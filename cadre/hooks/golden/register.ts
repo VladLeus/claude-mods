@@ -218,52 +218,31 @@ export const GOLDEN_PANE_ROWS: {
       "PM (pm)"
     ],
     [
-      "  ",
-      "framework:",
-      " GSD",
-      "; ",
-      "model:",
-      " opus + medium",
-      "; ",
-      "permission mode:"
+      "  framework: GSD; model: opus + medium; permission mode:"
     ],
     [
       "auto"
     ],
     [
-      "  ",
-      "skills:",
-      " none"
+      "  skills: none"
     ],
     [
-      "  ",
-      "MCP servers:",
-      " none"
+      "  MCP servers: none"
     ],
     [
-      "  ",
-      "not given skills:",
-      " none"
+      "  not given skills: none"
     ],
     [
-      "  ",
-      "not given MCP:",
-      " none"
+      "  not given MCP: none"
     ],
     [
-      "  ",
-      "hooks loaded:",
-      " none"
+      "  hooks loaded: none"
     ],
     [
-      "  ",
-      "hooks loaded by project settings:",
-      " none"
+      "  hooks loaded by project settings: none"
     ],
     [
-      "  ",
-      "hooks not loaded:",
-      " none"
+      "  hooks not loaded: none"
     ],
     [
       "  rules:"
@@ -331,52 +310,31 @@ export const GOLDEN_PANE_ROWS: {
       "PM (pm)"
     ],
     [
-      "  ",
-      "framework:",
-      " GSD",
-      "; ",
-      "model:",
-      " opus + medium",
-      "; ",
-      "permission mode:"
+      "  framework: GSD; model: opus + medium; permission mode:"
     ],
     [
       "auto"
     ],
     [
-      "  ",
-      "skills:",
-      " none"
+      "  skills: none"
     ],
     [
-      "  ",
-      "MCP servers:",
-      " none"
+      "  MCP servers: none"
     ],
     [
-      "  ",
-      "not given skills:",
-      " none"
+      "  not given skills: none"
     ],
     [
-      "  ",
-      "not given MCP:",
-      " none"
+      "  not given MCP: none"
     ],
     [
-      "  ",
-      "hooks loaded:",
-      " none"
+      "  hooks loaded: none"
     ],
     [
-      "  ",
-      "hooks loaded by project settings:",
-      " none"
+      "  hooks loaded by project settings: none"
     ],
     [
-      "  ",
-      "hooks not loaded:",
-      " none"
+      "  hooks not loaded: none"
     ],
     [
       "  rules:"

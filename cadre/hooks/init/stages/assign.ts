@@ -10,11 +10,11 @@
  * ui/ask, ui/blocks/assign, init/answers, init/assign-rules, init/handout, init/state and the duration, memory and
  * own-skills stages, and never imports init/machine or init/run.
  */
-import type { McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
+import type { ContextRow, McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { compareText, idsOrNone } from '../../core/text'
-import { SCREEN_LIST_WORDS, t } from '../../locales/t'
+import { keyLabel, SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { ownSkillId } from '../../suggest/skills'
 import type { SkillPromptGroup, SkillsRecommendation } from '../../suggest/skills'
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
@@ -22,7 +22,7 @@ import type { ChoiceAsk } from '../../ui/ask'
 import { mcpGroupContext, mcpSourceText, mcpToolNamesOf, ownSkillsContext } from '../../ui/blocks/assign'
 import type { McpLine } from '../../ui/blocks/assign'
 import { listWordsOf } from '../../ui/surface'
-import { assignToRoles, ownSkillLines, parseRoleList } from '../answers'
+import { assignToRoles, ownSkillContextRows, ownSkillLines, parseRoleList } from '../answers'
 import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
 import { handoutAnswer, handoutEnter, handoutItemsEnter } from '../handout'
@@ -286,9 +286,9 @@ function skillsStart(state: InitState, plan: AssignPlan, done: readonly NameAssi
 /**
  * The plugin group at `index` as its question asks it (D-53, D-248, D-251): the roles the skills call recommended for
  * the whole group, and its skills with the roles recommended for each, or the table seed when the call fell back
- * (skillGroupItem); its own context starts with `Recommended: <ids or none>` for the group, and its summary, which a
- * pane surface asks with the question, counts the skills and names that recommendation (D-310). Undefined after the
- * last group.
+ * (skillGroupItem); its own context starts with `Recommended: <ids or none>` for the group, a recommended row in its
+ * rows (D-313), and its summary, which a pane surface asks with the question, counts the skills and names that
+ * recommendation (D-310). Undefined after the last group.
  */
 function groupAt(
   plan: AssignPlan,
@@ -299,9 +299,14 @@ function groupAt(
   if (group === undefined) return undefined
   const perSkill = skills.groupSkills.get(group.label) ?? new Map<string, readonly string[]>()
   const recommended = skills.groups.get(group.label) ?? []
-  const line = t('ui.assign.groupRecommended', { roleIds: idsOrNone(recommended, SCREEN_LIST_WORDS.none) })
+  const roleIds = idsOrNone(recommended, SCREEN_LIST_WORDS.none)
+  const line = t('ui.assign.groupRecommended', { roleIds })
+  const label = keyLabel('ui.assign.groupRecommended')
+  const row: ContextRow = { role: 'recommended', label, text: roleIds, indent: 0 }
   const item = skillGroupItem(group, plan.counts, plan.roles, plan.setup.skills, perSkill, recommended)
-  const context = { ...item.context, lines: [line, ...item.context.lines] }
+  const [first, ...rest] = item.context.rows ?? []
+  const rows = [{ title: first?.title ?? null, rows: [row, ...(first?.rows ?? [])] }, ...rest]
+  const context = { ...item.context, lines: [line, ...item.context.lines], rows }
 
   return { group, item: { ...item, context }, recommended }
 }
@@ -535,9 +540,11 @@ function afterSkillsModel(
     if (!seeded.has(ownSkillId(index)) && seed !== undefined) seeded.set(ownSkillId(index), seed)
   })
   const lines = ownSkillLines(skills, plan.counts, recommended)
+  const rows = ownSkillContextRows(skills, plan.counts, recommended)
   const items = ownSkillItems(skills, plan.counts, seeded)
   const withRoles = skills.filter((_, index) => (recommended.get(ownSkillId(index)) ?? []).length > 0).length
-  const entry = { ...ownSkillsEntry(skills.length), context: ownSkillsContext(lines, skills.length, withRoles) }
+  const context = ownSkillsContext(lines, rows, skills.length, withRoles)
+  const entry = { ...ownSkillsEntry(skills.length), context }
 
   return handedOut(state, plan, done, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
 }

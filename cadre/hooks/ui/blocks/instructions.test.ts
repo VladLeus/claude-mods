@@ -5,7 +5,8 @@ import { REDACTED } from '../../core/redact'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { fallbackTopics } from '../../suggest/topics'
 import { MEMORIES, MEMORY, memory, RECOMMENDED, ROLES, TOPICS } from '../../testkit'
-import { instructionLines, instructionReviewLines } from './instructions'
+import { paneDrawn } from '../pane'
+import { instructionLines, instructionReviewLines, instructionRows } from './instructions'
 
 /**
  * A part of the global CLAUDE.md with this id, heading and text, and a stand-in hash; `file` changes the file it comes
@@ -172,6 +173,33 @@ describe('instructionReviewLines', () => {
       '  tl: 4 topics: A, B, C, +1 more; 2 memories',
       '  security: none',
       'Kept with the root session only: 1 topic, 0 memories',
+    ])
+  })
+})
+
+describe('instructionRows (D-313, D-323)', () => {
+  /** The texts the pane draws for `rows` in one untitled section, its title left out (paneDrawn). */
+  function drawnTexts(rows: ReturnType<typeof instructionRows>): string[] {
+    return paneDrawn({ title: 'T', summary: null, rows: [{ title: null, rows }], lines: [] }, null)
+      .slice(1)
+      .map(row => row.spans.map(span => span.text).join(''))
+  }
+
+  test('the instructions block as rows: the same words as its lines, a row per line', () => {
+    const scan: InstructionScan = { ...SCAN, memories: MEMORIES, warnings: ['w'] }
+    for (const recommended of [RECOMMENDED, new Map<string, readonly string[]>()]) {
+      const lines = instructionLines(scan, TOPICS, recommended)
+      expect(drawnTexts(instructionRows(scan, TOPICS, recommended))).toEqual(lines)
+    }
+  })
+
+  test('its headings are heading rows, a topic is a field and its sources and roles follow at indent 4', () => {
+    const rows = instructionRows(SCAN, TOPICS.slice(0, 1), RECOMMENDED)
+    expect(rows.map(row => [row.role, row.indent])).toEqual([
+      ['heading', 0],
+      ['field', 2],
+      ['field', 4],
+      ['recommended', 4],
     ])
   })
 })

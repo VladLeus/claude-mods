@@ -7,7 +7,7 @@
  * effect, imports core, detect, framework, ui/ask, init/state and init/stages/model (the answer modes and
  * teamContextLine), and never imports init/machine or init/run.
  */
-import type { AskContext, Choice, Facts, FrameworkId, RoleSpec } from '../../../types'
+import type { AskContext, Choice, ContextRow, Facts, FrameworkId, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -233,7 +233,8 @@ export const GSD_CHECK_DISMISSED_REASON = t('init.frameworks.gsdCheckDismissedRe
  * check`, with the GSD check chip, and as its context (kind `detection`) each user-level GSD install found but not
  * proven, by its display path; its summary, which a pane surface asks under the question, is the line of the first of
  * them, so it names the install the check runs (D-310, edge #39), or the context's title when it lists none, so the
- * context always carries what a pane surface asks (D-300). It takes no typed answer.
+ * context always carries what a pane surface asks (D-300); each line is one plain row (D-313). It takes no typed
+ * answer.
  */
 export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   const unproven = facts.gsd.filter(fact => fact.location === 'user' && fact.identity === 'unknown')
@@ -242,7 +243,8 @@ export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismi
   const title = t('init.frameworks.gsdCheckTitle')
   const [summary = title] = lines
   const pane = { asked: GSD_CHECK_QUESTION, text: withContext(GSD_CHECK_QUESTION, summary) }
-  const context: AskContext = { title, lines, kind: 'detection', summary, pane }
+  const rows = lines.map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 }))
+  const context: AskContext = { title, lines, kind: 'detection', summary, pane, rows: [{ title: null, rows }] }
 
   return {
     question: GSD_CHECK_QUESTION,

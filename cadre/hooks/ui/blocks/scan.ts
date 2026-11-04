@@ -1,13 +1,13 @@
 /**
  * The scan summary block, a layer 8 module: the side-pane lines of the repo scan and the user setup, with the partial
- * lines of a walk that listed a folder only in part or stopped at its safety cap (SCAN-01, SCAN-02, D-133, D-137), the
- * context line of the history question (G-02-1) and the scan warning lines. It imports scan, core and the types, so
- * init reads it here.
+ * lines of a walk that listed a folder only in part or stopped at its safety cap (SCAN-01, SCAN-02, D-133, D-137), and
+ * the structured rows the pane draws for them (D-313), the context line of the history question (G-02-1) and the scan
+ * warning lines. It imports scan, core and the types, so init reads it here.
  */
-import type { RepoScan, ScanKind, SetupScan } from '../../../types'
+import type { ContextRow, RepoScan, ScanKind, SetupScan } from '../../../types'
 import { cardList, idsOrNone, shown } from '../../core/text'
 import type { ListWords } from '../../core/text'
-import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
+import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { screenPath } from '../../paths'
 import { undecidedFacts } from '../../scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from '../../scan/walk'
@@ -94,6 +94,25 @@ function pluginSummary(plugins: readonly string[], words: ListWords): string {
   return t('ui.scan.pluginSummary', { count: plugins.length, map })
 }
 
+/** One line of the scan summary and the structured row the pane draws for it (D-313, D-323), from the same values. */
+type SummaryPart = {
+  readonly line: string
+  readonly row: ContextRow
+}
+
+/** A heading line of the scan summary: drawn as a heading row (D-313). */
+function headingPart(line: string): SummaryPart {
+  return { line, row: { role: 'heading', text: line, indent: 0 } }
+}
+
+/**
+ * A line of the scan summary that holds more than one field, or text around its fields: one plain row holding the
+ * whole line, its indent kept in its text (D-313).
+ */
+function plainPart(line: string): SummaryPart {
+  return { line, row: { role: 'plain', text: line, indent: 0 } }
+}
+
 /**
  * The scans as init shows them in the side pane before any role question (SCAN-01, SCAN-02, D-133): the repo part
  * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and the partial lines when the walk listed a deeper
@@ -101,9 +120,11 @@ function pluginSummary(plugins: readonly string[], words: ListWords): string {
  * line gives its counts first and its name list last, and a list shows the names `words` allows, cleaned and capped:
  * every name on a pane surface, 12 and how many more on the TUI default (listWordsOf, D-256), so a long list never
  * pushes a count out of its line (B2). A CLAUDE.md file in the repo is named with the folder name of `root`
- * (screenPath, D-226). No setting value, file content or warning is part of it.
+ * (screenPath, D-226). No setting value, file content or warning is part of it. Each line comes with its structured
+ * row (D-313): the two headings as heading rows, the existing `.cadre/` and the plugins lines as field rows of their
+ * template's label and value, every other line one plain row.
  */
-export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): string[] {
+function scanSummaryParts(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): SummaryPart[] {
   const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none) })
   const sides = t('ui.scan.sides', {
     findingLabels: findingLabels(repo, 'fe'),
@@ -111,22 +132,43 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string,
   })
   const mcp = cardList(setup.mcp.map(server => shown(server.name)), words)
   const globalMd = setup.hasGlobalClaudeMd ? t('ui.scan.yes') : t('ui.scan.no')
+  const cadre = cadreSummary(repo.cadre)
+  const plugins = pluginSummary(setup.plugins, words)
 
   return [
-    t('ui.scan.repoHeading'),
-    t('ui.scan.stackSides', { stack, sides }),
-    t('ui.scan.tests', { findingLabels: findingLabels(repo, 'test'), findingLabelsB: findingLabels(repo, 'e2e') }),
-    t('ui.scan.existingCadre', { cadreSummary: cadreSummary(repo.cadre) }),
-    ...partialLines(repo),
-    t('ui.scan.setupHeading'),
-    t('ui.scan.plugins', { pluginSummary: pluginSummary(setup.plugins, words) }),
-    t('ui.scan.setupCounts', { count: setup.skills.length, countB: setup.agents.length, mcp }),
-    t('ui.scan.setupFiles', {
+    headingPart(t('ui.scan.repoHeading')),
+    plainPart(t('ui.scan.stackSides', { stack, sides })),
+    plainPart(t('ui.scan.tests', {
+      findingLabels: findingLabels(repo, 'test'),
+      findingLabelsB: findingLabels(repo, 'e2e'),
+    })),
+    {
+      line: t('ui.scan.existingCadre', { cadreSummary: cadre }),
+      row: { role: 'field', label: keyLabel('ui.scan.existingCadre'), text: cadre, indent: 2 },
+    },
+    ...partialLines(repo).map(plainPart),
+    headingPart(t('ui.scan.setupHeading')),
+    {
+      line: t('ui.scan.plugins', { pluginSummary: plugins }),
+      row: { role: 'field', label: keyLabel('ui.scan.plugins'), text: plugins, indent: 2 },
+    },
+    plainPart(t('ui.scan.setupCounts', { count: setup.skills.length, countB: setup.agents.length, mcp })),
+    plainPart(t('ui.scan.setupFiles', {
       globalMd,
       count: setup.memoryFiles.length,
       map: cardList(setup.claudeMd.map(file => shown(screenPath(file, root))), words),
-    }),
+    })),
   ]
+}
+
+/** The scan summary's lines as the TUI default and a fold show them (scanSummaryParts, SCAN-01, SCAN-02, D-133). */
+export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): string[] {
+  return scanSummaryParts(repo, setup, root, words).map(part => part.line)
+}
+
+/** The scan summary's structured rows the pane draws (scanSummaryParts, D-313, D-323), one per line. */
+export function scanSummaryRows(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): ContextRow[] {
+  return scanSummaryParts(repo, setup, root, words).map(part => part.row)
 }
 
 /**

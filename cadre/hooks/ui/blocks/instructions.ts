@@ -1,14 +1,21 @@
 /**
- * The instruction blocks, a layer 8 module: the side-pane block of the instruction parts and memories and the review
- * rows per role (G-02-1f), with the source, topic-part and capped-list helpers the hand-out questions share. It
- * imports the grouping fallback of suggest/topics, records, core and the types, so init and the instruction questions
- * read it here.
+ * The instruction blocks, a layer 8 module: the side-pane block of the instruction parts and memories, with the
+ * structured rows the pane draws for it (D-313), and the review rows per role (G-02-1f), with the source, topic-part
+ * and capped-list helpers the hand-out questions share. It imports the grouping fallback of suggest/topics, records,
+ * core and the types, so init and the instruction questions read it here.
  */
-import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, RoleSpec } from '../../../types'
+import type {
+  ContextRow,
+  InstructionPart,
+  InstructionScan,
+  InstructionTopic,
+  MemoryItem,
+  RoleSpec,
+} from '../../../types'
 import { redactedText } from '../../core/redact'
 import { clean, idsOrNone } from '../../core/text'
 import type { ListWords } from '../../core/text'
-import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
+import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
 import { withMax } from '../surface'
@@ -127,6 +134,84 @@ export function instructionLines(
   return [READ_HEADING, ...rows, ...memories, ...scan.warnings.map(warning => t('ui.instructions.instructionLines', {
     warning,
   })), ...notes]
+}
+
+/**
+ * One topic's structured rows (D-313), one per row of topicRows: its title and summary as a field at indent 2, each
+ * source as a `from` field at indent 4 and the recommended roles at indent 4.
+ */
+function topicFieldRows(
+  topic: InstructionTopic,
+  parts: readonly InstructionPart[],
+  ids: readonly string[],
+): ContextRow[] {
+  return [
+    { role: 'field', label: redactedText(topic.title), text: redactedText(topic.summary), indent: 2 },
+    ...topicParts(topic, parts).map((part): ContextRow => ({
+      role: 'field',
+      label: keyLabel('ui.instructions.topicRows2'),
+      text: sourceText(part),
+      indent: 4,
+    })),
+    {
+      role: 'recommended',
+      label: keyLabel('ui.instructions.topicRows3'),
+      text: idsOrNone(ids, SCREEN_LIST_WORDS.none),
+      indent: 4,
+    },
+  ]
+}
+
+/**
+ * One memory's structured rows (D-313), one per row of memoryRows: its file and summary as a field at indent 2, then
+ * the recommended roles at indent 4.
+ */
+function memoryFieldRows(memory: MemoryItem, ids: readonly string[]): ContextRow[] {
+  return [
+    { role: 'field', label: memory.file, text: redactedText(memory.summary), indent: 2 },
+    {
+      role: 'recommended',
+      label: keyLabel('ui.instructions.memoryRows2'),
+      text: idsOrNone(ids, SCREEN_LIST_WORDS.none),
+      indent: 4,
+    },
+  ]
+}
+
+/**
+ * The structured rows of the instructions block (D-313, D-323), one per line of instructionLines from the same values:
+ * its headings as heading rows, each topic and memory as its field rows (topicFieldRows, memoryFieldRows), each read
+ * warning as a `warning` field and each note as a plain row.
+ */
+export function instructionRows(
+  scan: InstructionScan,
+  topics: readonly InstructionTopic[],
+  recommended: ReadonlyMap<string, readonly string[]>,
+): ContextRow[] {
+  const heading = (text: string): ContextRow => ({ role: 'heading', text, indent: 0 })
+  const rows = topics.flatMap(topic => topicFieldRows(topic, scan.parts, recommended.get(topic.id) ?? []))
+  const memoryRowsOf = scan.memories.flatMap(memory => memoryFieldRows(memory, recommended.get(memory.id) ?? []))
+  const memories = memoryRowsOf.length === 0 ? [] : [heading(MEMORIES_HEADING), ...memoryRowsOf]
+  const hasTopics = topics.length > 0
+  const hasItems = hasTopics || scan.memories.length > 0
+  const notes = [
+    ...(hasItems && recommended.size === 0 ? [NO_RECOMMENDATION_ROW] : []),
+    ...(hasTopics && isFileGrouping(scan, topics) ? [FILE_TOPICS_ROW] : []),
+  ]
+  const warnings = scan.warnings.map((warning): ContextRow => ({
+    role: 'field',
+    label: keyLabel('ui.instructions.instructionLines'),
+    text: warning,
+    indent: 0,
+  }))
+
+  return [
+    heading(READ_HEADING),
+    ...rows,
+    ...memories,
+    ...warnings,
+    ...notes.map((note): ContextRow => ({ role: 'plain', text: note, indent: 0 })),
+  ]
 }
 
 /** The most topic titles a review row names on the TUI default before it counts the rest (D-283: all on a pane). */

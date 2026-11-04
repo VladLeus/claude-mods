@@ -5,6 +5,7 @@ import { SCREEN_LIST_WORDS } from '../locales/t'
 import { EFFORTS } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { BIDI_OVERRIDE, PM, role, TL } from '../testkit'
+import { paneDrawn } from '../ui/pane'
 import { withMax } from '../ui/surface'
 import {
   ALL_ENV_OPTION,
@@ -21,6 +22,7 @@ import {
   modelEffortRefusal,
   NO_SKILL_PURPOSE,
   NONE_OPTION,
+  ownSkillContextRows,
   ownSkillLines,
   parseEnvNames,
   parseModelEffort,
@@ -299,6 +301,26 @@ describe('ownSkillLines', () => {
 
   test('the skills are S1, S2 by their place; a skill a usable map leaves out shows none, with no fallback row', () => {
     expect(ownSkillLines(OWN_SKILLS, new Map(), new Map([['S1', ['be', 'qa']]]))).toEqual(UNUSED_ROWS)
+  })
+
+  test('its rows draw the same words as its lines: each skill a field, then its roles (D-313)', () => {
+    const uses = new Map([['deploy-notes', 3]])
+    for (const recommended of [RECOMMENDED, new Map<string, readonly string[]>()]) {
+      const rows = ownSkillContextRows(OWN_SKILLS, uses, recommended)
+      const drawn = paneDrawn({ title: 'T', summary: null, rows: [{ title: null, rows }], lines: [] }, null)
+      expect(drawn.slice(1).map(row => row.spans.map(span => span.text).join(''))).toEqual(
+        ownSkillLines(OWN_SKILLS, uses, recommended),
+      )
+    }
+    expect(ownSkillContextRows(OWN_SKILLS, uses, RECOMMENDED).slice(1, 3)).toEqual([
+      { role: 'field', label: 'deploy-notes', text: 'Write the release notes for a deploy.', indent: 2 },
+      {
+        role: 'recommended',
+        label: 'used 3 times in the last 50 sessions; recommended',
+        text: 'be, qa',
+        indent: 4,
+      },
+    ])
   })
 
   test('a skill with no description reads NO_SKILL_PURPOSE; the sessions named are those the history reads', () => {

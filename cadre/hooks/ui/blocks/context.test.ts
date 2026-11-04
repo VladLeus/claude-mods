@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, InstructionPart, InstructionScan, RoleChange } from '../../../types'
+import type { AskContext, Detection, InstructionPart, InstructionScan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
@@ -38,6 +38,7 @@ import {
   topicContext,
 } from './context'
 import { instructionLines } from './instructions'
+import { paneDrawn } from '../pane'
 import { scanSummaryLines } from './scan'
 
 /** The roles DESCRIBED_REPLY stands for. */
@@ -507,3 +508,49 @@ describe('context lines kept whole (#163)', () => {
   })
 })
 
+/** The texts the pane draws for the rows of `context`, its title left out (paneDrawn, D-313). */
+function drawnLines(context: AskContext): string[] {
+  const block = { title: context.title, summary: null, rows: context.rows ?? [], lines: [] }
+
+  return paneDrawn(block, null)
+    .slice(1)
+    .map(row => row.spans.map(span => span.text).join(''))
+}
+
+describe('rows from the same data as lines (D-313, D-323)', () => {
+  test('every context but the Review draws as rows the same words its lines hold, a row per line', () => {
+    const repo = repoScan({ warnings: ['could not list src'] })
+    const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup: emptySetupScan() }
+    const proposal = proposeRoles(SOURCE_SCAN)
+    const squad = memory('M1', `squad${BIDI}.md`, `Unsigned${BIDI} commits.`)
+    const scan: InstructionScan = { parts: [PART], files: [PART.file], memories: [squad], warnings: ['w'] }
+    const detections: readonly Detection[] = [
+      { id: 'gsd', name: 'GSD', status: 'in-use', version: '1.2.3', evidence: ['.planning/', 'gsd-core'] },
+      { id: 'superpowers', name: 'superpowers', status: 'not-found', version: null, evidence: [] },
+    ]
+    const setup = { hasGlobalClaudeMd: true, claudeMd: ['<repo>/CLAUDE.md'], memoryFiles: ['squad.md'] }
+    const none = { hasGlobalClaudeMd: false, claudeMd: [], memoryFiles: [] }
+    const dirs = Array.from({ length: 13 }, (_, at) => `d${String(at).padStart(2, '0')}`)
+    const contexts = [
+      scanContext(DEFAULT_LOCATIONS, gathered, SCREEN_LIST_WORDS),
+      rolesContext(proposal.roles, proposal.changes),
+      rolesContext(proposal.roles, []),
+      detectionContext(detections),
+      securityContext([SECURITY_KEY, GUIDANCE_KEY, 'other@market']),
+      instructionsContext(setup, { rules: ['a.md'], hasAgentsMd: true }, '/repo', SCREEN_LIST_WORDS),
+      instructionsContext(none, { rules: null, hasAgentsMd: false }, '/repo', SCREEN_LIST_WORDS),
+      instructionPartsContext(scan, TOPICS, RECOMMENDED),
+      instructionPartsContext(scan, TOPICS, new Map()),
+      topicContext(SECURITY_TOPIC, [PART], ['security'], 1, 2),
+      memoryContext(squad, [], 2, 3),
+      memoryGroupContext('global-claude-md', [], SCREEN_LIST_WORDS),
+      memoryGroupContext('auto-memory', ['a.md', 'b.md'], SCREEN_LIST_WORDS),
+      envContext(['API_KEY', 'JIRA_URL']),
+      improverInstallContext(['be', 'qa']),
+      launchContext([templateRole('pm'), templateRole('be')], SCREEN_LIST_WORDS),
+      launchDirContext(dirs, SCREEN_LIST_WORDS),
+      launchDirContext([], SCREEN_LIST_WORDS),
+    ]
+    for (const context of contexts) expect(drawnLines(context)).toEqual(context.lines)
+  })
+})

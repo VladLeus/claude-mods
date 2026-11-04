@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Engine, MountTarget } from 'claude-code/testing'
 
-import type { AskContext, AskSpec } from '../types'
+import type { AskContext, AskSpec, ContextRow, ContextRowRole, ContextSection } from '../types'
 import { MANIFEST_SKIPPED_NOTE, NEXT_STEP_NOTE, privateFoldersUnknownWarning } from './apply/run'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
@@ -39,8 +39,8 @@ import {
   templateRole,
 } from './testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
-import { paneRows } from './ui/pane'
-import type { PaneSpan } from './ui/pane'
+import { paneDrawn, paneRows } from './ui/pane'
+import type { PaneBlock, PaneSpan } from './ui/pane'
 import { NOTE_WORDING, OTHER_WORDING, OWN_ANSWER_HINT, PREVIEW_ROWS } from './ui/preview'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
@@ -238,6 +238,60 @@ function openedContext(log: HostLog, prefix: string): { readonly title: string; 
   const { title, lines } = open.context
 
   return { title: String(title), lines: Array.isArray(lines) ? lines.map(String) : [] }
+}
+
+/** Every role a structured context row may have (D-313), to read a row back from a logged pane state. */
+const ROW_ROLES: readonly ContextRowRole[] = [
+  'heading',
+  'item',
+  'description',
+  'field',
+  'recommended',
+  'placeholder',
+  'plain',
+]
+
+/** A structured row read back from a logged pane state (D-313); null when the value is not one. */
+function loggedRowOf(value: unknown): ContextRow | null {
+  if (!isObject(value) || typeof value.text !== 'string' || typeof value.indent !== 'number') return null
+  const role = ROW_ROLES.find(known => known === value.role)
+  if (role === undefined) return null
+  const { text, indent } = value
+
+  return typeof value.label === 'string' ? { role, label: value.label, text, indent } : { role, text, indent }
+}
+
+/** A section of structured rows read back from a logged pane state (D-313); its rows that are none are left out. */
+function loggedSectionOf(value: unknown): ContextSection | null {
+  if (!isObject(value) || !Array.isArray(value.rows)) return null
+  const title = typeof value.title === 'string' ? value.title : null
+  const rows = value.rows.flatMap(row => {
+    const read = loggedRowOf(row)
+
+    return read === null ? [] : [read]
+  })
+
+  return { title, rows }
+}
+
+/**
+ * The block the pane draws for the own context of the first question a run opened whose text starts with `prefix`
+ * (paneBlockOf, D-313): its title, summary and rows when it has rows, else its title and lines; null when there is
+ * none.
+ */
+function openedBlock(log: HostLog, prefix: string): PaneBlock | null {
+  const context = openedContext(log, prefix)
+  const open = log.paneStates.map(openOf).find(value => isObject(value) && String(value.question).startsWith(prefix))
+  if (context === null || !isObject(open) || !isObject(open.context)) return null
+  const { rows, summary } = open.context
+  if (!Array.isArray(rows)) return { ...context, summary: null, rows: null }
+  const sections = rows.flatMap(row => {
+    const read = loggedSectionOf(row)
+
+    return read === null ? [] : [read]
+  })
+
+  return { ...context, summary: typeof summary === 'string' ? summary : null, rows: sections }
 }
 
 /** The pane state with no question open and no loader: what a run writes when it ends (D-303, D-304). */
@@ -2294,14 +2348,15 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
   }
 
   /**
-   * What a drawing of only the own context of the first question the run opened with `prefix` shows (R1, D-299): its
-   * title row, then its lines, each wrapped to the 60 columns of the test's pane body (D-231).
+   * What a drawing of only the own context of the first question the run opened with `prefix` shows (R1, D-299,
+   * D-313): the rows the one renderer draws for it (paneDrawn), each wrapped to the 60 columns of the test's pane body
+   * (D-231), its title first.
    */
   function contextDrawn(log: HostLog, prefix: string): Drawn {
-    const context = openedContext(log, prefix)
-    if (context === null) return { first: undefined, rows: 0 }
+    const block = openedBlock(log, prefix)
+    if (block === null) return { first: undefined, rows: 0 }
 
-    return { first: context.title, rows: paneRows([context], INLINE_PANE.bodyColumns).length }
+    return { first: block.title, rows: paneDrawn(block, INLINE_PANE.bodyColumns).length }
   }
 
   /**

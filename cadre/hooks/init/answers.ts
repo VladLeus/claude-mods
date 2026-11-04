@@ -6,11 +6,11 @@
  * imports core, roles, scan/history, suggest/skills and the shapes of the assignment rules; init.ts and init/handout
  * read it.
  */
-import type { Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
+import type { ContextRow, Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
 import { redactSecrets } from '../core/redact'
 import { clean, idsOrNone, sortedUnique } from '../core/text'
 import type { ListWords } from '../core/text'
-import { SCREEN_LIST_WORDS, t, tn } from '../locales/t'
+import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../locales/t'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
@@ -122,6 +122,44 @@ export function ownSkillLines(
   const notes = skills.length > 0 && recommended.size === 0 ? [NO_SKILL_RECOMMENDATION_ROW] : []
 
   return [OWN_SKILLS_HEADING, ...rows, ...notes]
+}
+
+/**
+ * One own skill's structured rows (D-313), one per row of ownSkillRows from the same values: its name and purpose as a
+ * field at indent 2, then its use count with the recommended roles at indent 4.
+ */
+function ownSkillFieldRows(skill: SkillRef, count: number, ids: readonly string[]): ContextRow[] {
+  const used = count === 0 ? '' : t('init.answers.ownSkillUsed', { skillUses: skillUsesText(count) })
+  const purpose = redactSecrets(skill.purpose ?? NO_SKILL_PURPOSE)
+
+  return [
+    { role: 'field', label: skill.name, text: purpose, indent: 2 },
+    {
+      role: 'recommended',
+      label: `${used}${keyLabel('init.answers.ownSkillRecommended')}`,
+      text: idsOrNone(ids, SCREEN_LIST_WORDS.none),
+      indent: 4,
+    },
+  ]
+}
+
+/**
+ * The structured rows of the own-skills block the pane draws (D-313, D-323), one per line of ownSkillLines from the
+ * same skills: OWN_SKILLS_HEADING as a heading row, each skill's rows (ownSkillFieldRows), then the no-recommendation
+ * row as a plain row when the model gave none.
+ */
+export function ownSkillContextRows(
+  skills: readonly SkillRef[],
+  uses: ReadonlyMap<string, number>,
+  recommended: ReadonlyMap<string, readonly string[]>,
+): ContextRow[] {
+  const rows = skills.flatMap((skill, index) =>
+    ownSkillFieldRows(skill, skillCount(skill.name, uses), recommended.get(ownSkillId(index)) ?? []),
+  )
+  const notes: ContextRow[] =
+    skills.length > 0 && recommended.size === 0 ? [{ role: 'plain', text: NO_SKILL_RECOMMENDATION_ROW, indent: 0 }] : []
+
+  return [{ role: 'heading', text: OWN_SKILLS_HEADING, indent: 0 }, ...rows, ...notes]
 }
 
 /** Records a role id under the lowercase form of a name, unless the name is blank or an earlier role holds it. */

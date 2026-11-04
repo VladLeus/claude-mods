@@ -5,7 +5,7 @@
  * import each other.
  * ui/ask is a layer 8 module: the init stages, regen, apply and epic import it.
  */
-import type { AskContext, AskSpec, InitIo, PaneKey, PaneQuestion } from '../../types'
+import type { AskContext, AskSpec, ContextRow, ContextSection, InitIo, PaneKey, PaneQuestion } from '../../types'
 import { clean, reportText } from '../core/text'
 import { t } from '../locales/t'
 import { UNCUT } from './pane'
@@ -285,9 +285,12 @@ function hasWord(line: string, word: string): boolean {
  * `spec` with each of `folds` merged into its context as a leading section (D-302): the fold's title, its lines and one
  * blank line, in the order given, before the context's own lines, except that the title is left out when the fold's
  * first line already names it (holds the title as a whole word, case-insensitive: the block's own heading line; user,
- * 2026-11-04), compared after the same cleaning. Every title and line is cleaned and not cut, as a pane block's were
- * (clean with UNCUT, #163), so a folded scanned value cannot add a row or hide text (T-02.2-24). A spec with no
- * context, or no fold, is given back as it is; the summary and the pane text never change.
+ * 2026-11-04), compared after the same cleaning. A context with structured rows also gets each fold as a leading
+ * section of its rows, so the pane draws it (D-302, D-313): titled as its lines are (null when the title is left out),
+ * each line a plain row at indent 0, before the context's own sections; a context with no rows gets none. Every title
+ * and line is cleaned and not cut, as a pane block's were (clean with UNCUT, #163), so a folded scanned value cannot
+ * add a row or hide text (T-02.2-24). A spec with no context, or no fold, is given back as it is; the summary and the
+ * pane text never change.
  */
 export function foldedSpec(
   spec: AskSpec,
@@ -295,16 +298,23 @@ export function foldedSpec(
 ): AskSpec {
   const { context } = spec
   if (context === undefined || folds.length === 0) return spec
-  const sections = folds.flatMap(fold => {
+  const sections = folds.map((fold): ContextSection => {
     const title = clean(fold.title, UNCUT)
     const lines = fold.lines.map(line => clean(line, UNCUT))
     const [first] = lines
-    if (first !== undefined && hasWord(first, title)) return [...lines, '']
+    const rows = lines.map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 }))
 
-    return [title, ...lines, '']
+    return { title: first !== undefined && hasWord(first, title) ? null : title, rows }
   })
+  const lines = sections.flatMap(section => [
+    ...(section.title === null ? [] : [section.title]),
+    ...section.rows.map(row => row.text),
+    '',
+  ])
+  const folded = { ...context, lines: [...lines, ...context.lines] }
+  if (context.rows === undefined) return { ...spec, context: folded }
 
-  return { ...spec, context: { ...context, lines: [...sections, ...context.lines] } }
+  return { ...spec, context: { ...folded, rows: [...sections, ...context.rows] } }
 }
 
 /**

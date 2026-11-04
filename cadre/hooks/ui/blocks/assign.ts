@@ -3,15 +3,15 @@
  * server's source, its tool names from the session's tool list (never a description) and the roles recommended for
  * it; a skill group question lists each of its skills with what it does, how often it was used and the roles
  * recommended for it; the own-skills entry question holds the own-skills block, and one own skill's question that
- * skill alone. Every value is cleaned and capped here (D-222), and a description's secret-like spans are hidden
- * (redactedText, E1) before its cap (#163). It imports core, the UNCUT rule of ui/pane and the types, so the
- * assignment stage reads it here.
+ * skill alone. Each context also gives the structured rows the pane draws from the same values (D-313, D-323). Every
+ * value is cleaned and capped here (D-222), and a description's secret-like spans are hidden (redactedText, E1) before
+ * its cap (#163). It imports core, the UNCUT rule of ui/pane and the types, so the assignment stage reads it here.
  */
-import type { AskContext, McpRef } from '../../../types'
+import type { AskContext, ContextRow, ContextSection, McpRef } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
 import type { ListWords } from '../../core/text'
-import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
+import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { UNCUT } from '../pane'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
@@ -58,6 +58,11 @@ function roleIdsText(ids: readonly string[]): string {
   return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
 }
 
+/** The rows of a context with one untitled section of lines, each one plain row holding its whole line (D-313). */
+function plainSection(lines: readonly string[]): readonly ContextSection[] {
+  return [{ title: null, rows: lines.map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 })) }]
+}
+
 /**
  * The context of an MCP server question (D-211, D-236): the server by name, its source (mcpSourceText), the tools the
  * session lists for it (mcpToolNamesOf), counted first, then the names `words` allows and how many more (every name
@@ -75,16 +80,24 @@ export function mcpServerContext(
     count: tools.length,
     tools: cardList(tools, words),
   })
+  const source = mcpSourceText(ref)
+  const roleIds = roleIdsText(recommended)
+  const rows: ContextRow[] = [
+    { role: 'field', label: keyLabel('ui.assign.mcpServerContext3'), text: source, indent: 0 },
+    { role: 'plain', text: toolsLine, indent: 0 },
+    { role: 'recommended', label: keyLabel('ui.assign.mcpServerContext4'), text: roleIds, indent: 0 },
+  ]
 
   return {
     title: t('ui.assign.mcpServerContextTitle', { name: shown(ref.name, MAX_CONTEXT_NAME_CHARS) }),
-    lines: [t('ui.assign.mcpServerContext3', {
-      mcpSource: mcpSourceText(ref),
-    }), toolsLine, t('ui.assign.mcpServerContext4', {
-      roleIds: roleIdsText(recommended),
-    })],
+    lines: [
+      t('ui.assign.mcpServerContext3', { mcpSource: source }),
+      toolsLine,
+      t('ui.assign.mcpServerContext4', { roleIds }),
+    ],
     kind: 'mcp-server',
-    summary: t('ui.summary.recommended', { roleIds: roleIdsText(recommended) }),
+    summary: t('ui.summary.recommended', { roleIds }),
+    rows: [{ title: null, rows }],
   }
 }
 
@@ -126,11 +139,14 @@ export function skillGroupContext(
   skills: readonly SkillLine[],
   recommended: readonly string[] = [],
 ): AskContext {
+  const lines = skills.map(skillLineText)
+
   return {
     title: t('ui.assign.skillGroupContextTitle', { label: shown(label, MAX_CONTEXT_NAME_CHARS) }),
-    lines: skills.map(skillLineText),
+    lines,
     kind: 'skill-group',
     summary: tn('ui.summary.skillGroup', skills.length, { count: skills.length, roleIds: roleIdsText(recommended) }),
+    rows: plainSection(lines),
   }
 }
 
@@ -163,8 +179,15 @@ export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
 
   const recommended = lines.filter(line => line.recommended.length > 0).length
   const summary = tn('ui.summary.mcpGroup', lines.length, { count: lines.length, recommended })
+  const texts = lines.map(lineText)
 
-  return { title: t('ui.assign.mcpGroupContextTitle'), lines: lines.map(lineText), kind: 'mcp-server', summary }
+  return {
+    title: t('ui.assign.mcpGroupContextTitle'),
+    lines: texts,
+    kind: 'mcp-server',
+    summary,
+    rows: plainSection(texts),
+  }
 }
 
 /**
@@ -172,24 +195,33 @@ export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
  * is the roles recommended for it (D-310).
  */
 export function skillContext(skill: SkillLine, position: number, count: number): AskContext {
+  const lines = [skillLineText(skill)]
+
   return {
     title: t('ui.assign.skillContext', { position, count }),
-    lines: [skillLineText(skill)],
+    lines,
     kind: 'skill',
     summary: t('ui.summary.recommended', { roleIds: roleIdsText(skill.recommended) }),
+    rows: plainSection(lines),
   }
 }
 
 /**
  * The context of the own-skills entry question (D-236): the own-skills block as the side pane shows it, each line
- * cleaned, not cut (#163); its summary counts the `count` own skills and the `recommended` of them with a recommended
- * role (D-310).
+ * cleaned, not cut (#163), and its structured rows, built from the same skills (D-313, D-323); its summary counts the
+ * `count` own skills and the `recommended` of them with a recommended role (D-310).
  */
-export function ownSkillsContext(lines: readonly string[], count: number, recommended: number): AskContext {
+export function ownSkillsContext(
+  lines: readonly string[],
+  rows: readonly ContextRow[],
+  count: number,
+  recommended: number,
+): AskContext {
   return {
     title: t('ui.assign.ownSkillsContext'),
     lines: lines.map(line => clean(line, UNCUT)),
     kind: 'skills',
     summary: tn('ui.summary.ownSkills', count, { count, recommended }),
+    rows: [{ title: null, rows }],
   }
 }

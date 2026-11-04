@@ -1,12 +1,15 @@
 /**
  * The question contexts of init, a layer 8 module (D-203, D-236): one builder per question family whose context needs
  * new composition, from the line builders of today's pane blocks, and the lines those blocks share with their stages:
- * the roles proposal, the env heading and the security plugin notes. Every value is cleaned and capped here (D-222).
- * It imports core, paths, the scans, the scope lint's plugin names, the built-file path of generate, the UNCUT rule of
- * ui/pane and the other block modules, so the init stages read it here.
+ * the roles proposal, the env heading and the security plugin notes. Each builder but the Review's gives its lines and
+ * the structured rows the pane draws from the same values (D-313, D-323). Every value is cleaned and capped here
+ * (D-222). It imports core, paths, the scans, the scope lint's plugin names, the built-file path of generate, the UNCUT
+ * rule of ui/pane and the other block modules, so the init stages read it here.
  */
 import type {
   AskContext,
+  ContextRow,
+  ContextSection,
   Detection,
   Facts,
   InitLocations,
@@ -24,7 +27,7 @@ import { redactedText } from '../../core/redact'
 import { cardList, clean, idsOrNone, pad, shown } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
-import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
+import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { launcherPath, screenPath } from '../../paths'
 import { scanWarnings } from '../../scan/gather'
 import type { Gathered } from '../../scan/gather'
@@ -33,8 +36,8 @@ import type { InstructionSources } from '../../scan/instructions/read'
 import { pluginName } from '../../scope/lint'
 import { UNCUT } from '../pane'
 import { STATUS_LABEL } from './cards'
-import { instructionLines, sourceText, topicParts } from './instructions'
-import { scanSummaryLines, scanWarningLines } from './scan'
+import { instructionLines, instructionRows, sourceText, topicParts } from './instructions'
+import { scanSummaryLines, scanSummaryRows, scanWarningLines } from './scan'
 
 /** The column, in code points, where a role's purpose starts in the proposal, after its title and id. */
 const ROLE_LABEL_WIDTH = 24
@@ -44,13 +47,14 @@ const ROLE_LABEL_WIDTH = 24
  * and the purpose's secret-like spans hidden (redactedText, E1, #163).
  */
 export function roleLines(roles: readonly RoleSpec[]): string[] {
-  const rows = roles.map(role => {
-    const label = t('ui.context.roleLines', { title: redactedText(role.title), id: role.id })
+  return [t('ui.context.roleLines2'), ...roles.map(role => `  ${roleText(role)}`)]
+}
 
-    return `  ${pad(label, ROLE_LABEL_WIDTH)}${redactedText(role.purpose)}`
-  })
+/** One role as the proposal lists it, after its indent: its title and id padded, then its purpose (roleLines). */
+function roleText(role: RoleSpec): string {
+  const label = t('ui.context.roleLines', { title: redactedText(role.title), id: role.id })
 
-  return [t('ui.context.roleLines2'), ...rows]
+  return `${pad(label, ROLE_LABEL_WIDTH)}${redactedText(role.purpose)}`
 }
 
 /** One scan change: dropped or kept, the role id and the reason, then its evidence paths when there are any. */
@@ -73,6 +77,21 @@ export function proposalLines(roles: readonly RoleSpec[], changes: readonly Role
   return [...roleLines(roles), t('ui.context.proposalLines2'), ...changeRows]
 }
 
+/**
+ * The proposal's structured rows (D-313, D-323), one per line of proposalLines: its two headings as heading rows,
+ * each role as a plain row at indent 2, each change, or the none line, as one plain row holding its whole line.
+ */
+function proposalRows(roles: readonly RoleSpec[], changes: readonly RoleChange[]): ContextRow[] {
+  const changeLines = changes.length === 0 ? [t('ui.context.proposalLines')] : changes.map(changeLine)
+
+  return [
+    headingRow(t('ui.context.roleLines2')),
+    ...roles.map((role): ContextRow => ({ role: 'plain', text: roleText(role), indent: 2 })),
+    headingRow(t('ui.context.proposalLines2')),
+    ...changeLines.map(line => plainRow(line)),
+  ]
+}
+
 /** The first line of the side-pane block that lists every scanned env name before the env question (D-135). */
 export const ENV_PANE_HEADING = t('ui.context.envPaneHeading')
 
@@ -90,6 +109,26 @@ function roleIdsText(ids: readonly string[]): string {
   return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
 }
 
+/** A heading row (D-313): a line that heads the rows after it, at indent 0. */
+function headingRow(text: string): ContextRow {
+  return { role: 'heading', text, indent: 0 }
+}
+
+/** A plain row (D-313): `text` as it is, at `indent`; a line with its own indent in its text is at indent 0. */
+function plainRow(text: string, indent = 0): ContextRow {
+  return { role: 'plain', text, indent }
+}
+
+/** A field row (D-313): `label` and `: `, then `text`, at `indent`. */
+function fieldRow(label: string, text: string, indent = 0): ContextRow {
+  return { role: 'field', label, text, indent }
+}
+
+/** The rows of a context with one untitled section (D-313). */
+function oneSection(rows: readonly ContextRow[]): readonly ContextSection[] {
+  return [{ title: null, rows }]
+}
+
 /**
  * Items as indented rows, each cleaned: the first `words.max`, then a row that counts the rest (D-256: every item on a
  * pane surface, 12 on the TUI default).
@@ -101,6 +140,14 @@ function cappedRows(items: readonly string[], words: ListWords): string[] {
   return rest > 0 ? [...rows, `  ${words.more(rest)}`] : rows
 }
 
+/** The structured rows of cappedRows (D-313): each shown item, then the row that counts the rest, plain at indent 2. */
+function cappedItemRows(items: readonly string[], words: ListWords): ContextRow[] {
+  const rows = items.slice(0, words.max).map(item => plainRow(shown(item), 2))
+  const rest = items.length - rows.length
+
+  return rest > 0 ? [...rows, plainRow(words.more(rest), 2)] : rows
+}
+
 /**
  * The context of the history question (D-236): the scan block as the side pane shows it after the scans, the summary
  * lines with the names `words` allows (scanSummaryLines, D-256), then each scan warning (scanWarningLines); its
@@ -108,9 +155,11 @@ function cappedRows(items: readonly string[], words: ListWords): string[] {
  */
 export function scanContext(locations: InitLocations, gathered: Gathered, words: ListWords): AskContext {
   const { setup } = gathered
-  const lines = [
-    ...scanSummaryLines(gathered.repo, setup, locations.root, words),
-    ...scanWarningLines(scanWarnings(locations, gathered)),
+  const warnings = scanWarnings(locations, gathered)
+  const lines = [...scanSummaryLines(gathered.repo, setup, locations.root, words), ...scanWarningLines(warnings)]
+  const rows = [
+    ...scanSummaryRows(gathered.repo, setup, locations.root, words),
+    ...warnings.map(warning => fieldRow(keyLabel('ui.scan.warning'), warning)),
   ]
   const summary = t('ui.summary.scan', {
     plugins: tn('ui.summary.plugins', setup.plugins.length, { count: setup.plugins.length }),
@@ -118,7 +167,13 @@ export function scanContext(locations: InitLocations, gathered: Gathered, words:
     files: tn('ui.summary.claudeMdFiles', setup.claudeMd.length, { count: setup.claudeMd.length }),
   })
 
-  return { title: t('ui.context.scanContext'), lines: lines.map(line => clean(line, UNCUT)), kind: 'scan', summary }
+  return {
+    title: t('ui.context.scanContext'),
+    lines: lines.map(line => clean(line, UNCUT)),
+    kind: 'scan',
+    summary,
+    rows: oneSection(rows),
+  }
 }
 
 /**
@@ -135,22 +190,37 @@ export function rolesContext(roles: readonly RoleSpec[], changes: readonly RoleC
     lines,
     kind: 'roles',
     summary: tn('ui.summary.roles', roles.length, { count: roles.length, ids }),
+    rows: oneSection(proposalRows(roles, changes)),
   }
 }
 
 /** One framework's detection as a context line: its name and status, its version when known, then its evidence. */
 function detectionLine(detection: Detection): string {
+  return clean(t('ui.context.detectionLine2', { name: detection.name, ...detectionSlots(detection) }), UNCUT)
+}
+
+/** The slots of a detection line after its name: its status, its version when known, then its evidence. */
+function detectionSlots(detection: Detection): {
+  readonly statusLabel: string
+  readonly version: string
+  readonly evidence: string
+} {
   const version = detection.version === null ? '' : ` ${detection.version}`
   const evidence = detection.evidence.length === 0 ? '' : t('ui.context.detectionLine', {
     evidence: detection.evidence.join('; '),
   })
 
-  return clean(t('ui.context.detectionLine2', {
-    name: detection.name,
-    statusLabel: STATUS_LABEL[detection.status],
-    version,
-    evidence,
-  }), UNCUT)
+  return { statusLabel: STATUS_LABEL[detection.status], version, evidence }
+}
+
+/**
+ * One framework's detection as a field row (D-313): its name as the label, its status, version and evidence as the
+ * value, the slots of its line in their order.
+ */
+function detectionRow(detection: Detection): ContextRow {
+  const { statusLabel, version, evidence } = detectionSlots(detection)
+
+  return fieldRow(detection.name, `${statusLabel}${version}${evidence}`)
 }
 
 /**
@@ -173,6 +243,7 @@ export function detectionContext(detections: readonly Detection[]): AskContext {
     lines: shownDetections.map(detectionLine),
     kind: 'detection',
     summary,
+    rows: oneSection(shownDetections.map(detectionRow)),
   }
 }
 
@@ -195,10 +266,15 @@ export function securityContext(keys: readonly string[]): AskContext {
 
     return clean(note === undefined ? key : t('ui.context.securityContext', { key, note }), UNCUT)
   })
+  const rows = keys.map(key => {
+    const note = SECURITY_PLUGIN_NOTES.get(pluginName(key))
+
+    return note === undefined ? plainRow(key) : fieldRow(key, note)
+  })
   const names = keys.map(key => shown(pluginName(key))).join(', ')
   const summary = tn('ui.summary.securityPlugins', keys.length, { count: keys.length, names })
 
-  return { title: t('ui.context.securityContext2'), lines, kind: 'security', summary }
+  return { title: t('ui.context.securityContext2'), lines, kind: 'security', summary, rows: oneSection(rows) }
 }
 
 /** The display form of the global CLAUDE.md, as the instruction questions name it. */
@@ -207,6 +283,11 @@ const GLOBAL_CLAUDE_MD_TEXT = '~/.claude/CLAUDE.md'
 /** The rows of a list of found names as `words` caps them, or one `none` row with none (cappedRows, D-256). */
 function foundRows(items: readonly string[], words: ListWords): string[] {
   return items.length === 0 ? [t('ui.context.foundRows')] : cappedRows(items, words)
+}
+
+/** The structured rows of foundRows (D-313): the none line as one plain row, else cappedItemRows. */
+function foundItemRows(items: readonly string[], words: ListWords): ContextRow[] {
+  return items.length === 0 ? [plainRow(t('ui.context.foundRows'))] : cappedItemRows(items, words)
 }
 
 /**
@@ -235,12 +316,18 @@ export function instructionsContext(
     t('ui.context.instructionsContext2'),
     ...foundRows(memories, words),
   ]
+  const rows = [
+    headingRow(t('ui.context.instructionsContext')),
+    ...foundItemRows(files, words),
+    headingRow(t('ui.context.instructionsContext2')),
+    ...foundItemRows(memories, words),
+  ]
   const summary = t('ui.summary.instructions', {
     files: tn('ui.summary.files', files.length, { count: files.length }),
     memories: tn('ui.summary.memories', memories.length, { count: memories.length }),
   })
 
-  return { title: t('ui.context.instructionsContext3'), lines, kind: 'instructions', summary }
+  return { title: t('ui.context.instructionsContext3'), lines, kind: 'instructions', summary, rows: oneSection(rows) }
 }
 
 /**
@@ -266,6 +353,7 @@ export function instructionPartsContext(
     lines: instructionLines(scan, topics, recommended).map(line => clean(line, UNCUT)),
     kind: 'instructions',
     summary,
+    rows: oneSection(instructionRows(scan, topics, recommended)),
   }
 }
 
@@ -289,9 +377,20 @@ export function topicContext(
     ...topicParts(topic, parts).map(part => clean(t('ui.context.topicContext2', { source: sourceText(part) }), UNCUT)),
     t('ui.context.topicContext3', { roleIds: roleIdsText(recommended) }),
   ]
+  const rows: ContextRow[] = [
+    fieldRow(redactedText(topic.title), redactedText(topic.summary)),
+    ...topicParts(topic, parts).map(part => fieldRow(keyLabel('ui.context.topicContext2'), sourceText(part), 2)),
+    { role: 'recommended', label: keyLabel('ui.context.topicContext3'), text: roleIdsText(recommended), indent: 2 },
+  ]
   const summary = t('ui.summary.recommended', { roleIds: roleIdsText(recommended) })
 
-  return { title: t('ui.context.topicContext4', { position, count }), lines, kind: 'topic', summary }
+  return {
+    title: t('ui.context.topicContext4', { position, count }),
+    lines,
+    kind: 'topic',
+    summary,
+    rows: oneSection(rows),
+  }
 }
 
 /**
@@ -309,9 +408,19 @@ export function memoryContext(
     clean(t('ui.context.memoryContext', { file: memory.file, summary: redactedText(memory.summary) }), UNCUT),
     t('ui.context.memoryContext2', { roleIds: roleIdsText(recommended) }),
   ]
+  const rows: ContextRow[] = [
+    fieldRow(memory.file, redactedText(memory.summary)),
+    { role: 'recommended', label: keyLabel('ui.context.memoryContext2'), text: roleIdsText(recommended), indent: 2 },
+  ]
   const summary = t('ui.summary.recommended', { roleIds: roleIdsText(recommended) })
 
-  return { title: t('ui.context.memoryContext3', { position, count }), lines, kind: 'memory', summary }
+  return {
+    title: t('ui.context.memoryContext3', { position, count }),
+    lines,
+    kind: 'memory',
+    summary,
+    rows: oneSection(rows),
+  }
 }
 
 /** The title of each instruction group's whole-file question context (D-236). */
@@ -336,11 +445,14 @@ export function memoryGroupContext(group: InstructionGroup, names: readonly stri
   const isGlobal = group === 'global-claude-md'
   const count = isGlobal ? 1 : names.length
 
+  const lines = isGlobal ? [GLOBAL_GROUP_LINE] : files
+
   return {
     title: MEMORY_GROUP_TITLES[group],
-    lines: isGlobal ? [GLOBAL_GROUP_LINE] : files,
+    lines,
     kind: 'memory-group',
     summary: tn('ui.summary.files', count, { count }),
+    rows: oneSection(lines.map(line => plainRow(line))),
   }
 }
 
@@ -350,9 +462,10 @@ export function memoryGroupContext(group: InstructionGroup, names: readonly stri
  */
 export function envContext(names: readonly string[]): AskContext {
   const lines = [ENV_PANE_HEADING, ...names.map(name => `  ${shown(name)}`)]
+  const rows = [headingRow(ENV_PANE_HEADING), ...names.map(name => plainRow(shown(name), 2))]
   const summary = tn('ui.summary.envNames', names.length, { count: names.length })
 
-  return { title: t('ui.context.envContext'), lines, kind: 'env', summary }
+  return { title: t('ui.context.envContext'), lines, kind: 'env', summary, rows: oneSection(rows) }
 }
 
 /**
@@ -366,9 +479,16 @@ export function improverInstallContext(roleIds: readonly string[]): AskContext {
   }))
 
   const lines = [t('ui.context.improverInstallContext2'), ...rows]
+  const fields = roleIds.map(id => fieldRow(shown(id), builtClaudeMdPath(shown(id)), 2))
   const summary = tn('ui.summary.roles', roleIds.length, { count: roleIds.length, ids: roleIdsText(roleIds) })
 
-  return { title: t('ui.context.improverInstallContext3'), lines, kind: 'improver-install', summary }
+  return {
+    title: t('ui.context.improverInstallContext3'),
+    lines,
+    kind: 'improver-install',
+    summary,
+    rows: oneSection([headingRow(t('ui.context.improverInstallContext2')), ...fields]),
+  }
 }
 
 /**
@@ -383,9 +503,14 @@ export function launchContext(roles: readonly RoleSpec[], words: ListWords): Ask
     t('ui.context.launchContext2'),
     t('ui.context.launchContext3', { map }),
   ]
+  const rows = [
+    plainRow(t('ui.context.launchContext')),
+    plainRow(t('ui.context.launchContext2')),
+    fieldRow(keyLabel('ui.context.launchContext3'), map),
+  ]
   const summary = tn('ui.summary.launchers', roles.length, { count: roles.length })
 
-  return { title: t('ui.context.launchContext4'), lines, kind: 'launch', summary }
+  return { title: t('ui.context.launchContext4'), lines, kind: 'launch', summary, rows: oneSection(rows) }
 }
 
 /**
@@ -394,13 +519,18 @@ export function launchContext(roles: readonly RoleSpec[], words: ListWords): Ask
  * says so. Its summary counts the folders (D-310).
  */
 export function launchDirContext(codeDirs: readonly string[], words: ListWords): AskContext {
+  const dirs = codeDirs.map(dir => `${dir}/`)
   const lines =
     codeDirs.length === 0
       ? [t('ui.context.launchDirContext')]
-      : [t('ui.context.launchDirContext2'), ...cappedRows(codeDirs.map(dir => `${dir}/`), words)]
+      : [t('ui.context.launchDirContext2'), ...cappedRows(dirs, words)]
+  const rows =
+    codeDirs.length === 0
+      ? [plainRow(t('ui.context.launchDirContext'))]
+      : [headingRow(t('ui.context.launchDirContext2')), ...cappedItemRows(dirs, words)]
   const summary = tn('ui.summary.codeFolders', codeDirs.length, { count: codeDirs.length })
 
-  return { title: t('ui.context.launchDirContext3'), lines, kind: 'launch-dir', summary }
+  return { title: t('ui.context.launchDirContext3'), lines, kind: 'launch-dir', summary, rows: oneSection(rows) }
 }
 
 /**

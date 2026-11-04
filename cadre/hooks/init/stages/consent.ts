@@ -46,8 +46,9 @@ const CONSENT_SUMMARY = t('ui.summary.consent')
  * The ~/.claude.json question as the consent stage asks it (D-58, D-136): CLAUDE_JSON_QUESTION with
  * CLAUDE_JSON_CONTEXT on its second line, the two answers with the claude.json chip, and as its own context (kind
  * `consent`) that one line stating what is read, so a pane surface shows it in the pane (D-287, D-300), with its
- * summary, the one file read for MCP server names only, which a pane surface asks under the question (D-310); then
- * parseConsent, the answers its refusal lists, and the reason a dismissal cancels with.
+ * summary, the one file read for MCP server names only, which a pane surface asks under the question (D-310), and that
+ * line as one plain row (D-313); then parseConsent, the answers its refusal lists, and the reason a dismissal cancels
+ * with.
  */
 const CONSENT_ASK = Object.freeze({
   question: withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT),
@@ -60,6 +61,7 @@ const CONSENT_ASK = Object.freeze({
       kind: 'consent',
       summary: CONSENT_SUMMARY,
       pane: paneQuestionOf(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT, CONSENT_SUMMARY),
+      rows: [{ title: null, rows: [{ role: 'plain', text: CLAUDE_JSON_CONTEXT, indent: 0 }] }],
     },
   }),
   parse: parseConsent,

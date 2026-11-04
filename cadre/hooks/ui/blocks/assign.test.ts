@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { McpRef } from '../../../types'
+import type { AskContext, ContextRow, McpRef } from '../../../types'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
+import { paneDrawn } from '../pane'
 import {
   mcpGroupContext,
   mcpServerContext,
@@ -150,20 +151,22 @@ describe('skill contexts (D-211)', () => {
 
   test('the own-skills entry context is the own-skills block, each line cleaned; its summary counts them', () => {
     const bidi = String.fromCodePoint(0x202e)
-    expect(ownSkillsContext(['Skills with no plugin:', `  mine: Do${bidi} it.`], 1, 0)).toEqual({
+    const rows = [{ role: 'field', label: 'mine', text: 'Do it.', indent: 2 }] satisfies ContextRow[]
+    expect(ownSkillsContext(['Skills with no plugin:', `  mine: Do${bidi} it.`], rows, 1, 0)).toEqual({
       title: 'Your own skills',
       lines: ['Skills with no plugin:', '  mine: Do it.'],
       kind: 'skills',
       summary: '1 skill, 0 recommended',
+      rows: [{ title: null, rows }],
     })
-    expect(ownSkillsContext([], 14, 3)).toMatchObject({ summary: '14 skills, 3 recommended' })
+    expect(ownSkillsContext([], [], 14, 3)).toMatchObject({ summary: '14 skills, 3 recommended' })
   })
 })
 
 describe('own skill lines and their caps (#163)', () => {
   test('the own-skills context keeps a line whole, never cut at 240 code points', () => {
     const wide = 'w'.repeat(300)
-    expect(ownSkillsContext([wide], 1, 0).lines).toEqual([wide])
+    expect(ownSkillsContext([wide], [], 1, 0).lines).toEqual([wide])
   })
 
   test('a purpose is redacted before its 120 cap: a key across the cap shows no prefix of it', () => {
@@ -196,3 +199,24 @@ describe('mcpGroupContext (D-250)', () => {
   })
 })
 
+/** The texts the pane draws for the rows of `context`, its title left out (paneDrawn, D-313). */
+function drawnLines(context: AskContext): string[] {
+  const block = { title: context.title, summary: null, rows: context.rows ?? [], lines: [] }
+
+  return paneDrawn(block, null)
+    .slice(1)
+    .map(row => row.spans.map(span => span.text).join(''))
+}
+
+describe('rows from the same data as lines (D-313, D-323)', () => {
+  test('every assignment context draws as rows the same words its lines hold, a row per line', () => {
+    const contexts = [
+      mcpServerContext(GITHUB, TOOLS, ['be', 'qa'], SCREEN_LIST_WORDS),
+      mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS),
+      skillGroupContext('codex', SKILLS),
+      ...SKILLS.map((skill, at) => skillContext(skill, at + 1, SKILLS.length)),
+      mcpGroupContext([{ name: 'github', source: 'session', tools: 2, recommended: ['tl'] }]),
+    ]
+    for (const context of contexts) expect(drawnLines(context)).toEqual(context.lines)
+  })
+})

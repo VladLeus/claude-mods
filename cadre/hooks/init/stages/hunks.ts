@@ -10,6 +10,7 @@ import type {
   AskContext,
   AskSpec,
   AutonomyHunks,
+  ContextRow,
   FrameworkId,
   HunkOp,
   PortRead,
@@ -25,7 +26,7 @@ import { provenUserDir } from '../../framework/gsd/identity'
 import { resolveToolCommand } from '../../framework/gsd/tools'
 import type { GsdToolContext } from '../../framework/gsd/tools'
 import { ADAPTERS } from '../../framework/registry'
-import { t } from '../../locales/t'
+import { keyLabel, t } from '../../locales/t'
 import { MAX_READ_BYTES } from '../../scan/facts/normalize'
 import { resolvedFramework } from '../../team'
 import { choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
@@ -58,7 +59,8 @@ const OPTIONAL_NOTE = t('init.hunks.optionalNote')
  * The dialog for one hunk (ROLE-04, D-287): the file and key alone as the question, under the header `Hunk <index> of
  * <total>` with the buttons Accept and Decline, and as its own context (kind `hunk`, D-300) the before and after
  * values, why, and whether autonomy requires it; its summary is the after line, which a pane surface asks under the
- * key line (OC-04-H, D-310).
+ * key line (OC-04-H, D-310). Its rows keep the before and after lines, aligned by their templates, as whole plain
+ * rows, why as a field and the note as a plain row (D-313).
  * `index` counts from 1 in the order of the candidates. GSD has three proposals at most, so the header stays within
  * the 12-character chip a dialog allows. Every value is cleaned and capped as a report cell is, so none can add a line
  * or hide text.
@@ -71,16 +73,21 @@ export function hunkQuestion(
   const { proposal, before } = candidate
   const [file, key] = [reportText(proposal.file), reportText(proposal.key)]
   const question = t('init.hunks.keyLine', { file, key })
+  const beforeLine = t('init.hunks.before', { before: reportText(before) })
   const after = t('init.hunks.after', { target: reportText(targetText(proposal)) })
-  const lines = [
-    t('init.hunks.before', { before: reportText(before) }),
-    after,
-    t('init.hunks.why', { why: reportText(proposal.why) }),
-    proposal.isRequired ? REQUIRED_NOTE : OPTIONAL_NOTE,
+  const why = reportText(proposal.why)
+  const note = proposal.isRequired ? REQUIRED_NOTE : OPTIONAL_NOTE
+  const lines = [beforeLine, after, t('init.hunks.why', { why }), note]
+  const plain = (line: string): ContextRow => ({ role: 'plain', text: line, indent: 0 })
+  const rows: ContextRow[] = [
+    plain(beforeLine),
+    plain(after),
+    { role: 'field', label: keyLabel('init.hunks.why'), text: why, indent: 0 },
+    plain(note),
   ]
   const pane = { asked: question, text: withContext(question, after) }
   const title = t('init.hunks.contextTitle', { file, key })
-  const context: AskContext = { title, lines, kind: 'hunk', summary: after, pane }
+  const context: AskContext = { title, lines, kind: 'hunk', summary: after, pane, rows: [{ title: null, rows }] }
 
   return { question, spec: { options: HUNK_OPTIONS, header: t('init.hunks.chip', { index, total }), context } }
 }

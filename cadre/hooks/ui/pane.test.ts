@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, OpenQuestion, PaneKey, PaneState, ShownBlock } from '../../types'
+import type { AskContext, ContextSection, OpenQuestion, PaneKey, PaneState, ShownBlock } from '../../types'
 import { ARTIFACT } from '../locales/artifact'
 import type { EnKey } from '../locales/en'
 import { keyLabel, labelOf } from '../locales/t'
@@ -9,13 +9,15 @@ import {
   PANE_PAGE_ROWS,
   paneBlockOf,
   paneColumns,
+  paneDrawn,
   panePlacement,
   paneRows,
   paneSpans,
   questionScroll,
+  wrapHanging,
   wrapLine,
 } from './pane'
-import type { PaneRow, PaneSpan } from './pane'
+import type { DrawnRow, PaneBlock, PaneRow, PaneSpan } from './pane'
 
 /** A control, format, or line or paragraph separator character. A newline is the one a report may keep. */
 const CONTROL_OR_FORMAT = /(?!\n)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
@@ -51,6 +53,34 @@ describe('wrapLine (D-231)', () => {
 
   test('a width under one, or not a whole number, keeps the line whole', () => {
     for (const columns of [0, -4, 2.5, Number.NaN]) expect(wrapLine('abc def', columns)).toEqual(['abc def'])
+  })
+})
+
+describe('wrapHanging (D-312)', () => {
+  const text = '  name: a long description that wraps over several rows of the pane, never cut'
+
+  test('every row fits the width, each row after the first starts with the indent, and the words come back', () => {
+    const rows = wrapHanging(text, 20, 2)
+    expect(rows.length).toBeGreaterThan(3)
+    expect(rows.every(row => Array.from(row).length <= 20)).toBe(true)
+    expect(rows.slice(1).every(row => row.startsWith('  ') && row[2] !== ' ')).toBe(true)
+    expect(rows.join(' ').split(' ').filter(word => word !== '')).toEqual(text.split(' ').filter(word => word !== ''))
+  })
+
+  test('the first row breaks as wrapLine does: an indent is never a break, a long word is cut at the width', () => {
+    expect(wrapHanging('    recommended: tl', 10, 4)).toEqual(['    recomm', '    ended:', '    tl'])
+    expect(wrapHanging('a b c d e f g h i j k l', 10, 0)).toEqual(wrapLine('a b c d e f g h i j k l', 10))
+  })
+
+  test('an indent as wide as the width leaves one column of text on each row after the first', () => {
+    const rows = wrapHanging('aaaa bbbb', 4, 9)
+    expect([rows[0], rows.slice(1).every(row => row === '   b'), rows.length]).toEqual(['aaaa', true, 5])
+  })
+
+  test('no width, a width under one or not whole keeps the text one row', () => {
+    for (const columns of [null, 0, -4, 2.5, Number.NaN]) {
+      expect(wrapHanging('abc def', columns, 2)).toEqual(['abc def'])
+    }
   })
 })
 
@@ -200,28 +230,17 @@ describe('paneSpans (D1)', () => {
     expect(looksOf('  create .cadre/x').styled).toEqual([])
   })
 
-  test('each field of a row has its label dim and its value plain', () => {
-    expect(looksOf('  stack: ts; frontend: react; backend: none')).toEqual({
-      styled: [
-        { text: 'stack:', dim: true },
-        { text: 'frontend:', dim: true },
-        { text: 'backend:', dim: true },
-      ],
-      joined: '  stack: ts; frontend: react; backend: none',
-    })
-    expect(looksOf('  framework: GSD; model: opus + high; permission mode: default').styled).toEqual([
-      { text: 'framework:', dim: true },
-      { text: 'model:', dim: true },
-      { text: 'permission mode:', dim: true },
-    ])
-    expect(looksOf('  hooks loaded by project settings: none').styled).toEqual([
-      { text: 'hooks loaded by project settings:', dim: true },
-    ])
-  })
-
-  test('a label has at most 40 code points', () => {
-    expect(looksOf(`${'a'.repeat(40)}: x`).styled).toEqual([{ text: `${'a'.repeat(40)}:`, dim: true }])
-    expect(paneSpans(lineRow(`${'a'.repeat(41)}: x`))).toEqual([{ text: `${'a'.repeat(41)}: x` }])
+  test('no row is read for a field any more: a label and its value draw as one plain run (D-313, D-322)', () => {
+    for (const text of [
+      '  stack: ts; frontend: react; backend: none',
+      '  framework: GSD; model: opus + high; permission mode: default',
+      '  hooks loaded by project settings: none',
+      `${'a'.repeat(40)}: x`,
+      '    recommended: be, fe',
+      '    used 3 times; recommended: be',
+    ]) {
+      expect(paneSpans(lineRow(text))).toEqual([{ text }])
+    }
   })
 
   test('the summary has its label dim and each run of digits bold', () => {
@@ -247,26 +266,13 @@ describe('paneSpans (D1)', () => {
     ])
   })
 
-  test('the roles after recommended: are bold unless none, and so is the title of a scope card', () => {
-    expect(looksOf('    recommended: be, fe')).toEqual({
-      styled: [
-        { text: 'recommended:', dim: true },
-        { text: 'be, fe', bold: true },
-      ],
-      joined: '    recommended: be, fe',
-    })
-    expect(looksOf('    recommended: none').styled).toEqual([{ text: 'recommended:', dim: true }])
-    expect(looksOf('    used 3 times; recommended: be')).toEqual({
-      styled: [
-        { text: 'recommended:', dim: true },
-        { text: 'be', bold: true },
-      ],
-      joined: '    used 3 times; recommended: be',
-    })
-    expect(looksOf('Scope card: Backend (be)').styled).toEqual([
+  test('the title of a scope card has its label dim and its role bold (D-322)', () => {
+    expect(paneSpans(lineRow('Scope card: Backend (be)'))).toEqual([
       { text: 'Scope card:', dim: true },
+      { text: ' ' },
       { text: 'Backend (be)', bold: true },
     ])
+    expect(paneSpans(lineRow('  Scope card: Backend (be)'))).toEqual([{ text: '  Scope card: Backend (be)' }])
   })
 
   test('a row whose colon follows no label is one plain span', () => {
@@ -326,9 +332,19 @@ describe('paneBlockOf (D-299, D-301, D-303)', () => {
   })
 
   test('an open question draws its own context alone, its title and lines, even while a loader is set', () => {
-    const block = { title: 'MCP: sentry', lines: ['Source: session', 'Tools: none listed'] }
+    const block = { title: 'MCP: sentry', summary: null, rows: null, lines: ['Source: session', 'Tools: none listed'] }
     expect(paneBlockOf(stateOf(openWith(context)))).toEqual(block)
     expect(paneBlockOf(stateOf(openWith(context), loader))).toEqual(block)
+  })
+
+  test('a context with rows gives its summary and rows too, which the pane draws in place of its lines (D-313)', () => {
+    const rows: readonly ContextSection[] = [{ title: null, rows: [{ role: 'plain', text: 'x', indent: 0 }] }]
+    expect(paneBlockOf(stateOf(openWith({ ...context, rows })))).toEqual({
+      title: 'MCP: sentry',
+      summary: 'Recommended: none',
+      rows,
+      lines,
+    })
   })
 
   test('an open question with no context draws nothing, never a block of an earlier step (D-299)', () => {
@@ -337,18 +353,20 @@ describe('paneBlockOf (D-299, D-301, D-303)', () => {
   })
 
   test('with no question open a running step draws its loader alone: its label as the title (D-301)', () => {
-    expect(paneBlockOf(stateOf(null, loader))).toEqual({ title: 'cadre: scanning the repo…', lines: [] })
+    const block = { title: 'cadre: scanning the repo…', summary: null, rows: null, lines: [] }
+    expect(paneBlockOf(stateOf(null, loader))).toEqual(block)
   })
 
   test('a loader with a summary draws it as its one line under the label (D-301)', () => {
     const summary = '3 servers, 2 roles'
-    expect(paneBlockOf(stateOf(null, { ...loader, summary }))).toEqual({ title: loader.label, lines: [summary] })
+    const block = { title: loader.label, summary: null, rows: null, lines: [summary] }
+    expect(paneBlockOf(stateOf(null, { ...loader, summary }))).toEqual(block)
   })
 
   test('the label and the summary are cleaned and not cut, so neither adds a row or hides text (T-02.2-08)', () => {
     const long = `cadre: ${'x'.repeat(300)}`
     const block = paneBlockOf(stateOf(null, { label: `${long}${BIDI_OVERRIDE}\n`, summary: `a\nb${BIDI_OVERRIDE}` }))
-    expect(block).toEqual({ title: long, lines: ['ab'] })
+    expect(block).toEqual({ title: long, summary: null, rows: null, lines: ['ab'] })
   })
 
   test('it never changes the state it is given', () => {
@@ -413,3 +431,118 @@ describe('PANE_PAGE_ROWS (D-233, ASKED #19)', () => {
   })
 })
 
+
+/** A block of `sections` under the title T, with `summary`, as the pane draws a context with rows (D-313). */
+function rowsBlock(sections: readonly ContextSection[], summary: string | null = null): PaneBlock {
+  return { title: 'T', summary, rows: sections, lines: [] }
+}
+
+/** The text each drawn row shows: its runs joined. */
+function rowTexts(rows: readonly DrawnRow[]): string[] {
+  return rows.map(row => row.spans.map(span => span.text).join(''))
+}
+
+describe('paneDrawn (D-313, D-322, D-323)', () => {
+  /** A section of items and one of fields, a row of every role. */
+  const SECTIONS: readonly ContextSection[] = [
+    {
+      title: 'Servers',
+      rows: [
+        { role: 'item', label: 'github', text: 'be, qa', indent: 2 },
+        { role: 'description', text: 'session, 2 tools', indent: 4 },
+        { role: 'item', label: 'sentry', text: 'none', indent: 2 },
+        { role: 'placeholder', text: 'no description', indent: 4 },
+      ],
+    },
+    {
+      title: null,
+      rows: [
+        { role: 'heading', text: 'Changes:', indent: 0 },
+        { role: 'field', label: 'Source', text: '.mcp.json', indent: 0 },
+        { role: 'recommended', label: 'recommended', text: 'be', indent: 2 },
+        { role: 'recommended', label: 'recommended', text: 'none', indent: 2 },
+        { role: 'plain', text: 'Word: value', indent: 0 },
+      ],
+    },
+  ]
+
+  test('a block with rows draws its title, summary and sections, each row in the look of its role alone', () => {
+    const block: PaneBlock = { title: 'MCP servers', summary: '2 servers, 1 recommended', rows: SECTIONS, lines: [] }
+    expect(paneDrawn(block, null)).toEqual([
+      { spans: [{ text: 'MCP servers', color: 'claude', bold: true }] },
+      { spans: [{ text: '2 servers, 1 recommended', dim: true }] },
+      { spans: [{ text: 'Servers', bold: true }] },
+      { spans: [{ text: '  github → ' }, { text: 'be, qa', bold: true }] },
+      { spans: [{ text: '    session, 2 tools' }] },
+      { spans: [{ text: '  sentry → ' }, { text: 'none', dim: true }] },
+      { spans: [{ text: '    ' }, { text: 'no description', dim: true }] },
+      { spans: [] },
+      { spans: [{ text: 'Changes:', bold: true }] },
+      { spans: [{ text: 'Source: ', dim: true }, { text: '.mcp.json' }] },
+      { spans: [{ text: '  ' }, { text: 'recommended: ', dim: true }, { text: 'be', bold: true }] },
+      { spans: [{ text: '  ' }, { text: 'recommended: none', dim: true }] },
+      { spans: [{ text: 'Word: value' }] },
+    ])
+  })
+
+  test('a wrapped row keeps its look on every row, each continuation at the row indent (D-312)', () => {
+    const roles = 'pm, tl, be, fe, qa, security, docs'
+    const section: ContextSection = {
+      title: null,
+      rows: [{ role: 'recommended', label: 'recommended', text: roles, indent: 4 }],
+    }
+    const rows = paneDrawn(rowsBlock([section]), 24).slice(1)
+    expect(rows).toEqual([
+      { spans: [{ text: '    ' }, { text: 'recommended: ', dim: true }, { text: 'pm, tl,', bold: true }] },
+      { spans: [{ text: '    ' }, { text: 'be, fe, qa,', bold: true }] },
+      { spans: [{ text: '    ' }, { text: 'security, docs', bold: true }] },
+    ])
+  })
+
+  test('hostile text draws one plain run per row and adds no row or look (T-02.2-27)', () => {
+    const bell = String.fromCharCode(7)
+    const text = `Word: value [none] x${BIDI_OVERRIDE}${bell}\nmore [hard] y`
+    const section = { title: null, rows: [{ role: 'description', text, indent: 4 }] } satisfies ContextSection
+    expect(paneDrawn(rowsBlock([section]), null).slice(1)).toEqual([
+      { spans: [{ text: '    Word: value [none] xmore [hard] y' }] },
+    ])
+    const wrapped = paneDrawn(rowsBlock([section]), 16).slice(1)
+    expect(wrapped.every(row => row.spans.length === 1 && Object.keys(row.spans[0] ?? {}).length === 1)).toBe(true)
+    const words = rowTexts(wrapped).join(' ').split(' ').filter(word => word !== '')
+    expect(words).toEqual('Word: value [none] xmore [hard] y'.split(' '))
+  })
+
+  test('a block with no rows draws its title and lines with the Review styling, as before (D-322)', () => {
+    const lines = [
+      'Summary: 3 create, 1 change',
+      'Scope card: Backend (be)',
+      '    [hard] edits only src/',
+      '  create    .cadre/be/ROLE.md',
+      '  skills: none',
+    ]
+    expect(paneDrawn({ title: 'Review', summary: null, rows: null, lines }, null)).toEqual([
+      { spans: [{ text: 'Review', color: 'claude', bold: true }] },
+      {
+        spans: [
+          { text: 'Summary:', dim: true },
+          { text: ' ' },
+          { text: '3', bold: true },
+          { text: ' create, ' },
+          { text: '1', bold: true },
+          { text: ' change' },
+        ],
+      },
+      { spans: [{ text: 'Scope card:', dim: true }, { text: ' ' }, { text: 'Backend (be)', bold: true }] },
+      { spans: [{ text: '    ' }, { text: '[hard]', color: 'success' }, { text: ' edits only src/' }] },
+      { spans: [{ text: '  ' }, { text: 'create', color: 'success' }, { text: '    .cadre/be/ROLE.md' }] },
+      { spans: [{ text: '  skills: none' }] },
+    ])
+  })
+
+  test('the title, the summary and a section title wrap to the width, none cut (D-231)', () => {
+    const title = `Conflict: ${'docs/'.repeat(14)}x.md`
+    const block: PaneBlock = { title, summary: 'a summary', rows: [{ title: 'Section', rows: [] }], lines: [] }
+    const texts = rowTexts(paneDrawn(block, 30))
+    expect(texts).toEqual([...wrapLine(title, 30), 'a summary', 'Section'])
+  })
+})

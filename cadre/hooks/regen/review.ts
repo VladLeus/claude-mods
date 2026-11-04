@@ -7,6 +7,7 @@
  */
 import type {
   AskContext,
+  ContextRow,
   HostIo,
   InitIo,
   InitLocations,
@@ -23,7 +24,7 @@ import type { Labelled } from '../core/labelled'
 import { redactedText } from '../core/redact'
 import { asSentence, clean, reportText } from '../core/text'
 import { GIT_TRACKING_UNKNOWN_WARNING, trackedParts } from '../generate/gittrack'
-import { t, tn } from '../locales/t'
+import { keyLabel, t, tn } from '../locales/t'
 import { partRecord, TOP_OF_FILE, withPartRecords } from '../records'
 import { NO_MEMORY_SUMMARY } from '../scan/instructions/memories'
 import { checkedCompletion } from '../suggest/checked'
@@ -138,7 +139,8 @@ export type RegenAsk =
 /**
  * The context of one regen question (D-236): what changed in that item, where it is (a part's file and heading, a
  * memory's file and summary, never its folder or text), whether it is new or changed since init and whether it is
- * recommended, titled by its place among the questions; its summary is that recommendation line (D-310).
+ * recommended, titled by its place among the questions; its summary is that recommendation line (D-310). Its rows hold
+ * the place and the change as plain rows and the recommendation as a field (D-313).
  */
 export function regenPartContext(
   item: RegenAsk,
@@ -156,13 +158,17 @@ export function regenPartContext(
         file: clean(item.memory.file),
         value: redactedText(summary ?? item.memory.summary),
       })
-  const recommended = t('regen.review.recommended', { value: isRecommended ? t('ui.scan.yes') : t('ui.scan.no') })
+  const value = isRecommended ? t('ui.scan.yes') : t('ui.scan.no')
+  const recommended = t('regen.review.recommended', { value })
   const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], recommended]
+  const rows: ContextRow[] = [
+    { role: 'plain', text: reportText(where), indent: 0 },
+    { role: 'plain', text: REGEN_CHANGE_TEXTS[item.change], indent: 0 },
+    { role: 'field', label: keyLabel('regen.review.recommended'), text: value, indent: 0 },
+  ]
+  const title = t('regen.review.pagedChip', { position: place.position, count: place.count })
 
-  return { title: t('regen.review.pagedChip', {
-    position: place.position,
-    count: place.count,
-  }), lines, kind: 'regen-part', summary: recommended }
+  return { title, lines, kind: 'regen-part', summary: recommended, rows: [{ title: null, rows }] }
 }
 
 /** What changed on one side since its records were made, and what regen asks about it (sideChanges). */

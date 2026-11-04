@@ -31,7 +31,7 @@ import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
 import { paneQuestionText } from './ui/ask'
-import { paneBlockOf, paneColumns, panePlacement, paneRows, paneSpans, questionScroll } from './ui/pane'
+import { paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
 import { answersFromNotes, dialogPlan, latestColumns, tuiTranscriptRows } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
@@ -494,9 +494,10 @@ export const register: Register = on => {
 
   // The cadre init side pane (D-133): the one block of its state (paneBlockOf), the own context of the question cadre
   // has open now, else the loader of the long step a run waits for, drawn alone, else its empty frame (D-299, D-301).
-  // The state is read once, at the top, and the tree is built from that one snapshot (D-303), in the rows of paneRows
-  // wrapped to the columns of the pane's body (paneColumns, D-231), coloured by paneSpans (D1). A terminal render
-  // records where the pane is seated (D3) and the width it was drawn at (#163).
+  // The state is read once, at the top, and the tree is built from that one snapshot (D-303), in the rows of the one
+  // renderer, paneDrawn, wrapped to the columns of the pane's body (paneColumns, D-231) and styled by each row's role
+  // (D-313); an empty row draws one space. A terminal render records where the pane is seated (D3) and the width it was
+  // drawn at (#163).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const state = await read($, paneState)
     const { Box, Text } = $.ui.resolve(e)
@@ -507,11 +508,11 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        {paneRows([block], paneColumns(e.props)).map((row, at) => (
+        {paneDrawn(block, paneColumns(e.props)).map((row, at) => (
           <Text key={at}>
-            {row.text === ''
+            {row.spans.length === 0
               ? ' '
-              : paneSpans(row).map(span => (
+              : row.spans.map(span => (
                   <Text
                     {...(span.color === undefined ? {} : { color: span.color })}
                     {...(span.bold === true ? { bold: true } : {})}

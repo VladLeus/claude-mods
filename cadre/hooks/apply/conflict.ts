@@ -4,7 +4,7 @@
  * conflicted paths of a plan (D-67, D-105). It imports core, paths, the manifest path of plan/classify, the line diff
  * of ui/diff and the types, so init and the apply steps read it here.
  */
-import type { AskContext, Plan } from '../../types'
+import type { AskContext, ContextRow, Plan } from '../../types'
 import { labelled } from '../core/labelled'
 import type { Labelled } from '../core/labelled'
 import { reportText } from '../core/text'
@@ -54,16 +54,20 @@ const UNREAD_CONFLICT_LINE = t('apply.conflict.unreadLine')
  * new writes: how many lines Take new adds and removes, then the changed lines as diffLines shows them, their
  * secret-like spans hidden before the cap (E1, PR-S1; only the shown lines, never a text on disk); with no diff,
  * because the person's version could not be read, UNREAD_CONFLICT_LINE. Its summary is the counts line, or that one
- * line when there is no diff (D-310).
+ * line when there is no diff (D-310). Its rows hold each line as one plain row (D-313).
  */
 export function conflictContext(path: string, diff: LineDiff | null): AskContext {
   const title = t('apply.conflict.contextTitle', { path: reportText(path) })
+  const plain = (line: string): ContextRow => ({ role: 'plain', text: line, indent: 0 })
   if (diff === null) {
-    return { title, lines: [UNREAD_CONFLICT_LINE], kind: 'conflict-diff', summary: UNREAD_CONFLICT_LINE }
+    const rows = [{ title: null, rows: [plain(UNREAD_CONFLICT_LINE)] }]
+
+    return { title, lines: [UNREAD_CONFLICT_LINE], kind: 'conflict-diff', summary: UNREAD_CONFLICT_LINE, rows }
   }
   const counts = tn('apply.conflict.takeNewCounts', diff.added, { count: diff.added, removed: diff.removed })
+  const lines = [counts, ...diffLines(diff)]
 
-  return { title, lines: [counts, ...diffLines(diff)], kind: 'conflict-diff', summary: counts }
+  return { title, lines, kind: 'conflict-diff', summary: counts, rows: [{ title: null, rows: lines.map(plain) }] }
 }
 
 /**

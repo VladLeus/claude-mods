@@ -6,7 +6,7 @@
  * paths, scan, ui/ask, ui/diff, the private role files, the write safety checks and the types, so the apply runner and
  * init read it here.
  */
-import type { AskContext, HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../types'
+import type { AskContext, ContextRow, HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { labelled } from '../core/labelled'
 import type { Labelled } from '../core/labelled'
@@ -185,13 +185,19 @@ export function improverBlockLines(path: string, diff: LineDiff): string[] {
 /**
  * The context of the per-file improver question (D-236): its diff, as the improver block shows it, then the other files
  * the run changed (otherFilesLines, T-02-75); its summary is the block's first line, the file with how many lines the
- * improver added and removed (D-310).
+ * improver added and removed (D-310). Its rows hold that line as a field of the path and the counts, then every other
+ * line as one plain row (D-313).
  */
 export function improverContext(path: string, diff: LineDiff, otherLines: readonly string[]): AskContext {
   const [summary = '', ...diffRows] = improverBlockLines(path, diff)
   const lines = [summary, ...diffRows, ...otherLines]
+  const rows: ContextRow[] = [
+    { role: 'field', label: path, text: diffCounts(diff), indent: 0 },
+    ...[...diffRows, ...otherLines].map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 })),
+  ]
+  const title = t('apply.improver.improverContext', { path: reportText(path) })
 
-  return { title: t('apply.improver.improverContext', { path: reportText(path) }), lines, kind: 'improver', summary }
+  return { title, lines, kind: 'improver', summary, rows: [{ title: null, rows }] }
 }
 
 /** The note for a built file the improver ran on and did not change (D-141). */

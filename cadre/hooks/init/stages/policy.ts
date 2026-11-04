@@ -6,7 +6,7 @@
  * what stays out of git under it. Pure: it gives states and never performs an effect, imports core, ui/ask and
  * init/state, and never imports init/machine or init/run.
  */
-import type { AskContext, GitPolicy } from '../../../types'
+import type { AskContext, ContextRow, GitPolicy } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { t } from '../../locales/t'
@@ -49,14 +49,17 @@ const GIT_POLICIES: readonly GitPolicyEntry[] =
 export const GIT_POLICY_CONTEXT = GIT_POLICIES.map(entry => entry.commits).join(' ')
 
 /**
- * The git policy question's own context (D-203, D-229): what each policy commits, one line per policy; its summary
- * recommends the default policy, commit definitions (D-310).
+ * The git policy question's own context (D-203, D-229): what each policy commits, one line per policy, each one plain
+ * row (D-313); its summary recommends the default policy, commit definitions (D-310).
  */
 const GIT_POLICY_ASK_CONTEXT: AskContext = Object.freeze({
   title: t('init.policy.contextTitle'),
   lines: Object.freeze(GIT_POLICIES.map(entry => entry.commits)),
   kind: 'git-policy',
   summary: t('ui.summary.gitPolicy'),
+  rows: Object.freeze([
+    { title: null, rows: GIT_POLICIES.map((entry): ContextRow => ({ role: 'plain', text: entry.commits, indent: 0 })) },
+  ]),
 })
 
 /**

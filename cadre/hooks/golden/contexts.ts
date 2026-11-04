@@ -29,7 +29,19 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
           "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\n1 file, MCP server names only"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Without it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -59,6 +71,103 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Repo scan (read-only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  stack: none; frontend: none; backend: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  tests: none; E2E: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  existing .cadre/: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "User setup (names only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  plugins: 0",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  skills: 0; agents: 0; MCP servers: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "warning: could not list the repo root (treated as unknown)",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.",
           "text": "Use these roles?\n3 roles: pm, tl, security"
@@ -86,6 +195,75 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "security",
         "summary": "2 plugins to install: claude-security, security-guidance",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install superpowers@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install claude-security@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- security-guidance for Security: no hooks warn the Security role about risky edits",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install security-guidance@claude-plugins-official",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "claude-security@claude-plugins-official",
+                "text": "claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "security-guidance@claude-plugins-official",
+                "text": "security-guidance adds hooks that warn about risky edits.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
           "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\n2 plugins to install: claude-security, security-guidance"
@@ -109,6 +287,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, security.",
           "text": "Autopilot duration for roles?\n3 roles: pm, tl, security"
@@ -132,6 +357,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, security.",
           "text": "Model and effort: same for all roles, or per role?\n3 roles: pm, tl, security"
@@ -155,6 +427,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
           "text": "Model and effort for all roles?\n3 roles: pm, tl, security"
@@ -173,6 +492,28 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "git-policy",
         "summary": "Recommended: commit definitions",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Commit all: only per-user files are ignored.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Ignore all: nothing in .cadre/ is committed.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
           "text": "Git policy for .cadre/?\nRecommended: commit definitions"
@@ -191,6 +532,29 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "launch",
         "summary": "3 launchers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Git root: the top of this repo, the same for every launcher.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Run folder: wherever you run a launcher from.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Launchers",
+                "text": ".cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, security) starts its session there.",
           "text": "Where should the role launchers start their sessions? (asked once for this repo)\n3 launchers"
@@ -246,7 +610,19 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
           "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\n1 file, MCP server names only"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Without it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -276,6 +652,103 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Repo scan (read-only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  stack: TypeScript; frontend: react; backend: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  tests: JS/TS test files; E2E: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  existing .cadre/: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "User setup (names only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  plugins: 0",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  skills: 0; agents: 0; MCP servers: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), BE (be), FE (fe), QA (qa), Security (security); 1 change from the scan.",
           "text": "Use these roles?\n6 roles: pm, tl, be, fe, qa, security"
@@ -303,6 +776,75 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "security",
         "summary": "2 plugins to install: claude-security, security-guidance",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- DevTools MCP for FE: the FE role cannot inspect the running page",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install claude-security@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- security-guidance for Security: no hooks warn the Security role about risky edits",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install security-guidance@claude-plugins-official",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "claude-security@claude-plugins-official",
+                "text": "claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "security-guidance@claude-plugins-official",
+                "text": "security-guidance adds hooks that warn about risky edits.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
           "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\n2 plugins to install: claude-security, security-guidance"
@@ -327,6 +869,58 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, be, fe, qa, security.",
           "text": "Autopilot duration for roles?\n6 roles: pm, tl, be, fe, qa, security"
@@ -351,6 +945,58 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, be, fe, qa, security.",
           "text": "Model and effort: same for all roles, or per role?\n6 roles: pm, tl, be, fe, qa, security"
@@ -375,6 +1021,58 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
           "text": "Model and effort for all roles?\n6 roles: pm, tl, be, fe, qa, security"
@@ -397,7 +1095,35 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": ".planning/config.json: mode",
           "text": ".planning/config.json: mode\n  after:  \"yolo\""
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "  before: not set (GSD default)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  after:  \"yolo\"",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Why",
+                "text": "interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Required for unattended GSD roles.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -416,7 +1142,35 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": ".planning/config.json: workflow.text_mode",
           "text": ".planning/config.json: workflow.text_mode\n  after:  false"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "  before: not set (GSD default)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  after:  false",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Why",
+                "text": "text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Required for unattended GSD roles.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -431,6 +1185,28 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "git-policy",
         "summary": "Recommended: commit definitions",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Commit all: only per-user files are ignored.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Ignore all: nothing in .cadre/ is committed.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
           "text": "Git policy for .cadre/?\nRecommended: commit definitions"
@@ -449,6 +1225,29 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "launch",
         "summary": "6 launchers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Git root: the top of this repo, the same for every launcher.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Run folder: wherever you run a launcher from.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Launchers",
+                "text": ".cadre/bin/pm, .cadre/bin/tl, .cadre/bin/be, .cadre/bin/fe, .cadre/bin/qa, .cadre/bin/security",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, be, fe, qa, security) starts its session there.",
           "text": "Where should the role launchers start their sessions? (asked once for this repo)\n6 launchers"
@@ -504,7 +1303,19 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
           "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\n1 file, MCP server names only"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Without it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -534,6 +1345,103 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Repo scan (read-only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  stack: TypeScript; frontend: react; backend: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  tests: JS/TS test files; E2E: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  existing .cadre/: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "User setup (names only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  plugins: 0",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  skills: 0; agents: 0; MCP servers: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), BE (be), FE (fe), QA (qa), Security (security); 1 change from the scan.",
           "text": "Use these roles?\n6 roles: pm, tl, be, fe, qa, security"
@@ -561,6 +1469,75 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "security",
         "summary": "2 plugins to install: claude-security, security-guidance",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- DevTools MCP for FE: the FE role cannot inspect the running page",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install claude-security@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- security-guidance for Security: no hooks warn the Security role about risky edits",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install security-guidance@claude-plugins-official",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "claude-security@claude-plugins-official",
+                "text": "claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "security-guidance@claude-plugins-official",
+                "text": "security-guidance adds hooks that warn about risky edits.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
           "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\n2 plugins to install: claude-security, security-guidance"
@@ -585,6 +1562,58 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, be, fe, qa, security.",
           "text": "Autopilot duration for roles?\n6 roles: pm, tl, be, fe, qa, security"
@@ -609,6 +1638,58 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, be, fe, qa, security.",
           "text": "Model and effort: same for all roles, or per role?\n6 roles: pm, tl, be, fe, qa, security"
@@ -633,6 +1714,58 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
           "text": "Model and effort for all roles?\n6 roles: pm, tl, be, fe, qa, security"
@@ -651,6 +1784,28 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "git-policy",
         "summary": "Recommended: commit definitions",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Commit all: only per-user files are ignored.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Ignore all: nothing in .cadre/ is committed.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
           "text": "Git policy for .cadre/?\nRecommended: commit definitions"
@@ -669,6 +1824,29 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "launch",
         "summary": "6 launchers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Git root: the top of this repo, the same for every launcher.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Run folder: wherever you run a launcher from.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Launchers",
+                "text": ".cadre/bin/pm, .cadre/bin/tl, .cadre/bin/be, .cadre/bin/fe, .cadre/bin/qa, .cadre/bin/security",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, be, fe, qa, security) starts its session there.",
           "text": "Where should the role launchers start their sessions? (asked once for this repo)\n6 launchers"
@@ -724,7 +1902,19 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
           "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\n1 file, MCP server names only"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Without it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -754,6 +1944,103 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Repo scan (read-only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  stack: none; frontend: none; backend: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  tests: none; E2E: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  existing .cadre/: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "User setup (names only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  plugins: 0",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  skills: 1; agents: 0; MCP servers: sentry",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  global ~/.claude/CLAUDE.md: yes; memories: 1; CLAUDE.md files: repo/CLAUDE.md",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "warning: could not list the repo root (treated as unknown)",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.",
           "text": "Use these roles?\n3 roles: pm, tl, security"
@@ -771,6 +2058,25 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "detection",
         "summary": "2 frameworks found: gsd, superpowers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "in use (.planning/ (dir))",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "in use (docs/superpowers/)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which framework do the roles use? (asked because more than one framework is in use)\nRoles: pm, tl, security.",
           "text": "Which framework do the roles use? (asked because more than one framework is in use)\n2 frameworks found: gsd, superpowers"
@@ -788,6 +2094,25 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "detection",
         "summary": "2 frameworks found: gsd, superpowers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "in use (.planning/ (dir))",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "in use (docs/superpowers/)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Framework for all roles?\nRoles: pm, tl, security.",
           "text": "Framework for all roles?\n2 frameworks found: gsd, superpowers"
@@ -811,6 +2136,55 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "security",
         "summary": "2 plugins to install: claude-security, security-guidance",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install claude-security@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- security-guidance for Security: no hooks warn the Security role about risky edits",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install security-guidance@claude-plugins-official",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "claude-security@claude-plugins-official",
+                "text": "claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "security-guidance@claude-plugins-official",
+                "text": "security-guidance adds hooks that warn about risky edits.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
           "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\n2 plugins to install: claude-security, security-guidance"
@@ -834,6 +2208,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, security.",
           "text": "Autopilot duration for roles?\n3 roles: pm, tl, security"
@@ -857,6 +2278,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, security.",
           "text": "Model and effort: same for all roles, or per role?\n3 roles: pm, tl, security"
@@ -880,6 +2348,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
           "text": "Model and effort for all roles?\n3 roles: pm, tl, security"
@@ -896,6 +2411,18 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "mcp-server",
         "summary": "1 server, 0 recommended",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "sentry: session, 1 tool. Recommended: none.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which roles get the MCP servers (1)? Pick how to hand them out.\n1 MCP server; each question shows its source, its tools and the roles it is recommended for.",
           "text": "Which roles get the MCP servers (1)? Pick how to hand them out.\n1 server, 0 recommended"
@@ -912,6 +2439,18 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "mcp-server",
         "summary": "1 server, 0 recommended",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "sentry: session, 1 tool. Recommended: none.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role not given the server cannot use it.",
           "text": "Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)\n1 server, 0 recommended"
@@ -929,6 +2468,24 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "skill-group",
         "summary": "1 skill. Recommended: none",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "recommended",
+                "label": "Recommended",
+                "text": "none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "codex:rescue: Bearer [hidden]. Recommended: none.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which roles get codex skills (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role given these skills can run them in its session; a role not given them cannot.",
           "text": "Which roles get codex skills? (e.g. BE, QA, or none)\n1 skill. Recommended: none"
@@ -949,6 +2506,38 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "instructions",
         "summary": "2 files, 1 memory",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Files found by name (nothing is read before a yes):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "~/.claude/CLAUDE.md",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "repo/CLAUDE.md",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Memories:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "notes.md",
+                "indent": 2
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\nFound: global CLAUDE.md yes, 1 CLAUDE.md file in the repo chain, 0 rule files, AGENTS.md no, 1 memory. No keeps the whole-file questions.",
           "text": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\n2 files, 1 memory"
@@ -965,6 +2554,18 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "memory-group",
         "summary": "1 file",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "~/.claude/CLAUDE.md and the files it imports",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
           "text": "Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)\n1 file"
@@ -981,6 +2582,18 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "memory-group",
         "summary": "1 file",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "notes.md",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
           "text": "Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)\n1 file"
@@ -997,6 +2610,18 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "memory-group",
         "summary": "1 file",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "repo/CLAUDE.md",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
           "text": "Which roles get the project CLAUDE.md? (e.g. PM, TL, or none)\n1 file"
@@ -1015,6 +2640,28 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "env",
         "summary": "2 env names",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Env variable names in your settings (values are never read):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "API_KEY",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "JIRA_URL",
+                "indent": 2
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)\nRoles: pm, tl, security. Every role carries the same names; values are filled in at launch.",
           "text": "Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)\n2 env names"
@@ -1037,7 +2684,35 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": ".planning/config.json: mode",
           "text": ".planning/config.json: mode\n  after:  \"yolo\""
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "  before: not set (GSD default)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  after:  \"yolo\"",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Why",
+                "text": "interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Required for unattended GSD roles.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -1056,7 +2731,35 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": ".planning/config.json: workflow.text_mode",
           "text": ".planning/config.json: workflow.text_mode\n  after:  false"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "  before: not set (GSD default)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  after:  false",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Why",
+                "text": "text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Required for unattended GSD roles.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -1075,7 +2778,35 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": ".planning/config.json: hooks.context_warnings",
           "text": ".planning/config.json: hooks.context_warnings\n  after:  false"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "  before: not set (GSD default)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  after:  false",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Why",
+                "text": "only when gsd-statusline is the statusline: gsd-context-monitor warnings conflict with the autopilot handoff",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Optional.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -1090,6 +2821,28 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "git-policy",
         "summary": "Recommended: commit definitions",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Commit all: only per-user files are ignored.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Ignore all: nothing in .cadre/ is committed.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
           "text": "Git policy for .cadre/?\nRecommended: commit definitions"
@@ -1108,6 +2861,29 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "launch",
         "summary": "3 launchers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Git root: the top of this repo, the same for every launcher.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Run folder: wherever you run a launcher from.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Launchers",
+                "text": ".cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, security) starts its session there.",
           "text": "Where should the role launchers start their sessions? (asked once for this repo)\n3 launchers"
@@ -1163,7 +2939,19 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "pane": {
           "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
           "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\n1 file, MCP server names only"
-        }
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Without it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -1193,6 +2981,103 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Repo scan (read-only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  stack: none; frontend: none; backend: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  tests: none; E2E: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  existing .cadre/: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "User setup (names only):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  plugins: 0",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  skills: 0; agents: 0; MCP servers: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  global ~/.claude/CLAUDE.md: yes; memories: 3; CLAUDE.md files: none",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "warning: could not list the repo root (treated as unknown)",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.",
           "text": "Use these roles?\n3 roles: pm, tl, security"
@@ -1220,6 +3105,75 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "security",
         "summary": "2 plugins to install: claude-security, security-guidance",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install superpowers@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install claude-security@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- security-guidance for Security: no hooks warn the Security role about risky edits",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install security-guidance@claude-plugins-official",
+                "indent": 0
+              }
+            ]
+          },
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "claude-security@claude-plugins-official",
+                "text": "claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "security-guidance@claude-plugins-official",
+                "text": "security-guidance adds hooks that warn about risky edits.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
           "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\n2 plugins to install: claude-security, security-guidance"
@@ -1243,6 +3197,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, security.",
           "text": "Autopilot duration for roles?\n3 roles: pm, tl, security"
@@ -1266,6 +3267,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, security.",
           "text": "Model and effort: same for all roles, or per role?\n3 roles: pm, tl, security"
@@ -1289,6 +3337,53 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "roles",
         "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
           "text": "Model and effort for all roles?\n3 roles: pm, tl, security"
@@ -1309,6 +3404,38 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "instructions",
         "summary": "1 file, 2 memories",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Files found by name (nothing is read before a yes):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "~/.claude/CLAUDE.md",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Memories:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "squad.md",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "workflow.md",
+                "indent": 2
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\nFound: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 2 memories. No keeps the whole-file questions.",
           "text": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\n1 file, 2 memories"
@@ -1336,6 +3463,83 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "instructions",
         "summary": "2 topics, 2 memories, 3 recommended",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Read for this run; a plain init writes the repo parts you hand out to .cadre/<role>/CLAUDE.md after Confirm:",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Security rules",
+                "text": "How secrets stay out of the repo.",
+                "indent": 2
+              },
+              {
+                "role": "field",
+                "label": "from",
+                "text": "~/.claude/CLAUDE.md > Security",
+                "indent": 4
+              },
+              {
+                "role": "recommended",
+                "label": "recommended",
+                "text": "security",
+                "indent": 4
+              },
+              {
+                "role": "field",
+                "label": "Git and commits",
+                "text": "How commits are made.",
+                "indent": 2
+              },
+              {
+                "role": "field",
+                "label": "from",
+                "text": "~/.claude/CLAUDE.md > Git",
+                "indent": 4
+              },
+              {
+                "role": "recommended",
+                "label": "recommended",
+                "text": "tl",
+                "indent": 4
+              },
+              {
+                "role": "heading",
+                "text": "Memories (each linked, never copied, when a role gets it):",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "squad.md",
+                "text": "Unsigned commits on per-phase branches.",
+                "indent": 2
+              },
+              {
+                "role": "recommended",
+                "label": "recommended",
+                "text": "tl",
+                "indent": 4
+              },
+              {
+                "role": "field",
+                "label": "workflow.md",
+                "text": "No summary in MEMORY.md.",
+                "indent": 2
+              },
+              {
+                "role": "recommended",
+                "label": "recommended",
+                "text": "none",
+                "indent": 4
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "How do you want to hand out the instruction parts and memories?\n2 topics from 1 file and 2 memories; the pane shows each with the roles it is recommended for.",
           "text": "How do you want to hand out the instruction parts and memories?\n2 topics, 2 memories, 3 recommended"
@@ -1354,6 +3558,30 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "improver-install",
         "summary": "2 roles: tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Built CLAUDE.md files it would tidy:",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "tl",
+                "text": ".cadre/tl/CLAUDE.md",
+                "indent": 2
+              },
+              {
+                "role": "field",
+                "label": "security",
+                "text": ".cadre/security/CLAUDE.md",
+                "indent": 2
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\nWithout it the built files stay as cadre wrote them; a --dry-run installs nothing.",
           "text": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\n2 roles: tl, security"
@@ -1372,6 +3600,28 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "git-policy",
         "summary": "Recommended: commit definitions",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Commit all: only per-user files are ignored.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Ignore all: nothing in .cadre/ is committed.",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
           "text": "Git policy for .cadre/?\nRecommended: commit definitions"
@@ -1390,6 +3640,29 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         ],
         "kind": "launch",
         "summary": "3 launchers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "Git root: the top of this repo, the same for every launcher.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "Run folder: wherever you run a launcher from.",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "Launchers",
+                "text": ".cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security",
+                "indent": 0
+              }
+            ]
+          }
+        ],
         "pane": {
           "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, security) starts its session there.",
           "text": "Where should the role launchers start their sessions? (asked once for this repo)\n3 launchers"
