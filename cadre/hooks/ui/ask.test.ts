@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, AskSpec, ContextSection, GitPolicy } from '../../types'
+import type { AskContext, AskSpec, ContextRow, ContextSection, GitPolicy } from '../../types'
 import { CLAUDE_JSON_OPTIONS, CONSENT_DISMISSED_REASON } from '../init/stages/consent'
 import { FRAMEWORK_DISMISSED_REASON } from '../init/stages/frameworks'
 import { GIT_POLICY_OPTIONS, GIT_POLICY_QUESTION, parseGitPolicy } from '../init/stages/policy'
@@ -407,5 +407,20 @@ describe('foldedSpec with rows (D-302, D-313)', () => {
     expect([folded.context?.rows, folded.context?.lines]).toEqual([undefined, ['History', 'a', '']])
     const bare: AskSpec = { options: ['Yes', 'No'] }
     expect([foldedSpec(bare, [{ title: 'History', lines: ['a'] }]), foldedSpec(spec, [])]).toEqual([bare, spec])
+  })
+
+  test("a fold's own rows lead the rows in place of plain rows; a fold with none keeps plain rows (N-03)", () => {
+    const rows: readonly ContextRow[] = [
+      { role: 'heading', text: 'Repo scan (read-only):', indent: 0 },
+      { role: 'field', label: 'warning', text: 'x', indent: 2 },
+    ]
+    const scan = { title: 'Scan', lines: ['Repo scan (read-only):', '  stack: none'], rows }
+    const { context } = foldedSpec(spec, [scan])
+    expect([context?.rows?.[0], context?.lines]).toEqual([
+      { title: null, rows },
+      ['Repo scan (read-only):', '  stack: none', '', 'Proposed roles:'],
+    ])
+    const plain = foldedSpec(spec, [{ title: 'History', lines: ['a'] }])
+    expect(plain.context?.rows?.[0]).toEqual({ title: 'History', rows: [{ role: 'plain', text: 'a', indent: 0 }] })
   })
 })

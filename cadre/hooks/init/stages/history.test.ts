@@ -109,12 +109,14 @@ const HISTORY_DRAFT: Partial<Draft> = {
 
 /**
  * The scan summary of HISTORY_DRAFT's empty repo and setup for a session at `locations`, folded into the roles
- * questions when no history question is asked (D-302).
+ * questions when no history question is asked (D-302): its lines and the structured rows of its one section (N-03).
  */
 function scanFoldAt(locations: InitLocations): unknown {
   const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup: emptySetupScan() }
+  const scan = scanContext(locations, gathered, PANE_LIST_WORDS)
+  const rows = (scan.rows ?? []).flatMap(section => section.rows)
 
-  return { kind: 'fold', title: 'Scan', lines: scanContext(locations, gathered, PANE_LIST_WORDS).lines }
+  return { kind: 'fold', title: 'Scan', lines: scan.lines, rows }
 }
 
 /** The Session history section a history scan folds into the roles questions (D-302). */

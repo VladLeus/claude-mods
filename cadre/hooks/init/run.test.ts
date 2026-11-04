@@ -6226,6 +6226,23 @@ describe('no stand-alone pane block: what it held folds into the next question (
     expect(lines.slice(0, scan.length + 2)).toEqual([...scan, '', 'Proposed roles:'])
   })
 
+  test(
+    'with no session transcript the roles rows start with the scan heading and its warning fields (N-03)',
+    async () => {
+      const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
+      const world = gitWorld({ locations })
+      const run = memIo(world, INIT_ANSWERS)
+      await runInit(run.io, { dryRun: true })
+      const gathered = await gatherScans(memIo(world, {}).io, locations, false)
+      const [first] = run.specs[firstLines(run.asked).indexOf(ROLES_QUESTION)]?.context?.rows ?? []
+      const rows = first?.rows ?? []
+      const warnings = rows.filter(row => row.role === 'field' && row.label === 'warning').map(row => row.text)
+      expect(rows[0]).toEqual({ role: 'heading', text: 'Repo scan (read-only):', indent: 0 })
+      expect(warnings).toEqual(scanWarnings(locations, gathered))
+      expect(warnings).toContain('the root was given through a link')
+    },
+  )
+
   test('the TUI default drops the fold: its roles question holds the proposal alone', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true, surface: 'tui-default' })
