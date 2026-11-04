@@ -31,7 +31,7 @@ import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { scanWarningLines } from '../../ui/blocks/scan'
-import { PANE_PAGE_ROWS, UNCUT, wrapLine } from '../../ui/pane'
+import { MAX_PANE_FRAME_CHARS, PANE_PAGE_ROWS, UNCUT, wrapLine } from '../../ui/pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
 import { PREVIEW_ROWS } from '../../ui/preview'
 import { listWordsOf } from '../../ui/surface'
@@ -207,26 +207,51 @@ function pageRows(surface: Surface): number {
   return surface === 'tui-default' ? PREVIEW_ROWS : PANE_PAGE_ROWS
 }
 
+/** Room, in code points, a pane Review frame keeps for its title, summary and page-marker rows (N-04). */
+const REVIEW_FRAME_RESERVE = 200
+
 /**
  * The review lines in pages of at most `rows - 1` rows each (D-233, D-261), the page title on the row left: whole
  * lines in order, each counting the rows it wraps to at `columns` (wrapLine of the cleaned line, as the TUI preview
  * and the pane draw it), one row each with no columns; a line that does not fit the rows a page has left starts the
- * next page, and a line taller than a whole page gets a page of its own, uncut. One page at least.
+ * next page, and a line taller than a whole page gets a page of its own, uncut. On a pane surface the caller gives
+ * `maxChars` (N-04): a line longer than it is first cut into consecutive lines of at most `maxChars` code points, and a
+ * line starts the next page when the page's code points, its cleaned lines summed, and its own would pass `maxChars`;
+ * with none given no line is cut and pages hold any number of code points, as before. One page at least.
  */
-export function reviewPages(lines: readonly string[], rows: number, columns: number | null): (readonly string[])[] {
+export function reviewPages(
+  lines: readonly string[],
+  rows: number,
+  columns: number | null,
+  maxChars = Number.POSITIVE_INFINITY,
+): (readonly string[])[] {
   const size = Math.max(1, rows - 1)
+  const width = Math.max(1, maxChars)
+  const cut = lines.flatMap(line => {
+    const points = Array.from(clean(line, UNCUT))
+    if (points.length <= width) return [line]
+
+    return Array.from({ length: Math.ceil(points.length / width) }, (_, at) =>
+      points.slice(at * width, (at + 1) * width).join(''),
+    )
+  })
   const pages: (readonly string[])[] = []
   let page: string[] = []
   let used = 0
-  for (const line of lines) {
-    const cost = columns === null ? 1 : wrapLine(clean(line, UNCUT), columns).length
-    if (page.length > 0 && used + cost > size) {
+  let chars = 0
+  for (const line of cut) {
+    const cleaned = clean(line, UNCUT)
+    const cost = columns === null ? 1 : wrapLine(cleaned, columns).length
+    const length = Array.from(cleaned).length
+    if (page.length > 0 && (used + cost > size || chars + length > width)) {
       pages.push(page)
       page = []
       used = 0
+      chars = 0
     }
     page.push(line)
     used += cost
+    chars += length
   }
   pages.push(page)
 
@@ -425,8 +450,9 @@ function pagedAsk(
   rows: number,
   columns: number | null,
   words: ListWords,
+  maxChars: number,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  const pages = reviewPages(reviewLines(draft, reviewPlanOf(draft).scopes, plan, words), rows, columns)
+  const pages = reviewPages(reviewLines(draft, reviewPlanOf(draft).scopes, plan, words), rows, columns, maxChars)
   const at = Math.min(Math.max(0, page), pages.length - 1)
   const choices = pageChoices(at, pages.length)
   const labels = choices.map(choice => choice.label)
@@ -456,7 +482,8 @@ function pagedAsk(
 /**
  * The review ask of page `page`, paged to the rows of the state's surface (D-233, ASKED #19) at the width its pages
  * are drawn at, `state.pageColumns` (D-261, D-292): the preview's on the TUI default and in a pane seated inline, the
- * pane body's when docked or on the desktop (pageColumnsOf), none when no width is known.
+ * pane body's when docked or on the desktop (pageColumnsOf), none when no width is known. On a pane surface a page
+ * also keeps under the frame's character cap, less REVIEW_FRAME_RESERVE (reviewPages, N-04).
  */
 function reviewAskOf(
   state: InitState,
@@ -464,7 +491,9 @@ function reviewAskOf(
   plan: Plan,
   page: number,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  return pagedAsk(draft, plan, page, pageRows(state.surface), state.pageColumns, listWordsOf(state.surface))
+  const maxChars = state.surface === 'pane' ? MAX_PANE_FRAME_CHARS - REVIEW_FRAME_RESERVE : Number.POSITIVE_INFINITY
+
+  return pagedAsk(draft, plan, page, pageRows(state.surface), state.pageColumns, listWordsOf(state.surface), maxChars)
 }
 
 /** The round's plan of the whole draft out, an io effect (planStep, run by init/run). */

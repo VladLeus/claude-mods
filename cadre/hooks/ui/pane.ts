@@ -452,10 +452,44 @@ function rowUnits(sections: readonly ContextSection[]): RowUnit[] {
 }
 
 /**
+ * A row too large for a page alone as consecutive pieces that each fit one (N-04): its cleaned text cut at code
+ * points, each piece the longest prefix `fitsRow` takes (a binary search on the count), and at least one code point,
+ * so the cut always ends. The first piece keeps the row's role, label and indent; each later one is a plain row at the
+ * same indent for an item, field or recommended row, and keeps the role of any other.
+ */
+function splitRow(row: ContextRow, fitsRow: (piece: ContextRow) => boolean): ContextRow[] {
+  const points = Array.from(clean(row.text, UNCUT))
+  const role = row.role === 'field' || row.role === 'recommended' || row.role === 'item' ? 'plain' : row.role
+  const pieces: ContextRow[] = []
+  let start = 0
+  while (start < points.length) {
+    const from = start
+    const isFirst = pieces.length === 0
+    const pieceTo = (end: number): ContextRow => {
+      const text = points.slice(from, end).join('')
+
+      return isFirst ? { ...row, text } : { role, text, indent: row.indent }
+    }
+    let low = from + 1
+    let high = points.length
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2)
+      if (fitsRow(pieceTo(middle))) low = middle
+      else high = middle - 1
+    }
+    pieces.push(pieceTo(low))
+    start = low
+  }
+
+  return pieces
+}
+
+/**
  * The pages of a context's rows on a pane surface at `columns` (D-305, D-306): one page when its whole frame fits
  * MAX_PANE_FRAME_ROWS and MAX_PANE_FRAME_CHARS, else pages filled in order, each as large as fits with the title, the
- * summary and the page marker row reserved (frameSize). An item and the rows under it are never split, a page that
- * goes on with a section repeats that section's title, and a unit larger than a page alone gets a page of its own.
+ * summary and the page marker row reserved (frameSize). An item and the rows under it stay together on a page, and a
+ * page that goes on with a section repeats that section's title. A unit that does not fit a page alone is split into
+ * one unit per row, and a row that does not fit alone into pieces (splitRow), so no frame exceeds either cap (N-04).
  */
 export function contextPages(context: AskContext, columns: number | null): (readonly ContextSection[])[] {
   const sections = context.rows ?? []
@@ -466,13 +500,39 @@ export function contextPages(context: AskContext, columns: number | null): (read
     return size.rows <= MAX_PANE_FRAME_ROWS && size.chars <= MAX_PANE_FRAME_CHARS
   }
   if (fits(sections, undefined)) return [sections]
-  const units = rowUnits(sections)
+  const sectionsOf = (parts: readonly RowUnit[]): ContextSection[] =>
+    parts.map(part => ({ title: sections[part.section]?.title ?? null, rows: part.rows }))
+  const grouped = rowUnits(sections)
+  // The units with each one too large for a page alone split (N-04), each checked alone with the widest marker a page
+  // of `count` pages could carry (D-334).
+  const fittedAt = (count: number): RowUnit[] => {
+    const marker = { index: count - 1, count }
+    const fitsAlone = (unit: RowUnit): boolean => fits(sectionsOf([unit]), marker)
+
+    return grouped.flatMap(unit => {
+      if (fitsAlone(unit)) return [unit]
+
+      return unit.rows.flatMap(row => {
+        const one = { section: unit.section, rows: [row] }
+        if (fitsAlone(one)) return [one]
+        const pieces = splitRow(row, piece => fitsAlone({ section: unit.section, rows: [piece] }))
+
+        return pieces.map(piece => ({ section: unit.section, rows: [piece] }))
+      })
+    })
+  }
+  // Splitting adds units; while their count has more digits than the count they were checked at, its marker is
+  // wider, so they are checked again at it.
+  let checkedAt = grouped.length
+  let units = fittedAt(checkedAt)
+  while (String(units.length).length > String(checkedAt).length) {
+    checkedAt = units.length
+    units = fittedAt(checkedAt)
+  }
   // The widest marker any page could carry, so a page never overflows once its marker is drawn (D-334).
   const widest = { index: units.length - 1, count: units.length }
   const pages: (readonly ContextSection[])[] = []
-  let page: { readonly section: number; readonly rows: readonly ContextRow[] }[] = []
-  const sectionsOf = (parts: typeof page): ContextSection[] =>
-    parts.map(part => ({ title: sections[part.section]?.title ?? null, rows: part.rows }))
+  let page: RowUnit[] = []
   for (const unit of units) {
     const last = page.at(-1)
     const next =
