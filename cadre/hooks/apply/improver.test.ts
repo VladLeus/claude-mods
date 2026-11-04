@@ -3,7 +3,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { HostIo, HostRun, InitIo, InstructionPart, Manifest, PortEntry } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
-import { IMPROVER_PROGRESS } from '../init/run'
 import { MANIFEST_PATH } from '../plan/classify'
 import { planWithManifest } from '../plan/plan'
 import { parseManifest } from '../state/cadre-files'
@@ -35,6 +34,7 @@ import {
   changedBeforeRunWarning,
   improveBuiltFiles,
   IMPROVER_OPTIONS,
+  IMPROVER_PROGRESS,
   IMPROVER_TIMEOUT_MS,
   improverArgv,
   improverBlockLines,

@@ -29,6 +29,7 @@ import type {
 } from '../../types'
 import { CONFLICT_OPTIONS, conflictQuestion } from '../apply/conflict'
 import {
+  IMPROVER_PROGRESS,
   improverArgv,
   improverGuardFlags,
   improverLine,
@@ -183,7 +184,6 @@ import {
   APPLY_HUNKS_PROGRESS,
   consentedGsdCheck,
   HISTORY_PROGRESS,
-  IMPROVER_PROGRESS,
   INSTALL_PROGRESS,
   MODEL_PROGRESS,
   modelSummary,

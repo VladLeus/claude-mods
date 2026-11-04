@@ -82,10 +82,17 @@ export type RegenScans = {
   readonly manifestState: ReadState
 }
 
+/** The regen scan's loader label: the same text init shows; regen cannot import init/run (layers, D-285, S-02). */
+const REGEN_SCAN_PROGRESS = t('init.status.scan')
+
+/** The regen scan's loader summary: the same text init shows; regen cannot import init/run (layers, D-285, S-02). */
+const REGEN_SCAN_SUMMARY = t('init.status.summary.scan')
+
 /**
  * The scans of a regen (D-68, D-70, D-72): every listed role compiled as init compiles it, on its own framework or the
  * repo default and attended by the current config (compileTeam), so the index lists the whole team; ~/.claude.json is
- * read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies init compiled from it stay.
+ * read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies init compiled from it stay. The
+ * scan loader (REGEN_SCAN_PROGRESS with REGEN_SCAN_SUMMARY) is set before the scan, as init sets it (D-285, S-02).
  * Without a manifest read in full regen cannot keep the other roles' entries, so it refuses (A2), as the scan read it:
  * REGEN_NO_MANIFEST when it is not there, REGEN_BAD_MANIFEST when it cannot be read, is too large or is not valid.
  */
@@ -95,6 +102,7 @@ export async function regenScans(
   state: CadreState,
   roles: readonly RoleSpec[],
 ): Promise<RegenRead<RegenScans>> {
+  await io.progress(REGEN_SCAN_PROGRESS, REGEN_SCAN_SUMMARY)
   const { gathered, scopes } = await compileTeam(io, locations, state, roles)
   const { manifest, manifestState } = gathered.repo.cadre
   if (manifest === null) return regenRefusal(manifestState === 'absent' ? REGEN_NO_MANIFEST : REGEN_BAD_MANIFEST)

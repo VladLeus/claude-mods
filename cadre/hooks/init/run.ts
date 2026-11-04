@@ -31,7 +31,7 @@ import {
 import type { ConflictChoice } from '../apply/conflict'
 import { hunkRuns, hunksAfterRuns } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
-import { builtRoleFiles } from '../apply/improver'
+import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
 import { noHomeInstallText, setupAfterInstalls } from '../apply/installs'
 import type { ApplyInput } from '../apply/private'
 import { installPlugins, privatePlanOf, writeWithImprover } from '../apply/run'
@@ -114,9 +114,6 @@ export const APPLY_HUNKS_PROGRESS = t('init.status.applyHunks')
 
 /** The status line or pane loader while apply installs the plugins answered Install, once for all (D-284). */
 export const INSTALL_PROGRESS = t('init.status.installPlugins')
-
-/** The status line or pane loader set once before apply's first improver run (D-284, edge #13). */
-export const IMPROVER_PROGRESS = t('init.status.improver')
 
 /** The status line the TUI default shows while each model call of init runs, by its ModelCall id (D-232). */
 export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.freeze({
@@ -321,7 +318,7 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  *    runs between the file writes and the manifest (writeImproved, G-02-1f, D-141): one `claude -p` run per written
  *    built file, in its own folder, then its diff and the Accept or Keep original question; a kept file is written
  *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
- *    offered, its one label is set once before the writes and the first run (IMPROVER_PROGRESS, D-284).
+ *    offered, its label is set before the writes and again before each improver run (IMPROVER_PROGRESS, D-284, S-02).
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
  *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
  *    (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and tally of 6a

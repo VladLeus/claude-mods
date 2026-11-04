@@ -28,6 +28,9 @@ import { privateFolderOf } from './safety'
 /** How long one improver run may take before it is given up (G-02-1f, D-141, T-02-77): the file then stays as built. */
 export const IMPROVER_TIMEOUT_MS = 300_000
 
+/** The status line or pane loader set before the writes and before each improver run (D-284, S-02). */
+export const IMPROVER_PROGRESS = t('init.status.improver')
+
 /**
  * The argv of one improver run (D-141 imp-b): `claude -p` in acceptEdits, so the run edits the file in place and asks
  * nothing, then `flags`, a repo file's guard (improverGuardFlags, 02-GAPS-B3 M1) and none for a private text file, then
@@ -574,8 +577,10 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
  * each file in `files` gets one improver run in turn, in place (improveOne), and the person reviews each change. A file
  * an earlier run changed is written back as built with no run of its own, and a repo file whose run has no guard gets
  * no run (02-GAPS-B3 M1). It gives the accepted text of each repo file for the manifest, the files to write back as
- * built (restoreSteps), the reply warnings, and how many files were changed and accepted of how many it was given. It
- * writes nothing itself; a dry run never reaches it, since it holds no HostIo (T-03-16).
+ * built (restoreSteps), the reply warnings, and how many files were changed and accepted of how many it was given. The
+ * loader (IMPROVER_PROGRESS, with the count of files) is set again before each file's run, because a per-file question
+ * clears it (D-257, D-285, S-02). It writes nothing itself; a dry run never reaches it, since it holds no HostIo
+ * (T-03-16).
  */
 export async function improveBuiltFiles(
   io: InitIo,
@@ -586,8 +591,10 @@ export async function improveBuiltFiles(
   const accepted = new Map<string, string>()
   const restores: BuiltFile[] = []
   const warnings: string[] = []
+  const summary = tn('init.status.count.files', files.length, { count: files.length })
   let changed = 0
   for (const file of files) {
+    await io.progress(IMPROVER_PROGRESS, summary)
     const result = await improveOne(io, host, file, from)
     warnings.push(...result.warnings)
     if (result.isRestored) restores.push(file)

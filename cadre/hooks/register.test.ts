@@ -2823,7 +2823,8 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
   test('a run with no progress makes no status call, not even a clear when it ends (edge #2, U-11)', async ($, on) => {
     const log = newLog()
     fakeHost(on, regenHostWorld(), log)
-    await $.command.run({ ...TUI_RUN, args: 'regen be --dry-run' })
+    // A regen of a role cadre.json does not list is refused before its scan, so it sets no loader (D-285, S-02).
+    await $.command.run({ ...TUI_RUN, args: 'regen zz --dry-run' })
     await $.command.run({ ...TUI_RUN, args: '' })
     expect(log.statuses).toEqual([])
   })
