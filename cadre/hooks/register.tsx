@@ -167,13 +167,14 @@ type PaneRun = {
 
 /**
  * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
- * the preview as transcript rows right above the dialog, its title first, each line cleaned and uncut, once per
- * question: a question asked again with the context the run printed last prints nothing (tuiTranscriptRows, D-228,
- * WD-S4); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing.
+ * the preview drawn at `columns` as transcript rows right above the dialog, its title first, each line cleaned and
+ * uncut, once per question: a question asked again with the context the run printed last prints nothing
+ * (tuiTranscriptRows, D-228, D-260, WD-S4); the preview ends with how many lines it left out. A context that fits, and
+ * the Review, print nothing.
  */
-function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext | null): void {
+function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext | null, columns: number | null): void {
   $.ui.status(undefined)
-  const rows = tuiTranscriptRows(context, pane.printed)
+  const rows = tuiTranscriptRows(context, pane.printed, columns)
   if (rows.length === 0) return
   for (const row of rows) $.ui.log(row)
   pane.printed = context
@@ -219,7 +220,9 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
       const scroll = questionScroll(PANE, open, pane.isOpened)
       if (scroll !== null) await $.ui.scroll(scroll).catch(() => undefined)
-      if (pane.surface === 'tui-default') beforeTuiDialog($, pane, open.context)
+      // The preview is drawn at the newest width a terminal reported, as the dialog hook draws it (D-260).
+      const columns = latestColumns(viewportColumns, presentationColumns)
+      if (pane.surface === 'tui-default') beforeTuiDialog($, pane, open.context, columns)
       try {
         const dialog = {
           options,

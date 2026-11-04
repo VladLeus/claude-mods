@@ -467,27 +467,49 @@ describe('fitPreview (D-228)', () => {
     expect(PREVIEW_ROWS).toBe(22)
   })
 
-  test('a context that fits the rows keeps every line, and nothing overflows', () => {
-    for (const count of [0, 1, PREVIEW_ROWS]) {
+  test('a context that fits the rows with its title row keeps every line, and nothing overflows', () => {
+    for (const count of [0, 1, PREVIEW_ROWS - 1]) {
       const context = linesContext(count)
-      expect(fitPreview(context, PREVIEW_ROWS)).toEqual({ lines: context.lines, isOverflow: false })
+      expect(fitPreview(context, PREVIEW_ROWS, null)).toEqual({ lines: context.lines, isOverflow: false })
     }
   })
 
-  test('a longer context keeps its first rows less one, then +N more above, and overflows', () => {
-    const fitted = fitPreview(linesContext(30), 5)
-    expect(fitted).toEqual({ lines: ['line 1', 'line 2', 'line 3', 'line 4', '+26 more above'], isOverflow: true })
-    expect(fitPreview(linesContext(PREVIEW_ROWS + 1), PREVIEW_ROWS).lines.at(-1)).toBe('+2 more above')
+  test('a longer context keeps the lines that fit with its title and marker rows, then +N more above', () => {
+    const fitted = fitPreview(linesContext(30), 5, null)
+    expect(fitted).toEqual({ lines: ['line 1', 'line 2', 'line 3', '+27 more above'], isOverflow: true })
+    expect(fitPreview(linesContext(PREVIEW_ROWS + 1), PREVIEW_ROWS, null).lines.at(-1)).toBe('+3 more above')
   })
 
   test('the Review is kept whole, since it is paged instead (D-233)', () => {
     const review = linesContext(40, 'review')
-    expect(fitPreview(review, 5)).toEqual({ lines: review.lines, isOverflow: false })
+    expect(fitPreview(review, 5, null)).toEqual({ lines: review.lines, isOverflow: false })
+    expect(fitPreview(review, 5, 10)).toEqual({ lines: review.lines, isOverflow: false })
+  })
+
+  test('with no columns a line is one row: 20 lines fit 21 rows with the title, 21 keep 19 (D-260)', () => {
+    expect(fitPreview(linesContext(20), 21, null)).toEqual({ lines: linesContext(20).lines, isOverflow: false })
+    const fitted = fitPreview(linesContext(21), 21, null)
+    expect(fitted).toEqual({ lines: [...linesContext(19).lines, '+2 more above'], isOverflow: true })
+  })
+
+  test('at 40 columns 15 lines of 100 characters keep the whole lines whose rows fit 21 rows (D-260)', () => {
+    const lines = Array.from({ length: 15 }, (_, at) => String(at).padStart(2, '0').padEnd(100, 'x'))
+    const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '15 lines' }
+    const fitted = fitPreview(context, 21, 40)
+    expect(fitted).toEqual({ lines: [...lines.slice(0, 6), '+9 more above'], isOverflow: true })
+    const rows = [context.title, ...fitted.lines].flatMap(line => wrapLine(line, 40)).length
+    expect([rows, rows + 3 > 21]).toEqual([20, true])
+  })
+
+  test('a wrapped title counts every row it takes; a width that is no whole number counts one (T-02.2-10)', () => {
+    const titled: AskContext = { ...linesContext(20), title: 'T'.repeat(30) }
+    expect(fitPreview(titled, 21, 10).lines).toEqual([...linesContext(17).lines, '+3 more above'])
+    expect(fitPreview(linesContext(20), 21, 0.5)).toEqual({ lines: linesContext(20).lines, isOverflow: false })
   })
 
   test('on the TUI default each option previews the fitted context (askRewrite with rows)', () => {
     const context = linesContext(30)
-    const fitted = { ...context, lines: fitPreview(context, 5).lines }
+    const fitted = { ...context, lines: fitPreview(context, 5, null).lines }
     const preview = previewMarkdown([fitted])
     expect(optionPreviews(askRewrite([PICK_QUESTION], context, true, null, 5)?.questions)).toEqual([
       [preview, preview, preview],
@@ -706,18 +728,21 @@ describe('tuiTranscriptRows (WD-S4)', () => {
     const rest = linesContext(PREVIEW_LINE_ROWS).lines
     const lines = [wide, `a${BIDI_OVERRIDE}b`, ...rest]
     const context: AskContext = { title: `Long ${BIDI_OVERRIDE}list`, lines, kind: 'skills', summary: 'Long list' }
-    expect(tuiTranscriptRows(context, null)).toEqual(['Long list', wide, 'ab', ...rest])
+    expect(tuiTranscriptRows(context, null, null)).toEqual(['Long list', wide, 'ab', ...rest])
   })
 
   test('a context that fits the preview, the Review and no context give no rows', () => {
-    expect(tuiTranscriptRows(linesContext(PREVIEW_LINE_ROWS - 1), null)).toEqual([])
-    expect(tuiTranscriptRows(linesContext(40, 'review'), null)).toEqual([])
-    expect(tuiTranscriptRows(null, linesContext(30))).toEqual([])
+    expect(tuiTranscriptRows(linesContext(PREVIEW_LINE_ROWS - 1), null, null)).toEqual([])
+    expect(tuiTranscriptRows(linesContext(40, 'review'), null, null)).toEqual([])
+    expect(tuiTranscriptRows(null, linesContext(30), null)).toEqual([])
   })
 
   test('a context of PREVIEW_LINE_ROWS lines overflows, its title row counted (D-260)', () => {
     const context = linesContext(PREVIEW_LINE_ROWS)
-    expect(tuiTranscriptRows(context, null)).toEqual(['Lines', ...context.lines])
+    expect(tuiTranscriptRows(context, null, null)).toEqual(['Lines', ...context.lines])
+    const wrapped = linesContext(15).lines.map(line => line.padEnd(100, 'x'))
+    const wide = { ...linesContext(15), lines: wrapped }
+    expect([tuiTranscriptRows(wide, null, null), tuiTranscriptRows(wide, null, 40).length]).toEqual([[], 16])
   })
 
   test('the context printed last, by its title and lines, gives no rows; a changed one gives them all', () => {
@@ -725,9 +750,9 @@ describe('tuiTranscriptRows (WD-S4)', () => {
     const rebuilt = { ...printed, lines: [...printed.lines] }
     const changed = { ...printed, lines: [...printed.lines.slice(0, -1), 'line X'] }
     const retitled = { ...printed, title: 'Other' }
-    expect(tuiTranscriptRows(rebuilt, printed)).toEqual([])
-    expect(tuiTranscriptRows(changed, printed)).toEqual(['Lines', ...changed.lines])
-    expect(tuiTranscriptRows(retitled, printed)).toEqual(['Other', ...printed.lines])
+    expect(tuiTranscriptRows(rebuilt, printed, null)).toEqual([])
+    expect(tuiTranscriptRows(changed, printed, null)).toEqual(['Lines', ...changed.lines])
+    expect(tuiTranscriptRows(retitled, printed, null)).toEqual(['Other', ...printed.lines])
   })
 })
 

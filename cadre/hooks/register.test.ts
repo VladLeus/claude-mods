@@ -39,7 +39,7 @@ import {
   templateRole,
 } from './testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
-import { paneDrawn, paneRows } from './ui/pane'
+import { paneDrawn, paneRows, wrapLine } from './ui/pane'
 import type { PaneBlock, PaneSpan } from './ui/pane'
 import { NOTE_WORDING, OTHER_WORDING, OWN_ANSWER_HINT, PREVIEW_LINE_ROWS, PREVIEW_ROWS } from './ui/preview'
 
@@ -2860,8 +2860,13 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.logs.some(line => line.includes(BIDI_OVERRIDE))).toBe(false)
     const [preview] = log.askPreviews[log.asks.findIndex(ask => ask.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))] ?? []
     const marker = typeof preview === 'string' ? preview.split('\n').at(-2) : null
-    // Each line is one row at the preview's 82 columns; the title and marker rows count too (D-260).
-    expect(marker).toBe(`+${rows.length - 1 - (PREVIEW_LINE_ROWS - 2)} more above`)
+    // At the preview's 82 columns the heading line wraps to two rows and every other line is one; the title and marker
+    // rows count too, so 18 whole lines fit its 21 rows (D-260).
+    expect([wrapLine(String(rows[1]), 82).length, rows.slice(2).every(line => String(line).length <= 82)]).toEqual([
+      2,
+      true,
+    ])
+    expect(marker).toBe(`+${rows.length - 1 - (PREVIEW_LINE_ROWS - 3)} more above`)
   })
 
   test('a refused answer is asked again and its long context is printed above it once (WD-S4)', async ($, on) => {

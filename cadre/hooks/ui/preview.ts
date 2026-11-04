@@ -56,15 +56,18 @@ export function latestColumns(viewportColumns: unknown, presentationColumns: unk
 }
 
 /**
- * The rows of context lines a dialog option's preview shows on the TUI default (D-228): the rows the spike measured
- * on the terminal main screen at 48 rows (`rows - 26`). The engine hides a preview's rows past its box, and the
- * terminal's rows are not known to cadre, so this is the one size every TUI-default preview is fitted to.
+ * The rows a dialog option's preview shows on the TUI default (D-228): the rows the spike measured on the terminal
+ * main screen at 48 rows (`rows - 26`). The engine hides a preview's rows past its box, and the terminal's rows are not
+ * known to cadre, so this is the one size every TUI-default preview is fitted to, and it stays fixed (D-263). They are
+ * drawn rows: a line the box wraps takes every row it wraps to (D-260).
  */
 export const PREVIEW_ROWS = 22
 
 /**
- * The context lines a TUI-default preview holds (D-228, WD-S3): PREVIEW_ROWS less the row its bold title takes, the
- * rows reviewPages pages the Review by too.
+ * The rows a context fills in a TUI-default preview (D-228, D-260, WD-S3): PREVIEW_ROWS less one, counted as the box
+ * draws them, its title row and its `+N more above` marker row included and the fence rows left out; a line counts
+ * every row it wraps to at the preview's columns, each code point one column (edge #9, wide cells, stays deferred).
+ * The rows reviewPages pages the Review by too.
  */
 export const PREVIEW_LINE_ROWS = PREVIEW_ROWS - 1
 
@@ -78,28 +81,46 @@ export type FittedPreview = {
 }
 
 /**
- * A context fitted to `rows` lines of a TUI-default preview (D-228): every line when they fit, and nothing overflows;
- * else its first `rows - 1` lines and one last line that counts the lines left out, which register prints above the
- * dialog, and it overflows. The Review is kept whole and never overflows: it is paged instead (D-233). Rows under two
- * leave no room for a line and the count, so the context is kept whole.
+ * A context fitted to `rows` rows of a TUI-default preview drawn at `columns` (D-228, D-260): its title and each line
+ * count the rows they wrap to at `columns`, cleaned and wrapped as previewBlock draws them (wrapLine), one row each
+ * with no columns; the fence rows do not count, and each code point is one column (edge #9 stays deferred). Every line
+ * when the title and all the lines fit, and nothing overflows; else the longest run of whole lines from the first
+ * whose rows fit with the title rows and one marker row, then the marker, which counts the lines left out and which
+ * register prints above the dialog, and it overflows. The Review is kept whole and never overflows: it is paged
+ * instead (D-233). Rows under two leave no room for a line and the marker, so the context is kept whole.
  */
-export function fitPreview(context: AskContext, rows: number): FittedPreview {
+export function fitPreview(context: AskContext, rows: number, columns: number | null): FittedPreview {
   const { lines } = context
-  if (context.kind === 'review' || lines.length <= rows || rows < 2) return { lines, isOverflow: false }
-  const shown = lines.slice(0, rows - 1)
+  if (context.kind === 'review' || rows < 2) return { lines, isOverflow: false }
+  const rowsOf = (text: string): number => (columns === null ? 1 : wrapLine(clean(text, UNCUT), columns).length)
+  const title = rowsOf(context.title)
+  const costs = lines.map(rowsOf)
+  if (costs.reduce((sum, cost) => sum + cost, title) <= rows) return { lines, isOverflow: false }
+  let room = rows - title - 1
+  let kept = 0
+  for (const cost of costs) {
+    if (cost > room) break
+    room -= cost
+    kept += 1
+  }
+  const marker = t('ui.preview.moreAbove', { value: lines.length - kept })
 
-  return { lines: [...shown, t('ui.preview.moreAbove', { value: lines.length - shown.length })], isOverflow: true }
+  return { lines: [...lines.slice(0, kept), marker], isOverflow: true }
 }
 
 /**
  * The transcript rows the TUI default prints right above a dialog (D-228, WD-S4): for a context too long for the
- * preview (fitPreview at PREVIEW_LINE_ROWS), its title and then every line, each cleaned with no cap (T-02.1-79), so
- * the full text above holds whole what the preview leaves out; none for a context that fits, for the Review (it is
- * paged), for no context, and for a context with the same title and the same lines, in order, as `printed`, the one
- * printed last, so a question asked again prints its context once.
+ * preview drawn at `columns` (fitPreview at PREVIEW_LINE_ROWS, D-260), its title and then every line, each cleaned
+ * with no cap (T-02.1-79), so the full text above holds whole what the preview leaves out; none for a context that
+ * fits, for the Review (it is paged), for no context, and for a context with the same title and the same lines, in
+ * order, as `printed`, the one printed last, so a question asked again prints its context once.
  */
-export function tuiTranscriptRows(context: AskContext | null, printed: AskContext | null): readonly string[] {
-  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS).isOverflow) return []
+export function tuiTranscriptRows(
+  context: AskContext | null,
+  printed: AskContext | null,
+  columns: number | null,
+): readonly string[] {
+  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS, columns).isOverflow) return []
   const { title, lines } = context
   const isPrinted =
     printed !== null &&
@@ -331,7 +352,7 @@ export type AskRewrite = {
  * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
  * that pairs its text as asked with the text the dialog shows (A3); a multi-select question is copied unchanged,
  * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context fitted to
- * them (fitPreview, D-228); with none it shows every line.
+ * them at `columns` (fitPreview, D-228, D-260); with none it shows every line.
  */
 export function askRewrite(
   questions: unknown,
@@ -341,7 +362,7 @@ export function askRewrite(
   rows: number | null = null,
 ): AskRewrite | null {
   if (context === null) return null
-  const shown = rows === null ? context : { ...context, lines: fitPreview(context, rows).lines }
+  const shown = rows === null ? context : { ...context, lines: fitPreview(context, rows, columns).lines }
   const preview = previewMarkdown([shown], columns)
   const previewed = withPreviews(questions, () => preview)
   if (previewed === null) return null
