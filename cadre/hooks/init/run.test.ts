@@ -6052,6 +6052,24 @@ describe('lists on pane surfaces (D-256)', () => {
   })
 })
 
+describe('the page width reaches the stages (D-292)', () => {
+  test('runInit reads the page width before each step; a run with no reader asks and replies the same', async () => {
+    let reads = 0
+    const pageColumns = (): number | null => {
+      reads += 1
+
+      return 70
+    }
+    const read = memIo(gitWorld(), INIT_ANSWERS)
+    const reply = await runInit(read.io, { dryRun: true, pageColumns })
+    const plain = memIo(gitWorld(), INIT_ANSWERS)
+    const plainReply = await runInit(plain.io, { dryRun: true })
+    expect([reply, read.asked, read.specs]).toEqual([plainReply, plain.asked, plain.specs])
+    // Every answer the run gives a stage is a step: each question and each scan, call and check before them.
+    expect(reads).toBeGreaterThan(read.asked.length)
+  })
+})
+
 describe('every pane-surface ask carries a context (D-300)', () => {
   /** The spec of every ask of a dry run of `world`, each question answered by its longest prefix in `answers`. */
   async function initSpecs(world: MemWorld, answers: Readonly<Record<string, string>>): Promise<readonly AskSpec[]> {

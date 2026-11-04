@@ -1628,6 +1628,7 @@ export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Part
     toolNames: [],
     dryRun: true,
     surface: 'pane',
+    pageColumns: null,
     ...over,
   }
 }

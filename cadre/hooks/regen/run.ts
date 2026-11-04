@@ -9,17 +9,24 @@ import { reportText } from '../core/text'
 import { initGuard } from '../guards/repo'
 import { t } from '../locales/t'
 import { readTeam, regenBadRole } from '../team'
+import type { Surface } from '../ui/surface'
 import { regenApply, regenPlan, regenReplyText } from './plan'
 import { regenHandout } from './review'
 import { regenScans } from './side-read'
 
 /**
  * How `/cadre regen <id>` runs (D-68, T-03-16): --dry-run prints the role's plan and holds no host, so it can neither
- * write nor run; plain regen writes that plan through `host`.
+ * write nor run; plain regen writes that plan through `host`. `surface` is where the run shows its context, a pane
+ * surface when absent (D-208, D-285), and `pageColumns` reads the columns its pane pages are drawn at (D-292), absent
+ * in tests and `-p`.
  */
-export type RegenOptions =
+export type RegenOptions = (
   | { readonly id: string; readonly dryRun: true }
   | { readonly id: string; readonly dryRun: false; readonly host: HostIo }
+) & {
+  readonly surface?: Surface
+  readonly pageColumns?: () => number | null
+}
 
 /**
  * The reply of a regen cancelled at one of its questions: its reason logged as its own line, the one place it is

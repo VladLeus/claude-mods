@@ -95,6 +95,11 @@ import type { Answer, Effect, InitStage, InitState, IoCall, IoResult, ModelCall,
  */
 export type InitOptions = ({ readonly dryRun: true } | { readonly dryRun: false; readonly host: HostIo }) & {
   readonly surface?: Surface
+  /**
+   * The columns a pane page or a Review page is drawn at (D-292): read before each step into the state the step gets,
+   * so the stages see the width the pane has now; absent in tests and `-p`, where the width is unknown.
+   */
+  readonly pageColumns?: () => number | null
 }
 
 /** The status line the TUI default shows while the repo scans run (D-232). */
@@ -743,6 +748,6 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
     const open = openQuestion === null ? null : { ...openQuestion, spec: foldedSpec(openQuestion.spec, folds) }
     const answer = await performState(io, options, { ...state, openQuestion: open })
     if (answer === null) return INIT_CANCELLED
-    state = nextStage({ ...state, outputs: [] }, answer)
+    state = nextStage({ ...state, outputs: [], pageColumns: options.pageColumns?.() ?? null }, answer)
   }
 }

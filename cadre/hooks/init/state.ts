@@ -433,6 +433,11 @@ export type InitState = {
   readonly dryRun: boolean
   /** Where the run shows its context (D-208): the side pane, the TUI default's option preview, or nowhere. */
   readonly surface: Surface
+  /**
+   * The columns a pane page or a Review page is drawn at (D-292), as the run read them before this step; null before
+   * the first step and when the width is unknown (tests, `-p`).
+   */
+  readonly pageColumns: number | null
 }
 
 /**

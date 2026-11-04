@@ -46,6 +46,10 @@ describe('init stage machine (D-230)', () => {
     expect(initialState(false).dryRun).toBe(false)
   })
 
+  test('initialState has no page width yet: the run reads it before each step (D-292)', () => {
+    expect([initialState(true).pageColumns, initialState(false, 'tui-default').pageColumns]).toEqual([null, null])
+  })
+
   test('initialState keeps the surface the run was given, a pane surface when none is given (D-208)', () => {
     expect(initialState(true, 'tui-default').surface).toBe('tui-default')
     expect(initialState(false, 'none').surface).toBe('none')

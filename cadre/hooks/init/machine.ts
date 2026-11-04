@@ -217,7 +217,7 @@ function isAnswerTo(effect: Effect, answer: Answer): boolean {
 
 /**
  * A run before its first answer (D-230): the guard entered, its effect out, nothing to show yet, on the surface the run
- * was given, a pane surface when none is given (D-208).
+ * was given, a pane surface when none is given (D-208), with no page width yet (D-292).
  */
 export function initialState(dryRun: boolean, surface: Surface = 'pane'): InitState {
   const blank: InitState = {
@@ -234,6 +234,7 @@ export function initialState(dryRun: boolean, surface: Surface = 'pane'): InitSt
     toolNames: [],
     dryRun,
     surface,
+    pageColumns: null,
   }
 
   return settled(entered(blank, 'guard'))

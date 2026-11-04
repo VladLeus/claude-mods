@@ -800,6 +800,16 @@ describe('regen by part hashes (G-02-1f)', () => {
     expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
   })
 
+  test('a regen run takes its surface and a page width reader, and asks as before (D-285, D-292)', async () => {
+    const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
+    const answers = { [REGEN_PART_PREFIX]: 'Yes' }
+    const plain = memIo(await regenPartsWorld(changed), answers)
+    const plainReply = await runRegen(plain.io, { id: 'be', dryRun: true })
+    const given = memIo(await regenPartsWorld(changed), answers)
+    const reply = await runRegen(given.io, { id: 'be', dryRun: true, surface: 'pane', pageColumns: () => 60 })
+    expect([reply, given.asked, given.specs]).toEqual([plainReply, plain.asked, plain.specs])
+  })
+
   test('in a session a changed part is asked after one recommendation call; Yes rebuilds and records it', async () => {
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
     const { reply, run, host } = await regenPlainBe(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })

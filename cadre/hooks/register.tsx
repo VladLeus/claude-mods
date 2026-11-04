@@ -31,7 +31,7 @@ import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
 import { paneQuestionText } from './ui/ask'
-import { paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
+import { pageColumnsOf, paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
 import { answersFromNotes, dialogPlan, latestColumns, tuiTranscriptRows } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
@@ -65,6 +65,11 @@ let presentationColumns: unknown = null
  * gave them; null before any. The preview of a dialog option wraps to them first (latestColumns).
  */
 let viewportColumns: unknown = null
+/**
+ * The body columns the newest Pane render reported (paneColumns, D-292); null before any, and reset to null at each
+ * `/cadre` command, so a run never pages to the width of an earlier one.
+ */
+let paneBodyColumns: number | null = null
 /**
  * Where the last `/cadre` command shows its context (D-208), as the command.run hook decided it before anything
  * opened; a pane surface before any. The AskUserQuestion hook previews the open question's context on the TUI default.
@@ -397,8 +402,17 @@ async function openPane($: EngineInterface, pane: PaneRun): Promise<void> {
 }
 
 /**
+ * The columns a page of the cadre-init pane is drawn at now on `surface` (pageColumnsOf, D-292): from where the pane
+ * is seated, the dialog's preview columns and the body columns the newest Pane render reported.
+ */
+function pageColumnsNow(surface: Surface): number | null {
+  return pageColumnsOf(surface, lastPlacement, latestColumns(viewportColumns, presentationColumns), paneBodyColumns)
+}
+
+/**
  * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo over `pane`. An init or regen
- * run on a pane surface opens the cadre-init pane as it starts (openPane, D-324); no other command opens it.
+ * run on a pane surface opens the cadre-init pane as it starts (openPane, D-324), and both read the page width before
+ * each step (pageColumnsNow, D-292); no other command opens the pane.
  */
 async function commandReply($: EngineInterface, args: string, pane: PaneRun): Promise<{ text: string }> {
   const command = parseCommand(args)
@@ -409,17 +423,22 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       return { text: await detectReply($, command.adapters, initIoOf($, pane)) }
     case 'init': {
       const { surface } = pane
+      const pageColumns = (): number | null => pageColumnsNow(surface)
       const options: InitOptions = command.dryRun
-        ? { dryRun: true, surface }
-        : { dryRun: false, host: hostIoOf($), surface }
+        ? { dryRun: true, surface, pageColumns }
+        : { dryRun: false, host: hostIoOf($), surface, pageColumns }
       if (surface === 'pane') await openPane($, pane)
 
       return { text: await runInit(initIoOf($, pane), options) }
     }
     case 'regen': {
       const { id } = command
-      const options: RegenOptions = command.dryRun ? { id, dryRun: true } : { id, dryRun: false, host: hostIoOf($) }
-      if (pane.surface === 'pane') await openPane($, pane)
+      const { surface } = pane
+      const pageColumns = (): number | null => pageColumnsNow(surface)
+      const options: RegenOptions = command.dryRun
+        ? { id, dryRun: true, surface, pageColumns }
+        : { id, dryRun: false, host: hostIoOf($), surface, pageColumns }
+      if (surface === 'pane') await openPane($, pane)
 
       return { text: await runRegen(initIoOf($, pane), options) }
     }
@@ -476,6 +495,7 @@ export const register: Register = on => {
     const presentation: unknown = e.presentation
     presentationColumns = isObject(presentation) ? presentation.columns : null
     viewportColumns = null
+    paneBodyColumns = null
     runSurface = surfaceOf(presentation, await $.session.surfaces().catch(() => null))
     const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null, hasStatus: false, isLoading: false }
     try {
@@ -497,18 +517,20 @@ export const register: Register = on => {
   // The state is read once, at the top, and the tree is built from that one snapshot (D-303), in the rows of the one
   // renderer, paneDrawn, wrapped to the columns of the pane's body (paneColumns, D-231) and styled by each row's role
   // (D-313); an empty row draws one space. A terminal render records where the pane is seated (D3) and the width it was
-  // drawn at (#163).
+  // drawn at (#163), and every render the body columns a page is drawn at (paneBodyColumns, D-292).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const state = await read($, paneState)
     const { Box, Text } = $.ui.resolve(e)
     if (e.surface === 'terminal') lastPlacement = panePlacement(e.props)
     if (e.surface === 'terminal' && isObject(e.viewport)) viewportColumns = e.viewport.columns
+    const columns = paneColumns(e.props)
+    paneBodyColumns = columns
     const block = paneBlockOf(state)
     if (block === null) return <Text>{t('register.paneEmpty')}</Text>
 
     return (
       <Box flexDirection="column">
-        {paneDrawn(block, paneColumns(e.props)).map((row, at) => (
+        {paneDrawn(block, columns).map((row, at) => (
           <Text key={at}>
             {row.spans.length === 0
               ? ' '
