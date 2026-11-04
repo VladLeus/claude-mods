@@ -75,7 +75,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask .planning/config.json: workflow.text_mode",
     "ask .planning/config.json: hooks.context_warnings",
     "log attended: GSD needs a person until mode and workflow.text_mode are set as proposed",
-    "show notes",
     "ask Git policy for .cadre/?",
     "ask Where should the role launchers start their sessions? (asked once for this repo)",
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item."
@@ -251,7 +250,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask .planning/config.json: workflow.text_mode",
     "ask .planning/config.json: hooks.context_warnings",
     "log attended: GSD needs a person until mode and workflow.text_mode are set as proposed",
-    "show notes",
     "ask Git policy for .cadre/?",
     "ask Where should the role launchers start their sessions? (asked once for this repo)",
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
@@ -288,7 +286,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask .planning/config.json: workflow.text_mode",
     "ask .planning/config.json: hooks.context_warnings",
     "log attended: GSD needs a person until mode and workflow.text_mode are set as proposed",
-    "show notes",
     "ask Git policy for .cadre/?",
     "ask Where should the role launchers start their sessions? (asked once for this repo)",
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
@@ -325,7 +322,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask .planning/config.json: workflow.text_mode",
     "ask .planning/config.json: hooks.context_warnings",
     "log attended: GSD needs a person until mode and workflow.text_mode are set as proposed",
-    "show notes",
     "ask Git policy for .cadre/?",
     "ask Where should the role launchers start their sessions? (asked once for this repo)",
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
@@ -360,7 +356,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask .planning/config.json: workflow.text_mode",
     "ask .planning/config.json: hooks.context_warnings",
     "log attended: GSD needs a person until mode and workflow.text_mode are set as proposed",
-    "show notes",
     "ask Git policy for .cadre/?",
     "ask Where should the role launchers start their sessions? (asked once for this repo)",
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
@@ -368,7 +363,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask .planning/config.json: workflow.text_mode",
     "ask .planning/config.json: hooks.context_warnings",
     "log attended: GSD needs a person until mode and workflow.text_mode are set as proposed",
-    "show notes",
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item."
   ],
   "applyNothing": [

@@ -281,13 +281,13 @@ export function foldedSpec(
 }
 
 /**
- * Logs one note to the transcript as one line and shows it in the side pane's notes block (D-133; batch-1 review S1:
- * the desktop app does not draw ui.log rows), cleaned as a report cell (reportText), so a scanned or typed value cannot
- * add a line or hide text. A block of lines goes to the side pane (showBlock) instead.
+ * Logs one note as one line (D-133), cleaned as a report cell (reportText), so a scanned or typed value cannot add a
+ * line or hide text, and shows no block of its own (D-325): on a pane surface the port puts a note that comes while a
+ * step runs on that step's loader as its summary line, as the desktop app does not draw ui.log rows (batch-1 review
+ * S1), and logs any other to the transcript (InitIo.log).
  */
 export async function noteLine(io: InitIo, line: string): Promise<void> {
   io.log(reportText(line))
-  await showBlock(io, 'notes', [line])
 }
 
 /**

@@ -338,15 +338,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "No session history for this repo.",
       "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
     ],
-    "shown": [
-      {
-        "key": "notes",
-        "title": "Notes",
-        "lines": [
-          "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
-        ]
-      }
-    ],
+    "shown": [],
     "promptHashes": [
       "73ed8a25af823e7774847203e3339bade6da6f7cdfe71913f7258a90cfca6f63",
       "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",
@@ -732,15 +724,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "No session history for this repo.",
       "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
     ],
-    "shown": [
-      {
-        "key": "notes",
-        "title": "Notes",
-        "lines": [
-          "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
-        ]
-      }
-    ],
+    "shown": [],
     "promptHashes": [
       "73ed8a25af823e7774847203e3339bade6da6f7cdfe71913f7258a90cfca6f63",
       "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",
@@ -1102,15 +1086,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "No session history for this repo.",
       "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
     ],
-    "shown": [
-      {
-        "key": "notes",
-        "title": "Notes",
-        "lines": [
-          "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
-        ]
-      }
-    ],
+    "shown": [],
     "promptHashes": [
       "73ed8a25af823e7774847203e3339bade6da6f7cdfe71913f7258a90cfca6f63",
       "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",
@@ -1494,22 +1470,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "attended: GSD needs a person until mode and workflow.text_mode are set as proposed",
       "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
     ],
-    "shown": [
-      {
-        "key": "notes",
-        "title": "Notes",
-        "lines": [
-          "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
-        ]
-      },
-      {
-        "key": "notes",
-        "title": "Notes",
-        "lines": [
-          "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
-        ]
-      }
-    ],
+    "shown": [],
     "promptHashes": [
       "73ed8a25af823e7774847203e3339bade6da6f7cdfe71913f7258a90cfca6f63",
       "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",

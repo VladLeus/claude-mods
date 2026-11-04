@@ -6106,7 +6106,7 @@ describe('no stand-alone pane block: what it held folds into the next question (
     for (const { world, answers } of Object.values(GOLDEN_WORLDS)) {
       const run = memIo(world, answers)
       await runInit(run.io, { dryRun: true })
-      expect(run.shown.filter(block => block.key !== 'notes')).toEqual([])
+      expect(run.shown).toEqual([])
     }
   })
 

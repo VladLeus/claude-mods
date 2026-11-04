@@ -467,9 +467,8 @@ describe('improver pass (G-02-1f)', () => {
     const outcome = await improveBuiltFiles(linkRun.io, linking, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
     const builtReads = linkRun.reads.filter(path => path === BE_BUILT_PATH)
     expect([outcome.restores, linkRun.asked, builtReads]).toEqual([[BE_BUILT_FILE], [], [BE_BUILT_PATH]])
-    expect(linkRun.shown).toEqual([
-      { key: 'notes', title: 'Notes', lines: [improverUnreadableNote(BE_BUILT_REPO_PATH)] },
-    ])
+    // The note is one logged line and no block of its own (D-325).
+    expect([linkRun.logged, linkRun.shown]).toEqual([[improverUnreadableNote(BE_BUILT_REPO_PATH)], []])
   })
 
   test('a private file is named from the home folder; its accepted change counts, never the manifest', async () => {

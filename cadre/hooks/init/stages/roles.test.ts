@@ -315,10 +315,8 @@ describe('adjustLoop', () => {
     expect(rolesResult(end)).toEqual({ kind: 'accepted', value: { roles: kept, changes: full.changes } })
     expect(adjusts).toHaveLength(MAX_ADJUST_ROUNDS)
     expect(MAX_ADJUST_ROUNDS).toBe(30)
-    expect(run.logged).toEqual([ADJUST_ROUNDS_NOTE])
-    expect(run.shown.filter(block => block.key === 'notes')).toEqual([
-      { key: 'notes', title: 'Notes', lines: [ADJUST_ROUNDS_NOTE] },
-    ])
+    // The note is one logged line and no block of its own (D-325).
+    expect([run.logged, run.shown]).toEqual([[ADJUST_ROUNDS_NOTE], []])
     expect(ADJUST_ROUNDS_NOTE).toBe(
       'Adjust took 30 answers without "Done adjusting": showing the roles as they are now.',
     )
@@ -424,7 +422,8 @@ describe('rolesStep', () => {
     expect(run.logged).toHaveLength(1)
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
     expect(reason?.endsWith(FALLBACK_END)).toBe(true)
-    expect(run.shown).toEqual([{ key: 'notes', title: 'Notes', lines: run.logged }])
+    // The note is the logged line alone, no block of its own (D-325).
+    expect(run.shown).toEqual([])
     expect(run.specs[2]?.context?.lines).toEqual(proposalLines(proposal.roles, proposal.changes))
     expect(firstLines(run.asked)).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
@@ -505,10 +504,9 @@ describe('rolesStep', () => {
     const end = await stageRun(io, rolesStage, rolesAt(full, FRAMEWORKS))
     expect(rolesResult(end)).toEqual({ kind: 'accepted', value: { roles: kept, changes: full.changes } })
     expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(2)
+    // The note is logged, then the roles question is asked; it shows no block of its own (D-325).
     const noteAt = events.indexOf(`log ${ADJUST_ROUNDS_NOTE}`)
-    expect(noteAt > 0 && events[noteAt + 1] === 'show notes' && events[noteAt + 2] === `ask ${ROLES_QUESTION}`).toBe(
-      true,
-    )
+    expect(noteAt > 0 && events[noteAt + 1] === `ask ${ROLES_QUESTION}`).toBe(true)
     expect(run.specs.at(-1)?.context?.lines).toEqual(proposalLines(kept, full.changes))
   })
 

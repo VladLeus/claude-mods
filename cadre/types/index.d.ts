@@ -597,7 +597,8 @@ export type InitIo = {
   readonly ask: (question: string, spec: AskSpec) => Promise<string>
   /**
    * Appends one line to the transcript as a dim notice (the desktop app does not draw it): only for one-line notes,
-   * never a block.
+   * never a block. On a pane surface a line logged while a long step runs is that step's loader summary line instead,
+   * and is not printed (D-325).
    */
   readonly log: (text: string) => void
   /**

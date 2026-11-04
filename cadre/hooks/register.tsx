@@ -140,8 +140,8 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 /**
  * One command run's pane handle: whether it opened the cadre-init pane (D2), set when an init or regen run on a pane
  * surface opens it as it starts (openPane, D-324) and read once the run settles, where the run shows its context
- * (D-208), decided before anything opens, the context the TUI default printed last, and whether the run set a status
- * line.
+ * (D-208), decided before anything opens, the context the TUI default printed last, whether the run set a status
+ * line, and whether a step runs now.
  */
 type PaneRun = {
   isOpened: boolean
@@ -153,6 +153,11 @@ type PaneRun = {
    * settles, which then clears the line; a run that set none clears none (D-257, edge #2, U-11).
    */
   hasStatus: boolean
+  /**
+   * Whether a long step runs now: set by a progress with a text, cleared by progress(null), by each ask and by the
+   * run's end. While it is set, a line the run logs on a pane surface is the loader's summary line (D-325).
+   */
+  isLoading: boolean
 }
 
 /**
@@ -181,10 +186,12 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * context line (paneQuestionText, D-255), so the dialog hook still pairs the dialog with it. `show` draws nothing on
  * any surface: it stays for the port (D-326), as the pane draws only the open question's context or the loader
  * (D-299). On a pane surface `progress` writes the step's label and summary as the loader in one update, which the
- * pane draws alone between questions (D-301, D-327); a state write the host refuses is swallowed, so it never cancels
- * init (D-133, T-02-50). The pane itself is opened by the command handler as an init or regen run starts (openPane,
- * D-324), which also writes the idle state and closes the pane once the run settles (D2, D-304). On the TUI default
- * `progress` sets the one status line, the label alone (`$.ui.status`), and `ask` clears it before each dialog (D-232)
+ * pane draws alone between questions (D-301, D-327), and `log` writes a line logged while that step runs as the
+ * loader's summary line in one update and prints nothing (D-325, OC-03-N); a line logged with no step running goes to
+ * the transcript. A state write the host refuses is swallowed, so it never cancels init (D-133, T-02-50). The pane
+ * itself is opened by the command handler as an init or regen run starts (openPane, D-324), which also writes the idle
+ * state and closes the pane once the run settles (D2, D-304). On the TUI default `progress` sets the one status line,
+ * the label alone (`$.ui.status`), `log` logs every line, and `ask` clears the status line before each dialog (D-232)
  * and prints a context too long for the preview above it (beforeTuiDialog, D-228).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
@@ -201,6 +208,8 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
         acceptsTyped: acceptsTyped === true,
       }
       // One write puts the question in the pane state with no loader (D-303); the pane draws only its context (D-299).
+      // No step runs while it is open, so a line logged after it goes to the transcript (D-325).
+      pane.isLoading = false
       await update($, paneState, () => ({ open, loader: null })).catch(() => undefined)
       // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
       const scroll = questionScroll(PANE, open, pane.isOpened)
@@ -218,13 +227,24 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
         await update($, paneState, () => IDLE_PANE).catch(() => undefined)
       }
     },
-    log: text => $.ui.log(text),
+    // A line logged on a pane surface while a step runs is the loader's summary line and is not printed (D-325, the
+    // OC-03-N pick); a state write the host refuses is swallowed. Any other line goes to the transcript.
+    log: text => {
+      if (pane.surface === 'pane' && pane.isLoading) {
+        void update($, paneState, state =>
+          state.loader === null ? state : { ...state, loader: { ...state.loader, summary: text } },
+        ).catch(() => undefined)
+        return
+      }
+      $.ui.log(text)
+    },
     // Kept for the port (D-326): the pane draws only the open question's context or the loader (D-299).
     show: async () => undefined,
     // Progress is one status line on the TUI default, the label alone (D-232), and, on a pane surface, the loader in
     // the pane state, the label and the step's summary drawn alone between questions (D-301, D-327); a state write the
-    // host refuses is swallowed.
+    // host refuses is swallowed. A text says a step runs, null that none does (D-325).
     progress: async (text, summary) => {
+      pane.isLoading = text !== null
       if (pane.surface === 'tui-default') {
         if (text !== null) pane.hasStatus = true
         $.ui.status(text ?? undefined)
@@ -449,18 +469,19 @@ export const register: Register = on => {
   })
 
   // A run decides its surface before it opens anything (D-208), and once it settles (finished, cancelled, refused or
-  // thrown) it writes the idle pane state, whatever its surface (D-304), clears the status line when it set one (D-257,
-  // edge #2), and closes the cadre-init pane if it opened it (D2).
+  // thrown) no step runs any more (D-325), it writes the idle pane state, whatever its surface (D-304), clears the
+  // status line when it set one (D-257, edge #2), and closes the cadre-init pane if it opened it (D2).
   on('command.run', { command: 'cadre' }, async ($, e) => {
     // A command a test kit runs, or one from a host that stamps no presentation, may carry none (previewColumns).
     const presentation: unknown = e.presentation
     presentationColumns = isObject(presentation) ? presentation.columns : null
     viewportColumns = null
     runSurface = surfaceOf(presentation, await $.session.surfaces().catch(() => null))
-    const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null, hasStatus: false }
+    const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null, hasStatus: false, isLoading: false }
     try {
       return await commandReply($, e.args, pane)
     } finally {
+      pane.isLoading = false
       await update($, paneState, () => IDLE_PANE).catch(() => undefined)
       try {
         if (pane.hasStatus) $.ui.status(undefined)

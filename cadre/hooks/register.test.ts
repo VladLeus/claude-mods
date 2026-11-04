@@ -14,10 +14,11 @@ import { GOLDEN_TUI } from './golden/register-tui'
 import { FILE_SYSTEM_ROOT_REPLY, fileSystemRootReply, HOME_ROOT_REPLY, homeRootReply } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { cancelledReply } from './init/replies'
-import { MODEL_PROGRESS, SCAN_PROGRESS } from './init/run'
+import { MODEL_PROGRESS, SCAN_PROGRESS, SCAN_SUMMARY } from './init/run'
 import { CLAUDE_JSON_QUESTION } from './init/stages/consent'
 import { DURATION_QUESTION } from './init/stages/duration'
 import { FRAMEWORK_QUESTION_PREFIX } from './init/stages/frameworks'
+import { NO_HISTORY_NOTE } from './init/stages/history'
 import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
@@ -2412,7 +2413,9 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
     expect(open).toEqual([{ drawn: contextDrawn(log, ROLES_QUESTION), header: 'Roles' }])
-    const at = log.paneStates.map(headerOf).indexOf('Roles')
+    // The question's last write is the one that landed: the line logged on the scan's loader (D-325) moved the state's
+    // version under the first one, which update tried again.
+    const at = log.paneStates.map(headerOf).lastIndexOf('Roles')
     expect(log.paneStates.slice(at + 1, at + 2)).toEqual([IDLE_STATE])
     expect(await drawPane($, INLINE_PANE)).toEqual(EMPTY_DRAWN)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
@@ -2424,7 +2427,8 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, DOCK_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
     expect(open).toEqual([{ drawn: contextDrawn(log, ROLES_QUESTION), header: 'Roles' }])
-    const at = log.paneStates.map(headerOf).indexOf('Roles')
+    // The question's last write is the one that landed, as for the inline pane (D-325).
+    const at = log.paneStates.map(headerOf).lastIndexOf('Roles')
     expect(log.paneStates.slice(at + 1, at + 2)).toEqual([IDLE_STATE])
     expect(await drawPane($, DOCK_PANE)).toEqual(EMPTY_DRAWN)
   })
@@ -2510,7 +2514,12 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     fakeHost(on, oneCallWorld(), log)
     await $.command.run(DRY_RUN)
     const loaders = log.paneStates.map(loaderOf)
-    expect(loaders.filter(label => label !== null)).toEqual([SCAN_PROGRESS, MODEL_PROGRESS.skills])
+    // The scan's loader is written twice: with its summary, then with the line the run logs while it runs (D-325).
+    const scans = log.paneStates.filter(state => loaderOf(state) === SCAN_PROGRESS).map(loaderSummaryOf)
+    expect([loaders.filter(label => label !== null), scans]).toEqual([
+      [SCAN_PROGRESS, SCAN_PROGRESS, MODEL_PROGRESS.skills],
+      [SCAN_SUMMARY, NO_HISTORY_NOTE],
+    ])
     expect(loaders.at(-1)).toBe(null)
     expect(await drawPane($, INLINE_PANE)).toEqual(EMPTY_DRAWN)
   })
@@ -2841,8 +2850,11 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
       return hasSummary && (rest.length === 0 || isPaged) ? [] : [sentence]
     })
     expect([contextual.length > 10, unsummarised]).toEqual([true, []])
-    // The dialog asks the open question's text itself, so the dialog hook pairs the two (dialogPlan).
-    expect(opened.map(open => `ask ${String(open.question)}`)).toEqual(log.asks)
+    // The dialog asks the open question's text itself, so the dialog hook pairs the two (dialogPlan). A write that
+    // missed its version is tried again (update), so a question written twice in a row was asked once: the line logged
+    // on the scan's loader (D-325) moves the version under the roles question's first write.
+    const asked = opened.map(open => `ask ${String(open.question)}`)
+    expect(asked.filter((text, at) => text !== asked[at - 1])).toEqual(log.asks)
   })
 })
 
