@@ -13,6 +13,7 @@ import {
   choiceAnswer,
   MAX_ASKS,
   NO_USABLE_ANSWER_REASON,
+  noteLine,
   orList,
   PANE_TITLES,
   paneQuestionOf,
@@ -313,5 +314,13 @@ describe('showBlock (#163)', () => {
     const wide = 'w'.repeat(300)
     await showBlock(run.io, 'notes', [wide, `a${BIDI_OVERRIDE}b`])
     expect(run.shown.map(block => block.lines)).toEqual([[wide, 'ab']])
+  })
+})
+
+describe('noteLine (D-325)', () => {
+  test('a note is logged as one cleaned line and never shown as a block of its own', async () => {
+    const run = memIo(memWorld({}), [])
+    await noteLine(run.io, `a${BIDI_OVERRIDE}b`)
+    expect([run.logged, run.shown]).toEqual([['ab'], []])
   })
 })

@@ -5,6 +5,7 @@ import type { AskContext, AskSpec } from '../types'
 import { MANIFEST_SKIPPED_NOTE, NEXT_STEP_NOTE, privateFoldersUnknownWarning } from './apply/run'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
+import { attendedNote } from './framework/gsd/hunks'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { CHECKOUT_ARGV } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
@@ -220,6 +221,11 @@ function loaderOf(state: unknown): unknown {
   return isObject(state) && isObject(state.loader) ? state.loader.label : null
 }
 
+/** The summary line of the loader in a value written to the pane state, null when no step runs (D-301, D-325). */
+function loaderSummaryOf(state: unknown): unknown {
+  return isObject(state) && isObject(state.loader) ? state.loader.summary : null
+}
+
 /**
  * The own context of the first question a run opened in the pane state whose text starts with `prefix` (D-299): what
  * the pane drew while it was open, its title and its lines; null when the run opened no such question with a context.
@@ -299,6 +305,41 @@ function initWorld(over: Partial<World> = {}): World {
   const base = ambiguousWorld()
 
   return { ...base, dirs: [...base.dirs, '/repo/.git'], answers: INIT_ANSWERS, ...over }
+}
+
+/**
+ * The note the roles stage gives when the model answers a described structure with no text on every try (ROLE-02,
+ * D-83): in notedWorld it comes while that step's loader is up (D-325).
+ */
+const DESCRIBED_FALLBACK_NOTE =
+  'Could not use the described structure: the model gave no text. ' +
+  'Using the template proposal; you can still adjust it.'
+
+/** The note the hunk stage gives for the GSD hunks notedWorld declines, right after their dialogs (D-325). */
+const ATTENDED_NOTE = attendedNote(['mode', 'workflow.text_mode'])
+
+/**
+ * initWorld with two notes (D-325): the roles question is first answered Describe my own structure, the structure is
+ * typed (under Other on a pane surface, as the dialog's note on the TUI default, A3) and the model gives no text for
+ * it, so the roles stage notes DESCRIBED_FALLBACK_NOTE while that step's loader is up; once the model was called the
+ * roles question is answered Use these roles. The GSD hunks are declined, so the hunk stage notes ATTENDED_NOTE after
+ * their dialogs, with no step running.
+ */
+function notedWorld(): World {
+  // The describe question as both surfaces word it: its end differs (OTHER_WORDING, NOTE_WORDING).
+  const describe = 'Describe your role structure'
+  const description = 'A writer for the docs and a reviewer.'
+  const answers: Record<string, string> = {
+    ...INIT_ANSWERS,
+    [ROLES_QUESTION]: 'Describe my own structure',
+    [describe]: description,
+    '.planning/config.json:': 'Decline',
+  }
+  const onComplete = async (): Promise<void> => {
+    answers[ROLES_QUESTION] = 'Use these roles'
+  }
+
+  return initWorld({ answers, notes: { [describe]: description }, onComplete })
 }
 
 /**
@@ -2474,6 +2515,25 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(await drawPane($, INLINE_PANE)).toEqual(EMPTY_DRAWN)
   })
 
+  test('a note while a step runs is its loader summary line, not a transcript line (D-325)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, notedWorld(), log)
+    await $.command.run(DRY_RUN)
+    const loader = { label: MODEL_PROGRESS['describe-roles'], summary: DESCRIBED_FALLBACK_NOTE }
+    const noted = log.paneStates.filter(state => loaderSummaryOf(state) === DESCRIBED_FALLBACK_NOTE)
+    expect([noted, log.logs.includes(DESCRIBED_FALLBACK_NOTE)]).toEqual([[{ open: null, loader }], false])
+    // Never a block: no question's context holds the note (D-302, D-325).
+    expect(JSON.stringify(log.paneStates.map(openOf))).not.toContain(DESCRIBED_FALLBACK_NOTE)
+  })
+
+  test('a note with no step running is one transcript line, and never in the pane (D-325)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, notedWorld(), log)
+    await $.command.run(DRY_RUN)
+    expect(log.logs.filter(line => line === ATTENDED_NOTE)).toEqual([ATTENDED_NOTE])
+    expect(JSON.stringify(log.paneStates)).not.toContain(ATTENDED_NOTE)
+  })
+
   test('the pane wraps each row of the open context to its body columns, cutting none (D-231)', async ($, on) => {
     const log = newLog()
     const drawn: string[][][] = []
@@ -2629,6 +2689,14 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     await $.command.run(TUI_RUN)
     expect(log.paneStates.map(loaderOf).filter(label => label !== null)).toEqual([])
     expect(log.statuses.includes(MODEL_PROGRESS.skills)).toBe(true)
+  })
+
+  test('the TUI default logs every note as before, a step running or not (D-325)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, notedWorld(), log)
+    await $.command.run(TUI_RUN)
+    const notes = [DESCRIBED_FALLBACK_NOTE, ATTENDED_NOTE]
+    expect(log.logs.filter(line => notes.includes(line))).toEqual(notes)
   })
 
   test('a run with no progress makes no status call, not even a clear when it ends (edge #2, U-11)', async ($, on) => {
