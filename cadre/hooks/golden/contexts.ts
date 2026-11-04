@@ -76,7 +76,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "title": null,
             "rows": [
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "Repo scan (read-only):",
                 "indent": 0
               },
@@ -91,19 +91,21 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  existing .cadre/: none",
-                "indent": 0
+                "role": "field",
+                "label": "existing .cadre/",
+                "text": "none",
+                "indent": 2
               },
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "User setup (names only):",
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  plugins: 0",
-                "indent": 0
+                "role": "field",
+                "label": "plugins",
+                "text": "0",
+                "indent": 2
               },
               {
                 "role": "plain",
@@ -116,8 +118,9 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "warning: could not list the repo root (treated as unknown)",
+                "role": "field",
+                "label": "warning",
+                "text": "could not list the repo root (treated as unknown)",
                 "indent": 0
               }
             ]
@@ -657,7 +660,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "title": null,
             "rows": [
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "Repo scan (read-only):",
                 "indent": 0
               },
@@ -672,19 +675,21 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  existing .cadre/: none",
-                "indent": 0
+                "role": "field",
+                "label": "existing .cadre/",
+                "text": "none",
+                "indent": 2
               },
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "User setup (names only):",
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  plugins: 0",
-                "indent": 0
+                "role": "field",
+                "label": "plugins",
+                "text": "0",
+                "indent": 2
               },
               {
                 "role": "plain",
@@ -1350,7 +1355,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "title": null,
             "rows": [
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "Repo scan (read-only):",
                 "indent": 0
               },
@@ -1365,19 +1370,21 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  existing .cadre/: none",
-                "indent": 0
+                "role": "field",
+                "label": "existing .cadre/",
+                "text": "none",
+                "indent": 2
               },
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "User setup (names only):",
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  plugins: 0",
-                "indent": 0
+                "role": "field",
+                "label": "plugins",
+                "text": "0",
+                "indent": 2
               },
               {
                 "role": "plain",
@@ -1950,7 +1957,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "title": null,
             "rows": [
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "Repo scan (read-only):",
                 "indent": 0
               },
@@ -1965,19 +1972,21 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  existing .cadre/: none",
-                "indent": 0
+                "role": "field",
+                "label": "existing .cadre/",
+                "text": "none",
+                "indent": 2
               },
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "User setup (names only):",
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  plugins: 0",
-                "indent": 0
+                "role": "field",
+                "label": "plugins",
+                "text": "0",
+                "indent": 2
               },
               {
                 "role": "plain",
@@ -1990,13 +1999,15 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "warning: could not list the repo root (treated as unknown)",
+                "role": "field",
+                "label": "warning",
+                "text": "could not list the repo root (treated as unknown)",
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "warning: MCP servers disabled for this project could not be checked (~/.claude.json was not read).",
+                "role": "field",
+                "label": "warning",
+                "text": "MCP servers disabled for this project could not be checked (~/.claude.json was not read).",
                 "indent": 0
               }
             ]
@@ -3000,7 +3011,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "title": null,
             "rows": [
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "Repo scan (read-only):",
                 "indent": 0
               },
@@ -3015,19 +3026,21 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  existing .cadre/: none",
-                "indent": 0
+                "role": "field",
+                "label": "existing .cadre/",
+                "text": "none",
+                "indent": 2
               },
               {
-                "role": "plain",
+                "role": "heading",
                 "text": "User setup (names only):",
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "  plugins: 0",
-                "indent": 0
+                "role": "field",
+                "label": "plugins",
+                "text": "0",
+                "indent": 2
               },
               {
                 "role": "plain",
@@ -3040,8 +3053,9 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "warning: could not list the repo root (treated as unknown)",
+                "role": "field",
+                "label": "warning",
+                "text": "could not list the repo root (treated as unknown)",
                 "indent": 0
               }
             ]

@@ -164,13 +164,15 @@ function withHints(state: InitState, history: HistoryScan | 'skipped'): InitStat
 /**
  * The scan skipped with `note` logged as it is: nothing was asked and no transcript was read. No history question
  * shows the scan summary and its warnings (scanContext), so they fold into the questions of the stage that asks next,
- * the roles (D-302).
+ * the roles (D-302), with the scan block's structured rows, so the pane draws its headings, fields and warning fields
+ * as the history question does (D-313, N-03).
  */
 function skippedWith(state: InitState, note: string): InitState {
   const { gathered, locations } = state.draft
   if (gathered === undefined || locations === undefined) return stageFailed(state)
   const scan = scanContext(locations, gathered, listWordsOf(state.surface))
-  const fold: Output = { kind: 'fold', title: PANE_TITLES.scan, lines: scan.lines }
+  const rows = (scan.rows ?? []).flatMap(section => section.rows)
+  const fold: Output = { kind: 'fold', title: PANE_TITLES.scan, lines: scan.lines, rows }
 
   return withHints(withOutputs(state, [{ kind: 'log', text: note }, fold]), 'skipped')
 }
