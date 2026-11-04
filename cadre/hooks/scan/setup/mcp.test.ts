@@ -145,6 +145,17 @@ describe('desktop app connectors (R2)', () => {
     expect(scan.isMcpPartial).toBe(false)
   })
 
+  test('a connector stays left out, never joined to a claude.ai connector of ~/.claude.json (D-331)', async () => {
+    const claudeJson = JSON.stringify({ claudeAiMcpEverConnected: ['claude.ai Gmail'] })
+    const tools = [{ name: `mcp__${CONNECTOR_UUID}__x` }]
+    const world = memWorld({ tools, files: { [CLAUDE_JSON_PATH]: claudeJson } })
+    const scan = await scanOf(world, true)
+    expect(scan.mcp).toEqual([{ name: 'claude_ai_Gmail', source: 'user-config' }])
+    expect(scan.warnings).toEqual([
+      'left out 1 desktop app connector (role sessions run in the terminal, where connectors are claude_ai_* servers)',
+    ])
+  })
+
   test('one connector is counted in the singular, and a session with none gets no such line', async () => {
     const one = await scanOf(memWorld({ tools: [{ name: `mcp__${CONNECTOR_UUID}__x` }] }), true)
     expect(one.warnings).toEqual([

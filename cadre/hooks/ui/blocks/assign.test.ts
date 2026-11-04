@@ -73,10 +73,27 @@ describe('MCP server contexts (D-211)', () => {
     })
   })
 
-  test('a server the session lists no tool for says so, and no recommendation reads none', () => {
+  test('a server the session lists no tool for reads not connected, and no recommendation reads none (D-317)', () => {
     const sentry = mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS)
-    expect(sentry.lines).toEqual(['Source: session', 'Tools: none listed', 'Recommended: none'])
+    expect(sentry.lines).toEqual(['Source: session', 'Tools: not connected, tools unknown', 'Recommended: none'])
     expect(sentry).toMatchObject({ summary: 'Recommended: none' })
+    expect(sentry.rows?.[0]?.rows[1]).toEqual({
+      role: 'field',
+      label: 'Tools',
+      text: 'not connected, tools unknown',
+      indent: 0,
+    })
+  })
+
+  test('a claude_ai_ server reads claude.ai whatever list found it (D-317, D-331)', () => {
+    const refs: readonly McpRef[] = [
+      { name: 'claude_ai_Gmail', source: 'user-config' },
+      { name: 'claude_ai_Notion', source: 'project' },
+      { name: 'claude_ai_Slack', source: 'session' },
+    ]
+    expect(refs.map(mcpSourceText)).toEqual(['claude.ai', 'claude.ai', 'claude.ai'])
+    const gmail = mcpServerContext({ name: 'claude_ai_Gmail', source: 'user-config' }, TOOLS, [], SCREEN_LIST_WORDS)
+    expect(gmail.lines).toEqual(['Source: claude.ai', 'Tools: not connected, tools unknown', 'Recommended: none'])
   })
 
   test('50 tools show 12 names, then how many more (T-02.1-73); a name never adds a line (T-02.1-71)', () => {

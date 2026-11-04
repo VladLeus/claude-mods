@@ -57,6 +57,20 @@ function serverRows(source: string, tools: string, roleIds: string): unknown {
   return [{ title: null, rows }]
 }
 
+/** The tools line of a server the session lists no tool for (D-317). */
+const NOT_CONNECTED_LINE = 'Tools: not connected, tools unknown'
+
+/** serverRows for a server the session lists no tool for: its tools are a field that says so (D-317). */
+function notConnectedRows(source: string, roleIds: string): unknown {
+  const rows = [
+    { role: 'field', label: 'Source', text: source, indent: 0 },
+    { role: 'field', label: 'Tools', text: 'not connected, tools unknown', indent: 0 },
+    { role: 'recommended', label: 'Recommended', text: roleIds, indent: 0 },
+  ]
+
+  return [{ title: null, rows }]
+}
+
 /**
  * The rows of a skill group question's context (D-311, D-313): the group's recommended roles, then each skill as its
  * item rows, `name → none` and its description, or the placeholder when it has none.
@@ -104,21 +118,21 @@ describe('assignmentStep', () => {
    */
   const JIRA_CONTEXT = {
     title: 'MCP: jira',
-    lines: ['Source: session', 'Tools: none listed', 'Recommended: pm, tl'],
+    lines: ['Source: session', NOT_CONNECTED_LINE, 'Recommended: pm, tl'],
     kind: 'mcp-server',
     // A pane surface asks each question with its summary, the roles recommended for it, in place of the context line
     // (D-310).
     summary: 'Recommended: pm, tl',
     pane: { asked: JIRA_ASKED, text: withContext(JIRA_QUESTION, 'Recommended: pm, tl') },
-    rows: serverRows('session', 'Tools: none listed', 'pm, tl'),
+    rows: notConnectedRows('session', 'pm, tl'),
   }
   const SENTRY_CONTEXT = {
     title: 'MCP: sentry',
-    lines: ['Source: session', 'Tools: none listed', 'Recommended: none'],
+    lines: ['Source: session', NOT_CONNECTED_LINE, 'Recommended: none'],
     kind: 'mcp-server',
     summary: 'Recommended: none',
     pane: { asked: SENTRY_ASKED, text: withContext(SENTRY_QUESTION, 'Recommended: none') },
-    rows: serverRows('session', 'Tools: none listed', 'none'),
+    rows: notConnectedRows('session', 'none'),
   }
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
@@ -375,9 +389,9 @@ describe('the assign stage (D-230)', () => {
     const state = nextStage(entry, { kind: 'answer', text: 'Go one by one' })
     const sentence = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
     const question = withContext(sentence, mcpContextLine(roles))
-    const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
+    const lines = ['Source: session', NOT_CONNECTED_LINE, 'Recommended: none']
     const pane = { asked: question, text: withContext(sentence, 'Recommended: none') }
-    const rows = serverRows('session', 'Tools: none listed', 'none')
+    const rows = notConnectedRows('session', 'none')
     const context = { title: 'MCP: sentry', lines, kind: 'mcp-server', summary: 'Recommended: none', pane, rows }
     const ask = { question, spec: { options: ['Yes', 'No'], header: 'MCP 1/1', context, acceptsTyped: true } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
