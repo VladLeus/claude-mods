@@ -187,11 +187,28 @@ describe('own skill lines and their caps (#163)', () => {
     expect(ownSkillsContext([wide], [], 1, 0).lines).toEqual([wide])
   })
 
-  test('a purpose is redacted before its 120 cap: a key across the cap shows no prefix of it', () => {
+  test('a purpose of 230 characters is shown whole in the line and the rows, a key in it hidden (D-312, D-330)', () => {
     const key = ['sk', 'FAKE0123456789abcdef'].join('-')
-    const skill: SkillLine = { name: 'deploy', purpose: `${'x'.repeat(110)} ${key} tail`, uses: '', recommended: [] }
-    const [line = ''] = skillContext(skill, 1, 1).lines
-    expect([line.includes(key.slice(0, 8)), line.includes('[hidden]')]).toEqual([false, true])
+    const words = 'word '.repeat(40)
+    const purpose = `${words}${key} sevens`
+    const skill: SkillLine = { name: 'deploy', purpose, uses: '', recommended: [] }
+    const shownPurpose = `${words}[hidden] sevens.`
+    const context = skillContext(skill, 1, 1)
+    expect([Array.from(purpose).length, context.lines]).toEqual([
+      230,
+      [`deploy: ${shownPurpose} Recommended: none.`],
+    ])
+    expect(context.rows?.[0]?.rows[1]).toEqual({ role: 'description', text: shownPurpose, indent: 4 })
+  })
+
+  test('the pane wraps a long description under its item with a hanging indent, never cutting it (D-312)', () => {
+    const purpose = 'word '.repeat(46).trim()
+    const rows = skillContext({ name: 'deploy', purpose, uses: '', recommended: [] }, 1, 1).rows ?? []
+    const drawn = paneDrawn({ title: 'T', summary: null, rows, lines: [] }, 60)
+      .slice(2)
+      .map(row => row.spans.map(span => span.text).join(''))
+    expect(drawn.every(row => row.startsWith('    ') && Array.from(row).length <= 60)).toBe(true)
+    expect(drawn.join(' ').split(' ').filter(word => word !== '')).toEqual(`${purpose}.`.split(' '))
   })
 })
 

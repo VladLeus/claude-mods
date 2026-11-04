@@ -611,3 +611,15 @@ describe('instructionRows (D-311, D-313)', () => {
     expect([item?.label, about?.text]).toEqual([`Deploy token=${REDACTED}`, `Uses token=${REDACTED}`])
   })
 })
+
+describe('descriptions never cut (D-312, D-330)', () => {
+  test('a memory summary of 230 characters is shown whole in its line and in its rows', () => {
+    const summary = `${'word '.repeat(45)}tails`
+    const context = memoryContext(memory('M1', 'm.md', summary), [], 1, 1)
+    expect([Array.from(summary).length, context.lines[0], context.rows?.[0]?.rows[1]?.text]).toEqual([
+      230,
+      `m.md: ${summary}`,
+      summary,
+    ])
+  })
+})

@@ -31,17 +31,19 @@ describe('skill purpose (D-139)', () => {
     ])
   })
 
-  test('a purpose is cut to 120 code points, the ellipsis included; one of 120 is kept whole', () => {
+  test('a purpose is kept whole up to 240 code points and cut there, the ellipsis included (D-330)', () => {
     const smile = String.fromCodePoint(0x1f600)
     const found = projectCommands([
-      { name: 'exact', source: 'user', description: 'x'.repeat(120) },
-      { name: 'long', source: 'user', description: 'y'.repeat(121) },
-      { name: 'wide', source: 'user', description: smile.repeat(121) },
+      { name: 'a230', source: 'user', description: 'w'.repeat(230) },
+      { name: 'exact', source: 'user', description: 'x'.repeat(240) },
+      { name: 'long', source: 'user', description: 'y'.repeat(241) },
+      { name: 'wide', source: 'user', description: smile.repeat(241) },
     ])
     expect(found.map(skill => skill.purpose)).toEqual([
-      'x'.repeat(120),
-      `${'y'.repeat(119)}…`,
-      `${smile.repeat(119)}…`,
+      'w'.repeat(230),
+      'x'.repeat(240),
+      `${'y'.repeat(239)}…`,
+      `${smile.repeat(239)}…`,
     ])
   })
 

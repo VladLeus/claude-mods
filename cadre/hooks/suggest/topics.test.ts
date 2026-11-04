@@ -59,21 +59,21 @@ describe('parseTopics', () => {
     ])
   })
 
-  test('a blank or long title or summary gives its error; 60 and 160 code points are kept', () => {
+  test('a blank or long title or summary gives its error; 60 and 240 code points are kept (D-330)', () => {
     const reply = topicsReply([
-      [' ', 's'.repeat(161), ['P1']],
+      [' ', 's'.repeat(241), ['P1']],
       ['t'.repeat(61), '', ['P2']],
     ])
     expect(errorsOf(parseTopics(reply, ['P1', 'P2']))).toEqual([
       'topic 1 has a blank title',
-      'topic 1 has a summary over 160 characters',
+      'topic 1 has a summary over 240 characters',
       'topic 2 has a title over 60 characters',
       'topic 2 has a blank summary',
     ])
-    const longest = topicsReply([['t'.repeat(60), 's'.repeat(160), ['P1']]])
+    const longest = topicsReply([['t'.repeat(60), 's'.repeat(240), ['P1']]])
     expect(parseTopics(longest, ['P1'])).toEqual({
       kind: 'ok',
-      topics: [{ id: 'T1', title: 't'.repeat(60), summary: 's'.repeat(160), partIds: ['P1'] }],
+      topics: [{ id: 'T1', title: 't'.repeat(60), summary: 's'.repeat(240), partIds: ['P1'] }],
     })
   })
 
@@ -124,7 +124,7 @@ describe('instruction prompts (G-02-1f)', () => {
     expect(TOPICS_SYSTEM).toContain('{"topics":[{"title":"...","summary":"...","parts":["P1"]}]}')
     expect(TOPICS_SYSTEM).toContain('exactly one topic')
     expect(TOPICS_SYSTEM).toContain('at most 60 characters')
-    expect(TOPICS_SYSTEM).toContain('at most 160')
+    expect(TOPICS_SYSTEM).toContain('at most 240')
     expect(TOPICS_SYSTEM).toContain('across files')
   })
 

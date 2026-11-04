@@ -66,11 +66,16 @@ describe('memoryIndex', () => {
     ])
   })
 
-  test('a summary is cleaned and cut to 160 code points; a file named twice keeps its first line', () => {
-    const long = `- [A](a.md) \u2014 Sec${BIDI_OVERRIDE}ret ${'s'.repeat(200)}`
+  test('a summary is cleaned and cut to 240 code points; a file named twice keeps its first line (D-330)', () => {
+    const long = `- [A](a.md) \u2014 Sec${BIDI_OVERRIDE}ret ${'s'.repeat(300)}`
     const index = memoryIndex(`${long}\n- [A again](a.md) - second`)
-    expect(index.get('a.md')).toBe(`Secret ${'s'.repeat(152)}\u2026`)
+    expect(index.get('a.md')).toBe(`Secret ${'s'.repeat(232)}\u2026`)
     expect(index.size).toBe(1)
+  })
+
+  test('a summary of 230 code points is kept whole, as the pane shows it (D-312, D-330)', () => {
+    const summary = 's'.repeat(230)
+    expect(memoryIndex(`- [A](a.md) - ${summary}`).get('a.md')).toBe(summary)
   })
 })
 
