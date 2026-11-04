@@ -656,10 +656,11 @@ describe('the TUI-default preview rows (WD-S3)', () => {
     }
   }
 
-  test('a 22-line context shows 20 lines and +2 more above, the title on the 22nd row; 21 lines fit whole', () => {
+  test('with the title and marker rows counted, 21 lines show 19 and +2 more above; 20 fit whole (D-260)', () => {
     const cases: readonly (readonly [number, readonly string[]])[] = [
-      [22, [...linesContext(20).lines, '+2 more above']],
-      [21, linesContext(21).lines],
+      [22, [...linesContext(19).lines, '+3 more above']],
+      [21, [...linesContext(19).lines, '+2 more above']],
+      [20, linesContext(20).lines],
     ]
     for (const [count, shown] of cases) {
       const context = linesContext(count)
@@ -668,6 +669,24 @@ describe('the TUI-default preview rows (WD-S3)', () => {
       const [previews = []] = optionPreviews(plan?.questions ?? undefined)
       expect([count, previews[0]]).toEqual([count, previewMarkdown([{ ...context, lines: shown }])])
     }
+  })
+})
+
+describe('the TUI-default preview by wrapped rows (D-260)', () => {
+  test('a preview keeps the whole lines whose rows at its columns fit with the title and marker rows', () => {
+    // 15 lines of 100 characters and no space: three rows each at 40 columns.
+    const lines = Array.from({ length: 15 }, (_, at) => String(at).padStart(2, '0').padEnd(100, 'x'))
+    const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '15 lines' }
+    const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context, acceptsTyped: false }
+    const plan = dialogPlan([PICK_QUESTION], open, 'tui-default', null, 40, 'Change it')
+    const [previews = []] = optionPreviews(plan?.questions ?? undefined)
+    const shown = [...lines.slice(0, 6), '+9 more above']
+    expect(previews[0]).toBe(previewMarkdown([{ ...context, lines: shown }], 40))
+    const rows = 1 + shown.flatMap(line => wrapLine(line, 40)).length
+    expect([rows <= PREVIEW_LINE_ROWS, rows + wrapLine(lines[6] ?? '', 40).length > PREVIEW_LINE_ROWS]).toEqual([
+      true,
+      true,
+    ])
   })
 })
 
@@ -691,9 +710,14 @@ describe('tuiTranscriptRows (WD-S4)', () => {
   })
 
   test('a context that fits the preview, the Review and no context give no rows', () => {
-    expect(tuiTranscriptRows(linesContext(PREVIEW_LINE_ROWS), null)).toEqual([])
+    expect(tuiTranscriptRows(linesContext(PREVIEW_LINE_ROWS - 1), null)).toEqual([])
     expect(tuiTranscriptRows(linesContext(40, 'review'), null)).toEqual([])
     expect(tuiTranscriptRows(null, linesContext(30))).toEqual([])
+  })
+
+  test('a context of PREVIEW_LINE_ROWS lines overflows, its title row counted (D-260)', () => {
+    const context = linesContext(PREVIEW_LINE_ROWS)
+    expect(tuiTranscriptRows(context, null)).toEqual(['Lines', ...context.lines])
   })
 
   test('the context printed last, by its title and lines, gives no rows; a changed one gives them all', () => {
