@@ -144,7 +144,7 @@ describe('previewMarkdown (D3)', () => {
   })
 
   test('every opened fence is closed and the preview stays under the cap, however many blocks there are', () => {
-    const keys: PaneKey[] = ['scan', 'history', 'roles', 'recommendations', 'review', 'env', 'notes']
+    const keys: PaneKey[] = ['scan', 'history', 'roles', 'recommendations', 'review', 'env', 'instructions']
     const blocks = keys.map(key => shownBlock(key, key, longLines(key, 9)))
     const preview = previewMarkdown(blocks)
     const rows = preview.split('\n')

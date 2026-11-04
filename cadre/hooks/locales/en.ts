@@ -376,11 +376,9 @@ export const EN = Object.freeze({
   'ui.paneTitle.recommendations': 'Recommendations',
   'ui.paneTitle.review': 'Review',
   'ui.paneTitle.env': 'Env variables',
-  'ui.paneTitle.notes': 'Notes',
   'ui.paneTitle.instructions': 'Instruction parts',
   'ui.paneTitle.skills': 'Your own skills',
   'ui.paneTitle.improver': 'Improver changes',
-  'ui.paneTitle.loader': 'Working',
 
   'ui.chip.claudeJson': 'claude.json',
   'ui.chip.history': 'History',
@@ -532,8 +530,6 @@ export const EN = Object.freeze({
 
   'ui.item.arrow': ' → ',
   'ui.item.noDescription': 'no description',
-  'ui.item.mcpDescription.one': '{source}, {count} tool',
-  'ui.item.mcpDescription.other': '{source}, {count} tools',
 
   'ui.paging.marker': 'page {number} of {count}',
   'ui.paging.lastPage': 'Last page',

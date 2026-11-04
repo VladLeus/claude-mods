@@ -21,7 +21,6 @@ import {
   paneQuestionText,
   quotedLabels,
   refusalLine,
-  showBlock,
   withContext,
 } from './ask'
 import type { ChoiceAsk } from './ask'
@@ -102,11 +101,9 @@ describe('init pane (G-02-1)', () => {
       recommendations: 'Recommendations',
       review: 'Review',
       env: 'Env variables',
-      notes: 'Notes',
       instructions: 'Instruction parts',
       skills: 'Your own skills',
       improver: 'Improver changes',
-      loader: 'Working',
     })
     expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
@@ -306,15 +303,6 @@ describe('choiceAnswer (D-230)', () => {
   test("a dismissal cancels with the question's own dismissed reason at any try", () => {
     expect(choiceAnswer(STAGE_ASK, { tries: 1 }, null)).toEqual({ kind: 'cancelled', reason: DISMISSED })
     expect(choiceAnswer(STAGE_ASK, { tries: MAX_ASKS }, null)).toEqual({ kind: 'cancelled', reason: DISMISSED })
-  })
-})
-
-describe('showBlock (#163)', () => {
-  test('each line is cleaned and kept whole, never cut at 240 code points; the pane wraps it (D-231)', async () => {
-    const run = memIo(memWorld({}), [])
-    const wide = 'w'.repeat(300)
-    await showBlock(run.io, 'notes', [wide, `a${BIDI_OVERRIDE}b`])
-    expect(run.shown.map(block => block.lines)).toEqual([[wide, 'ab']])
   })
 })
 

@@ -340,17 +340,7 @@ export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   recommendations: t('ui.paneTitle.recommendations'),
   review: t('ui.paneTitle.review'),
   env: t('ui.paneTitle.env'),
-  notes: t('ui.paneTitle.notes'),
   instructions: t('ui.paneTitle.instructions'),
   skills: t('ui.paneTitle.skills'),
   improver: t('ui.paneTitle.improver'),
-  loader: t('ui.paneTitle.loader'),
 })
-
-/**
- * Shows lines as one side-pane block (D-133): each line cleaned, not cut (clean with UNCUT, #163), so a scanned or
- * typed value cannot add a row or hide text, and the pane wraps a long line to its width (D-231).
- */
-export async function showBlock(io: InitIo, key: PaneKey, lines: readonly string[]): Promise<void> {
-  await io.show({ key, title: PANE_TITLES[key], lines: lines.map(line => clean(line, UNCUT)) })
-}

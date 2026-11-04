@@ -570,11 +570,9 @@ export type PaneKey =
   | 'recommendations'
   | 'review'
   | 'env'
-  | 'notes'
   | 'instructions'
   | 'skills'
   | 'improver'
-  | 'loader'
 
 /** One block shown through InitIo.show (D-133, D-326): its kind, its bold title, and one row per line. */
 export type ShownBlock = {
