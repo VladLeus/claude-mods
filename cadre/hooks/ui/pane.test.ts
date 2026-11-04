@@ -320,7 +320,9 @@ describe('paneSpans (D1)', () => {
 
 /** The question cadre has open, asked with `context` (null for none), as register keeps it (D-203). */
 function openWith(context: AskContext | null): OpenQuestion {
-  return { question: 'Which roles get the sentry MCP server?', header: 'MCP', context, acceptsTyped: true }
+  const question = 'Which roles get the sentry MCP server?'
+
+  return { question, header: 'MCP', context, acceptsTyped: true, takesNote: true }
 }
 
 /** The pane state with `open` and `loader` (D-303). */

@@ -3803,7 +3803,7 @@ function firstPageSpec(lines: readonly string[], asked: string | undefined, summ
   const pane = { asked, text: `${withContext(REVIEW_QUESTION, summary)}\n${title}` }
   const context = { title, lines: lines.slice(0, size), kind: 'review', summary, pane }
 
-  return { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', context }
+  return { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', takesNote: true, context }
 }
 
 /** A user-level GSD install found but not proven, as in the D-243 spec of runInit (WF-S2). */
@@ -6320,7 +6320,7 @@ describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () =>
     await runInit(run.io, { dryRun: true })
     const contexts = run.specs.flatMap(({ context }) => (context === undefined || context === null ? [] : [context]))
     const blocks = contexts.map(context => {
-      const open = { question: '', header: '', context, acceptsTyped: false }
+      const open = { question: '', header: '', context, acceptsTyped: false, takesNote: false }
 
       return { context, block: paneBlockOf({ open, loader: null }) }
     })

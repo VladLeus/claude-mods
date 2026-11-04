@@ -293,7 +293,8 @@ describe('every other question over the cap (D-329, D-335)', () => {
       for (const spec of run.specs) {
         expect(spec.options.length >= 2 && spec.options.length <= MAX_DIALOG_OPTIONS).toBe(true)
         const context = spec.context ?? null
-        const block = paneBlockOf({ open: { question: '', header: '', context, acceptsTyped: false }, loader: null })
+        const open = { question: '', header: '', context, acceptsTyped: false, takesNote: false }
+        const block = paneBlockOf({ open, loader: null })
         const size = block === null ? { rows: 0, chars: 0 } : frameSize(block, null)
         expect(size.rows <= MAX_PANE_FRAME_ROWS && size.chars <= MAX_PANE_FRAME_CHARS).toBe(true)
       }

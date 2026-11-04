@@ -167,6 +167,17 @@ const PICK_QUESTION = {
   ],
 }
 
+/**
+ * PICK_QUESTION as register keeps it open, with no context: it takes a typed answer, and so a note (D-234, D-270).
+ */
+const PICK_OPEN: OpenQuestion = {
+  question: 'Pick one?',
+  header: 'Pick',
+  context: null,
+  acceptsTyped: true,
+  takesNote: true,
+}
+
 /** Questions whose shape withPreviews cannot check (D3, A1): a call that asks them passes through unchanged. */
 const UNCHECKED_QUESTIONS: readonly unknown[] = [
   'x',
@@ -339,15 +350,15 @@ describe('askRewrite (A1, A2, D-203)', () => {
   }
 
   test('a question with no context gives null, so the call passes through with no preview (D-203)', () => {
-    expect(askRewrite([PICK_QUESTION], null, true)).toBe(null)
+    expect(askRewrite([PICK_QUESTION], null, true, true)).toBe(null)
   })
 
   test('a shape withPreviews cannot check gives null', () => {
-    for (const questions of UNCHECKED_QUESTIONS) expect(askRewrite(questions, CONTEXT, true)).toBe(null)
+    for (const questions of UNCHECKED_QUESTIONS) expect(askRewrite(questions, CONTEXT, true, true)).toBe(null)
   })
 
   test('only multi-select questions give null', () => {
-    expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], CONTEXT, true)).toBe(null)
+    expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], CONTEXT, true, true)).toBe(null)
   })
 
   test('a single-select question gets the preview on every option, Describe your own and the hint (R3)', () => {
@@ -355,7 +366,7 @@ describe('askRewrite (A1, A2, D-203)', () => {
     const before = JSON.stringify(questions)
     const preview = previewMarkdown([CONTEXT])
     const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
-    const rewrite = askRewrite(questions, CONTEXT, true)
+    const rewrite = askRewrite(questions, CONTEXT, true, true)
     expect(rewrite?.questions).toEqual([
       {
         ...PICK_QUESTION,
@@ -367,31 +378,35 @@ describe('askRewrite (A1, A2, D-203)', () => {
         ],
       },
     ])
-    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted }])
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted, labels: ['A', 'B'], takesNote: true }])
     expect(JSON.stringify(questions)).toBe(before)
   })
 
   test('the asked entry of a 2-option question pairs its text as asked with the text shown (R3, R4)', () => {
     const shownText = `Type ids as a note (press n).\n${OWN_ANSWER_HINT}`
-    const rewrite = askRewrite([{ ...PICK_QUESTION, question: 'Type ids under Other.' }], CONTEXT, true)
-    expect(rewrite?.asked).toEqual([{ question: 'Type ids under Other.', asked: shownText }])
+    const rewrite = askRewrite([{ ...PICK_QUESTION, question: 'Type ids under Other.' }], CONTEXT, true, true)
+    expect(rewrite?.asked).toEqual([
+      { question: 'Type ids under Other.', asked: shownText, labels: ['A', 'B'], takesNote: true },
+    ])
     expect(rewrite?.questions[0]?.question).toBe(shownText)
   })
 
   test('a 4-option question is asked with the hint line, and its asked entry pairs the two texts', () => {
     const hinted = 'Pick one?\nOr press n, type your own answer, then Enter.'
-    const rewrite = askRewrite([pickWith('C', 'D')], CONTEXT, true)
-    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted }])
+    const rewrite = askRewrite([pickWith('C', 'D')], CONTEXT, true, true)
+    const labels = ['A', 'B', 'C', 'D']
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted, labels, takesNote: true }])
     expect(rewrite?.questions[0]?.question).toBe(hinted)
     expect(rewrite?.questions[0]?.options).toHaveLength(4)
   })
 
   test("a multi-select question among single-select ones is copied unchanged, 'under Other' kept, unasked", () => {
     const multi = { ...PICK_QUESTION, question: 'Which? Type more under Other.', multiSelect: true }
-    const rewrite = askRewrite([PICK_QUESTION, multi], CONTEXT, true)
+    const rewrite = askRewrite([PICK_QUESTION, multi], CONTEXT, true, true)
     expect(rewrite?.questions[1]).toEqual(multi)
     expect(rewrite?.questions[1] === multi).toBe(false)
-    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: `Pick one?\n${OWN_ANSWER_HINT}` }])
+    const asked = `Pick one?\n${OWN_ANSWER_HINT}`
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked, labels: ['A', 'B'], takesNote: true }])
   })
 
   test("every single-select question previews the open question's own context, whatever its header (D-203)", () => {
@@ -400,24 +415,32 @@ describe('askRewrite (A1, A2, D-203)', () => {
       { ...PICK_QUESTION, question: 'Carry?', header: 'Env' },
     ]
     const preview = previewMarkdown([CONTEXT])
-    expect(optionPreviews(askRewrite(questions, CONTEXT, true)?.questions)).toEqual([
+    expect(optionPreviews(askRewrite(questions, CONTEXT, true, true)?.questions)).toEqual([
       [preview, preview, preview],
       [preview, preview, preview],
     ])
   })
 
   test('a question that takes no typed answer is previewed with no Describe your own and no hint (D-234)', () => {
-    const rewrite = askRewrite([PICK_QUESTION], CONTEXT, false)
+    const rewrite = askRewrite([PICK_QUESTION], CONTEXT, false, false)
     const preview = previewMarkdown([CONTEXT])
     expect(optionPreviews(rewrite?.questions)).toEqual([[preview, preview]])
     expect(rewrite?.questions[0]?.question).toBe('Pick one?')
-    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: 'Pick one?' }])
+    const asked = { question: 'Pick one?', asked: 'Pick one?', labels: ['A', 'B'], takesNote: false }
+    expect(rewrite?.asked).toEqual([asked])
+  })
+
+  test('each asked entry carries the labels of its options as asked and whether it takes a note (D-270)', () => {
+    const rewrite = askRewrite([pickWith('C')], CONTEXT, false, true)
+    expect(rewrite?.asked).toEqual([
+      { question: 'Pick one?', asked: 'Pick one?', labels: ['A', 'B', 'C'], takesNote: true },
+    ])
   })
 
   test('each option previews its context wrapped to the width it is given (D-231)', () => {
     const context: AskContext = { title: 'Wide', lines: [WIDE_LINE], kind: 'review', summary: '0 files, 1 role' }
     const preview = previewMarkdown([context], 40)
-    const rewrite = askRewrite([PICK_QUESTION], context, true, 40)
+    const rewrite = askRewrite([PICK_QUESTION], context, true, true, 40)
     expect(optionPreviews(rewrite?.questions)).toEqual([[preview, preview, preview]])
     expect(preview.split('\n').slice(2, -1)).toEqual(wrapLine(WIDE_LINE, 40))
   })
@@ -444,7 +467,7 @@ describe('askRewrite (A1, A2, D-203)', () => {
       { title: 'Git policy', lines: policies, kind: 'git-policy', summary: 'Recommended: commit definitions' },
     ]
     for (const context of contexts) {
-      const rewrite = askRewrite([{ ...PICK_QUESTION, header: context.title }], context, true)
+      const rewrite = askRewrite([{ ...PICK_QUESTION, header: context.title }], context, true, true)
       const [previews = []] = optionPreviews(rewrite?.questions)
       const lines = typeof previews[0] === 'string' ? previews[0].split('\n') : []
       expect([lines, new Set(previews).size]).toEqual([[`**${context.title}**`, '```', ...context.lines, '```'], 1])
@@ -511,17 +534,17 @@ describe('fitPreview (D-228)', () => {
     const context = linesContext(30)
     const fitted = { ...context, lines: fitPreview(context, 5, null).lines }
     const preview = previewMarkdown([fitted])
-    expect(optionPreviews(askRewrite([PICK_QUESTION], context, true, null, 5)?.questions)).toEqual([
+    expect(optionPreviews(askRewrite([PICK_QUESTION], context, true, true, null, 5)?.questions)).toEqual([
       [preview, preview, preview],
     ])
     const whole = previewMarkdown([context])
-    expect(optionPreviews(askRewrite([PICK_QUESTION], context, true)?.questions)).toEqual([[whole, whole, whole]])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], context, true, true)?.questions)).toEqual([[whole, whole, whole]])
   })
 })
 
 describe('answersFromNotes (A3)', () => {
   /** The one question these results answer, asked as the dialog showed it. */
-  const ASKED: readonly AskedQuestion[] = [{ question: 'Q?', asked: 'Q?' }]
+  const ASKED: readonly AskedQuestion[] = [{ question: 'Q?', asked: 'Q?', labels: ['A', 'B'], takesNote: true }]
 
   /** A dialog result that answers Q? with `answer`, with `notes` typed for it when given. */
   function answered(answer: string, notes?: string): Record<string, unknown> {
@@ -543,7 +566,7 @@ describe('answersFromNotes (A3)', () => {
   })
 
   test('the answer is stored under the question as asked, and the text the dialog showed is dropped', () => {
-    const asked = [{ question: 'Q?', asked: 'Q?\nhint' }]
+    const asked = [{ question: 'Q?', asked: 'Q?\nhint', labels: ['C'], takesNote: true }]
     expect(answersFromNotes(asked, { answers: { 'Q?\nhint': 'C' } })).toEqual({ 'Q?': 'C' })
     const noted = { answers: { 'Q?\nhint': 'C' }, annotations: { 'Q?\nhint': { notes: 'mine' } } }
     expect(answersFromNotes(asked, noted)).toEqual({ 'Q?': 'mine' })
@@ -551,7 +574,7 @@ describe('answersFromNotes (A3)', () => {
 
   test("an answer to a question whose 'under Other' was rewritten is stored under the text as asked (R4)", () => {
     const shownText = `Type ids as a note (press n).\n${OWN_ANSWER_HINT}`
-    const asked = [{ question: 'Type ids under Other.', asked: shownText }]
+    const asked = [{ question: 'Type ids under Other.', asked: shownText, labels: ['A'], takesNote: true }]
     expect(answersFromNotes(asked, { answers: { [shownText]: 'A' } })).toEqual({ 'Type ids under Other.': 'A' })
   })
 
@@ -568,11 +591,35 @@ describe('answersFromNotes (A3)', () => {
       expect(answersFromNotes(ASKED, result)).toEqual({ 'Q?': 'B' })
     }
     const inherited = [
-      { question: 'constructor', asked: 'constructor' },
-      { question: 'toString', asked: 'toString' },
+      { question: 'constructor', asked: 'constructor', labels: [], takesNote: true },
+      { question: 'toString', asked: 'toString', labels: [], takesNote: true },
     ]
     const none = answersFromNotes(inherited, { answers: {}, annotations: {} })
     expect(none === null ? null : Object.keys(none)).toEqual([])
+  })
+
+  test('a note naming an option label in any case answers that label, whatever the question (D-270)', () => {
+    const labels = ['Confirm', 'Change something…']
+    const review: AskedQuestion = { question: 'Review?', asked: 'Review?', labels, takesNote: true }
+    const consent: AskedQuestion = { question: 'Read?', asked: 'Read?', labels: ['No', 'Yes'], takesNote: false }
+    const result = {
+      answers: { 'Review?': 'Change something…', 'Read?': 'No' },
+      annotations: { 'Review?': { notes: ' confirm ' }, 'Read?': { notes: 'YES' } },
+    }
+    expect(answersFromNotes([review, consent], result)).toEqual({ 'Review?': 'Confirm', 'Read?': 'Yes' })
+  })
+
+  test('on a question that takes no note any other note is ignored, so the chosen option stands (D-270)', () => {
+    const roles: AskedQuestion = { question: 'Roles?', asked: 'Roles?', labels: ['Use', 'Adjust'], takesNote: false }
+    const result = { answers: { 'Roles?': 'Use' }, annotations: { 'Roles?': { notes: 'add a docs role' } } }
+    expect(answersFromNotes([roles], result)).toEqual({ 'Roles?': 'Use' })
+  })
+
+  test('on a question that takes a note any other note is the answer, as before (D-270)', () => {
+    const labels = ['Type a folder', 'Cancel init']
+    const folder: AskedQuestion = { question: 'Folder?', asked: 'Folder?', labels, takesNote: true }
+    const result = { answers: { 'Folder?': 'Type a folder' }, annotations: { 'Folder?': { notes: ' packages/api ' } } }
+    expect(answersFromNotes([folder], result)).toEqual({ 'Folder?': 'packages/api' })
   })
 
   test('a result whose shape does not validate gives null', () => {
@@ -592,7 +639,7 @@ describe('answersFromNotes (A3)', () => {
   test('the result it reads is never changed', () => {
     const result = { answers: { 'Q?\nhint': 'C', 'Other?': 'X' }, annotations: { 'Q?\nhint': { notes: ' mine ' } } }
     const before = JSON.stringify(result)
-    const answers = answersFromNotes([{ question: 'Q?', asked: 'Q?\nhint' }], result)
+    const answers = answersFromNotes([{ question: 'Q?', asked: 'Q?\nhint', labels: ['C'], takesNote: true }], result)
     expect(answers).toEqual({ 'Other?': 'X', 'Q?': 'mine' })
     expect(JSON.stringify(result)).toBe(before)
     expect(answers === result.answers).toBe(false)
@@ -640,10 +687,13 @@ describe('dialogPlan (WD-S2)', () => {
       for (const { context, acceptsTyped, offersChange, hasMulti } of CASES) {
         const first = offersChange ? pickWith(CHANGE_LABEL) : PICK_QUESTION
         const raw = hasMulti ? [first, MULTI] : [first]
-        const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context, acceptsTyped }
-        const rewrite = askRewrite(raw, context, acceptsTyped, 40, surface === 'tui-default' ? PREVIEW_ROWS : null)
+        const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped, takesNote: acceptsTyped }
+        const rows = surface === 'tui-default' ? PREVIEW_ROWS : null
+        const rewrite = askRewrite(raw, context, acceptsTyped, acceptsTyped, 40, rows)
         const previewed = rewrite === null ? null : { questions: rewrite.questions, notes: rewrite.asked }
-        const noted = offersChange ? { questions: null, notes: [{ question: 'Pick one?', asked: 'Pick one?' }] } : null
+        const labels = ['A', 'B', CHANGE_LABEL]
+        const note = { question: 'Pick one?', asked: 'Pick one?', labels, takesNote: acceptsTyped }
+        const noted = offersChange ? { questions: null, notes: [note] } : null
         const expected = { preview: previewed, note: noted, none: null }[seat]
         expect(dialogPlan(raw, open, surface, placement, 40, CHANGE_LABEL)).toEqual(expected)
         const other = [{ ...first, question: 'Another?' }]
@@ -653,14 +703,23 @@ describe('dialogPlan (WD-S2)', () => {
   })
 
   test('a call whose first question is not the open question, by its exact text, gets no plan (D-239)', () => {
-    const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context: CONTEXT, acceptsTyped: true }
+    const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT }
     for (const raw of [null, [], [{ question: 3, options: [] }], [{ ...PICK_QUESTION, question: 'Pick one? ' }]]) {
       expect(dialogPlan(raw, open, 'tui-default', null, null, CHANGE_LABEL)).toBe(null)
     }
   })
 
+  test('the note of a docked pane pairs the open question with its labels and its takesNote (D-270)', () => {
+    const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT, acceptsTyped: false, takesNote: true }
+    const note = { question: 'Pick one?', asked: 'Pick one?', labels: ['A', 'B', CHANGE_LABEL], takesNote: true }
+    expect(dialogPlan([pickWith(CHANGE_LABEL)], open, 'pane', 'dock', 40, CHANGE_LABEL)).toEqual({
+      questions: null,
+      notes: [note],
+    })
+  })
+
   test('a multi-select question is copied unchanged and has no note', () => {
-    const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context: CONTEXT, acceptsTyped: true }
+    const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT }
     const plan = dialogPlan([PICK_QUESTION, MULTI], open, 'pane', 'inline', null, CHANGE_LABEL)
     expect(plan?.questions?.[1]).toEqual(MULTI)
     expect(plan?.notes.map(note => note.question)).toEqual(['Pick one?'])
@@ -686,7 +745,7 @@ describe('the TUI-default preview rows (WD-S3)', () => {
     ]
     for (const [count, shown] of cases) {
       const context = linesContext(count)
-      const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context, acceptsTyped: false }
+      const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped: false, takesNote: false }
       const plan = dialogPlan([PICK_QUESTION], open, 'tui-default', null, null, 'Change it')
       const [previews = []] = optionPreviews(plan?.questions ?? undefined)
       expect([count, previews[0]]).toEqual([count, previewMarkdown([{ ...context, lines: shown }])])
@@ -699,7 +758,7 @@ describe('the TUI-default preview by wrapped rows (D-260)', () => {
     // 15 lines of 100 characters and no space: three rows each at 40 columns.
     const lines = Array.from({ length: 15 }, (_, at) => String(at).padStart(2, '0').padEnd(100, 'x'))
     const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '15 lines' }
-    const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context, acceptsTyped: false }
+    const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped: false, takesNote: false }
     const plan = dialogPlan([PICK_QUESTION], open, 'tui-default', null, 40, 'Change it')
     const [previews = []] = optionPreviews(plan?.questions ?? undefined)
     const shown = [...lines.slice(0, 6), '+9 more above']

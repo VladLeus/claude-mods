@@ -1918,17 +1918,18 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   /**
    * Has the host read `question` as the question cadre has open (D-239), with `context` as its own context (D-203),
-   * one that takes a typed answer unless `acceptsTyped` says not (D-234): every read of cadre's pane state gives it
-   * open with no loader (D-303), so a dialog that asks it is cadre's own and the hook may rewrite it, as init's own
-   * questions are.
+   * one that takes a typed answer unless `acceptsTyped` says not (D-234) and a note when it takes a typed answer or
+   * `takesNote` says so (D-270): every read of cadre's pane state gives it open with no loader (D-303), so a dialog
+   * that asks it is cadre's own and the hook may rewrite it, as init's own questions are.
    */
   function openAsCadre(
     on: HostOn,
     question: string,
     context: AskContext | null = PICK_CONTEXT,
     acceptsTyped = true,
+    takesNote = acceptsTyped,
   ): void {
-    const open = { question, header: null, context, acceptsTyped }
+    const open = { question, header: null, context, acceptsTyped, takesNote }
     on('state.get', async (_$, e, next) => {
       if (e.plugin !== 'cadre' || e.key !== 'pane') return next(e)
 
@@ -2223,7 +2224,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('on a pane surface a note typed with Change something… is the answer (ASKED #24)', WITH_ASKER, async ($, on) => {
     const log = newLog()
-    openAsCadre(on, 'Review it?', PICK_CONTEXT, false)
+    openAsCadre(on, 'Review it?', PICK_CONTEXT, false, true)
     const answers = { ...INIT_ANSWERS, 'Review it?': 'Change something…' }
     fakeHost(on, initWorld({ answers, notes: { 'Review it?': ' roles ' } }), log)
     const ask = await seatAfterRun($, DOCK_PANE)
@@ -2800,6 +2801,15 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const at = askHeads(log).findIndex(ask => ask.startsWith(`ask ${dir}`))
     expect([at >= 0, log.askOptions[at]]).toEqual([true, ['Type a folder', 'Cancel init']])
     expect(out.text.split('\n')).toContain('Launchers start in: packages/api/ under the git root')
+  })
+
+  test('a stray note leaves the consent as chosen; a label typed as a Review note picks it (D-270)', async ($, on) => {
+    const log = newLog()
+    const answers = { ...INIT_ANSWERS, 'Review the plan': 'Change something…' }
+    fakeHost(on, initWorld({ answers, notes: { 'Read ~/.claude.json': 'sure', 'Review the plan': ' confirm ' } }), log)
+    const out = await $.command.run(TUI_RUN)
+    expect(askHeads(log).filter(ask => ask === `ask ${CLAUDE_JSON_QUESTION}`)).toHaveLength(1)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
   test('with no presentation, or in fullscreen, the terminal opens the pane as before (D-208)', async ($, on) => {
