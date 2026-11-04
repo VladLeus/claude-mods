@@ -982,3 +982,20 @@ export function manyNamesWorld(over: Partial<MemWorld> = {}): MemWorld {
 
   return gitWorld({ tools, ancestors, commands, ...over })
 }
+
+/** The description of each own skill of oversizeWorld: 230 characters, under the scan's cap of 240 (D-330). */
+export const OVERSIZE_DESCRIPTION = `${'word '.repeat(45)}tails`
+
+/**
+ * gitWorld larger than one pane frame can draw (D-305, D-306): forty own skills, oversize01 to oversize40, each with
+ * OVERSIZE_DESCRIPTION, and thirty session MCP servers, mcp01 to mcp30, with one tool each, so the own-skills entry
+ * is paged on a pane surface. It is no golden world. `over` changes the fields it names.
+ */
+export function oversizeWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const named = (stem: string, count: number): string[] =>
+    Array.from({ length: count }, (_, at) => `${stem}${String(at + 1).padStart(2, '0')}`)
+  const tools = named('mcp', 30).map(server => ({ name: `mcp__${server}__search`, description: 'Search.', mcp: true }))
+  const commands = named('oversize', 40).map(name => ({ name, source: 'user', description: OVERSIZE_DESCRIPTION }))
+
+  return gitWorld({ tools, commands, ...over })
+}

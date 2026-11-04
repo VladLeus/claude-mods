@@ -348,6 +348,18 @@ describe('paneBlockOf (D-299, D-301, D-303)', () => {
     })
   })
 
+  test("a paged context gives its page too, whose marker the pane draws as the frame's last row (D-306, D-334)", () => {
+    const rows: readonly ContextSection[] = [{ title: null, rows: [{ role: 'plain', text: 'x', indent: 0 }] }]
+    const page = { index: 1, count: 3 }
+    expect(paneBlockOf(stateOf(openWith({ ...context, rows, page })))).toEqual({
+      title: 'MCP: sentry',
+      summary: 'Recommended: none',
+      rows,
+      lines,
+      page,
+    })
+  })
+
   test('an open question with no context draws nothing, never a block of an earlier step (D-299)', () => {
     expect(paneBlockOf(stateOf(openWith(null)))).toBe(null)
     expect(paneBlockOf(stateOf(openWith(null), loader))).toBe(null)

@@ -56,7 +56,14 @@ import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
-import { beOnlyWorld, GOLDEN_WORLDS, infraPluginWorld, manyNamesWorld, tableMatchWorld } from '../golden/worlds'
+import {
+  beOnlyWorld,
+  GOLDEN_WORLDS,
+  infraPluginWorld,
+  manyNamesWorld,
+  oversizeWorld,
+  tableMatchWorld,
+} from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
 import { PANE_LIST_WORDS, t } from '../locales/t'
@@ -1320,7 +1327,8 @@ describe('instruction parts (G-02-1f)', () => {
     const rows = [{ title: null, rows: PARTS_ROWS }]
     const parts = { title: 'Instruction parts', lines, kind: 'instructions', summary: entrySummary }
     const entry = { ...parts, pane: entryPane, rows }
-    expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions', context: entry })
+    const pageOptions = { always: ['Go part by part', 'Whole files'], dropped: [] }
+    expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions', pageOptions, context: entry })
   })
 
   test('no instruction file is read before the content consent answer; the global file once (T-02-60)', async () => {
@@ -6246,6 +6254,25 @@ describe('no stand-alone pane block: what it held folds into the next question (
       [PANE_TITLES.instructions, READ_HEADING_ROW],
       true,
       true,
+    ])
+  })
+})
+
+describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () => {
+  /** The model's replies: no server recommended, the first own skill recommended for the PM. */
+  const replies = ['{"servers":{}}', '{"skills":{"S1":["pm"]},"groups":{}}']
+
+  /** The init answers, the own skills' recommendations accepted. */
+  const answers = { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations' }
+
+  test('the own-skills entry is asked a page at a time, Accept recommendations on its last page only', async () => {
+    const run = memIo(oversizeWorld({ replies }), answers)
+    await runInit(run.io, { dryRun: true })
+    const entries = run.specs.filter((_, at) => (run.asked[at] ?? '').startsWith(OWN_SKILLS_ENTRY_PREFIX))
+    expect(entries.map(spec => [spec.context?.page, spec.options])).toEqual([
+      [{ index: 0, count: 3 }, ['Next page', 'Go one by one', 'Whole group']],
+      [{ index: 1, count: 3 }, ['Next page', 'Previous page', 'Go one by one', 'Whole group']],
+      [{ index: 2, count: 3 }, ['Previous page', 'Accept recommendations', 'Go one by one', 'Whole group']],
     ])
   })
 })

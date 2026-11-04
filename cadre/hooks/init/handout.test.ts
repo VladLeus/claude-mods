@@ -112,7 +112,11 @@ describe('handoutStep', () => {
     const run = handedOut(ITEMS, ['Accept recommendations'])
     expect(run.asked).toEqual([ENTRY_ASKED])
     const options = ['Accept recommendations', 'Go part by part', 'Whole files']
-    expect(run.specs).toEqual([{ options, header: 'Instructions', context: withPane(ENTRY_CONTEXT, ENTRY) }])
+    // Paged on a pane surface, the entry keeps one by one and the whole group on every page (D-306).
+    const pageOptions = { always: ['Go part by part', 'Whole files'], dropped: [] }
+    expect(run.specs).toEqual([
+      { options, header: 'Instructions', pageOptions, context: withPane(ENTRY_CONTEXT, ENTRY) },
+    ])
   })
 
   test('Accept gives each item its recommended roles, one with none to no role, and asks nothing more', () => {
@@ -240,9 +244,10 @@ describe('the hand-out cursor (D-230)', () => {
   test('handoutEnter asks the entry question with its context line, the three answers in order and its chip', () => {
     const first = handoutEnter(ENTRY, ITEMS, ROLES, DISMISSED)
     const options = ['Accept recommendations', 'Go part by part', 'Whole files']
+    const pageOptions = { always: ['Go part by part', 'Whole files'], dropped: [] }
     expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
       ENTRY_ASKED,
-      { options, header: 'Instructions', context: withPane(ENTRY_CONTEXT, ENTRY) },
+      { options, header: 'Instructions', pageOptions, context: withPane(ENTRY_CONTEXT, ENTRY) },
     ])
   })
 

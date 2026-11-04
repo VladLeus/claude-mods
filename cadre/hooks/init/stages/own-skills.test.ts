@@ -51,6 +51,9 @@ function ownEntry(count: number): string {
 /** The answers of the own-skills entry question, in the order the dialog shows them (G-02-1b). */
 const OWN_ENTRY_OPTIONS = ['Accept recommendations', 'Go one by one', 'Whole group']
 
+/** How the own-skills entry spreads its answers over its pages on a pane surface (D-306): Accept on the last only. */
+const OWN_PAGE_OPTIONS = { always: ['Go one by one', 'Whole group'], dropped: [] }
+
 /** The assign stage run over `io` for `roles`, the setup scan `setup` and the history `hints`, as a step result. */
 function assignedBy(
   io: InitIo,
@@ -196,7 +199,7 @@ describe('own skills hand-out (G-02-1b)', () => {
     expect(run.asked).toEqual([withContext(CODEX_QUESTION, skillsContextLine(roles)), ENTRY_ASKED])
     expect(run.specs).toEqual([
       { options: ['Go one by one', 'None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
-      { options: OWN_ENTRY_OPTIONS, header: 'Skills', context: OWN_CONTEXT },
+      { options: OWN_ENTRY_OPTIONS, header: 'Skills', pageOptions: OWN_PAGE_OPTIONS, context: OWN_CONTEXT },
     ])
   })
 

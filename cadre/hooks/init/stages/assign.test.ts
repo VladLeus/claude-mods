@@ -148,7 +148,12 @@ describe('assignmentStep', () => {
       'mcp-server',
     ])
     expect(run.specs.slice(0, 4).map(spec => ({ ...spec, context: spec === entry ? null : spec.context }))).toEqual([
-      { options: ['Accept recommendations', 'Go one by one', 'Whole group'], header: 'MCP', context: null },
+      {
+        options: ['Accept recommendations', 'Go one by one', 'Whole group'],
+        header: 'MCP',
+        pageOptions: { always: ['Go one by one', 'Whole group'], dropped: [] },
+        context: null,
+      },
       { options: ['Yes', 'No'], header: 'MCP 1/2', context: JIRA_CONTEXT, acceptsTyped: true },
       { options: ['Yes', 'No'], header: 'MCP 2/2', context: SENTRY_CONTEXT, acceptsTyped: true },
       { options: GROUP_OPTIONS, header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },

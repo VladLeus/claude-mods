@@ -483,6 +483,11 @@ export type AskContext = {
    * keep their own styling (D-322).
    */
   readonly rows?: readonly ContextSection[]
+  /**
+   * The page of a paged context (D-306, D-334): its index from 0 and how many pages there are. The pane draws
+   * `page i of n` as the frame's last row and the dialog line carries it too; it travels in the one pane state (D-303).
+   */
+  readonly page?: { readonly index: number; readonly count: number }
 }
 
 /**
@@ -497,6 +502,11 @@ export type AskSpec = {
   readonly context?: AskContext
   /** The question takes a typed answer, so the TUI default may offer "Describe your own" (D-234). */
   readonly acceptsTyped?: true
+  /**
+   * How the options of a paged question are spread over its pages on a pane surface (D-306, D-307): `always` shows on
+   * every page, `dropped` on none, and every other option on the last page only.
+   */
+  readonly pageOptions?: { readonly always: readonly string[]; readonly dropped: readonly string[] }
 }
 
 /** One directory entry as the host lists it. A symlink is `other` with `isLink` true. */
