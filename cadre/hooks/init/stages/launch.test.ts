@@ -135,7 +135,7 @@ describe('launchStartStep', () => {
     expect(LAUNCH_DIR_QUESTION).toBe(
       'Type the folder the launchers start in under Other, relative to the repo root (for example apps/web).',
     )
-    expect(LAUNCH_DIR_OPTIONS).toEqual(['Cancel init'])
+    expect(LAUNCH_DIR_OPTIONS).toEqual(['Type a folder', 'Cancel init'])
     expect(Object.isFrozen(LAUNCH_DIR_OPTIONS)).toBe(true)
   })
 
@@ -160,7 +160,7 @@ describe('launchStartStep', () => {
         const run = await drivenWith(launchAt(), [first, folder], launchCalls(memIo(FOLDER_WORLD, []).io))
         expect(run.state.draft.launchStart).toEqual(APPS_WEB)
         expect(run.asked).toEqual([LAUNCH_ASKED, DIR_ASKED])
-        expect(run.specs[1]).toEqual({ options: ['Cancel init'], header: 'Launch dir', context: NO_DIRS_CONTEXT })
+        expect(run.specs[1]).toEqual({ options: LAUNCH_DIR_OPTIONS, header: 'Launch dir', context: NO_DIRS_CONTEXT })
         expect(run.outputs).toEqual([])
       }
     }
@@ -236,6 +236,15 @@ describe('launchStartStep', () => {
     ])
     expect(run.outputs).toEqual([])
     expect(LAUNCH_DIR_ROUNDS_REASON).toBe('No usable launcher folder after 3 tries: nothing was chosen.')
+  })
+
+  test('Type a folder with nothing typed is refused as empty and asked again, a try each (D-268)', async () => {
+    const calls = launchCalls(memIo(FOLDER_WORLD, []).io)
+    const run = await drivenWith(launchAt(), ['other', 'Type a folder', ' type A FOLDER ', 'apps/web'], calls)
+    const refused = `${cannotUse('', UNSAFE_FOLDER)}\n${DIR_ASKED}`
+    expect([run.state.draft.launchStart, run.asked]).toEqual([APPS_WEB, [LAUNCH_ASKED, DIR_ASKED, refused, refused]])
+    const capped = await drivenWith(launchAt(), ['other', 'Type a folder', 'Type a folder', 'Type a folder'], calls)
+    expect(capped.state.effect).toEqual({ kind: 'end', reply: cancelledReply(LAUNCH_DIR_ROUNDS_REASON) })
   })
 
   test('Cancel init or a dismissal at the folder question cancels with its reason', async () => {
@@ -319,7 +328,7 @@ describe('the launch stage (D-230)', () => {
 
   test('another folder asks for it; the folder check is an io effect, and a repo folder ends the stage', () => {
     const asked = nextStage(entered, { kind: 'answer', text: 'Another folder in this repo' })
-    const spec = { options: ['Cancel init'], header: 'Launch dir', context: NO_DIRS_CONTEXT }
+    const spec = { options: ['Type a folder', 'Cancel init'], header: 'Launch dir', context: NO_DIRS_CONTEXT }
     expect(asked.openQuestion).toEqual({ question: DIR_ASKED, spec })
     const checking = nextStage(asked, { kind: 'answer', text: 'apps/web/' })
     const call = { id: 'launch-dir-check', root: '/repo', path: 'apps/web' }

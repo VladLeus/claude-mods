@@ -2790,6 +2790,18 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     ])
   })
 
+  test('the Launch folder dialog offers Type a folder and Cancel init; a note is the folder (D-268)', async ($, on) => {
+    const log = newLog()
+    const dir = 'Type the folder the launchers start in'
+    const start = { 'Where should the role launchers start': 'Another folder in this repo', [dir]: 'Type a folder' }
+    const base = initWorld({ answers: { ...INIT_ANSWERS, ...start }, notes: { [dir]: 'packages/api' } })
+    fakeHost(on, { ...base, realPaths: { ...base.realPaths, '/repo/packages/api': '/repo/packages/api' } }, log)
+    const out = await $.command.run(TUI_RUN)
+    const at = askHeads(log).findIndex(ask => ask.startsWith(`ask ${dir}`))
+    expect([at >= 0, log.askOptions[at]]).toEqual([true, ['Type a folder', 'Cancel init']])
+    expect(out.text.split('\n')).toContain('Launchers start in: packages/api/ under the git root')
+  })
+
   test('with no presentation, or in fullscreen, the terminal opens the pane as before (D-208)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
