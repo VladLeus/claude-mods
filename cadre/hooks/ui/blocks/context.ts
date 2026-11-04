@@ -36,7 +36,16 @@ import type { InstructionSources } from '../../scan/instructions/read'
 import { pluginName } from '../../scope/lint'
 import { UNCUT } from '../pane'
 import { STATUS_LABEL } from './cards'
-import { instructionLines, instructionRows, sourceText, topicParts } from './instructions'
+import {
+  FILE_TOPICS_ROW,
+  instructionLines,
+  isFileGrouping,
+  MEMORIES_HEADING,
+  NO_RECOMMENDATION_ROW,
+  READ_HEADING,
+  sourceText,
+  topicParts,
+} from './instructions'
 import { scanSummaryLines, scanSummaryRows, scanWarningLines } from './scan'
 
 /** The column, in code points, where a role's purpose starts in the proposal, after its title and id. */
@@ -127,6 +136,27 @@ function fieldRow(label: string, text: string, indent = 0): ContextRow {
 /** The rows of a context with one untitled section (D-313). */
 function oneSection(rows: readonly ContextRow[]): readonly ContextSection[] {
   return [{ title: null, rows }]
+}
+
+/**
+ * One item of a pane list as its rows (D-311): `name → roles` at indent 2, the ids of the roles recommended for it or
+ * `none` (roleIdsText), then its description at indent 4, never cut (D-312), or the dim `no description` placeholder
+ * there when it has none or only blanks, then its `fields` as given, such as a topic's `from` rows. Skills, MCP
+ * servers, topics and memories share it, in their lists and in their one-item contexts.
+ */
+export function itemRows(
+  name: string,
+  roleIds: readonly string[],
+  description: string | null,
+  fields: readonly ContextRow[] = [],
+): ContextRow[] {
+  const item: ContextRow = { role: 'item', label: name, text: roleIdsText(roleIds), indent: 2 }
+  const about: ContextRow =
+    description === null || description.trim() === ''
+      ? { role: 'placeholder', text: t('ui.item.noDescription'), indent: 4 }
+      : { role: 'description', text: description, indent: 4 }
+
+  return [item, about, ...fields]
 }
 
 /**
@@ -331,9 +361,42 @@ export function instructionsContext(
 }
 
 /**
+ * The structured rows of the instructions block (D-311, D-313, D-323), from the values instructionLines reads:
+ * READ_HEADING as a heading row; each topic as an item, its title, the roles recommended for it and its summary, with
+ * a `from` field per source (itemRows); when there are memories, MEMORIES_HEADING and each memory as an item, its file,
+ * roles and summary; each read warning as a `warning` field; and the no-recommendation and one-topic-per-file notes as
+ * plain rows. Every title and summary has its secret-like spans hidden (redactedText, E1, #163, PR-S3).
+ */
+export function instructionRows(
+  scan: InstructionScan,
+  topics: readonly InstructionTopic[],
+  recommended: ReadonlyMap<string, readonly string[]>,
+): ContextRow[] {
+  const topicItems = topics.flatMap(topic => {
+    const label = keyLabel('ui.instructions.topicRows2')
+    const from = topicParts(topic, scan.parts).map(part => fieldRow(label, sourceText(part), 4))
+
+    return itemRows(redactedText(topic.title), recommended.get(topic.id) ?? [], redactedText(topic.summary), from)
+  })
+  const memoryItems = scan.memories.flatMap(memory =>
+    itemRows(memory.file, recommended.get(memory.id) ?? [], redactedText(memory.summary)),
+  )
+  const memories = memoryItems.length === 0 ? [] : [headingRow(MEMORIES_HEADING), ...memoryItems]
+  const hasTopics = topics.length > 0
+  const hasItems = hasTopics || scan.memories.length > 0
+  const notes = [
+    ...(hasItems && recommended.size === 0 ? [NO_RECOMMENDATION_ROW] : []),
+    ...(hasTopics && isFileGrouping(scan, topics) ? [FILE_TOPICS_ROW] : []),
+  ]
+  const warnings = scan.warnings.map(warning => fieldRow(keyLabel('ui.instructions.instructionLines'), warning))
+
+  return [headingRow(READ_HEADING), ...topicItems, ...memories, ...warnings, ...notes.map(note => plainRow(note))]
+}
+
+/**
  * The context of the entry question of the instruction hand-out (D-236): the instructions block as the side pane
- * shows it (instructionLines), each line cleaned, not cut (#163); its summary counts the topics, the memories and how
- * many of them `recommended` gives a role (D-310).
+ * shows it (instructionLines), each line cleaned, not cut (#163), and its rows (instructionRows); its summary counts
+ * the topics, the memories and how many of them `recommended` gives a role (D-310).
  */
 export function instructionPartsContext(
   scan: InstructionScan,
@@ -360,7 +423,8 @@ export function instructionPartsContext(
 /**
  * The context of one topic's question (D-236): that topic only, its title and summary, their secret-like spans hidden
  * (redactedText, E1, #163, PR-S3), the file and heading of each of its parts (never their text) and the roles
- * recommended for it, titled by its place among the topics; its summary is those roles (D-310).
+ * recommended for it, titled by its place among the topics; its summary is those roles (D-310). Its rows are the
+ * topic's item rows with its `from` fields (itemRows, D-311).
  */
 export function topicContext(
   topic: InstructionTopic,
@@ -377,11 +441,8 @@ export function topicContext(
     ...topicParts(topic, parts).map(part => clean(t('ui.context.topicContext2', { source: sourceText(part) }), UNCUT)),
     t('ui.context.topicContext3', { roleIds: roleIdsText(recommended) }),
   ]
-  const rows: ContextRow[] = [
-    fieldRow(redactedText(topic.title), redactedText(topic.summary)),
-    ...topicParts(topic, parts).map(part => fieldRow(keyLabel('ui.context.topicContext2'), sourceText(part), 2)),
-    { role: 'recommended', label: keyLabel('ui.context.topicContext3'), text: roleIdsText(recommended), indent: 2 },
-  ]
+  const from = topicParts(topic, parts).map(part => fieldRow(keyLabel('ui.context.topicContext2'), sourceText(part), 4))
+  const rows = itemRows(redactedText(topic.title), recommended, redactedText(topic.summary), from)
   const summary = t('ui.summary.recommended', { roleIds: roleIdsText(recommended) })
 
   return {
@@ -396,7 +457,7 @@ export function topicContext(
 /**
  * The context of one memory's question (D-236): that memory only, its file and summary, the summary's secret-like
  * spans hidden (redactedText, E1, #163), and the roles recommended for it, never its folder or text, titled by its
- * place among the memories; its summary is those roles (D-310).
+ * place among the memories; its summary is those roles (D-310). Its rows are the memory's item rows (itemRows, D-311).
  */
 export function memoryContext(
   memory: MemoryItem,
@@ -408,10 +469,7 @@ export function memoryContext(
     clean(t('ui.context.memoryContext', { file: memory.file, summary: redactedText(memory.summary) }), UNCUT),
     t('ui.context.memoryContext2', { roleIds: roleIdsText(recommended) }),
   ]
-  const rows: ContextRow[] = [
-    fieldRow(memory.file, redactedText(memory.summary)),
-    { role: 'recommended', label: keyLabel('ui.context.memoryContext2'), text: roleIdsText(recommended), indent: 2 },
-  ]
+  const rows = itemRows(memory.file, recommended, redactedText(memory.summary))
   const summary = t('ui.summary.recommended', { roleIds: roleIdsText(recommended) })
 
   return {

@@ -527,6 +527,9 @@ export const EN = Object.freeze({
   'ui.context.reviewContext': 'Review',
 
   'ui.item.arrow': ' → ',
+  'ui.item.noDescription': 'no description',
+  'ui.item.mcpDescription.one': '{source}, {count} tool',
+  'ui.item.mcpDescription.other': '{source}, {count} tools',
 
   'ui.summary.consent': '1 file, MCP server names only',
   'ui.summary.scan': '{plugins}, {servers}, {files}',

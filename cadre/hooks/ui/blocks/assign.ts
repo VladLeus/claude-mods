@@ -3,16 +3,19 @@
  * server's source, its tool names from the session's tool list (never a description) and the roles recommended for
  * it; a skill group question lists each of its skills with what it does, how often it was used and the roles
  * recommended for it; the own-skills entry question holds the own-skills block, and one own skill's question that
- * skill alone. Each context also gives the structured rows the pane draws from the same values (D-313, D-323). Every
+ * skill alone. Each context also gives the structured rows the pane draws from the same values (D-313, D-323): a
+ * skill and a server of the list for all the servers as item rows (itemRows of ui/blocks/context, D-311). Every
  * value is cleaned and capped here (D-222), and a description's secret-like spans are hidden (redactedText, E1) before
- * its cap (#163). It imports core, the UNCUT rule of ui/pane and the types, so the assignment stage reads it here.
+ * its cap (#163). It imports core, the UNCUT rule of ui/pane, the item rows of ui/blocks/context and the types, so the
+ * assignment stage reads it here.
  */
-import type { AskContext, ContextRow, ContextSection, McpRef } from '../../../types'
+import type { AskContext, ContextRow, McpRef } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { UNCUT } from '../pane'
+import { itemRows } from './context'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
 const CLAUDE_AI_SERVER_PREFIX = 'claude_ai_'
@@ -58,10 +61,6 @@ function roleIdsText(ids: readonly string[]): string {
   return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
 }
 
-/** The rows of a context with one untitled section of lines, each one plain row holding its whole line (D-313). */
-function plainSection(lines: readonly string[]): readonly ContextSection[] {
-  return [{ title: null, rows: lines.map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 })) }]
-}
 
 /**
  * The context of an MCP server question (D-211, D-236): the server by name, its source (mcpSourceText), the tools the
@@ -129,6 +128,28 @@ function skillLineText(skill: SkillLine): string {
   return t('ui.assign.skillLineText2', { name, purpose, used, roleIds: roleIdsText(skill.recommended) })
 }
 
+/** The text a caller stands in for a skill the engine gave no description (init/answers NO_SKILL_PURPOSE, D-139). */
+const NO_PURPOSE_TEXT = t('init.answers.noSkillPurpose')
+
+/**
+ * One skill as item rows (D-311): its name cut to 60 code points and the roles recommended for it, then what it does
+ * as a sentence, its secret-like spans hidden before the MAX_SKILL_PURPOSE_CHARS cap (redactedText, E1, #163), with
+ * how often it was used after it (` Used ….`, user 2026-11-04). A skill the caller gave NO_PURPOSE_TEXT has the
+ * placeholder in place of a description, then its uses on a row of their own when it was used.
+ */
+function skillRows(skill: SkillLine): ContextRow[] {
+  const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
+  const used = skill.uses === '' ? '' : t('ui.assign.skillLineText', { uses: clean(skill.uses) })
+  if (skill.purpose !== NO_PURPOSE_TEXT) {
+    const purpose = asSentence(redactedText(skill.purpose, MAX_SKILL_PURPOSE_CHARS))
+
+    return itemRows(name, skill.recommended, `${purpose}${used}`)
+  }
+  const uses: ContextRow[] = used === '' ? [] : [{ role: 'description', text: used.trim(), indent: 4 }]
+
+  return itemRows(name, skill.recommended, null, uses)
+}
+
 /**
  * The context of a skill group question (D-211, D-236): the group by its label, then one line per skill with what it
  * does, how often it was used and the roles recommended for it; its summary counts the skills and names the roles
@@ -146,7 +167,7 @@ export function skillGroupContext(
     lines,
     kind: 'skill-group',
     summary: tn('ui.summary.skillGroup', skills.length, { count: skills.length, roleIds: roleIdsText(recommended) }),
-    rows: plainSection(lines),
+    rows: [{ title: null, rows: skills.flatMap(skillRows) }],
   }
 }
 
@@ -180,13 +201,18 @@ export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
   const recommended = lines.filter(line => line.recommended.length > 0).length
   const summary = tn('ui.summary.mcpGroup', lines.length, { count: lines.length, recommended })
   const texts = lines.map(lineText)
+  const rows = lines.flatMap(line => {
+    const description = tn('ui.item.mcpDescription', line.tools, { source: clean(line.source), count: line.tools })
+
+    return itemRows(shown(line.name, MAX_CONTEXT_NAME_CHARS), line.recommended, description)
+  })
 
   return {
     title: t('ui.assign.mcpGroupContextTitle'),
     lines: texts,
     kind: 'mcp-server',
     summary,
-    rows: plainSection(texts),
+    rows: [{ title: null, rows }],
   }
 }
 
@@ -202,7 +228,7 @@ export function skillContext(skill: SkillLine, position: number, count: number):
     lines,
     kind: 'skill',
     summary: t('ui.summary.recommended', { roleIds: roleIdsText(skill.recommended) }),
-    rows: plainSection(lines),
+    rows: [{ title: null, rows: skillRows(skill) }],
   }
 }
 

@@ -1,19 +1,21 @@
 /**
  * The assignment answers of init (D-52, D-53, D-60, D-63, D-86, D-135, G-02-1b), a layer 10 module: the questions that
  * ask which roles get an MCP server, a skill group or an instruction group, which env variables roles carry and which
- * model and effort a role gets; the own-skills block of the side pane; and the parsers of the answers (parseRoleList,
- * parseModelEffort, parseEnvNames), with assignToRoles, which gives the assigned names to the roles. It is pure and
- * imports core, roles, scan/history, suggest/skills and the shapes of the assignment rules; init.ts and init/handout
+ * model and effort a role gets; the own-skills block of the side pane, with its item rows (itemRows of
+ * ui/blocks/context, D-311); and the parsers of the answers (parseRoleList, parseModelEffort, parseEnvNames), with
+ * assignToRoles, which gives the assigned names to the roles. It is pure and imports core, roles, scan/history,
+ * suggest/skills, the item rows of ui/blocks/context and the shapes of the assignment rules; init.ts and init/handout
  * read it.
  */
 import type { ContextRow, Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
 import { redactSecrets } from '../core/redact'
-import { clean, idsOrNone, sortedUnique } from '../core/text'
+import { asSentence, clean, idsOrNone, sortedUnique } from '../core/text'
 import type { ListWords } from '../core/text'
-import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../locales/t'
+import { SCREEN_LIST_WORDS, t, tn } from '../locales/t'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
+import { itemRows } from '../ui/blocks/context'
 import { withMax } from '../ui/surface'
 import type { NameAssignment, SkillGroup } from './assign-rules'
 
@@ -125,28 +127,25 @@ export function ownSkillLines(
 }
 
 /**
- * One own skill's structured rows (D-313), one per row of ownSkillRows from the same values: its name and purpose as a
- * field at indent 2, then its use count with the recommended roles at indent 4.
+ * One own skill as item rows (D-311): its name and the roles recommended for it, then what it does as a sentence, its
+ * secret-like spans hidden (redactSecrets, E1), with how often the history scan saw it after it (` Used ….`, user
+ * 2026-11-04; left out at 0). A skill the engine gave no description has the placeholder in its place, then its uses
+ * on a row of their own when it was used.
  */
-function ownSkillFieldRows(skill: SkillRef, count: number, ids: readonly string[]): ContextRow[] {
-  const used = count === 0 ? '' : t('init.answers.ownSkillUsed', { skillUses: skillUsesText(count) })
-  const purpose = redactSecrets(skill.purpose ?? NO_SKILL_PURPOSE)
+function ownSkillItemRows(skill: SkillRef, count: number, ids: readonly string[]): ContextRow[] {
+  const used = count === 0 ? '' : t('ui.assign.skillLineText', { uses: skillUsesText(count) })
+  if (skill.purpose !== undefined) {
+    return itemRows(skill.name, ids, `${asSentence(redactSecrets(skill.purpose))}${used}`)
+  }
+  const uses: ContextRow[] = used === '' ? [] : [{ role: 'description', text: used.trim(), indent: 4 }]
 
-  return [
-    { role: 'field', label: skill.name, text: purpose, indent: 2 },
-    {
-      role: 'recommended',
-      label: `${used}${keyLabel('init.answers.ownSkillRecommended')}`,
-      text: idsOrNone(ids, SCREEN_LIST_WORDS.none),
-      indent: 4,
-    },
-  ]
+  return itemRows(skill.name, ids, null, uses)
 }
 
 /**
- * The structured rows of the own-skills block the pane draws (D-313, D-323), one per line of ownSkillLines from the
- * same skills: OWN_SKILLS_HEADING as a heading row, each skill's rows (ownSkillFieldRows), then the no-recommendation
- * row as a plain row when the model gave none.
+ * The structured rows of the own-skills block the pane draws (D-311, D-313, D-323), from the skills ownSkillLines
+ * lists: OWN_SKILLS_HEADING as a heading row, each skill as its item rows (ownSkillItemRows), then the
+ * no-recommendation row as a plain row when the model gave none.
  */
 export function ownSkillContextRows(
   skills: readonly SkillRef[],
@@ -154,7 +153,7 @@ export function ownSkillContextRows(
   recommended: ReadonlyMap<string, readonly string[]>,
 ): ContextRow[] {
   const rows = skills.flatMap((skill, index) =>
-    ownSkillFieldRows(skill, skillCount(skill.name, uses), recommended.get(ownSkillId(index)) ?? []),
+    ownSkillItemRows(skill, skillCount(skill.name, uses), recommended.get(ownSkillId(index)) ?? []),
   )
   const notes: ContextRow[] =
     skills.length > 0 && recommended.size === 0 ? [{ role: 'plain', text: NO_SKILL_RECOMMENDATION_ROW, indent: 0 }] : []

@@ -2416,9 +2416,15 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "title": null,
             "rows": [
               {
-                "role": "plain",
-                "text": "sentry: session, 1 tool. Recommended: none.",
-                "indent": 0
+                "role": "item",
+                "label": "sentry",
+                "text": "none",
+                "indent": 2
+              },
+              {
+                "role": "description",
+                "text": "session, 1 tool",
+                "indent": 4
               }
             ]
           }
@@ -2444,9 +2450,15 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "title": null,
             "rows": [
               {
-                "role": "plain",
-                "text": "sentry: session, 1 tool. Recommended: none.",
-                "indent": 0
+                "role": "item",
+                "label": "sentry",
+                "text": "none",
+                "indent": 2
+              },
+              {
+                "role": "description",
+                "text": "session, 1 tool",
+                "indent": 4
               }
             ]
           }
@@ -2479,9 +2491,15 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "plain",
-                "text": "codex:rescue: Bearer [hidden]. Recommended: none.",
-                "indent": 0
+                "role": "item",
+                "label": "codex:rescue",
+                "text": "none",
+                "indent": 2
+              },
+              {
+                "role": "description",
+                "text": "Bearer [hidden].",
+                "indent": 4
               }
             ]
           }
@@ -3473,10 +3491,15 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 0
               },
               {
-                "role": "field",
+                "role": "item",
                 "label": "Security rules",
-                "text": "How secrets stay out of the repo.",
+                "text": "security",
                 "indent": 2
+              },
+              {
+                "role": "description",
+                "text": "How secrets stay out of the repo.",
+                "indent": 4
               },
               {
                 "role": "field",
@@ -3485,16 +3508,15 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 4
               },
               {
-                "role": "recommended",
-                "label": "recommended",
-                "text": "security",
-                "indent": 4
+                "role": "item",
+                "label": "Git and commits",
+                "text": "tl",
+                "indent": 2
               },
               {
-                "role": "field",
-                "label": "Git and commits",
+                "role": "description",
                 "text": "How commits are made.",
-                "indent": 2
+                "indent": 4
               },
               {
                 "role": "field",
@@ -3503,38 +3525,30 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
                 "indent": 4
               },
               {
-                "role": "recommended",
-                "label": "recommended",
-                "text": "tl",
-                "indent": 4
-              },
-              {
                 "role": "heading",
                 "text": "Memories (each linked, never copied, when a role gets it):",
                 "indent": 0
               },
               {
-                "role": "field",
+                "role": "item",
                 "label": "squad.md",
-                "text": "Unsigned commits on per-phase branches.",
+                "text": "tl",
                 "indent": 2
               },
               {
-                "role": "recommended",
-                "label": "recommended",
-                "text": "tl",
+                "role": "description",
+                "text": "Unsigned commits on per-phase branches.",
                 "indent": 4
               },
               {
-                "role": "field",
+                "role": "item",
                 "label": "workflow.md",
-                "text": "No summary in MEMORY.md.",
+                "text": "none",
                 "indent": 2
               },
               {
-                "role": "recommended",
-                "label": "recommended",
-                "text": "none",
+                "role": "description",
+                "text": "No summary in MEMORY.md.",
                 "indent": 4
               }
             ]

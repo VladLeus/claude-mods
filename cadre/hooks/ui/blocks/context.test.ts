@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, Detection, InstructionPart, InstructionScan, RoleChange } from '../../../types'
+import type { AskContext, ContextRow, Detection, InstructionPart, InstructionScan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
@@ -25,7 +25,9 @@ import {
   envContext,
   improverInstallContext,
   instructionPartsContext,
+  instructionRows,
   instructionsContext,
+  itemRows,
   launchContext,
   launchDirContext,
   memoryContext,
@@ -546,5 +548,66 @@ describe('rows from the same data as lines (D-313, D-323)', () => {
       launchDirContext([], SCREEN_LIST_WORDS),
     ]
     for (const context of contexts) expect(drawnLines(context)).toEqual(context.lines)
+  })
+})
+
+describe('itemRows (D-311)', () => {
+  test('an item is `name → roles` at indent 2, then its description at indent 4, then its fields', () => {
+    const from = { role: 'field', label: 'from', text: 'CLAUDE.md > Git', indent: 4 } satisfies ContextRow
+    expect(itemRows('Git and commits', ['tl', 'be'], 'How commits are made.', [from])).toEqual([
+      { role: 'item', label: 'Git and commits', text: 'tl, be', indent: 2 },
+      { role: 'description', text: 'How commits are made.', indent: 4 },
+      from,
+    ])
+  })
+
+  test('no recommended role reads none, and no description or only blanks gives the placeholder row', () => {
+    const placeholder = { role: 'placeholder', text: 'no description', indent: 4 }
+    expect([itemRows('a', [], null), itemRows('b', [], '  ')]).toEqual([
+      [{ role: 'item', label: 'a', text: 'none', indent: 2 }, placeholder],
+      [{ role: 'item', label: 'b', text: 'none', indent: 2 }, placeholder],
+    ])
+  })
+
+  test('the pane draws an item as `name → roles` and its description under it, wrapped at its indent (D-312)', () => {
+    const description = 'word '.repeat(12).trim()
+    const rows = [{ title: null, rows: itemRows('x', ['be'], description) }]
+    const block = { title: 'T', summary: null, rows, lines: [] }
+    const drawn = paneDrawn(block, 30)
+      .slice(1)
+      .map(row => row.spans.map(span => span.text).join(''))
+    expect(drawn[0]).toBe('  x → be')
+    expect(drawn.slice(1).every(row => row.startsWith('    ') && Array.from(row).length <= 30)).toBe(true)
+    expect(drawn.slice(1).join(' ').split(' ').filter(word => word !== '')).toEqual(description.split(' '))
+  })
+})
+
+describe('instructionRows (D-311, D-313)', () => {
+  test('the block as rows: its heading, each topic and memory an item with its summary, warnings and notes', () => {
+    const squad = memory('M1', 'squad.md', '')
+    const scan: InstructionScan = { parts: [PART], files: [PART.file], memories: [squad], warnings: ['w'] }
+    expect(instructionRows(scan, TOPICS.slice(0, 1), new Map())).toEqual([
+      { role: 'heading', text: instructionLines(scan, TOPICS, new Map())[0], indent: 0 },
+      { role: 'item', label: 'Security rules', text: 'none', indent: 2 },
+      { role: 'description', text: 'How secrets stay out of the repo.', indent: 4 },
+      { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 4 },
+      { role: 'heading', text: 'Memories (each linked, never copied, when a role gets it):', indent: 0 },
+      { role: 'item', label: 'squad.md', text: 'none', indent: 2 },
+      { role: 'placeholder', text: 'no description', indent: 4 },
+      { role: 'field', label: 'warning', text: 'w', indent: 0 },
+      {
+        role: 'plain',
+        text: 'The model gave no usable recommendation: no role gets a part unless you pick one.',
+        indent: 0,
+      },
+    ])
+  })
+
+  test('a secret-like span of a topic title or summary is hidden in its item rows (PR-S3)', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const topic = { ...SECURITY_TOPIC, title: `Deploy ${secret}`, summary: `Uses ${secret}` }
+    const scan: InstructionScan = { parts: [PART], files: [PART.file], memories: [], warnings: [] }
+    const [, item, about] = instructionRows(scan, [topic], RECOMMENDED)
+    expect([item?.label, about?.text]).toEqual([`Deploy token=${REDACTED}`, `Uses token=${REDACTED}`])
   })
 })
