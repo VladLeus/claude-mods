@@ -12,6 +12,7 @@ import {
   ownSkillsContext,
   skillContext,
   skillGroupContext,
+  skillItemRows,
 } from './assign'
 import type { McpLine, SkillLine } from './assign'
 
@@ -107,10 +108,10 @@ describe('MCP server contexts (D-211)', () => {
   })
 })
 
-/** Two skills of a group: one with a description and uses, one with the fallback text and no uses. */
+/** Two skills of a group: one with a description and uses, one with no description (a null purpose) and no uses. */
 const SKILLS: readonly SkillLine[] = [
   { name: 'codex:rescue', purpose: 'Delegate a stuck task', uses: '3 times in the last 50 sessions', recommended: [] },
-  { name: 'codex:setup', purpose: 'No description.', uses: '', recommended: ['be'] },
+  { name: 'codex:setup', purpose: null, uses: '', recommended: ['be'] },
 ]
 
 describe('skill contexts (D-211)', () => {
@@ -334,7 +335,7 @@ describe('rows from the same data as lines (D-313, D-323)', () => {
 
 describe('skills and servers as item rows (D-311)', () => {
   test('a skill with no description has the placeholder, then its uses on a row of their own', () => {
-    const used = { name: 'codex:setup', purpose: 'No description.', uses: '2 times in the last 50 sessions' }
+    const used = { name: 'codex:setup', purpose: null, uses: '2 times in the last 50 sessions' }
     const skill: SkillLine = { ...used, recommended: [] }
     expect(skillContext(skill, 1, 1).rows).toEqual([
       {
@@ -355,5 +356,36 @@ describe('skills and servers as item rows (D-311)', () => {
       '  codex:setup → be',
       '    no description',
     ])
+  })
+})
+
+describe('skillItemRows (S-03)', () => {
+  test('a name over 60 code points is cut to 60 in its item row', () => {
+    const [item] = skillItemRows({ name: 'x'.repeat(70), purpose: 'Do it.', uses: '', recommended: [] })
+    expect(item).toEqual({ role: 'item', label: `${'x'.repeat(59)}…`, text: 'none', indent: 2 })
+  })
+
+  test('a null purpose has the placeholder, then its uses on a row of their own', () => {
+    const skill: SkillLine = {
+      name: 'mine',
+      purpose: null,
+      uses: '2 times in the last 50 sessions',
+      recommended: ['be'],
+    }
+    expect(skillItemRows(skill)).toEqual([
+      { role: 'item', label: 'mine', text: 'be', indent: 2 },
+      { role: 'placeholder', text: 'no description', indent: 4 },
+      { role: 'description', text: 'Used 2 times in the last 50 sessions.', indent: 4 },
+    ])
+  })
+
+  test('a real description reading No description. draws as a description, not the placeholder', () => {
+    const skill: SkillLine = { name: 'mine', purpose: 'No description.', uses: '', recommended: [] }
+    expect(skillItemRows(skill)).toEqual(itemOf('mine', 'none', 'No description.'))
+  })
+
+  test('a secret-like span of a description is hidden (E1)', () => {
+    const skill: SkillLine = { name: 'mine', purpose: 'Calls with ghp_FAKEFAKEFAKEFAKEFAKE', uses: '', recommended: [] }
+    expect(skillItemRows(skill)).toEqual(itemOf('mine', 'none', 'Calls with [hidden].'))
   })
 })

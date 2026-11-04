@@ -344,6 +344,18 @@ describe('ownSkillLines', () => {
     expect(about).toEqual({ role: 'description', text: '2 APIs called with [hidden].', indent: 4 })
   })
 
+  test("an own skill's name over 60 code points is cut to 60 in its item row (S-03)", () => {
+    const skills: readonly SkillRef[] = [{ name: 'n'.repeat(70), plugin: null, purpose: 'Do it.' }]
+    const [, item] = ownSkillContextRows(skills, new Map(), new Map([['S1', []]]))
+    expect(item).toEqual({ role: 'item', label: `${'n'.repeat(59)}…`, text: 'none', indent: 2 })
+  })
+
+  test("an own skill's name over 60 code points is cut to 60 on its TUI line too (S-03)", () => {
+    const skills: readonly SkillRef[] = [{ name: 'n'.repeat(70), plugin: null, purpose: 'Do it.' }]
+    const [, first] = ownSkillLines(skills, new Map(), new Map([['S1', []]]))
+    expect(first).toBe(`  ${'n'.repeat(59)}…: Do it.`)
+  })
+
   test('a skill with no description reads NO_SKILL_PURPOSE; the sessions named are those the history reads', () => {
     expect(NO_SKILL_PURPOSE).toBe('No description.')
     expect(skillUsesText(1)).toBe(`1 time in the last ${HISTORY_MAX_SESSIONS} sessions`)
