@@ -67,12 +67,19 @@ export const LAUNCH_DIR_QUESTION = t('init.launch.launchDirQuestion')
 /** The context line of the launcher folder question (D-136): which folders can be used. */
 export const LAUNCH_DIR_CONTEXT = t('init.launch.launchDirContext')
 
-/** The one button of the folder question, which ends init; the folder itself is typed in the text field. */
-const LAUNCH_DIR_CHOICES: readonly Labelled<'cancel'>[] = Object.freeze([
+/**
+ * The buttons of the folder question (D-268): `Type a folder`, which reads as an empty answer when nothing was typed,
+ * and `Cancel init`, which ends init; the folder itself is typed as a note or under Other.
+ */
+const LAUNCH_DIR_CHOICES: readonly Labelled<'type' | 'cancel'>[] = Object.freeze([
+  { label: t('init.launch.dirType'), value: 'type' },
   { label: t('init.launch.dirCancel'), value: 'cancel' },
 ])
 
-/** The buttons of the folder question. */
+/**
+ * The buttons of the folder question, `Type a folder` before `Cancel init` (D-268): two real choices, so the engine
+ * never pads the dialog with Yes/No; the folder itself is typed as a note or under Other.
+ */
 export const LAUNCH_DIR_OPTIONS: readonly string[] = Object.freeze(LAUNCH_DIR_CHOICES.map(entry => entry.label))
 
 /** Why init cancels when the launcher start question is dismissed; unread answers give NO_USABLE_ANSWER_REASON. */
@@ -109,7 +116,7 @@ const LAUNCH_START_ACCEPTS = t('init.launch.launchStartAccepts', {
   words: orList(LAUNCH_STARTS.map(entry => entry.word)),
 })
 
-/** The dialog of the folder question: its one button with the Launch dir chip. */
+/** The dialog of the folder question: its two buttons, Type a folder and Cancel init, with the Launch dir chip. */
 const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir })
 
 /**
@@ -181,22 +188,24 @@ function afterStart(state: InitState, answer: string | null): InitState {
 }
 
 /**
- * The answer to the folder question (A2): `Cancel init` or a dismissal cancels with LAUNCH_DIR_CANCELLED_REASON. An
- * answer is trimmed and loses one trailing `/`; one isSafeRelativePath refuses is asked again at once, and a safe one
- * is checked to be a folder inside the repo (the launch-dir-check io effect, isRepoFolder), so a link anywhere in the
- * path that leads out is refused, and so is a folder whose real path the host could not give.
+ * The answer to the folder question (A2): `Cancel init` or a dismissal cancels with LAUNCH_DIR_CANCELLED_REASON.
+ * `Type a folder` with nothing typed as a note or under Other is an empty answer, refused and asked again, counting a
+ * try (D-268, the Describe-your-own pattern of D-234). An answer is trimmed and loses one trailing `/`; one
+ * isSafeRelativePath refuses is asked again at once, and a safe one is checked to be a folder inside the repo (the
+ * launch-dir-check io effect, isRepoFolder), so a link anywhere in the path that leads out is refused, and so is a
+ * folder whose real path the host could not give.
  */
 function afterDir(state: InitState, answer: string | null): InitState {
   const { locations } = state.draft
   if (state.sub.kind !== 'launch-dir' || locations === undefined) return stageFailed(state)
-  if (answer === null || labelled(LAUNCH_DIR_CHOICES, answer) === 'cancel') {
-    return stageCancelled(state, LAUNCH_DIR_CANCELLED_REASON)
-  }
+  const choice = answer === null ? null : labelled(LAUNCH_DIR_CHOICES, answer)
+  if (answer === null || choice === 'cancel') return stageCancelled(state, LAUNCH_DIR_CANCELLED_REASON)
   const { tries } = state.sub
-  const trimmed = answer.trim()
+  const typed = choice === 'type' ? '' : answer
+  const trimmed = typed.trim()
   const path = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
-  if (!isSafeRelativePath(path)) return dirRefused(state, tries, answer, UNSAFE_LAUNCH_DIR)
-  const sub: InitState['sub'] = { kind: 'launch-check', tries, answer, path }
+  if (!isSafeRelativePath(path)) return dirRefused(state, tries, typed, UNSAFE_LAUNCH_DIR)
+  const sub: InitState['sub'] = { kind: 'launch-check', tries, answer: typed, path }
 
   return withEffect({ ...state, sub }, { kind: 'io', call: { id: 'launch-dir-check', root: locations.root, path } })
 }

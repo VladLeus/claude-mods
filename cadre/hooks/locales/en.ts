@@ -276,6 +276,7 @@ export const EN = Object.freeze({
   'init.launch.launchDirQuestion':
     'Type the folder the launchers start in under Other, relative to the repo root (for example apps/web).',
   'init.launch.launchDirContext': 'It must be a folder inside this repo; a link that leads out is refused.',
+  'init.launch.dirType': 'Type a folder',
   'init.launch.dirCancel': 'Cancel init',
   'init.launch.launchStartDismissedReason': 'The launcher start question was dismissed or not answered.',
   'init.launch.launchDirCancelledReason': 'The launcher folder question was dismissed or cancelled.',
