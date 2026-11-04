@@ -5889,19 +5889,23 @@ describe('table seeds (D-249, D-280)', () => {
     expect(cardMcp(given, 'tl')).toBe('  MCP servers: github')
   })
 
-  test('security-review is handed out with its table seed when the model gives none; Accept gives it', async () => {
-    const run = memIo(tableMatchWorld(), OWN_ACCEPTED)
-    await runInit(pagedIo(run), { dryRun: true })
-    expect(firstLines(run.asked)).toContain(ownEntry(1))
-    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toEqual([
-      OWN_SKILLS_HEADING,
-      '  security-review: Review the changes for security.',
-      '    recommended: none',
-      NO_SKILL_RECOMMENDATION,
-    ])
-    expect(cardSkills(run, 'security')).toContain('security-review')
-    expect(cardSkills(run, 'be')).not.toContain('security-review')
-  })
+  test(
+    'security-review shows its table seed as the recommendation when the model gives none; Accept gives it',
+    async () => {
+      const run = memIo(tableMatchWorld(), OWN_ACCEPTED)
+      await runInit(pagedIo(run), { dryRun: true })
+      expect(firstLines(run.asked)).toContain(ownEntry(1))
+      expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toEqual([
+        OWN_SKILLS_HEADING,
+        '  security-review: Review the changes for security.',
+        '    recommended: security',
+      ])
+      const at = firstLines(run.asked).findIndex(line => line.startsWith(OWN_SKILLS_ENTRY_PREFIX))
+      expect(run.specs[at]?.context?.summary).toBe('1 skill, 1 recommended')
+      expect(cardSkills(run, 'security')).toContain('security-review')
+      expect(cardSkills(run, 'be')).not.toContain('security-review')
+    },
+  )
 })
 
 describe('the mcp call (D-248, D-253)', () => {
