@@ -24,17 +24,23 @@ export const CLAUDE_AI_SERVER_PREFIX = 'claude_ai_'
 /** The most code points of a server, group or skill name a context shows, as the questions cut them. */
 const MAX_CONTEXT_NAME_CHARS = 60
 
+/** The tools value of a server the session lists no tool for (D-317, D-331): not connected, its tools unknown. */
+const NOT_CONNECTED_STATE = t('ui.assign.mcpNotConnectedState')
+
 /**
  * The tools line of a server the session lists no tool for (D-317, D-331): one found in config only, as a claude.ai
  * connector of ~/.claude.json may be, is not connected, and its tools are unknown.
  */
-const NOT_CONNECTED_LINE = t('ui.assign.mcpNotConnected')
+const NOT_CONNECTED_LINE = t('ui.assign.mcpNotConnected', { state: NOT_CONNECTED_STATE })
 
-/** NOT_CONNECTED_LINE as a field row (D-313, D-317): its label, then its value, the text after the label's `: `. */
+/**
+ * NOT_CONNECTED_LINE as a field row (D-313, D-317): the label of its template, then NOT_CONNECTED_STATE, the value of
+ * its own key, so no screen text is read for its structure (N-06).
+ */
 const NOT_CONNECTED_ROW: ContextRow = {
   role: 'field',
   label: keyLabel('ui.assign.mcpNotConnected'),
-  text: NOT_CONNECTED_LINE.slice(NOT_CONNECTED_LINE.indexOf(': ') + 2),
+  text: NOT_CONNECTED_STATE,
   indent: 0,
 }
 
