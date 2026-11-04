@@ -334,6 +334,13 @@ describe('runRegen', () => {
     expect(run.asked).toEqual([])
   })
 
+  test('a regen sets the scan loader before its full scan, with the summary init shows (D-285, S-02)', async () => {
+    const run = memIo(await regenWorld(), {})
+    await runRegen(run.io, { id: 'be', dryRun: true })
+    expect(run.progress[0]).toBe('cadre: scanning the repo…')
+    expect(run.progressSummaries[0]).toBe('the repo, your settings, plugins, skills and MCP servers')
+  })
+
   test('with no .cadre/cadre.json regen asks for /cadre init first, and asks nothing', async () => {
     for (const world of [gitWorld(), without(await regenWorld(), STATE)]) {
       const run = memIo(world, {})
@@ -954,6 +961,38 @@ describe('regen by part hashes (G-02-1f)', () => {
     ])
     expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 1 }), NEXT_STEP_NOTE])
     expect(writtenManifestText(host)).toContain(await sha256Hex(improved))
+  })
+
+  test('a plain session regen sets the improver loader with its file count (D-285, S-02)', async () => {
+    const installed = { [INSTALLED_PLUGINS_PATH]: claudeMdInstalled() }
+    const over = { files: installed, replies: ['{"items":{"I1":true}}'] }
+    const world = await regenPartsWorld({ claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over })
+    const files: Record<string, string> = { ...world.files }
+    const edited = await rootPart('P2', 'Git', GIT_EDITED)
+    const improved = `${roleClaudeMdText('be', [edited])}Keep commits small.\n`
+    const host = memHost(hostWorld({ runs: REGEN_RUNS }))
+    const io: HostIo = {
+      ...host.io,
+      // Each write that lands is on the disk, so the improver finds the rebuilt file as apply wrote it (02-GAPS-B3 M1).
+      write: async (path, text) => {
+        const isWritten = await host.io.write(path, text)
+        if (isWritten) files[path] = text
+
+        return isWritten
+      },
+      run: async (argv, options) => {
+        const result = await host.io.run(argv, options)
+        if (argv.join(' ') === BE_IMPROVER_ARGV.join(' ')) files[BE_CLAUDE_MD] = improved
+
+        return result
+      },
+    }
+    const run = memIo({ ...world, files }, { [REGEN_PART_PREFIX]: 'Yes', [IMPROVER_PREFIX]: 'Accept' })
+    await runRegen(run.io, { id: 'be', dryRun: false, host: io })
+    const label = 'cadre: running the improver…'
+    expect(improverCalls(host)).toHaveLength(1)
+    expect(run.progress).toContain(label)
+    expect(run.progressSummaries[run.progress.indexOf(label)]).toBe('1 file')
   })
 
   test('in claude -p a rebuilt file the improver could improve gets the improver warning and no run', async () => {

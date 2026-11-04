@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { HostIo, HostRun, InitIo, InstructionPart, Manifest, PortEntry } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
+import { IMPROVER_PROGRESS } from '../init/run'
 import { MANIFEST_PATH } from '../plan/classify'
 import { planWithManifest } from '../plan/plan'
 import { parseManifest } from '../state/cadre-files'
@@ -238,6 +239,39 @@ function beRun(result: HostRun | null): HostRunRule {
   return { argv: improverArgv(BE_BUILT_PATH), result }
 }
 
+/**
+ * The init port of `run` and the host port `host` with the loader writes, the questions and the claude runs in one
+ * list, in order: `progress <label>`, `ask` and `run claude` (S-02).
+ */
+function loaderEvents(
+  run: MemRun,
+  host: HostIo,
+): { readonly io: InitIo; readonly host: HostIo; readonly events: string[] } {
+  const events: string[] = []
+  const io: InitIo = {
+    ...run.io,
+    progress: async (text, summary) => {
+      events.push(`progress ${text ?? ''}`)
+      await run.io.progress(text, summary)
+    },
+    ask: async (question, spec) => {
+      events.push('ask')
+
+      return run.io.ask(question, spec)
+    },
+  }
+  const logged: HostIo = {
+    ...host,
+    run: async (argv, options) => {
+      if (argv[0] === 'claude') events.push('run claude')
+
+      return host.run(argv, options)
+    },
+  }
+
+  return { io, host: logged, events }
+}
+
 describe('improver pass (G-02-1f)', () => {
   test('improverArgv is claude -p in acceptEdits with the skill and the absolute path, and nothing else', () => {
     expect(improverArgv(BE_BUILT_PATH)).toEqual([
@@ -311,6 +345,22 @@ describe('improver pass (G-02-1f)', () => {
     expect(run.logged).toEqual([improverNoChangeNote(BE_BUILT_REPO_PATH), improverNoChangeNote(SECURITY_SHOWN)])
     expect(run.asked).toEqual([])
     expect(improverNoChangeNote(BE_BUILT_REPO_PATH)).toBe('the improver made no change to .cadre/be/CLAUDE.md')
+  })
+
+  test('the improver label is set before each run, since a per-file question clears it (D-257, S-02)', async () => {
+    const securityImproved = `${SECURITY_BUILT_FILE.text}Keep secrets out of logs.\n`
+    const edits = new Map<string, Edits>([
+      [BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }],
+      [SECURITY_TEXT_FILE, { [SECURITY_TEXT_FILE]: securityImproved }],
+    ])
+    const disk = builtDisk()
+    const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
+    const { io, host, events } = loaderEvents(run, editingHost(disk, edits).io)
+    const outcome = await improveBuiltFiles(io, host, [BE_BUILT_FILE, SECURITY_BUILT_FILE], DEFAULT_LOCATIONS)
+    const label = `progress ${IMPROVER_PROGRESS}`
+    expect(events).toEqual([label, 'run claude', 'ask', label, 'run claude', 'ask'])
+    expect(run.progressSummaries).toEqual(['2 files', '2 files'])
+    expect(outcome.changed).toBe(2)
   })
 
   test("a change is asked about with its diff as the question's context, and Accept keeps it (D-302)", async () => {

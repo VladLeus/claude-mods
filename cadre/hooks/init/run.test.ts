@@ -5391,14 +5391,17 @@ describe('apply step labels (D-284, edge #13)', () => {
     expect(run.progress.filter(text => text === LABELS.installs).length).toBe(1)
   })
 
-  test('a built role file: the improver label is set once, before the first improver run', async () => {
+  test('a built role file: the improver label is set before each improver run', async () => {
     const files = builtFilesRecord()
     const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
     const { io, host, events } = labelled(run, improvingHost(files).io)
     await runInit(io, { dryRun: false, host })
-    const [labelAt, runAt] = labelAndRun(events, LABELS.improver, ['claude', '-p'])
-    expect([labelAt >= 0, labelAt < runAt]).toEqual([true, true])
-    expect(run.progress.filter(text => text === LABELS.improver).length).toBe(1)
+    const runs = events.flatMap((event, at) => (event.startsWith('run claude -p') ? [at] : []))
+    const labelBefore = (at: number): string | undefined =>
+      events.slice(0, at).findLast(event => event.startsWith('progress '))
+    expect(runs.length).toBeGreaterThan(0)
+    expect(runs.map(labelBefore)).toEqual(runs.map(() => `progress ${LABELS.improver}`))
+    expect(run.progress.filter(text => text === LABELS.improver).length).toBe(1 + runs.length)
   })
 
   test('each apply step records how many items it works on beside its label (D-301)', async () => {
