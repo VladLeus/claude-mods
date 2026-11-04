@@ -32,6 +32,7 @@ import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { scanWarningLines } from '../../ui/blocks/scan'
 import { PANE_PAGE_ROWS } from '../../ui/pane'
+import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
 import { PREVIEW_ROWS } from '../../ui/preview'
 import { listWordsOf } from '../../ui/surface'
 import type { Surface } from '../../ui/surface'
@@ -143,8 +144,8 @@ export const CHANGE_SOMETHING_LABEL = t('init.review.changeSomething')
  * choice whose item word goes in a note.
  */
 const REVIEW_PAGE_CHOICES: readonly Labelled<PageOption>[] = Object.freeze([
-  { label: t('init.review.nextPage'), value: 'next' },
-  { label: t('init.review.previousPage'), value: 'previous' },
+  { label: NEXT_PAGE_LABEL, value: 'next' },
+  { label: PREVIOUS_PAGE_LABEL, value: 'previous' },
   { label: CONFIRM_LABEL, value: 'confirm' },
   { label: CHANGE_SOMETHING_LABEL, value: 'change' },
 ])

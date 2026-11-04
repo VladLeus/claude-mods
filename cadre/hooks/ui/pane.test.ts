@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, ContextSection, OpenQuestion, PaneKey, PaneState, ShownBlock } from '../../types'
+import type { AskContext, ContextRow, ContextSection, OpenQuestion, PaneKey, PaneState, ShownBlock } from '../../types'
 import { ARTIFACT } from '../locales/artifact'
 import type { EnKey } from '../locales/en'
 import { keyLabel, labelOf } from '../locales/t'
 import { BIDI_OVERRIDE } from '../testkit'
 import {
+  contextPages,
+  frameSize,
+  MAX_PANE_FRAME_CHARS,
+  MAX_PANE_FRAME_ROWS,
+  PANE_FALLBACK_COLUMNS,
   PANE_PAGE_ROWS,
   pageColumnsOf,
   paneBlockOf,
@@ -572,5 +577,152 @@ describe('paneDrawn (D-313, D-322, D-323)', () => {
     const block: PaneBlock = { title, summary: 'a summary', rows: [{ title: 'Section', rows: [] }], lines: [] }
     const texts = rowTexts(paneDrawn(block, 30))
     expect(texts).toEqual([...wrapLine(title, 30), 'a summary', 'Section'])
+  })
+})
+
+describe('the page marker (D-334)', () => {
+  /** One section of one item with no description. */
+  const sections: readonly ContextSection[] = [
+    {
+      title: 'Skills',
+      rows: [
+        { role: 'item', label: 'alpha', text: 'be', indent: 2 },
+        { role: 'placeholder', text: 'no description', indent: 4 },
+      ],
+    },
+  ]
+
+  test('a paged block draws page i of n, dim, as its last row, after every row it draws unpaged', () => {
+    const block = rowsBlock(sections, 'one skill')
+    const drawn = paneDrawn({ ...block, page: { index: 1, count: 3 } }, null)
+    expect(drawn.at(-1)).toEqual({ spans: [{ text: 'page 2 of 3', dim: true }] })
+    expect(drawn.slice(0, -1)).toEqual(paneDrawn(block, null))
+  })
+
+  test('a block with no page draws no marker row', () => {
+    const texts = rowTexts(paneDrawn(rowsBlock(sections, 'one skill'), null))
+    expect(texts).toEqual(['T', 'one skill', 'Skills', '  alpha → be', '    no description'])
+  })
+
+  test('a paged block with no rows ends with the marker too, after its lines', () => {
+    const block: PaneBlock = { title: 'T', summary: null, rows: null, lines: ['a line'], page: { index: 0, count: 2 } }
+    expect(rowTexts(paneDrawn(block, null))).toEqual(['T', 'a line', 'page 1 of 2'])
+  })
+})
+
+describe('frameSize (D-305)', () => {
+  /** One skill under the title T, whose description of 20 four-letter words is two rows at 60 columns. */
+  const block = rowsBlock(
+    [
+      {
+        title: 'Skills',
+        rows: [
+          { role: 'item', label: 'alpha', text: 'be', indent: 2 },
+          { role: 'description', text: 'abcd '.repeat(20).trim(), indent: 4 },
+        ],
+      },
+    ],
+    'one skill',
+  )
+
+  test('a frame is capped at 100 rows and 4,000 characters, and one of no known width is counted at 60 columns', () => {
+    expect([MAX_PANE_FRAME_ROWS, MAX_PANE_FRAME_CHARS, PANE_FALLBACK_COLUMNS]).toEqual([100, 4_000, 60])
+  })
+
+  test('it counts the rows paneDrawn draws and their characters, wrapped at the width', () => {
+    // T, one skill, Skills and `  alpha → be`, then the description: one row of 103 at 200 columns, 58 and 48 at 60.
+    expect(frameSize(block, 200)).toEqual({ rows: 5, chars: 1 + 9 + 6 + 12 + 103 })
+    expect(frameSize(block, 60)).toEqual({ rows: 6, chars: 1 + 9 + 6 + 12 + 58 + 48 })
+    expect(frameSize(block, null)).toEqual(frameSize(block, PANE_FALLBACK_COLUMNS))
+  })
+
+  test('characters are counted in code points, and the page marker row is counted too (D-334)', () => {
+    const faces = String.fromCodePoint(0x1f600).repeat(3)
+    expect(frameSize(rowsBlock([{ title: null, rows: [{ role: 'plain', text: faces, indent: 0 }] }]), 60)).toEqual({
+      rows: 2,
+      chars: 4,
+    })
+    const paged = { ...block, page: { index: 0, count: 2 } }
+    expect(frameSize(paged, 60)).toEqual({ rows: 7, chars: 1 + 9 + 6 + 12 + 58 + 48 + 11 })
+  })
+})
+
+describe('contextPages (D-305, D-306, D-308)', () => {
+  /** Item `name` given be, with a description of `words` four-letter words and a uses row under it. */
+  function itemOf(name: string, words: number): ContextRow[] {
+    return [
+      { role: 'item', label: name, text: 'be', indent: 2 },
+      { role: 'description', text: 'abcd '.repeat(words).trim(), indent: 4 },
+      { role: 'plain', text: 'Used 3 times.', indent: 4 },
+    ]
+  }
+
+  /** Items s0 onwards, `count` of them, each with a description of `words` words. */
+  function itemsOf(count: number, words: number): ContextRow[] {
+    return Array.from({ length: count }, (_, at) => itemOf(`s${at}`, words)).flat()
+  }
+
+  /** A context titled T, summed up as S, of `sections`. */
+  function contextOf(sections: readonly ContextSection[]): AskContext {
+    return { title: 'T', lines: [], kind: 'mcp-server', summary: 'S', rows: sections }
+  }
+
+  /** Whether each of `pages`, its marker drawn, fits both caps at `columns`. */
+  function fitCaps(pages: readonly (readonly ContextSection[])[], columns: number | null): boolean {
+    return pages.every((rows, index) => {
+      const page = { index, count: pages.length }
+      const size = frameSize({ title: 'T', summary: 'S', rows, lines: [], page }, columns)
+
+      return size.rows <= MAX_PANE_FRAME_ROWS && size.chars <= MAX_PANE_FRAME_CHARS
+    })
+  }
+
+  test('a context whose whole frame fits is one page of all its sections', () => {
+    const sections = [{ title: 'Skills', rows: itemsOf(2, 3) }]
+    expect(contextPages(contextOf(sections), null)).toEqual([sections])
+  })
+
+  test('a context over the row cap is pages that fit both caps with their marker, every row on one in order', () => {
+    // 40 items of three rows each: 120 rows and the title, summary and section title.
+    const rows = itemsOf(40, 3)
+    const pages = contextPages(contextOf([{ title: 'Skills', rows }]), null)
+    expect(pages.length).toBe(2)
+    expect(fitCaps(pages, null)).toBe(true)
+    expect(pages.flatMap(page => page.flatMap(section => section.rows))).toEqual(rows)
+  })
+
+  test('a context of few long rows over the character cap is paged too', () => {
+    // 20 items with 194-character descriptions, one row each at 200 columns: 63 rows, but 4,498 characters.
+    const context = contextOf([{ title: 'Skills', rows: itemsOf(20, 39) }])
+    expect(frameSize({ title: 'T', summary: 'S', rows: context.rows ?? [], lines: [] }, 200)).toEqual({
+      rows: 63,
+      chars: 4_498,
+    })
+    const pages = contextPages(context, 200)
+    expect(pages.length).toBe(2)
+    expect(fitCaps(pages, 200)).toBe(true)
+  })
+
+  test('an item and the rows under it are never split; a page that goes on with a section repeats its title', () => {
+    // 30 items of five rows each at 60 columns (a description of three rows): 19 fill the 96 rows a page has for them.
+    const rows = itemsOf(30, 25)
+    const sections = [
+      { title: 'Skills', rows },
+      { title: 'Agents', rows: itemOf('a0', 25) },
+    ]
+    const pages = contextPages(contextOf(sections), null)
+    expect(pages.map(page => page.map(section => section.title))).toEqual([['Skills'], ['Skills', 'Agents']])
+    expect(pages.map(page => page.map(section => section.rows.length))).toEqual([[19 * 3], [11 * 3, 3]])
+    expect(pages.every(page => page.every(section => section.rows[0]?.role === 'item'))).toBe(true)
+  })
+
+  test('an item larger than a page alone gets a page of its own, never cut', () => {
+    const huge = itemOf('huge', 1_000)
+    const rows = [...itemOf('a', 3), ...huge, ...itemOf('b', 3)]
+    expect(contextPages(contextOf([{ title: 'Skills', rows }]), null)).toEqual([
+      [{ title: 'Skills', rows: itemOf('a', 3) }],
+      [{ title: 'Skills', rows: huge }],
+      [{ title: 'Skills', rows: itemOf('b', 3) }],
+    ])
   })
 })

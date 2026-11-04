@@ -9,6 +9,7 @@ import { reportText } from '../core/text'
 import { initGuard } from '../guards/repo'
 import { t } from '../locales/t'
 import { readTeam, regenBadRole } from '../team'
+import { withPagedAsks } from '../ui/paging'
 import type { Surface } from '../ui/surface'
 import { regenApply, regenPlan, regenReplyText } from './plan'
 import { regenHandout } from './review'
@@ -59,7 +60,10 @@ function regenCancelReply(io: InitIo, reason: string): string {
  * A1), so the MCP denies init compiled from it stay. Plain regen and --dry-run differ in the first line and the ending,
  * and a dry run compares no private record (AUTO-PICK #19 Q5) and asks git nothing.
  */
-export async function runRegen(io: InitIo, options: RegenOptions): Promise<string> {
+export async function runRegen(given: InitIo, options: RegenOptions): Promise<string> {
+  // Every question goes through the paged port: on a pane surface a context over the frame cap is asked a page at a
+  // time (withPagedAsks, D-306).
+  const io = withPagedAsks(given, options.surface ?? 'pane', () => options.pageColumns?.() ?? null)
   const guard = await initGuard(io, 'regen')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard

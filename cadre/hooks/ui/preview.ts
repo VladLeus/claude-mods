@@ -285,7 +285,7 @@ export const OTHER_WORDING = t('ui.preview.otherWording')
 export const NOTE_WORDING = t('ui.preview.noteWording')
 
 /** The most options an AskUserQuestion question may have: the tool's schema allows 2 to 4 (A2). */
-const MAX_DIALOG_OPTIONS = 4
+export const MAX_DIALOG_OPTIONS = 4
 
 /**
  * A previewed single-select question (A2, R3, R4, D-234), since the engine draws no Other row beside a preview: its

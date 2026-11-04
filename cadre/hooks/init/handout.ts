@@ -162,15 +162,17 @@ type HandoutAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
  * The entry question (G-02-1f Entry choices): its question with its context line on the second line, its chip, its
  * own context, with what a pane surface asks (specWith, D-300, D-310), and its answers in the order accept,
  * one by one, whole, read trimmed and in any case; with no recommended item Accept is neither offered nor taken, so
- * typing it is refused like any other label (D-279).
+ * typing it is refused like any other label (D-279). Paged on a pane surface, Go one by one and Whole group show on
+ * every page and Accept recommendations on the last page only (pageOptions, D-306, D-307).
  */
 function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
   const labels = entryLabels(cursor.entry, cursor.items)
   const options = labels.map(label => label.label)
+  const pageOptions = { always: [cursor.entry.oneByOne, cursor.entry.whole], dropped: [] }
 
   return {
     question: withContext(cursor.entry.question, cursor.entry.contextLine),
-    spec: specWith({ options, header: cursor.entry.header }, cursor.entry, cursor.entry.context),
+    spec: specWith({ options, header: cursor.entry.header, pageOptions }, cursor.entry, cursor.entry.context),
     parse: (answer: string): EntryChoice | null => parseEntry(labels, answer),
     accepts: quotedLabels(options),
     dismissedReason: cursor.dismissedReason,

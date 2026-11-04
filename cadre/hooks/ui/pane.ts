@@ -38,17 +38,21 @@ export type PaneBlock = {
   readonly summary: string | null
   readonly rows: readonly ContextSection[] | null
   readonly lines: readonly string[]
+  /** The page of a paged context (D-306), whose marker the pane draws as the frame's last row (D-334). */
+  readonly page?: { readonly index: number; readonly count: number }
 }
 
 /**
- * The block of a question's context (D-313, D-322): with rows, its title, summary and rows; without them, as on the
- * Review, its title and lines alone.
+ * The block of a question's context (D-313, D-322, D-334): with rows, its title, summary, rows and page when it is
+ * paged; without them, as on the Review, its title and lines alone.
  */
 function contextBlock(context: AskContext): PaneBlock {
   const { title, lines, rows } = context
   if (rows === undefined) return { title, summary: null, rows: null, lines }
 
-  return { title, summary: context.summary, rows, lines }
+  const block = { title, summary: context.summary, rows, lines }
+
+  return context.page === undefined ? block : { ...block, page: context.page }
 }
 
 /**
@@ -258,6 +262,9 @@ const SUMMARY_LOOK: Look = { dim: true }
 /** The look of a section's title row (D-313). */
 const SECTION_LOOK: Look = { bold: true }
 
+/** The look of the page marker, the last row of a paged frame (D-334). */
+const PAGE_MARKER_LOOK: Look = { dim: true }
+
 /** What an item row draws between its name and its roles (D-311, D-313). */
 const ITEM_ARROW = t('ui.item.arrow')
 
@@ -359,10 +366,16 @@ function textRows(text: string, look: Look, columns: number | null): DrawnRow[] 
  * of its role alone (rowParts), never one taken from its text, one empty row between two sections. Each row is
  * wrapped to `columns` with a hanging indent of the row's indent (wrapHanging), its look chosen before the wrap so a
  * continuation row keeps it. A block with no rows, the Review or the loader, draws its title and lines through
- * paneRows (wrapLine) with the Review's own styling (paneSpans). With no columns no row is wrapped.
+ * paneRows (wrapLine) with the Review's own styling (paneSpans). With no columns no row is wrapped. A paged block ends
+ * with its page marker, `page i of n`, dim, as the frame's last row (D-334).
  */
 export function paneDrawn(block: PaneBlock, columns: number | null): DrawnRow[] {
-  if (block.rows === null) return paneRows([block], columns).map(row => ({ spans: paneSpans(row) }))
+  const { page } = block
+  const marker =
+    page === undefined
+      ? []
+      : textRows(t('ui.paging.marker', { number: page.index + 1, count: page.count }), PAGE_MARKER_LOOK, columns)
+  if (block.rows === null) return [...paneRows([block], columns).map(row => ({ spans: paneSpans(row) })), ...marker]
   const head = [
     ...textRows(block.title, TITLE_LOOK, columns),
     ...(block.summary === null ? [] : textRows(block.summary, SUMMARY_LOOK, columns)),
@@ -373,7 +386,107 @@ export function paneDrawn(block: PaneBlock, columns: number | null): DrawnRow[] 
     ...section.rows.flatMap(row => wrappedRows(rowParts(row), columns, row.indent)),
   ])
 
-  return [...head, ...sections]
+  return [...head, ...sections, ...marker]
+}
+
+/**
+ * The most rows one pane frame draws (D-305): wrapped rows, counted as paneDrawn draws them. On the desktop a frame of
+ * 108 rows and 4,248 characters drew and one of 448 rows and 19,159 characters was dropped without a word (UF-08), so
+ * every frame stays under this cap and MAX_PANE_FRAME_CHARS, and a larger context is paged (D-306).
+ */
+export const MAX_PANE_FRAME_ROWS = 100
+
+/**
+ * The most characters, in code points, one pane frame draws (D-305): the UF-08 desktop run drew a frame of 4,248
+ * characters (108 rows) and dropped one of 19,159 (448 rows) without a word, so a frame stays under this cap.
+ */
+export const MAX_PANE_FRAME_CHARS = 4_000
+
+/**
+ * The columns a frame is counted and paged at when no width is known (D-305): the narrowest pane body seen, 60 inline
+ * and 62 on the desktop, so a frame counted here is never wider than one the pane draws.
+ */
+export const PANE_FALLBACK_COLUMNS = 60
+
+/**
+ * How large a pane frame of `block` is (D-305): the rows paneDrawn draws for it and their characters in code points,
+ * at `columns`, or PANE_FALLBACK_COLUMNS when no width is known, wrapped by the same wrapHanging cut the pane draws
+ * with, so the counter and the renderer never disagree.
+ */
+export function frameSize(block: PaneBlock, columns: number | null): { readonly rows: number; readonly chars: number } {
+  const drawn = paneDrawn(block, columns ?? PANE_FALLBACK_COLUMNS)
+  const chars = drawn.reduce((sum, row) => sum + row.spans.reduce((n, span) => n + Array.from(span.text).length, 0), 0)
+
+  return { rows: drawn.length, chars }
+}
+
+/** Rows a page keeps together (contextPages): an item with the rows under it, else one row, and its section. */
+type RowUnit = {
+  readonly section: number
+  readonly rows: readonly ContextRow[]
+}
+
+/**
+ * The units of `sections` in order (D-306): an item row and every row after it that is indented deeper and is no item
+ * (its description and fields), else one row; a section with no rows is one unit of none, so its title still shows.
+ */
+function rowUnits(sections: readonly ContextSection[]): RowUnit[] {
+  return sections.flatMap((section, at) => {
+    if (section.rows.length === 0) return [{ section: at, rows: [] }]
+    const units: ContextRow[][] = []
+    let itemIndent: number | null = null
+    for (const row of section.rows) {
+      const last = units.at(-1)
+      if (itemIndent !== null && last !== undefined && row.role !== 'item' && row.indent > itemIndent) {
+        last.push(row)
+        continue
+      }
+      itemIndent = row.role === 'item' ? row.indent : null
+      units.push([row])
+    }
+
+    return units.map(rows => ({ section: at, rows }))
+  })
+}
+
+/**
+ * The pages of a context's rows on a pane surface at `columns` (D-305, D-306): one page when its whole frame fits
+ * MAX_PANE_FRAME_ROWS and MAX_PANE_FRAME_CHARS, else pages filled in order, each as large as fits with the title, the
+ * summary and the page marker row reserved (frameSize). An item and the rows under it are never split, a page that
+ * goes on with a section repeats that section's title, and a unit larger than a page alone gets a page of its own.
+ */
+export function contextPages(context: AskContext, columns: number | null): (readonly ContextSection[])[] {
+  const sections = context.rows ?? []
+  const block = { title: context.title, summary: context.summary, lines: [] }
+  const fits = (rows: readonly ContextSection[], page: PaneBlock['page']): boolean => {
+    const size = frameSize(page === undefined ? { ...block, rows } : { ...block, rows, page }, columns)
+
+    return size.rows <= MAX_PANE_FRAME_ROWS && size.chars <= MAX_PANE_FRAME_CHARS
+  }
+  if (fits(sections, undefined)) return [sections]
+  const units = rowUnits(sections)
+  // The widest marker any page could carry, so a page never overflows once its marker is drawn (D-334).
+  const widest = { index: units.length - 1, count: units.length }
+  const pages: (readonly ContextSection[])[] = []
+  let page: { readonly section: number; readonly rows: readonly ContextRow[] }[] = []
+  const sectionsOf = (parts: typeof page): ContextSection[] =>
+    parts.map(part => ({ title: sections[part.section]?.title ?? null, rows: part.rows }))
+  for (const unit of units) {
+    const last = page.at(-1)
+    const next =
+      last !== undefined && last.section === unit.section
+        ? [...page.slice(0, -1), { section: unit.section, rows: [...last.rows, ...unit.rows] }]
+        : [...page, { section: unit.section, rows: unit.rows }]
+    if (page.length === 0 || fits(sectionsOf(next), widest)) {
+      page = next
+      continue
+    }
+    pages.push(sectionsOf(page))
+    page = [{ section: unit.section, rows: unit.rows }]
+  }
+  pages.push(sectionsOf(page))
+
+  return pages
 }
 
 /** The colour of each rule marker of a scope card (D1): hard success, best-effort warning, none error. */

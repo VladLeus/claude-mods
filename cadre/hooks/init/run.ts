@@ -78,6 +78,7 @@ import {
 } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
+import { withPagedAsks } from '../ui/paging'
 import type { Surface } from '../ui/surface'
 import type { PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
@@ -725,13 +726,16 @@ export async function performState(io: InitIo, options: InitOptions, state: Init
  * effect and feeds the answer back.
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
+  // Every question goes through the paged port: on a pane surface a context over the frame cap is asked a page at a
+  // time, at the width the run reads before each ask (withPagedAsks, D-306).
+  const paged = withPagedAsks(io, options.surface ?? 'pane', () => options.pageColumns?.() ?? null)
   let state = initialState(options.dryRun, options.surface)
   // The folds the stages gave since the last ask, and those bound to the stage that asked first after them (D-302).
   let held: readonly Extract<Output, { readonly kind: 'fold' }>[] = []
   let boundStage: InitStage | null = null
   let bound: typeof held = []
   for (;;) {
-    for (const output of state.outputs) await showOutput(io, output)
+    for (const output of state.outputs) await showOutput(paged, output)
     held = [...held, ...state.outputs.flatMap(output => (output.kind === 'fold' ? [output] : []))]
     const { effect, openQuestion, stage } = state
     if (effect.kind === 'end') return effect.reply
@@ -746,7 +750,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
     }
     const folds = state.surface === 'tui-default' ? [] : bound
     const open = openQuestion === null ? null : { ...openQuestion, spec: foldedSpec(openQuestion.spec, folds) }
-    const answer = await performState(io, options, { ...state, openQuestion: open })
+    const answer = await performState(paged, options, { ...state, openQuestion: open })
     if (answer === null) return INIT_CANCELLED
     state = nextStage({ ...state, outputs: [], pageColumns: options.pageColumns?.() ?? null }, answer)
   }

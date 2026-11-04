@@ -166,7 +166,15 @@ import { proposalLines } from '../ui/blocks/context'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { diffLines, lineDiff } from '../ui/diff'
-import { PANE_PAGE_ROWS } from '../ui/pane'
+import {
+  frameSize,
+  MAX_PANE_FRAME_CHARS,
+  MAX_PANE_FRAME_ROWS,
+  PANE_FALLBACK_COLUMNS,
+  PANE_PAGE_ROWS,
+  paneBlockOf,
+  paneDrawn,
+} from '../ui/pane'
 import type { Surface } from '../ui/surface'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
@@ -6274,5 +6282,24 @@ describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () =>
       [{ index: 1, count: 3 }, ['Next page', 'Previous page', 'Go one by one', 'Whole group']],
       [{ index: 2, count: 3 }, ['Previous page', 'Accept recommendations', 'Go one by one', 'Whole group']],
     ])
+  })
+
+  test("every question's frame fits both caps at the fallback width, and each page ends with its marker", async () => {
+    const run = memIo(oversizeWorld({ replies }), answers)
+    await runInit(run.io, { dryRun: true })
+    const contexts = run.specs.flatMap(({ context }) => (context === undefined || context === null ? [] : [context]))
+    const blocks = contexts.map(context => {
+      const open = { question: '', header: '', context, acceptsTyped: false }
+
+      return { context, block: paneBlockOf({ open, loader: null }) }
+    })
+    for (const { block } of blocks) {
+      const size = block === null ? { rows: 0, chars: 0 } : frameSize(block, null)
+      expect(size.rows <= MAX_PANE_FRAME_ROWS && size.chars <= MAX_PANE_FRAME_CHARS).toBe(true)
+    }
+    const paged = blocks.flatMap(({ context, block }) => (context.page === undefined || block === null ? [] : [block]))
+    expect(paged.map(block => paneDrawn(block, PANE_FALLBACK_COLUMNS).at(-1))).toEqual(
+      ['page 1 of 3', 'page 2 of 3', 'page 3 of 3'].map(text => ({ spans: [{ text, dim: true }] })),
+    )
   })
 })
