@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Facts, RawFacts, RawGsdCandidate } from '../../../types'
 import { isChangedByClean } from '../../core/text'
 import type { ProbedGsdCandidate } from '../../framework/gsd/identity'
-import { hiddenNameWarnings, normalizeFacts, parseRepoEntries } from './normalize'
+import { hiddenNameWarnings, ignoredPluginKeyWarnings, normalizeFacts, parseRepoEntries } from './normalize'
 
 /** A value planted in settings env and in a hook command; it must never reach Facts. */
 const SENTINEL = 'SENTINEL_SECRET_123'
@@ -202,6 +202,35 @@ describe('names that clean would change (WR-03)', () => {
     const [warning] = hiddenNameWarnings([`${'x'.repeat(100)}\u200B`], 'repoEntry', 255)
     expect(warning).toBe(`ignored repo entry "${'x'.repeat(59)}\u2026": its name has hidden characters or is too long`)
     expect(String(warning)).not.toContain('\u200B')
+  })
+})
+
+describe('ignored plugin keys (D-267)', () => {
+  test('each refused key is named once, as shown, in the order given', () => {
+    const keys = ['autopilot@local-mods.', 'a b@m', 'autopilot@local-mods.']
+    expect(ignoredPluginKeyWarnings(keys)).toEqual([
+      'ignored plugin key: autopilot@local-mods.',
+      'ignored plugin key: a b@m',
+    ])
+  })
+
+  test('at most five keys are named, and the rest are counted in one more line, as hidden names are', () => {
+    const keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(name => `${name}@m.`)
+    expect(ignoredPluginKeyWarnings(keys)).toEqual([
+      ...keys.slice(0, 5).map(key => `ignored plugin key: ${key}`),
+      'ignored 2 more plugin keys',
+    ])
+    expect(ignoredPluginKeyWarnings(keys.slice(0, 6)).at(-1)).toBe('ignored 1 more plugin key')
+  })
+
+  test('a key is shown cleaned and capped, so it cannot add a line or hide text', () => {
+    const bidi = String.fromCodePoint(0x202e)
+    const [warning] = ignoredPluginKeyWarnings([`a${bidi}\nb@${'m'.repeat(200)}`])
+    expect([warning?.includes(bidi), warning?.includes('\n'), Array.from(warning ?? '').length <= 130]).toEqual([
+      false,
+      false,
+      true,
+    ])
   })
 })
 

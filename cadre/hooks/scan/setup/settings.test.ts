@@ -367,6 +367,46 @@ describe('setup settings', () => {
   })
 })
 
+describe('plugin keys not shaped name@marketplace (D-267)', () => {
+  /** installed_plugins.json of the fixture user. */
+  const INSTALLED_PATH = '/home/u/.claude/plugins/installed_plugins.json'
+
+  /** An installed_plugins.json holding each of `keys` installed for the user. */
+  function installedText(keys: readonly string[]): string {
+    const entries = [{ scope: 'user', version: '0.5.0' }]
+
+    return JSON.stringify({ plugins: Object.fromEntries(keys.map(key => [key, entries])) })
+  }
+
+  test('a dotted settings key is skipped: one autopilot plugin, one warning, the settings only read', async () => {
+    const user = { enabledPlugins: { 'autopilot@local-mods': true, 'autopilot@local-mods.': true } }
+    const before = JSON.stringify(user)
+    const files = { [INSTALLED_PATH]: installedText(['autopilot@local-mods']) }
+    const { scan, reads } = await runOf(memWorld({ settings: { user, project: {}, local: {} }, files }))
+    expect([scan.plugins, scan.installedPlugins]).toEqual([['autopilot@local-mods'], ['autopilot@local-mods']])
+    expect(scan.warnings).toEqual(['ignored plugin key: autopilot@local-mods.'])
+    expect([reads.includes(INSTALLED_PATH), JSON.stringify(user)]).toEqual([true, before])
+  })
+
+  test('a dotted installed_plugins.json key is skipped and named in a warning', async () => {
+    const files = { [INSTALLED_PATH]: installedText(['autopilot@local-mods', 'autopilot@local-mods.']) }
+    const scan = await scanOf(memWorld({ files }))
+    expect([scan.installedPlugins, scan.warnings]).toEqual([
+      ['autopilot@local-mods'],
+      ['ignored plugin key: autopilot@local-mods.'],
+    ])
+  })
+
+  test('seven refused keys: five are named and the rest counted in one line, as hidden names are', async () => {
+    const keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(name => `${name}@m.`)
+    const scan = await scanOf(settingsWorld({ enabledPlugins: Object.fromEntries(keys.map(key => [key, true])) }))
+    expect([scan.plugins, scan.warnings]).toEqual([
+      [],
+      [...keys.slice(0, 5).map(key => `ignored plugin key: ${key}`), 'ignored 2 more plugin keys'],
+    ])
+  })
+})
+
 describe('the .mcp.json approval lists of the settings (D-332)', () => {
   test('every source gives its disabled and enabled names, sorted once each, and whether it approves all', () => {
     const local = { disabledMcpjsonServers: ['a', `b${BIDI_OVERRIDE}`], enableAllProjectMcpServers: true }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, RepoEntry } from '../../../types'
+import { parseEnabledPlugins } from '../../scan/facts/settings'
 import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 import { isDecisionType } from '../contract'
 import { adapterOf } from '../registry'
@@ -93,16 +94,10 @@ describe('detectSuperpowers', () => {
     })
   })
 
-  test('a malformed superpowers@ key still counts, because the match is by prefix', () => {
-    const flags = [{ key: 'superpowers@x.', source: 'user' as const, value: true }]
+  test('a malformed superpowers@ key never counts: the settings parser drops it before detection (D-267)', () => {
+    const flags = parseEnabledPlugins({ enabledPlugins: { 'superpowers@x.': true } }, 'user')
 
-    expect(detectSuperpowers(facts({ enabledPlugins: flags }))).toEqual({
-      id: 'superpowers',
-      name: 'superpowers',
-      status: 'installed',
-      version: null,
-      evidence: ['enabledPlugins["superpowers@x."]=true (user)'],
-    })
+    expect([flags, detectSuperpowers(facts({ enabledPlugins: flags }))]).toEqual([[], NOT_FOUND])
   })
 
   test('a key that only starts with superpowers, or spells it with a capital, is not a superpowers@ key', () => {

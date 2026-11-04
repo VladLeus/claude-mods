@@ -4,6 +4,7 @@ import type { PluginVersion } from '../../../types'
 import {
   foldEnabledPlugins,
   hookScriptsMatching,
+  isPluginKey,
   parseEnabledPlugins,
   parseHookScripts,
   parseInstalledPlugins,
@@ -17,6 +18,26 @@ function installedPluginsOf(value: unknown, root: string, givenRoot: string = ro
   return parseInstalledPlugins(value, root, givenRoot)
 }
 
+describe('isPluginKey (D-267)', () => {
+  test('a key is name@marketplace: one @, two non-empty parts, no whitespace, no part ending in punctuation', () => {
+    const kept = ['autopilot@local-mods', 'superpowers@claude-plugins-official']
+    const refused = ['autopilot@local-mods.', 'a b@m', '@m', 'a@', 'a@b@c', 'a.@m', '']
+    expect([kept.map(key => isPluginKey(key)), refused.map(key => isPluginKey(key))]).toEqual([
+      kept.map(() => true),
+      refused.map(() => false),
+    ])
+  })
+
+  test('both plugin parsers drop autopilot@local-mods. and keep autopilot@local-mods', () => {
+    const value = { enabledPlugins: { 'autopilot@local-mods': true, 'autopilot@local-mods.': true } }
+    const entries = [{ scope: 'user', version: '0.5.0' }]
+    const plugins = { plugins: { 'autopilot@local-mods': entries, 'autopilot@local-mods.': entries } }
+    const enabled = parseEnabledPlugins(value, 'user').map(flag => flag.key)
+    const installed = installedPluginsOf(plugins, '/repo').map(plugin => plugin.key)
+    expect([enabled, installed]).toEqual([['autopilot@local-mods'], ['autopilot@local-mods']])
+  })
+})
+
 describe('parseEnabledPlugins', () => {
   test('keeps boolean flags only, each with the settings source it came from', () => {
     const value = {
@@ -28,17 +49,15 @@ describe('parseEnabledPlugins', () => {
     ])
   })
 
-  test('keeps a malformed key as written, and drops a key with bidi or line-break characters (WR-03)', () => {
-    const value = { enabledPlugins: { 'superpowers@x.': true, 'tool\u202E@a\nb': false } }
-    expect(parseEnabledPlugins(value, 'project')).toEqual([
-      { key: 'superpowers@x.', source: 'project', value: true },
-    ])
+  test('drops a malformed key and a key with bidi or line-break characters (WR-03, D-267)', () => {
+    const value = { enabledPlugins: { 'superpowers@x.': true, 'tool\u202E@a\nb': false, 'superpowers@x': true } }
+    expect(parseEnabledPlugins(value, 'project')).toEqual([{ key: 'superpowers@x', source: 'project', value: true }])
   })
 
   test('a key longer than 120 code points is dropped, and a key of exactly 120 is kept (WR-03 decision)', () => {
-    const value = { enabledPlugins: { [`${'k'.repeat(121)}`]: true, [`${'j'.repeat(120)}`]: true } }
-    const keys = parseEnabledPlugins(value, 'user').map(flag => flag.key)
-    expect(keys).toEqual(['j'.repeat(120)])
+    const [long, kept] = [`${'k'.repeat(60)}@${'m'.repeat(60)}`, `${'j'.repeat(60)}@${'m'.repeat(59)}`]
+    const keys = parseEnabledPlugins({ enabledPlugins: { [long]: true, [kept]: true } }, 'user').map(flag => flag.key)
+    expect(keys).toEqual([kept])
   })
 
   test('gives no flags for null, for an array, or for an object without enabledPlugins', () => {
