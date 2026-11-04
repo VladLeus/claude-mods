@@ -10,7 +10,6 @@ import {
   dialogPlan,
   fitPreview,
   latestColumns,
-  MAX_LOG_ENTRY_CHARS,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
   previewColumns,
@@ -723,10 +722,6 @@ describe('tuiTranscriptEntries (WD-S4, D-262)', () => {
       summary: `${count} lines`,
     }
   }
-
-  test('the engine draws 2000 characters of a transcript entry, so an entry holds 1999 at most', () => {
-    expect(MAX_LOG_ENTRY_CHARS).toBe(1999)
-  })
 
   test('a title and 30 short lines give one entry per row: the title, then every line (D-262, user 2026-11-04)', () => {
     const context = linesContext(30)

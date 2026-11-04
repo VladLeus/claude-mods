@@ -18,13 +18,6 @@ import type { Surface } from './surface'
  */
 export const MAX_PREVIEW_CHARS = 1900
 
-/**
- * The most characters, by String length, one transcript entry printed above a TUI-default dialog holds (D-262,
- * D-286): the engine draws the first 2000 characters of a `$.ui.log` text on the terminal (`[ASSUMED]`, from the
- * engine stub's `ui.log` docs), so an entry stays under that. A String length is never below its code points.
- */
-export const MAX_LOG_ENTRY_CHARS = 1999
-
 /** The last line of a preview that was cut (D3). */
 const CUT_LINE = '…'
 
@@ -116,14 +109,13 @@ export function fitPreview(context: AskContext, rows: number, columns: number | 
 }
 
 /**
- * The transcript entries the TUI default prints right above a dialog (D-228, D-262, D-286, WD-S4): for a context too
- * long for the preview drawn at `columns` (fitPreview at PREVIEW_LINE_ROWS, D-260), its title and then every line as
- * rows, each cleaned with no cap (T-02.1-79, T-02.2-09), so no value can add a row or a title of its own, packed in
- * order into the fewest entries of whole rows joined by newlines, each at most MAX_LOG_ENTRY_CHARS long by String
- * length, the title in the first; a row that alone does not fit is an entry of its own and is never cut, so the full
- * text above holds whole what the preview leaves out. None for a context that fits, for the Review (it is paged), for
- * no context, and for a context with the same title and the same lines, in order, as `printed`, the one printed last,
- * so a question asked again prints its context once.
+ * The transcript entries the TUI default prints right above a dialog (D-228, D-262, WD-S4): for a context too long for
+ * the preview drawn at `columns` (fitPreview at PREVIEW_LINE_ROWS, D-260), one entry per row, its title and then every
+ * line, each cleaned with no cap (T-02.1-79, T-02.2-09), so no value can add an entry or a title of its own and the
+ * full text above holds whole what the preview leaves out. Rows are never joined: the terminal stores a newline inside
+ * a `$.ui.log` text as U+FFFD and draws the rows run together (D-262 reload check, user 2026-11-04). None for a context
+ * that fits, for the Review (it is paged), for no context, and for a context with the same title and the same lines,
+ * in order, as `printed`, the one printed last, so a question asked again prints its context once.
  */
 export function tuiTranscriptEntries(
   context: AskContext | null,
@@ -138,17 +130,8 @@ export function tuiTranscriptEntries(
     printed.lines.length === lines.length &&
     printed.lines.every((line, at) => line === lines[at])
   if (isPrinted) return []
-  const entries: string[] = []
-  for (const row of [title, ...lines].map(line => clean(line, UNCUT))) {
-    const last = entries.at(-1)
-    if (last !== undefined && last.length + 1 + row.length <= MAX_LOG_ENTRY_CHARS) {
-      entries[entries.length - 1] = `${last}\n${row}`
-      continue
-    }
-    entries.push(row)
-  }
 
-  return entries
+  return [title, ...lines].map(line => clean(line, UNCUT))
 }
 
 /** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */

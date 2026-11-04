@@ -167,11 +167,10 @@ type PaneRun = {
 
 /**
  * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
- * the preview drawn at `columns` right above the dialog as one transcript entry, its title and lines joined by
- * newlines, or as the fewest entries under the engine's 2000-character draw limit, each a whole run of rows, the title
- * in the first; each line cleaned and nothing cut. It prints once per question: a question asked again with the
- * context the run printed last prints nothing (tuiTranscriptEntries, D-228, D-260, D-262, D-286, WD-S4); the preview
- * ends with how many lines it left out. A context that fits, and the Review, print nothing.
+ * the preview drawn at `columns` right above the dialog, one transcript entry per row, its title first, each line
+ * cleaned and uncut, as the terminal draws no newline inside an entry (D-262). It prints once per question: a question
+ * asked again with the context the run printed last prints nothing (tuiTranscriptEntries, D-228, D-260, D-262,
+ * WD-S4); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing.
  */
 function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext | null, columns: number | null): void {
   $.ui.status(undefined)
