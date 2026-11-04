@@ -32,7 +32,7 @@ import { runStart } from './start/run'
 import { runStatus } from './status/run'
 import { paneQuestionText } from './ui/ask'
 import { pageColumnsOf, paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
-import { answersFromNotes, dialogPlan, latestColumns, tuiTranscriptRows } from './ui/preview'
+import { answersFromNotes, dialogPlan, latestColumns, tuiTranscriptEntries } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
 
@@ -167,16 +167,17 @@ type PaneRun = {
 
 /**
  * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
- * the preview drawn at `columns` as transcript rows right above the dialog, its title first, each line cleaned and
- * uncut, once per question: a question asked again with the context the run printed last prints nothing
- * (tuiTranscriptRows, D-228, D-260, WD-S4); the preview ends with how many lines it left out. A context that fits, and
- * the Review, print nothing.
+ * the preview drawn at `columns` right above the dialog as one transcript entry, its title and lines joined by
+ * newlines, or as the fewest entries under the engine's 2000-character draw limit, each a whole run of rows, the title
+ * in the first; each line cleaned and nothing cut. It prints once per question: a question asked again with the
+ * context the run printed last prints nothing (tuiTranscriptEntries, D-228, D-260, D-262, D-286, WD-S4); the preview
+ * ends with how many lines it left out. A context that fits, and the Review, print nothing.
  */
 function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext | null, columns: number | null): void {
   $.ui.status(undefined)
-  const rows = tuiTranscriptRows(context, pane.printed, columns)
-  if (rows.length === 0) return
-  for (const row of rows) $.ui.log(row)
+  const entries = tuiTranscriptEntries(context, pane.printed, columns)
+  if (entries.length === 0) return
+  for (const entry of entries) $.ui.log(entry)
   pane.printed = context
 }
 

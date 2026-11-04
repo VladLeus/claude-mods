@@ -10,13 +10,14 @@ import {
   dialogPlan,
   fitPreview,
   latestColumns,
+  MAX_LOG_ENTRY_CHARS,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
   previewColumns,
   previewMarkdown,
   PREVIEW_LINE_ROWS,
   PREVIEW_ROWS,
-  tuiTranscriptRows,
+  tuiTranscriptEntries,
   withDescribeOwn,
   withPreviews,
 } from './preview'
@@ -712,7 +713,7 @@ describe('the TUI-default preview by wrapped rows (D-260)', () => {
   })
 })
 
-describe('tuiTranscriptRows (WD-S4)', () => {
+describe('tuiTranscriptEntries (WD-S4, D-262, D-286)', () => {
   /** A context of `count` lines `line 1`, `line 2`, ... of `kind`. */
   function linesContext(count: number, kind: AskContext['kind'] = 'skills'): AskContext {
     return {
@@ -723,36 +724,68 @@ describe('tuiTranscriptRows (WD-S4)', () => {
     }
   }
 
-  test('an overflowing context gives its title and every line, cleaned and never cut at 240 code points', () => {
-    const wide = 'x'.repeat(300)
-    const rest = linesContext(PREVIEW_LINE_ROWS).lines
-    const lines = [wide, `a${BIDI_OVERRIDE}b`, ...rest]
-    const context: AskContext = { title: `Long ${BIDI_OVERRIDE}list`, lines, kind: 'skills', summary: 'Long list' }
-    expect(tuiTranscriptRows(context, null, null)).toEqual(['Long list', wide, 'ab', ...rest])
+  test('the engine draws 2000 characters of a transcript entry, so an entry holds 1999 at most', () => {
+    expect(MAX_LOG_ENTRY_CHARS).toBe(1999)
   })
 
-  test('a context that fits the preview, the Review and no context give no rows', () => {
-    expect(tuiTranscriptRows(linesContext(PREVIEW_LINE_ROWS - 1), null, null)).toEqual([])
-    expect(tuiTranscriptRows(linesContext(40, 'review'), null, null)).toEqual([])
-    expect(tuiTranscriptRows(null, linesContext(30), null)).toEqual([])
+  test('a title and 30 short lines give one entry: the title, then every line, joined by newlines (D-262)', () => {
+    const context = linesContext(30)
+    expect(tuiTranscriptEntries(context, null, null)).toEqual([['Lines', ...context.lines].join('\n')])
+  })
+
+  test('4500 characters give the fewest entries under 2000, whole lines, the title in the first (D-286)', () => {
+    const lines = Array.from({ length: 45 }, (_, at) => String(at).padStart(2, '0').padEnd(99, 'x'))
+    const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '45 lines' }
+    const entries = tuiTranscriptEntries(context, null, null)
+    expect(['Lines', ...lines].join('\n').length).toBe(4505)
+    expect(entries.map(entry => entry.length)).toEqual([1905, 1999, 599])
+    expect(entries.join('\n')).toBe(['Lines', ...lines].join('\n'))
+    expect(entries.map(entry => entry.split('\n')[0])).toEqual(['Lines', lines[19], lines[39]])
+  })
+
+  test('a line of 2500 characters is an entry of its own, never cut (D-286)', () => {
+    const long = 'x'.repeat(2500)
+    const lines = linesContext(25).lines.map((line, at) => (at === 2 ? long : line))
+    const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '25 lines' }
+    expect(tuiTranscriptEntries(context, null, null)).toEqual([
+      'Lines\nline 1\nline 2',
+      long,
+      lines.slice(3).join('\n'),
+    ])
+  })
+
+  test('each row is cleaned and uncut, so a scanned newline or control adds no row or title (T-02.2-09)', () => {
+    const wide = 'x'.repeat(300)
+    const rest = linesContext(PREVIEW_LINE_ROWS).lines
+    const lines = [wide, `a${BIDI_OVERRIDE}b`, `c${String.fromCodePoint(10)}Forged title`, ...rest]
+    const context: AskContext = { title: `Long ${BIDI_OVERRIDE}list`, lines, kind: 'skills', summary: 'Long list' }
+    const [entry = ''] = tuiTranscriptEntries(context, null, null)
+    expect(entry.split('\n')).toEqual(['Long list', wide, 'ab', 'cForged title', ...rest])
+  })
+
+  test('a context that fits the preview, the Review and no context give no entry', () => {
+    expect(tuiTranscriptEntries(linesContext(PREVIEW_LINE_ROWS - 1), null, null)).toEqual([])
+    expect(tuiTranscriptEntries(linesContext(40, 'review'), null, null)).toEqual([])
+    expect(tuiTranscriptEntries(null, linesContext(30), null)).toEqual([])
   })
 
   test('a context of PREVIEW_LINE_ROWS lines overflows, its title row counted (D-260)', () => {
     const context = linesContext(PREVIEW_LINE_ROWS)
-    expect(tuiTranscriptRows(context, null, null)).toEqual(['Lines', ...context.lines])
+    expect(tuiTranscriptEntries(context, null, null)).toEqual([['Lines', ...context.lines].join('\n')])
     const wrapped = linesContext(15).lines.map(line => line.padEnd(100, 'x'))
     const wide = { ...linesContext(15), lines: wrapped }
-    expect([tuiTranscriptRows(wide, null, null), tuiTranscriptRows(wide, null, 40).length]).toEqual([[], 16])
+    const entries = [tuiTranscriptEntries(wide, null, null), tuiTranscriptEntries(wide, null, 40)]
+    expect(entries).toEqual([[], [['Lines', ...wrapped].join('\n')]])
   })
 
-  test('the context printed last, by its title and lines, gives no rows; a changed one gives them all', () => {
+  test('the context printed last, by its title and lines, gives no entry; a changed one gives it all', () => {
     const printed = linesContext(30)
     const rebuilt = { ...printed, lines: [...printed.lines] }
     const changed = { ...printed, lines: [...printed.lines.slice(0, -1), 'line X'] }
     const retitled = { ...printed, title: 'Other' }
-    expect(tuiTranscriptRows(rebuilt, printed, null)).toEqual([])
-    expect(tuiTranscriptRows(changed, printed, null)).toEqual(['Lines', ...changed.lines])
-    expect(tuiTranscriptRows(retitled, printed, null)).toEqual(['Other', ...printed.lines])
+    expect(tuiTranscriptEntries(rebuilt, printed, null)).toEqual([])
+    expect(tuiTranscriptEntries(changed, printed, null)).toEqual([['Lines', ...changed.lines].join('\n')])
+    expect(tuiTranscriptEntries(retitled, printed, null)).toEqual([['Other', ...printed.lines].join('\n')])
   })
 })
 
