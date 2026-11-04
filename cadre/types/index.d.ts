@@ -1034,8 +1034,8 @@ export type SkillRef = {
   readonly name: string
   readonly plugin: string | null
   /**
-   * The skill's one-line description, cleaned and cut to 120 code points; in memory only, for the questions and the
-   * recommendation call; never written (D-139).
+   * The skill's one-line description, cleaned and cut to 240 code points (MAX_REPORT_CHARS, D-330); in memory only,
+   * for the questions and the recommendation call; never written (D-139).
    */
   readonly purpose?: string
 }

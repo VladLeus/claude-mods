@@ -188,8 +188,9 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * and typed-answer flag into the pane state in one update before the dialog, no loader with it, and the idle state in
  * one update after it (D-303), scrolls a pane the run opened back to its start for each question (questionScroll,
  * D-209; a scroll the host refuses is swallowed), and gives the dialog only its options, header and multi-select
- * (D-203, D-229). On a pane surface it asks, and keeps as the open question's text, the question's sentence and one
- * context line (paneQuestionText, D-255), so the dialog hook still pairs the dialog with it. `show` draws nothing on
+ * (D-203, D-229). On a pane surface it asks, and keeps as the open question's text, the pane text of the question's
+ * context: its sentence and summary, plus the page marker on a paged question, with the refusal line on top of a
+ * refusal (paneQuestionText, D-255, D-310), so the dialog hook still pairs the dialog with it. `show` draws nothing on
  * any surface: it stays for the port (D-326), as the pane draws only the open question's context or the loader
  * (D-299). On a pane surface `progress` writes the step's label and summary as the loader in one update, which the
  * pane draws alone between questions (D-301, D-327), and `log` writes a line logged while that step runs as the
@@ -204,8 +205,8 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
     ask: async (question, spec) => {
       const { options, header, multiSelect, context, acceptsTyped } = spec
-      // A pane surface asks the sentence and one context line, the pane holding the rest (D-255); the TUI default and
-      // a run with no surface ask the question as given.
+      // A pane surface asks the pane text of the question's context: its sentence and summary, plus the page marker
+      // on a paged question (paneQuestionText, D-310); the TUI default and a run with no surface ask it as given.
       const text = pane.surface === 'pane' ? paneQuestionText(question, context ?? null) : question
       const open: OpenQuestion = {
         question: text,
