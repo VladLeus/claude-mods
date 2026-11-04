@@ -31,6 +31,9 @@ const ROLE_LIST_OPTIONS = ['None', 'All roles']
 /** The buttons of a plugin group question with no recommendation for the group (D-251). */
 const GROUP_OPTIONS = ['Go one by one', ...ROLE_LIST_OPTIONS]
 
+/** How a plugin group spreads its buttons over its pages on a pane surface (D-328): None and All roles on none. */
+const GROUP_PAGE_OPTIONS = { always: ['Go one by one'], dropped: ROLE_LIST_OPTIONS }
+
 /** The assign stage run over `io` for `roles`, the setup scan `setup` and the history `hints`, as a step result. */
 function assignedBy(
   io: InitIo,
@@ -156,7 +159,13 @@ describe('assignmentStep', () => {
       },
       { options: ['Yes', 'No'], header: 'MCP 1/2', context: JIRA_CONTEXT, acceptsTyped: true },
       { options: ['Yes', 'No'], header: 'MCP 2/2', context: SENTRY_CONTEXT, acceptsTyped: true },
-      { options: GROUP_OPTIONS, header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
+      {
+        options: GROUP_OPTIONS,
+        header: 'Skills',
+        pageOptions: GROUP_PAGE_OPTIONS,
+        context: CODEX_CONTEXT,
+        acceptsTyped: true,
+      },
     ])
     expect(assigned.map(role => [role.id, role.mcp])).toEqual([
       ['pm', ['jira']],
@@ -389,7 +398,13 @@ describe('the assign stage (D-230)', () => {
       rows: groupRows('none', [['codex:rescue', null]]),
     }
     const typed = { acceptsTyped: true }
-    expect(group.openQuestion?.spec).toEqual({ options: GROUP_OPTIONS, header: 'Skills', context: codex, ...typed })
+    expect(group.openQuestion?.spec).toEqual({
+      options: GROUP_OPTIONS,
+      header: 'Skills',
+      pageOptions: GROUP_PAGE_OPTIONS,
+      context: codex,
+      ...typed,
+    })
   })
 
   test('an MCP server question names its source and the tools the session lists for it (D-211)', () => {

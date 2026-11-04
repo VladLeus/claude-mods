@@ -198,7 +198,13 @@ describe('own skills hand-out (G-02-1b)', () => {
     const { run } = await stepRun(['None', 'Accept recommendations'])
     expect(run.asked).toEqual([withContext(CODEX_QUESTION, skillsContextLine(roles)), ENTRY_ASKED])
     expect(run.specs).toEqual([
-      { options: ['Go one by one', 'None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
+      {
+        options: ['Go one by one', 'None', 'All roles'],
+        header: 'Skills',
+        pageOptions: { always: ['Go one by one'], dropped: ['None', 'All roles'] },
+        context: CODEX_CONTEXT,
+        acceptsTyped: true,
+      },
       { options: OWN_ENTRY_OPTIONS, header: 'Skills', pageOptions: OWN_PAGE_OPTIONS, context: OWN_CONTEXT },
     ])
   })

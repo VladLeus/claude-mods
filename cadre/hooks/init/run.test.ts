@@ -61,6 +61,7 @@ import {
   GOLDEN_WORLDS,
   infraPluginWorld,
   manyNamesWorld,
+  oversizeGroupWorld,
   oversizeWorld,
   tableMatchWorld,
 } from '../golden/worlds'
@@ -6301,5 +6302,36 @@ describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () =>
     expect(paged.map(block => paneDrawn(block, PANE_FALLBACK_COLUMNS).at(-1))).toEqual(
       ['page 1 of 3', 'page 2 of 3', 'page 3 of 3'].map(text => ({ spans: [{ text, dim: true }] })),
     )
+  })
+})
+
+describe('an oversize plugin group on a pane surface (D-328)', () => {
+  /** The model's reply: the bigkit group recommended for the PM. */
+  const replies = ['{"skills":{},"groups":{"G1":["pm"]}}']
+
+  /** The start of the bigkit plugin group question. */
+  const prefix = 'Which roles get bigkit skills'
+
+  test('it is asked a page at a time: Accept recommendation on its last page, None and All roles on none', async () => {
+    const run = memIo(oversizeGroupWorld({ replies }), { ...INIT_ANSWERS, [prefix]: 'Accept recommendation' })
+    await runInit(run.io, { dryRun: true })
+    const groups = run.specs.filter((_, at) => (run.asked[at] ?? '').startsWith(prefix))
+    expect(groups.map(spec => spec.options)).toEqual([
+      ['Next page', 'Go one by one'],
+      ['Next page', 'Previous page', 'Go one by one'],
+      ['Previous page', 'Accept recommendation', 'Go one by one'],
+    ])
+  })
+
+  test('a typed none or all on its first page is read as on the unpaged group of the TUI default', async () => {
+    for (const typed of ['none', 'all']) {
+      const answers = { ...INIT_ANSWERS, [prefix]: typed }
+      const paged = memIo(oversizeGroupWorld({ replies }), answers)
+      const unpaged = memIo(oversizeGroupWorld({ replies }), answers)
+      const reply = await runInit(paged.io, { dryRun: true })
+      expect(reply).toBe(await runInit(unpaged.io, { dryRun: true, surface: 'tui-default' }))
+      const groups = paged.specs.filter((_, at) => (paged.asked[at] ?? '').startsWith(prefix))
+      expect(groups.map(spec => spec.options)).toEqual([['Next page', 'Go one by one']])
+    }
   })
 })

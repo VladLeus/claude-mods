@@ -999,3 +999,19 @@ export function oversizeWorld(over: Partial<MemWorld> = {}): MemWorld {
 
   return gitWorld({ tools, commands, ...over })
 }
+
+/**
+ * gitWorld with one plugin, bigkit, of forty skills, bigkit:skill01 to bigkit:skill40, each with OVERSIZE_DESCRIPTION,
+ * so its plugin group question is larger than one pane frame can draw and is paged on a pane surface (D-305, D-328).
+ * It is no golden world. `over` changes the fields it names.
+ */
+export function oversizeGroupWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const commands = Array.from({ length: 40 }, (_, at) => ({
+    name: `bigkit:skill${String(at + 1).padStart(2, '0')}`,
+    source: 'plugin',
+    plugin: 'bigkit',
+    description: OVERSIZE_DESCRIPTION,
+  }))
+
+  return gitWorld({ commands, ...over })
+}
