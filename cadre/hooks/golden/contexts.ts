@@ -2419,18 +2419,13 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "summary": "1 server, 0 recommended",
         "rows": [
           {
-            "title": null,
+            "title": "Not recommended",
             "rows": [
               {
                 "role": "item",
                 "label": "sentry",
-                "text": "none",
+                "text": "",
                 "indent": 2
-              },
-              {
-                "role": "description",
-                "text": "session, 1 tool",
-                "indent": 4
               }
             ]
           }
@@ -2453,18 +2448,13 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "summary": "1 server, 0 recommended",
         "rows": [
           {
-            "title": null,
+            "title": "Not recommended",
             "rows": [
               {
                 "role": "item",
                 "label": "sentry",
-                "text": "none",
+                "text": "",
                 "indent": 2
-              },
-              {
-                "role": "description",
-                "text": "session, 1 tool",
-                "indent": 4
               }
             ]
           }

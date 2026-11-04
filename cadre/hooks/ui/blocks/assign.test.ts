@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, ContextRow, McpRef } from '../../../types'
+import type { AskContext, ContextRow, McpRef, RoleSpec } from '../../../types'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
+import { templateRole } from '../../testkit'
 import { paneDrawn } from '../pane'
 import {
   mcpGroupContext,
@@ -12,7 +13,7 @@ import {
   skillContext,
   skillGroupContext,
 } from './assign'
-import type { SkillLine } from './assign'
+import type { McpLine, SkillLine } from './assign'
 
 /** A server of the repo's `.mcp.json`. */
 const GITHUB: McpRef = { name: 'github', source: 'project' }
@@ -229,34 +230,86 @@ describe('own skill lines and their caps (#163)', () => {
   })
 })
 
-describe('mcpGroupContext (D-250)', () => {
+describe('mcpGroupContext (D-250, D-309, D-333)', () => {
+  /** BE, FE and QA. */
+  const ROLES: readonly RoleSpec[] = [templateRole('be'), templateRole('fe'), templateRole('qa')]
+
+  /** A server of the list as an item row with no roles, which the pane draws as its name alone (D-309). */
+  const listed = (label: string): ContextRow => ({ role: 'item', label, text: '', indent: 2 })
+
+  /** An MCP line of `name`, connected with one tool and no recommendation unless `over` says otherwise. */
+  const line = (name: string, over: Partial<McpLine> = {}): McpLine => ({
+    name,
+    source: 'session',
+    tools: 1,
+    recommended: [],
+    isConnected: true,
+    isConnector: false,
+    ...over,
+  })
+
   test('the question for all the servers lists each with its source, its tool count and its recommended roles', () => {
     const lines = [
-      { name: 'github', source: 'session', tools: 2, recommended: ['tl'] },
-      { name: 'sentry', source: '.mcp.json', tools: 0, recommended: [] },
-      { name: 'jira', source: 'claude.ai', tools: 1, recommended: [] },
+      line('github', { tools: 2, recommended: ['tl'] }),
+      line('sentry', { source: '.mcp.json', tools: 0, isConnected: false }),
+      line('jira', { source: 'claude.ai', isConnector: true }),
     ]
     const texts = [
       'github: session, 2 tools. Recommended: tl.',
       'sentry: .mcp.json, 0 tools. Recommended: none.',
       'jira: claude.ai, 1 tool. Recommended: none.',
     ]
-    expect(mcpGroupContext(lines)).toEqual({
+    expect(mcpGroupContext(lines, [...ROLES, templateRole('tl')])).toEqual({
       title: 'MCP servers',
       lines: texts,
       kind: 'mcp-server',
       summary: '3 servers, 1 recommended',
       rows: [
-        {
-          title: null,
-          rows: [
-            ...itemOf('github', 'tl', 'session, 2 tools'),
-            ...itemOf('sentry', 'none', '.mcp.json, 0 tools'),
-            ...itemOf('jira', 'none', 'claude.ai, 1 tool'),
-          ],
-        },
+        { title: 'tl: Team Lead', rows: [listed('github')] },
+        { title: 'Not recommended', rows: [listed('sentry (not connected)'), listed('jira (claude.ai)')] },
       ],
     })
+  })
+
+  test('a section per role in team order holds each server recommended for it, then Not recommended', () => {
+    const lines = [
+      line('a', { recommended: ['be', 'fe'] }),
+      line('b'),
+      line('c', { recommended: ['qa'] }),
+      line('d', { tools: 0, isConnected: false }),
+    ]
+    expect(mcpGroupContext(lines, ROLES).rows).toEqual([
+      { title: 'be: BE', rows: [listed('a')] },
+      { title: 'fe: FE', rows: [listed('a')] },
+      { title: 'qa: QA', rows: [listed('c')] },
+      { title: 'Not recommended', rows: [listed('b'), listed('d (not connected)')] },
+    ])
+    const recommended = mcpGroupContext([line('a', { recommended: ['fe'] })], ROLES).rows
+    expect(recommended).toEqual([{ title: 'fe: FE', rows: [listed('a')] }])
+  })
+
+  test('a connector is tagged claude.ai, also not connected when the session lists no tool for it', () => {
+    const lines = [
+      line('claude_ai_Gmail', { isConnector: true }),
+      line('claude_ai_Notion', { isConnector: true, tools: 0, isConnected: false }),
+      line('jira'),
+    ]
+    expect(mcpGroupContext(lines, ROLES).rows).toEqual([
+      {
+        title: 'Not recommended',
+        rows: [
+          listed('claude_ai_Gmail (claude.ai)'),
+          listed('claude_ai_Notion (claude.ai, not connected)'),
+          listed('jira'),
+        ],
+      },
+    ])
+  })
+
+  test('the pane draws each server of the list as its name alone, under its section titles', () => {
+    const lines = [line('a', { recommended: ['be'] }), line('d', { tools: 0, isConnected: false })]
+    const drawn = drawnLines(mcpGroupContext(lines, ROLES))
+    expect(drawn).toEqual(['be: BE', '  a', '', 'Not recommended', '  d (not connected)'])
   })
 })
 

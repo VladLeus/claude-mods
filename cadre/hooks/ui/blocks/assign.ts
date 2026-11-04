@@ -9,7 +9,7 @@
  * description is not cut here, as the scan capped it at MAX_REPORT_CHARS (D-312, D-330). It imports core, the UNCUT
  * rule of ui/pane, the item rows of ui/blocks/context and the types, so the assignment stage reads it here.
  */
-import type { AskContext, ContextRow, McpRef } from '../../../types'
+import type { AskContext, ContextRow, ContextSection, McpRef, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
 import type { ListWords } from '../../core/text'
@@ -18,7 +18,7 @@ import { UNCUT } from '../pane'
 import { itemRows } from './context'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
-const CLAUDE_AI_SERVER_PREFIX = 'claude_ai_'
+export const CLAUDE_AI_SERVER_PREFIX = 'claude_ai_'
 
 /** The most code points of a server, group or skill name a context shows, as the questions cut them. */
 const MAX_CONTEXT_NAME_CHARS = 60
@@ -187,24 +187,67 @@ export function skillGroupContext(
 }
 
 /**
- * One MCP server as the context of the question for all the servers lists it (D-250): its name, the source word of
- * its server question (mcpSourceText), how many tool names the session lists for it, and the ids of the roles
- * recommended for it.
+ * One MCP server as the context of the question for all the servers lists it (D-250, D-309): its name, the source
+ * word of its server question (mcpSourceText), how many tool names the session lists for it, the ids of the roles
+ * recommended for it, whether the session connected it (it lists a tool for it) and whether it is a claude.ai
+ * connector (its name starts with CLAUDE_AI_SERVER_PREFIX).
  */
 export type McpLine = {
   readonly name: string
   readonly source: string
   readonly tools: number
   readonly recommended: readonly string[]
+  readonly isConnected: boolean
+  readonly isConnector: boolean
+}
+
+/**
+ * An MCP server's name as the list of all the servers shows it (D-309): cut to 60 code points, then, only when it has
+ * any, its tags in parentheses, joined by `, `: `claude.ai` for a claude.ai connector, then `not connected` for a
+ * server the session lists no tool for, so a connected server of any other kind shows its name alone.
+ */
+function mcpItemLabel(line: McpLine): string {
+  const name = shown(line.name, MAX_CONTEXT_NAME_CHARS)
+  const tags = [
+    ...(line.isConnector ? [t('ui.assign.tagConnector')] : []),
+    ...(line.isConnected ? [] : [t('ui.assign.tagNotConnected')]),
+  ]
+
+  return tags.length === 0 ? name : `${name} (${tags.join(', ')})`
+}
+
+/**
+ * The rows of the list of all the MCP servers on pane surfaces (D-309, D-333): a section per role of `roles` in team
+ * order, titled with the role's id and title, holding each server recommended for it, so a server recommended for
+ * several roles is listed under each, then a section titled Not recommended holding the servers recommended for none;
+ * a role no server is recommended for has no section, and nor has Not recommended when every server has a role. Each
+ * server, in the order given, is an item row with its name and tags (mcpItemLabel) and no roles, which the pane draws
+ * as its name alone; its source, tools and details stay in its own question (mcpServerContext).
+ */
+function mcpRoleSections(lines: readonly McpLine[], roles: readonly RoleSpec[]): ContextSection[] {
+  const itemOf = (line: McpLine): ContextRow => ({ role: 'item', label: mcpItemLabel(line), text: '', indent: 2 })
+  const sections = roles.flatMap(role => {
+    const given = lines.filter(line => line.recommended.includes(role.id))
+    if (given.length === 0) return []
+    const title = t('ui.assign.mcpRoleSection', { id: shown(role.id), title: shown(role.title) })
+
+    return [{ title, rows: given.map(itemOf) }]
+  })
+  const none = lines.filter(line => line.recommended.length === 0)
+  if (none.length === 0) return sections
+
+  return [...sections, { title: t('ui.assign.notRecommended'), rows: none.map(itemOf) }]
 }
 
 /**
  * The context of the question for all the MCP servers at once (D-250), as skillGroupContext is for a skill group: the
  * title MCP servers, then one line per server with its source, how many tools the session lists for it (counted, `1
  * tool`) and the roles recommended for it, or none; the name cut to 60 code points and every value cleaned. Its
- * summary counts the servers and those with a recommended role (D-310).
+ * summary counts the servers and those with a recommended role (D-310). Its rows, which the pane draws, list the
+ * servers by the roles of `roles` they are recommended for (mcpRoleSections, D-309, D-333); the lines stay as they are
+ * for the TUI default.
  */
-export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
+export function mcpGroupContext(lines: readonly McpLine[], roles: readonly RoleSpec[]): AskContext {
   const lineText = (line: McpLine): string =>
     tn('ui.assign.mcpGroupLine', line.tools, {
       name: shown(line.name, MAX_CONTEXT_NAME_CHARS),
@@ -216,18 +259,13 @@ export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
   const recommended = lines.filter(line => line.recommended.length > 0).length
   const summary = tn('ui.summary.mcpGroup', lines.length, { count: lines.length, recommended })
   const texts = lines.map(lineText)
-  const rows = lines.flatMap(line => {
-    const description = tn('ui.item.mcpDescription', line.tools, { source: clean(line.source), count: line.tools })
-
-    return itemRows(shown(line.name, MAX_CONTEXT_NAME_CHARS), line.recommended, description)
-  })
 
   return {
     title: t('ui.assign.mcpGroupContextTitle'),
     lines: texts,
     kind: 'mcp-server',
     summary,
-    rows: [{ title: null, rows }],
+    rows: mcpRoleSections(lines, roles),
   }
 }
 

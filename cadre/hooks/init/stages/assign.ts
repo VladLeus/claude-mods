@@ -19,7 +19,13 @@ import { ownSkillId } from '../../suggest/skills'
 import type { SkillPromptGroup, SkillsRecommendation } from '../../suggest/skills'
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
-import { mcpGroupContext, mcpSourceText, mcpToolNamesOf, ownSkillsContext } from '../../ui/blocks/assign'
+import {
+  CLAUDE_AI_SERVER_PREFIX,
+  mcpGroupContext,
+  mcpSourceText,
+  mcpToolNamesOf,
+  ownSkillsContext,
+} from '../../ui/blocks/assign'
 import type { McpLine } from '../../ui/blocks/assign'
 import { listWordsOf } from '../../ui/surface'
 import { assignToRoles, ownSkillContextRows, ownSkillLines, parseRoleList } from '../answers'
@@ -114,7 +120,8 @@ function mcpStart(state: InitState, plan: AssignPlan, recommended: ReadonlyMap<s
   if (names.length === 0) return skillsStart(state, plan, [])
   const refs = names.map(name => mcpRefOf(plan.setup.mcp, name))
   const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles, listWordsOf(state.surface))
-  const entry = { ...mcpEntry(names.length), context: mcpGroupContext(mcpLinesOf(state, plan, recommended)) }
+  const context = mcpGroupContext(mcpLinesOf(state, plan, recommended), plan.roles)
+  const entry = { ...mcpEntry(names.length), context }
 
   return mcpHandedOut(state, plan, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
 }
@@ -146,27 +153,34 @@ type McpWholeCursor = Omit<Extract<InitState['sub'], { readonly kind: 'mcp-whole
 
 /**
  * Each MCP server of the plan as the contexts of the MCP entry and of the question for all the servers list it
- * (D-250, D-300): its name, its source (mcpSourceText), how many tool names the session lists for it and the roles
- * `recommended` gives it, none when it gives none.
+ * (D-250, D-300, D-309): its name, its source (mcpSourceText), how many tool names the session lists for it, the roles
+ * `recommended` gives it, none when it gives none, whether it is connected (the session lists a tool for it) and
+ * whether it is a claude.ai connector (CLAUDE_AI_SERVER_PREFIX).
  */
 function mcpLinesOf(
   state: InitState,
   plan: AssignPlan,
   recommended: ReadonlyMap<string, readonly string[]>,
 ): McpLine[] {
-  return plan.mcp.names.map(name => ({
-    name,
-    source: mcpSourceText(mcpRefOf(plan.setup.mcp, name)),
-    tools: mcpToolNamesOf(state.toolNames, name).length,
-    recommended: recommended.get(name) ?? [],
-  }))
+  return plan.mcp.names.map(name => {
+    const tools = mcpToolNamesOf(state.toolNames, name).length
+
+    return {
+      name,
+      source: mcpSourceText(mcpRefOf(plan.setup.mcp, name)),
+      tools,
+      recommended: recommended.get(name) ?? [],
+      isConnected: tools > 0,
+      isConnector: name.startsWith(CLAUDE_AI_SERVER_PREFIX),
+    }
+  })
 }
 
 /**
  * The question for all the MCP servers at once (D-250): which roles get all `n` of them, with the team's role ids on
  * its second line (mcpContextLine), the MCP chip, and as its own context each server with its source, its tool count
- * and the roles `recommended` gives it (mcpGroupContext over mcpLinesOf), whose summary a pane surface asks in place
- * of that line (D-310).
+ * and the roles `recommended` gives it (mcpGroupContext over mcpLinesOf), listed by the team's roles on pane surfaces
+ * (D-309, D-333), whose summary a pane surface asks in place of that line (D-310).
  */
 function mcpWholeItem(
   state: InitState,
@@ -175,7 +189,7 @@ function mcpWholeItem(
 ): AssignItem {
   const { names } = plan.mcp
   const question = t('init.assign.mcpWholeQuestion', { count: names.length })
-  const context = mcpGroupContext(mcpLinesOf(state, plan, recommended))
+  const context = mcpGroupContext(mcpLinesOf(state, plan, recommended), plan.roles)
   const contextLine = mcpContextLine(plan.roles)
   const pane = paneQuestionOf(question, contextLine, context.summary)
 

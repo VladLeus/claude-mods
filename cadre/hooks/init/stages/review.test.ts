@@ -389,7 +389,9 @@ describe('the review stage (D-230)', () => {
     const asked = nextStage(entry, { kind: 'answer', text: 'Whole group' })
     const lines = ['sentry: session, 0 tools. Recommended: none.']
     const summary = '1 server, 0 recommended'
-    const { rows } = mcpGroupContext([{ name: 'sentry', source: 'session', tools: 0, recommended: [] }])
+    const sentry = { name: 'sentry', source: 'session', tools: 0, recommended: [] }
+    const unconnected = { ...sentry, isConnected: false, isConnector: false }
+    const { rows } = mcpGroupContext([unconnected], REVIEW_DRAFT.roles)
     const context = { title: 'MCP servers', lines, kind: 'mcp-server', summary, pane: paneOf(asked, summary), rows }
     const spec = { options: ['None', 'All roles'], header: 'MCP', context, acceptsTyped: true }
     expect(asked.openQuestion?.spec).toEqual(spec)

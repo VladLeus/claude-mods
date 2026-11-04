@@ -328,9 +328,9 @@ function rolesLook(role: 'item' | 'recommended', text: string): Look {
 
 /**
  * The parts of one structured row (D-313), its look taken from its role only (ROW_LOOK): its indent, then for an item
- * its name, the arrow and its roles; for a field its label with `: ` dim and its value; for the recommended field its
- * label dim and its roles; else its text. Every label and text is cleaned (clean, UNCUT) first, so no value can add a
- * row or hide text.
+ * its name, the arrow and its roles, or its name alone when it has no roles text, as a server of the MCP list by role
+ * (D-309); for a field its label with `: ` dim and its value; for the recommended field its label dim and its roles;
+ * else its text. Every label and text is cleaned (clean, UNCUT) first, so no value can add a row or hide text.
  */
 function rowParts(row: ContextRow): PaneSpan[] {
   const indent = ' '.repeat(Number.isInteger(row.indent) ? Math.max(0, row.indent) : 0)
@@ -338,6 +338,7 @@ function rowParts(row: ContextRow): PaneSpan[] {
   const label = clean(row.label ?? '', UNCUT)
   switch (row.role) {
     case 'item':
+      if (text === '') return [spanOf(`${indent}${label}`, {})]
       return [spanOf(`${indent}${label}${ITEM_ARROW}`, {}), spanOf(text, rolesLook('item', text))]
     case 'field':
       return [spanOf(indent, {}), spanOf(`${label}: `, LABEL_LOOK), spanOf(text, ROW_LOOK.field)]
