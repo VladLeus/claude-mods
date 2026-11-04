@@ -6,7 +6,7 @@ import { proposeRoles } from '../../roles/propose'
 import { AUTOPILOT_THRESHOLD } from '../../roles/template'
 import { driven, roleIn, SOURCE_SCAN, stateAt, templateRole } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { proposalLines } from '../../ui/blocks/context'
+import { proposalLines, rolesContext } from '../../ui/blocks/context'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from '../answers'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
@@ -40,6 +40,7 @@ describe('modelStep', () => {
     kind: 'roles',
     summary,
     pane: { asked, text: withContext(sentence, summary) },
+    rows: rolesContext(roles, []).rows,
   })
 
   test('the first model question offers Same for all roles first, then Per role', () => {
@@ -183,7 +184,7 @@ describe('the model stage (D-230)', () => {
     // A pane surface asks the question with the summary of its context (D-310).
     const summary = '5 roles: pm, tl, be, qa, security'
     const pane = { asked: question, text: withContext(MODEL_MODE_QUESTION, summary) }
-    const context = { title: 'Roles', lines, kind: 'roles', summary, pane }
+    const context = { title: 'Roles', lines, kind: 'roles', summary, pane, rows: rolesContext(roles, []).rows }
     const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Model', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
@@ -206,6 +207,7 @@ describe('the model stage (D-230)', () => {
       kind: 'roles',
       summary,
       pane: { asked, text: withContext(sentence, summary) },
+      rows: rolesContext(roles, changes).rows,
     }))
     expect(run.specs.map(spec => spec.context)).toEqual(contexts)
   })

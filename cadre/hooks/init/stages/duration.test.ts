@@ -4,7 +4,7 @@ import type { RoleChange, RoleSpec } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { driven, repoScan, stateAt, templateRole } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { proposalLines } from '../../ui/blocks/context'
+import { proposalLines, rolesContext } from '../../ui/blocks/context'
 import { cancelledReply } from '../replies'
 import type { InitState } from '../state'
 import {
@@ -45,10 +45,11 @@ describe('durationStep', () => {
       expect([answer, run.state.draft.duration]).toEqual([answer, duration])
       expect(run.asked).toEqual([ASKED])
       const lines = proposalLines(roles, [])
+      const { rows } = rolesContext(roles, [])
       // A pane surface asks the question with the summary of its context (D-310).
       const summary = '3 roles: pm, tl, security'
       const pane = { asked: ASKED, text: withContext(DURATION_QUESTION, summary) }
-      const context = { title: 'Roles', lines, kind: 'roles', summary, pane }
+      const context = { title: 'Roles', lines, kind: 'roles', summary, pane, rows }
       expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'], header: 'Duration', context, acceptsTyped: true }])
       expect(run.outputs).toEqual([])
     }
@@ -103,16 +104,18 @@ describe('the duration stage (D-230)', () => {
     const asked = withContext(DURATION_QUESTION, durationContextLine(roles))
     const summary = '3 roles: pm, tl, security'
     const pane = { asked, text: withContext(DURATION_QUESTION, summary) }
-    expect(state.openQuestion?.spec.context).toEqual({ title: 'Roles', lines, kind: 'roles', summary, pane })
+    const { rows } = rolesContext(roles, changes)
+    expect(state.openQuestion?.spec.context).toEqual({ title: 'Roles', lines, kind: 'roles', summary, pane, rows })
   })
 
   test('durationStage asks the duration question with the role ids; the open question is that ask', () => {
     const state = durationStage.enter(stateAt('duration', { roles }))
     const question = withContext(DURATION_QUESTION, durationContextLine(roles))
     const lines = proposalLines(roles, [])
+    const { rows } = rolesContext(roles, [])
     const summary = '3 roles: pm, tl, security'
     const pane = { asked: question, text: withContext(DURATION_QUESTION, summary) }
-    const context = { title: 'Roles', lines, kind: 'roles', summary, pane }
+    const context = { title: 'Roles', lines, kind: 'roles', summary, pane, rows }
     const ask = { question, spec: { options: ['4h', '2h', '8h'], header: 'Duration', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)

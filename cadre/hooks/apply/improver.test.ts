@@ -331,7 +331,16 @@ describe('improver pass (G-02-1f)', () => {
     const question = "Accept the improver's changes to .cadre/be/CLAUDE.md?"
     const summary = lines[0] ?? ''
     const pane = { asked: BE_IMPROVER_ASKED, text: `${question}\n${summary}` }
-    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver', summary, pane }
+    const rows = [
+      {
+        title: null,
+        rows: [
+          { role: 'field', label: '.cadre/be/CLAUDE.md', text: '2 lines added, 1 removed', indent: 0 },
+          ...lines.slice(1).map(text => ({ role: 'plain', text, indent: 0 })),
+        ],
+      },
+    ]
+    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver', summary, pane, rows }
     expect(run.specs).toEqual([{ options: ['Accept', 'Keep original'], header: 'Improver', context }])
     expect(outcome).toEqual({
       accepted: new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]]),
@@ -358,7 +367,16 @@ describe('improver pass (G-02-1f)', () => {
     const [asked = ''] = run.asked
     const summary = lines[0] ?? ''
     const pane = { asked, text: `Accept the improver's changes to .cadre/be/CLAUDE.md?\n${summary}` }
-    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver', summary, pane }
+    const rows = [
+      {
+        title: null,
+        rows: [
+          { role: 'field', label: '.cadre/be/CLAUDE.md', text: '1 line added, 1 removed', indent: 0 },
+          ...lines.slice(1).map(text => ({ role: 'plain', text, indent: 0 })),
+        ],
+      },
+    ]
+    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver', summary, pane, rows }
     expect([run.shown, run.specs.map(spec => spec.context)]).toEqual([[], [context]])
     expect([outcome.accepted, disk.files[BE_BUILT_PATH]]).toEqual([new Map([[BE_BUILT_REPO_PATH, improved]]), improved])
   })

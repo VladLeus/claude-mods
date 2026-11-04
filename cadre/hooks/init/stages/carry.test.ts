@@ -30,6 +30,13 @@ function carryAt(roles: readonly RoleSpec[], setup: SetupScan): InitState {
   return carryStage.enter(stateAt('carry', wholeDraft({ roles, gathered: { ...wholeDraft().gathered, setup } })))
 }
 
+/** The rows of the env context for API_KEY and JIRA_URL the pane draws: the heading, each name at indent 2 (D-313). */
+const TWO_NAMES_ROWS = [
+  { role: 'heading', text: 'Env variable names in your settings (values are never read):', indent: 0 },
+  { role: 'plain', text: 'API_KEY', indent: 2 },
+  { role: 'plain', text: 'JIRA_URL', indent: 2 },
+]
+
 describe('carryStep', () => {
   const roles = proposeRoles(FULL_SCAN).roles
   /** The carry facts of user settings with two env variables and nothing else. */
@@ -60,7 +67,8 @@ describe('carryStep', () => {
     // A pane surface asks the question alone with the summary of its context, which lists every name (D-283, D-310).
     const summary = '2 env names'
     const pane = { asked: ENV_ASKED, text: withContext(ENV_PANE_QUESTION, summary) }
-    const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env', summary, pane }
+    const rows = [{ title: null, rows: TWO_NAMES_ROWS }]
+    const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env', summary, pane, rows }
     expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(run.state.draft.roles?.map(role => role.carry)).toEqual(roles.map(() => carry))
@@ -165,7 +173,8 @@ describe('the carry stage (D-230)', () => {
     const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
     const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
     const pane = { asked: question, text: withContext(short, '2 env names') }
-    const context = { title: 'Env variables', lines, kind: 'env', summary: '2 env names', pane }
+    const rows = [{ title: null, rows: TWO_NAMES_ROWS }]
+    const context = { title: 'Env variables', lines, kind: 'env', summary: '2 env names', pane, rows }
     const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)

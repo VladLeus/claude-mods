@@ -826,6 +826,16 @@ describe('regen by part hashes (G-02-1f)', () => {
             asked: withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: yes.'),
             text: withContext('Should be get "Git" from CLAUDE.md?', 'Recommended: yes'),
           },
+          rows: [
+            {
+              title: null,
+              rows: [
+                { role: 'plain', text: 'CLAUDE.md > Git', indent: 0 },
+                { role: 'plain', text: 'Changed since init.', indent: 0 },
+                { role: 'field', label: 'Recommended', text: 'yes', indent: 0 },
+              ],
+            },
+          ],
         },
       },
     ])

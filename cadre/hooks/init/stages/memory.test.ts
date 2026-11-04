@@ -50,7 +50,8 @@ describe('memoryStep', () => {
       const summary = '1 file'
       const pane = { asked: asAsked(question), text: withContext(short, summary) }
 
-      const context = { title, lines, kind: 'memory-group', summary, pane }
+      const rows = [{ title: null, rows: lines.map(text => ({ role: 'plain', text, indent: 0 })) }]
+      const context = { title, lines, kind: 'memory-group', summary, pane, rows }
 
       return { options: ROLE_LIST_OPTIONS, header: 'Memory', context, acceptsTyped: true }
     }
@@ -147,7 +148,14 @@ describe('the whole-file question cursor (D-230)', () => {
       {
         options: ROLE_LIST_OPTIONS,
         header: 'Memory',
-        context: { title: 'Auto-memories', lines: ['a.md'], kind: 'memory-group', summary: '1 file', pane },
+        context: {
+          title: 'Auto-memories',
+          lines: ['a.md'],
+          kind: 'memory-group',
+          summary: '1 file',
+          pane,
+          rows: [{ title: null, rows: [{ role: 'plain', text: 'a.md', indent: 0 }] }],
+        },
         acceptsTyped: true,
       },
     ])

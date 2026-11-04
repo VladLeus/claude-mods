@@ -136,8 +136,10 @@ function scanAskContext(total: number): unknown {
   const lines = scanSummaryLines(repoScan(), emptySetupScan(), '/repo', PANE_LIST_WORDS)
   const summary = '0 plugins, 0 MCP servers, 0 CLAUDE.md files'
   const pane = { asked: historyAsked(total), text: withContext(historyQuestion(total), summary) }
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup: emptySetupScan() }
+  const { rows } = scanContext(DEFAULT_LOCATIONS, gathered, PANE_LIST_WORDS)
 
-  return { title: 'Scan', lines, kind: 'scan', summary, pane }
+  return { title: 'Scan', lines, kind: 'scan', summary, pane, rows }
 }
 
 /** The history stage's host operations as init/run performs them, through `io` (listSessions, scanHistory). */
@@ -422,7 +424,8 @@ describe('the history stage (D-230)', () => {
     const asking = nextStage(state, listed(ONE_SESSION))
     const summary = '0 plugins, 0 MCP servers, 0 CLAUDE.md files'
     const pane = { asked: historyAsked(1), text: withContext(historyQuestion(1), summary) }
-    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan', summary, pane })
+    const { rows } = scanContext(DEFAULT_LOCATIONS, gathered, PANE_LIST_WORDS)
+    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan', summary, pane, rows })
   })
 
   test('with no user folder, no transcript or a folder it cannot list, it logs why and asks nothing', () => {

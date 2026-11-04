@@ -17,23 +17,28 @@ import {
 /** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
 const POLICY_DRAFT = { locations: DEFAULT_LOCATIONS, roles: TEMPLATE_ROLES }
 
+/** What each git policy commits, one line per policy (D-203). */
+const POLICY_LINES = [
+  'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.',
+  'Commit all: only per-user files are ignored.',
+  'Ignore all: nothing in .cadre/ is committed.',
+]
+
 /**
- * The git policy question's own context (D-203): what each policy commits, one line per policy; a pane surface asks
- * the question with its summary, the default policy recommended, in place of GIT_POLICY_CONTEXT (D-310).
+ * The git policy question's own context (D-203): what each policy commits, one line per policy, each one plain row
+ * (D-313); a pane surface asks the question with its summary, the default policy recommended, in place of
+ * GIT_POLICY_CONTEXT (D-310).
  */
 const POLICY_CONTEXT = {
   title: 'Git policy',
-  lines: [
-    'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.',
-    'Commit all: only per-user files are ignored.',
-    'Ignore all: nothing in .cadre/ is committed.',
-  ],
+  lines: POLICY_LINES,
   kind: 'git-policy',
   summary: 'Recommended: commit definitions',
   pane: {
     asked: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
     text: withContext(GIT_POLICY_QUESTION, 'Recommended: commit definitions'),
   },
+  rows: [{ title: null, rows: POLICY_LINES.map(text => ({ role: 'plain', text, indent: 0 })) }],
 }
 
 describe('init helpers', () => {

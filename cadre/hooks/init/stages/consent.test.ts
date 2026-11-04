@@ -23,7 +23,8 @@ const CONSENT_SUMMARY = '1 file, MCP server names only'
 
 /**
  * The dialog spec of the consent: its two answers, its chip and its own context, the one line stating what is read
- * (D-287, D-300), with its summary, which a pane surface asks under the question (D-310).
+ * (D-287, D-300), with its summary, which a pane surface asks under the question (D-310), and that line as one plain
+ * row (D-313).
  */
 const CONSENT_SPEC = {
   options: CLAUDE_JSON_OPTIONS,
@@ -34,6 +35,7 @@ const CONSENT_SPEC = {
     kind: 'consent',
     summary: CONSENT_SUMMARY,
     pane: { asked: CONSENT_ASKED, text: withContext(CLAUDE_JSON_QUESTION, CONSENT_SUMMARY) },
+    rows: [{ title: null, rows: [{ role: 'plain', text: CLAUDE_JSON_CONTEXT, indent: 0 }] }],
   },
 }
 

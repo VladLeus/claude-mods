@@ -51,7 +51,16 @@ describe('the improver install stage (D-230)', () => {
     // A pane surface asks the question with the summary of its context (D-310).
     const summary = '1 role: pm'
     const pane = { asked: question, text: withContext(IMPROVER_INSTALL_QUESTION, summary) }
-    const context = { title: 'Improver install', lines, kind: 'improver-install', summary, pane }
+    const rows = [
+      {
+        title: null,
+        rows: [
+          { role: 'heading', text: 'Built CLAUDE.md files it would tidy:', indent: 0 },
+          { role: 'field', label: 'pm', text: '.cadre/pm/CLAUDE.md', indent: 2 },
+        ],
+      },
+    ]
+    const context = { title: 'Improver install', lines, kind: 'improver-install', summary, pane, rows }
     const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Improver', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)

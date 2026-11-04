@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, AskSpec, GitPolicy } from '../../types'
+import type { AskContext, AskSpec, ContextSection, GitPolicy } from '../../types'
 import { CLAUDE_JSON_OPTIONS, CONSENT_DISMISSED_REASON } from '../init/stages/consent'
 import { FRAMEWORK_DISMISSED_REASON } from '../init/stages/frameworks'
 import { GIT_POLICY_OPTIONS, GIT_POLICY_QUESTION, parseGitPolicy } from '../init/stages/policy'
@@ -376,5 +376,48 @@ describe('foldedSpec (D-302, folded heading)', () => {
       '',
       'Proposed roles:',
     ])
+  })
+})
+
+describe('foldedSpec with rows (D-302, D-313)', () => {
+  /** The question every case folds into: a roles context with one line of its own and its one row. */
+  const own: ContextSection = { title: null, rows: [{ role: 'heading', text: 'Proposed roles:', indent: 0 }] }
+  const spec: AskSpec = {
+    options: ['Yes', 'No'],
+    context: { title: 'Roles', lines: ['Proposed roles:'], kind: 'roles', summary: '2 roles: pm, tl', rows: [own] },
+  }
+
+  test('a fold leads the rows as a section of its own, each line a plain row, and leads the lines as before', () => {
+    const { context } = foldedSpec(spec, [{ title: 'History', lines: ['a', 'b'] }])
+    const history: ContextSection = {
+      title: 'History',
+      rows: [
+        { role: 'plain', text: 'a', indent: 0 },
+        { role: 'plain', text: 'b', indent: 0 },
+      ],
+    }
+    expect([context?.rows, context?.lines]).toEqual([
+      [history, own],
+      ['History', 'a', 'b', '', 'Proposed roles:'],
+    ])
+  })
+
+  test('a fold whose first line names its title is a section with no title, as its lines leave the title out', () => {
+    const lines = ['Session history (names and counts only):', '  gsd-plan-phase  1']
+    const { context } = foldedSpec(spec, [{ title: 'Session history', lines }])
+    expect(context?.rows?.[0]).toEqual({ title: null, rows: lines.map(text => ({ role: 'plain', text, indent: 0 })) })
+  })
+
+  test('each fold is cleaned in its rows too, so a folded value adds no row or hidden text (T-02.2-24)', () => {
+    const { context } = foldedSpec(spec, [{ title: `Sc${BIDI_OVERRIDE}an`, lines: [`x${BIDI_OVERRIDE}\ny`] }])
+    expect(context?.rows?.[0]).toEqual({ title: 'Scan', rows: [{ role: 'plain', text: 'xy', indent: 0 }] })
+  })
+
+  test('a context with no rows gains none; no fold or no context gives the spec back as it is', () => {
+    const noRows: AskSpec = { options: ['Yes', 'No'], context: { title: 'R', lines: [], kind: 'roles', summary: '' } }
+    const folded = foldedSpec(noRows, [{ title: 'History', lines: ['a'] }])
+    expect([folded.context?.rows, folded.context?.lines]).toEqual([undefined, ['History', 'a', '']])
+    const bare: AskSpec = { options: ['Yes', 'No'] }
+    expect([foldedSpec(bare, [{ title: 'History', lines: ['a'] }]), foldedSpec(spec, [])]).toEqual([bare, spec])
   })
 })

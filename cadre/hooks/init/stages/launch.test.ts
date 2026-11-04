@@ -96,6 +96,16 @@ const LAUNCH_CONTEXT = {
   kind: 'launch',
   summary: '3 launchers',
   pane: { asked: LAUNCH_ASKED, text: withContext(LAUNCH_START_QUESTION, '3 launchers') },
+  rows: [
+    {
+      title: null,
+      rows: [
+        { role: 'plain', text: 'Git root: the top of this repo, the same for every launcher.', indent: 0 },
+        { role: 'plain', text: 'Run folder: wherever you run a launcher from.', indent: 0 },
+        { role: 'field', label: 'Launchers', text: '.cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security', indent: 0 },
+      ],
+    },
+  ],
 }
 
 /**
@@ -108,6 +118,7 @@ const NO_DIRS_CONTEXT = {
   kind: 'launch-dir',
   summary: '0 code folders',
   pane: { asked: DIR_ASKED, text: withContext(LAUNCH_DIR_QUESTION, '0 code folders') },
+  rows: [{ title: null, rows: [{ role: 'plain', text: 'No folder with code was found in this repo.', indent: 0 }] }],
 }
 
 describe('launchStartStep', () => {
@@ -293,6 +304,16 @@ describe('the launch stage (D-230)', () => {
       kind: 'launch-dir',
       summary: '2 code folders',
       pane: { asked: DIR_ASKED, text: withContext(LAUNCH_DIR_QUESTION, '2 code folders') },
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: 'Folders with code in this repo:', indent: 0 },
+            { role: 'plain', text: 'apps/', indent: 2 },
+            { role: 'plain', text: 'packages/', indent: 2 },
+          ],
+        },
+      ],
     })
   })
 

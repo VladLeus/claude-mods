@@ -15,6 +15,7 @@ import {
   wholeDraft,
 } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { securityContext } from '../../ui/blocks/context'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import type { Draft } from '../draft'
 import { cancelledReply } from '../replies'
@@ -146,7 +147,7 @@ function pluginsContext(keys: readonly string[], lines: readonly string[], summa
   const asked = withContext(question, SECURITY_INSTALL_CONTEXT)
   const pane = { asked, text: withContext(PANE_QUESTION, summary) }
 
-  return { title: 'Security plugins', lines, kind: 'security', summary, pane }
+  return { title: 'Security plugins', lines, kind: 'security', summary, pane, rows: securityContext(keys).rows }
 }
 
 /** The security plugins question's own context when both plugins are missing (D-236, D-310). */

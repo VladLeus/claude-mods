@@ -40,6 +40,7 @@ import {
 } from './testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
 import { paneRows } from './ui/pane'
+import type { PaneSpan } from './ui/pane'
 import { NOTE_WORDING, OTHER_WORDING, OWN_ANSWER_HINT, PREVIEW_ROWS } from './ui/preview'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
@@ -2303,6 +2304,35 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     return { first: context.title, rows: paneRows([context], INLINE_PANE.bodyColumns).length }
   }
 
+  /**
+   * The runs of each row of a drawing of the cadre-init pane with `props`, each its text and its look as the Text that
+   * draws it carries it (D1, D-313): its colour, bold and dim.
+   */
+  async function paneLooks($: Engine, props: MountTarget<'terminal', 'Pane'>['props']): Promise<PaneSpan[][]> {
+    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props })
+    const box = await ui.find({ type: 'Box' })
+    await ui.unmount()
+
+    return (box?.children ?? []).map(row => {
+      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : []
+
+      return spans.flatMap((span): PaneSpan[] => {
+        if (!isObject(span) || !Array.isArray(span.children)) return []
+        const look = isObject(span.props) ? span.props : {}
+        const color = look.color === 'claude' || look.color === 'success' ? look.color : undefined
+
+        return [
+          {
+            text: span.children.join(''),
+            ...(color === undefined ? {} : { color }),
+            ...(look.bold === true ? { bold: true } : {}),
+            ...(look.dimColor === true ? { dim: true } : {}),
+          },
+        ]
+      })
+    })
+  }
+
   /** The span texts of each row of a drawing of the cadre-init pane with `props` (D1), as the goldens pin them. */
   async function paneTexts($: Engine, props: MountTarget<'terminal', 'Pane'>['props']): Promise<string[][]> {
     const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props })
@@ -2439,8 +2469,9 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, GIT_POLICY_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    // Its first policy line, 67 code points, takes two rows of the 60-column body (D-231).
-    expect(open).toEqual([{ drawn: { first: 'Git policy', rows: 5 }, header: 'Git policy' }])
+    // Its title, its summary (D-313), then its three policy lines, the first of 67 code points taking two rows of the
+    // 60-column body (D-231).
+    expect(open).toEqual([{ drawn: { first: 'Git policy', rows: 6 }, header: 'Git policy' }])
   })
 
   test('the security question draws its own context, the missing plugins, not a block (D-203)', async ($, on) => {
@@ -2499,6 +2530,30 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     fakeHost(on, oneCallWorld(async () => void drawn.push(await drawPane($, INLINE_PANE))), log)
     await $.command.run(DRY_RUN)
     expect(drawn).toEqual([{ first: MODEL_PROGRESS.skills, rows: 2 }])
+  })
+
+  test('the own-skills entry draws its rows by their roles, the recommended roles bold (D-313)', async ($, on) => {
+    const log = newLog()
+    const drawn: PaneSpan[][][] = []
+    const commands = [{ name: 'deploy-notes', source: 'user', description: 'Write the release notes for a deploy.' }]
+    const answers = { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' }
+    const onAsk = async (): Promise<void> => {
+      if (drawn.length > 0 || !(log.asks.at(-1) ?? '').startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`)) return
+      drawn.push(await paneLooks($, INLINE_PANE))
+    }
+    fakeHost(on, initWorld({ commands, answers, replies: ['{"skills":{"S1":["pm"]},"groups":{}}'], onAsk }), log)
+    await $.command.run(DRY_RUN)
+    const rows = drawn[0] ?? []
+    expect(rows.slice(0, 2)).toEqual([
+      [{ text: PANE_TITLES.skills, color: 'claude', bold: true }],
+      [{ text: '1 skill, 1 recommended', dim: true }],
+    ])
+    expect(rows.slice(-2)).toEqual([
+      [{ text: '  ' }, { text: 'deploy-notes: ', dim: true }, { text: 'Write the release notes for a deploy.' }],
+      [{ text: '    ' }, { text: 'recommended: ', dim: true }, { text: 'pm', bold: true }],
+    ])
+    // The heading rows are bold by their role; no row of the context is styled from its text (D-313).
+    expect(rows.slice(2, -2).every(row => row.length === 1 && row[0]?.bold === true)).toBe(true)
   })
 
   test('the pane drawn at the next question shows its own context, with no loader row (D-257)', async ($, on) => {

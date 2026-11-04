@@ -19,6 +19,11 @@ const GITHUB: McpRef = { name: 'github', source: 'project' }
 /** The session's tool names: two of github, one of another server, and a built-in tool. */
 const TOOLS = ['mcp__github__list_prs', 'mcp__github__create_issue', 'mcp__gitlab__merge', 'Read']
 
+/** One untitled section holding each line as one plain row (D-313). */
+function plainRows(lines: readonly string[]): unknown {
+  return [{ title: null, rows: lines.map(text => ({ role: 'plain', text, indent: 0 })) }]
+}
+
 describe('MCP server contexts (D-211)', () => {
   test('each source is named as the person knows it; a claude_ai_ session server is a claude.ai connector', () => {
     const refs: readonly McpRef[] = [
@@ -49,6 +54,16 @@ describe('MCP server contexts (D-211)', () => {
       lines: ['Source: .mcp.json', 'Tools: 2 (create_issue, list_prs)', 'Recommended: be, qa'],
       kind: 'mcp-server',
       summary: 'Recommended: be, qa',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'field', label: 'Source', text: '.mcp.json', indent: 0 },
+            { role: 'plain', text: 'Tools: 2 (create_issue, list_prs)', indent: 0 },
+            { role: 'recommended', label: 'Recommended', text: 'be, qa', indent: 0 },
+          ],
+        },
+      ],
     })
   })
 
@@ -76,24 +91,28 @@ const SKILLS: readonly SkillLine[] = [
 
 describe('skill contexts (D-211)', () => {
   test('a skill group lists one line per skill: name, description, uses and the recommended roles', () => {
+    const lines = [
+      'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.',
+      'codex:setup: No description. Recommended: be.',
+    ]
     expect(skillGroupContext('codex', SKILLS)).toEqual({
       title: 'Skills: codex',
-      lines: [
-        'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.',
-        'codex:setup: No description. Recommended: be.',
-      ],
+      lines,
       kind: 'skill-group',
       summary: '2 skills. Recommended: none',
+      rows: plainRows(lines),
     })
   })
 
   test("one own skill's context holds that skill only, titled by its place", () => {
     const [first, second] = SKILLS
+    const line = 'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.'
     expect(first === undefined ? null : skillContext(first, 1, 2)).toEqual({
       title: 'Skill 1 of 2',
-      lines: ['codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.'],
+      lines: [line],
       kind: 'skill',
       summary: 'Recommended: none',
+      rows: plainRows([line]),
     })
     expect(second === undefined ? null : skillContext(second, 2, 2).lines).toEqual([
       'codex:setup: No description. Recommended: be.',
@@ -109,6 +128,7 @@ describe('skill contexts (D-211)', () => {
       lines: [`${'n'.repeat(59)}…: Do it. Recommended: qa.`],
       kind: 'skill-group',
       summary: '1 skill. Recommended: none',
+      rows: plainRows([`${'n'.repeat(59)}…: Do it. Recommended: qa.`]),
     })
   })
 
@@ -161,15 +181,18 @@ describe('mcpGroupContext (D-250)', () => {
       { name: 'sentry', source: '.mcp.json', tools: 0, recommended: [] },
       { name: 'jira', source: 'claude.ai', tools: 1, recommended: [] },
     ]
+    const texts = [
+      'github: session, 2 tools. Recommended: tl.',
+      'sentry: .mcp.json, 0 tools. Recommended: none.',
+      'jira: claude.ai, 1 tool. Recommended: none.',
+    ]
     expect(mcpGroupContext(lines)).toEqual({
       title: 'MCP servers',
-      lines: [
-        'github: session, 2 tools. Recommended: tl.',
-        'sentry: .mcp.json, 0 tools. Recommended: none.',
-        'jira: claude.ai, 1 tool. Recommended: none.',
-      ],
+      lines: texts,
       kind: 'mcp-server',
       summary: '3 servers, 1 recommended',
+      rows: plainRows(texts),
     })
   })
 })
+

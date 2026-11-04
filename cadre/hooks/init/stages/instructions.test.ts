@@ -43,6 +43,7 @@ import {
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { contextText, withContext } from '../../ui/ask'
+import { instructionPartsContext, memoryContext, topicContext } from '../../ui/blocks/context'
 import { instructionLines } from '../../ui/blocks/instructions'
 import type { StepResult } from '../../ui/ask'
 import { nextStage } from '../machine'
@@ -442,6 +443,17 @@ describe('the instructions stage (D-230)', () => {
       kind: 'instructions',
       summary,
       pane: { asked: asking.openQuestion?.question, text: withContext(CONTENT_QUESTION, summary) },
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: 'Files found by name (nothing is read before a yes):', indent: 0 },
+            { role: 'plain', text: '~/.claude/CLAUDE.md', indent: 2 },
+            { role: 'heading', text: 'Memories:', indent: 0 },
+            { role: 'plain', text: '  none', indent: 0 },
+          ],
+        },
+      ],
     })
   })
 
@@ -460,6 +472,7 @@ describe('the instructions stage (D-230)', () => {
       kind: 'instructions',
       summary: entrySummary,
       pane: { asked: entry.openQuestion?.question, text: withContext(INSTRUCTIONS_ENTRY_QUESTION, entrySummary) },
+      rows: instructionPartsContext(MEMORY_SCAN, TOPICS, RECOMMENDED).rows,
     })
     const first = nextStage(entry, { kind: 'answer', text: 'Go part by part' })
     const second = nextStage(first, { kind: 'answer', text: 'Yes' })
@@ -483,6 +496,7 @@ describe('the instructions stage (D-230)', () => {
         kind: 'topic',
         summary: summaries[0],
         pane: panes[0],
+        rows: topicContext(SECURITY_TOPIC, MEMORY_SCAN.parts, ['security'], 1, 2).rows,
       },
       {
         title: 'Topic 2 of 2',
@@ -490,6 +504,7 @@ describe('the instructions stage (D-230)', () => {
         kind: 'topic',
         summary: summaries[1],
         pane: panes[1],
+        rows: topicContext(GIT_TOPIC, MEMORY_SCAN.parts, ['tl'], 2, 2).rows,
       },
       {
         title: 'Memory 1 of 2',
@@ -497,6 +512,7 @@ describe('the instructions stage (D-230)', () => {
         kind: 'memory',
         summary: summaries[2],
         pane: panes[2],
+        rows: memoryContext(memory('M1', 'squad.md', 'Unsigned commits on per-phase branches.'), [], 1, 2).rows,
       },
     ])
   })

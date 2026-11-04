@@ -24,6 +24,16 @@ describe('regen question context (D-236)', () => {
       lines: ['CLAUDE.md > Git', 'Changed since init.', 'Recommended: yes'],
       kind: 'regen-part',
       summary: 'Recommended: yes',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'plain', text: 'CLAUDE.md > Git', indent: 0 },
+            { role: 'plain', text: 'Changed since init.', indent: 0 },
+            { role: 'field', label: 'Recommended', text: 'yes', indent: 0 },
+          ],
+        },
+      ],
     })
     const top = { ...GIT_PART, heading: '' }
     const added = { kind: 'part', part: top, change: 'new' } satisfies RegenAsk
@@ -44,6 +54,16 @@ describe('regen question context (D-236)', () => {
       lines: ['memory squad.md: Unsigned commits.', 'Changed since init.', 'Recommended: no'],
       kind: 'regen-part',
       summary: 'Recommended: no',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'plain', text: 'memory squad.md: Unsigned commits.', indent: 0 },
+            { role: 'plain', text: 'Changed since init.', indent: 0 },
+            { role: 'field', label: 'Recommended', text: 'no', indent: 0 },
+          ],
+        },
+      ],
     })
     expect(context.lines.join('\n')).not.toContain(squad.folder)
   })

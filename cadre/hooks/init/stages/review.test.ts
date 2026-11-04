@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionHandout, Plan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
+import { PANE_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { recommend } from '../../roles/recommend'
 import type { Gathered } from '../../scan/gather'
@@ -23,7 +24,14 @@ import {
   withFramework,
 } from '../../testkit'
 import { contextText, MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { proposalLines } from '../../ui/blocks/context'
+import { mcpGroupContext } from '../../ui/blocks/assign'
+import {
+  envContext,
+  launchContext,
+  memoryGroupContext,
+  proposalLines,
+  rolesContext,
+} from '../../ui/blocks/context'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { PANE_PAGE_ROWS } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
@@ -300,7 +308,8 @@ describe('the review stage (D-230)', () => {
       'Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security',
     ]
     const summary = '3 launchers'
-    const context = { title: 'Launch', lines, kind: 'launch', summary, pane: paneOf(going, summary) }
+    const { rows } = launchContext(REVIEW_DRAFT.roles, PANE_LIST_WORDS)
+    const context = { title: 'Launch', lines, kind: 'launch', summary, pane: paneOf(going, summary), rows }
     expect(going.openQuestion?.spec).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch', context })
     const back = nextStage(going, { kind: 'answer', text: 'The folder I run it from' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
@@ -314,7 +323,8 @@ describe('the review stage (D-230)', () => {
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['duration', 'review', 'duration'])
     const lines = proposalLines(REVIEW_DRAFT.roles, [])
     const summary = '3 roles: pm, tl, security'
-    const context = { title: 'Roles', lines, kind: 'roles', summary, pane: paneOf(going, summary) }
+    const rows = rolesContext(REVIEW_DRAFT.roles, []).rows
+    const context = { title: 'Roles', lines, kind: 'roles', summary, pane: paneOf(going, summary), rows }
     const spec = { options: DURATION_OPTIONS, header: 'Duration', context, acceptsTyped: true }
     expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: '2h' })
@@ -345,7 +355,8 @@ describe('the review stage (D-230)', () => {
     // A pane surface asks the env question alone, with no env name, and the summary of its context (D-283, D-310).
     const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
     const pane = { asked: going.openQuestion?.question, text: withContext(short, '1 env name') }
-    const context = { title: 'Env variables', lines: env, kind: 'env', summary: '1 env name', pane }
+    const { rows } = envContext(['API_KEY'])
+    const context = { title: 'Env variables', lines: env, kind: 'env', summary: '1 env name', pane, rows }
     const spec = { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }
     expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'API_KEY' })
@@ -378,7 +389,8 @@ describe('the review stage (D-230)', () => {
     const asked = nextStage(entry, { kind: 'answer', text: 'Whole group' })
     const lines = ['sentry: session, 0 tools. Recommended: none.']
     const summary = '1 server, 0 recommended'
-    const context = { title: 'MCP servers', lines, kind: 'mcp-server', summary, pane: paneOf(asked, summary) }
+    const { rows } = mcpGroupContext([{ name: 'sentry', source: 'session', tools: 0, recommended: [] }])
+    const context = { title: 'MCP servers', lines, kind: 'mcp-server', summary, pane: paneOf(asked, summary), rows }
     const spec = { options: ['None', 'All roles'], header: 'MCP', context, acceptsTyped: true }
     expect(asked.openQuestion?.spec).toEqual(spec)
     const back = nextStage(asked, { kind: 'answer', text: 'All roles' })
@@ -394,7 +406,8 @@ describe('the review stage (D-230)', () => {
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['instructions', 'review', 'instructions'])
     const lines = ['~/.claude/CLAUDE.md and the files it imports']
     const pane = paneOf(going, '1 file')
-    const context = { title: 'Global CLAUDE.md', lines, kind: 'memory-group', summary: '1 file', pane }
+    const { rows } = memoryGroupContext('global-claude-md', [], PANE_LIST_WORDS)
+    const context = { title: 'Global CLAUDE.md', lines, kind: 'memory-group', summary: '1 file', pane, rows }
     const spec = { options: ['None', 'All roles'], header: 'Memory', context, acceptsTyped: true }
     expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'All roles' })

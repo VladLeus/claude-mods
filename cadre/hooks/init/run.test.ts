@@ -1235,6 +1235,17 @@ const PARTS_BLOCK = [
   '    recommended: tl',
 ]
 
+/** The rows of PARTS_BLOCK the pane draws (D-313): the heading, then each topic's field and recommended rows. */
+const PARTS_ROWS = [
+  { role: 'heading', text: READ_HEADING_ROW, indent: 0 },
+  { role: 'field', label: 'Security rules', text: 'How secrets stay out of the repo.', indent: 2 },
+  { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 4 },
+  { role: 'recommended', label: 'recommended', text: 'security', indent: 4 },
+  { role: 'field', label: 'Git and commits', text: 'How commits are made.', indent: 2 },
+  { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Git', indent: 4 },
+  { role: 'recommended', label: 'recommended', text: 'tl', indent: 4 },
+]
+
 /** The content consent context line of a world with only the global CLAUDE.md (G-02-1f). */
 const GLOBAL_ONLY_FOUND =
   'Found: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 0 memories. ' +
@@ -1287,7 +1298,13 @@ describe('instruction parts (G-02-1f)', () => {
     const consentSummary = '1 file, 0 memories'
     const consentPane = { asked: run.asked[consentAt], text: withContext(CONTENT_QUESTION, consentSummary) }
     const consent = { title: 'Instruction files', lines: found, kind: 'instructions', summary: consentSummary }
-    const consentContext = { ...consent, pane: consentPane }
+    const foundRows = [
+      { role: 'heading', text: heading, indent: 0 },
+      { role: 'plain', text: '~/.claude/CLAUDE.md', indent: 2 },
+      { role: 'heading', text: 'Memories:', indent: 0 },
+      { role: 'plain', text: '  none', indent: 0 },
+    ]
+    const consentContext = { ...consent, pane: consentPane, rows: [{ title: null, rows: foundRows }] }
     const consentOptions = ['No, skip it', 'Yes, read them']
     expect(run.specs[consentAt]).toEqual({ options: consentOptions, header: 'Instructions', context: consentContext })
     const entryContext =
@@ -1297,7 +1314,9 @@ describe('instruction parts (G-02-1f)', () => {
     const entrySummary = '2 topics, 0 memories, 2 recommended'
     const entryPane = { asked: run.asked[entryAt], text: withContext(INSTRUCTIONS_ENTRY_QUESTION, entrySummary) }
     const lines = PARTS_BLOCK
-    const entry = { title: 'Instruction parts', lines, kind: 'instructions', summary: entrySummary, pane: entryPane }
+    const rows = [{ title: null, rows: PARTS_ROWS }]
+    const parts = { title: 'Instruction parts', lines, kind: 'instructions', summary: entrySummary }
+    const entry = { ...parts, pane: entryPane, rows }
     expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions', context: entry })
   })
 
@@ -4605,6 +4624,7 @@ describe('init apply conflicts (D-67)', () => {
       kind: 'conflict-diff',
       summary: counts,
       pane: { asked: ROLE_ASKED, text: withContext(sentence, counts) },
+      rows: [{ title: null, rows: [counts, ...diffLines(diff)].map(text => ({ role: 'plain', text, indent: 0 })) }],
     })
   })
 
@@ -5745,6 +5765,16 @@ describe('question contexts (D-211, D-236)', () => {
       kind: 'mcp-server',
       summary: 'Recommended: none',
       pane: { asked: run.asked[at], text: withContext(sentence, 'Recommended: none') },
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'field', label: 'Source', text: 'session', indent: 0 },
+            { role: 'plain', text: 'Tools: 1 (issues)', indent: 0 },
+            { role: 'recommended', label: 'Recommended', text: 'none', indent: 0 },
+          ],
+        },
+      ],
     })
   })
 })
@@ -6077,6 +6107,20 @@ describe('every pane-surface ask carries a context (D-300)', () => {
     expect(bare(run.specs)).toEqual([])
   })
 
+  test('carries rows except the Review (D-313)', async () => {
+    const specs: AskSpec[] = []
+    const worlds = [...Object.values(GOLDEN_WORLDS), { world: manyNamesWorld(), answers: INIT_ANSWERS }]
+    for (const { world, answers } of worlds) specs.push(...(await initSpecs(world, answers)))
+    const regen = memIo(beOnlyWorld(), {})
+    await runRegen(regen.io, { id: 'be', dryRun: true })
+    specs.push(...regen.specs)
+    // Every pane-surface ask but the Review's draws structured rows, so the frame cap holds for each (D-305, D-322).
+    const rowless = specs.filter(spec => spec.context?.kind !== 'review' && spec.context?.rows === undefined)
+    const reviews = specs.filter(spec => spec.context?.kind === 'review')
+    expect([rowless.map(spec => spec.header ?? null), reviews.length > 0]).toEqual([[], true])
+    expect(reviews.filter(spec => spec.context?.rows !== undefined)).toEqual([])
+  })
+
   test('the roles question asks its sentence, then how many roles it proposes and their ids (D-310)', async () => {
     const { world, answers } = GOLDEN_WORLDS.nothing
     const run = memIo(world, answers)
@@ -6140,6 +6184,16 @@ describe('no stand-alone pane block: what it held folds into the next question (
     const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true, surface: 'tui-default' })
     expect(contextLinesAt(run, ROLES_QUESTION)[0]).toBe('Proposed roles:')
+  })
+
+  test('the history fold leads the roles question rows on a pane surface, so the pane draws it (D-313)', async () => {
+    const run = memIo(historyGitWorld(), { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+    await runInit(run.io, { dryRun: true })
+    const context = run.specs[firstLines(run.asked).indexOf(ROLES_QUESTION)]?.context
+    const history = [t('init.history.historyHeading'), '  gsd-plan-phase  1']
+    // The fold's first line names its title, so its section has none, as its lines leave it out (user, 2026-11-04);
+    // the pane draws every section of the rows (paneDrawn).
+    expect(context?.rows?.[0]).toEqual({ title: null, rows: history.map(text => ({ role: 'plain', text, indent: 0 })) })
   })
 
   test('after the history scan the roles question starts with the session history it found', async () => {

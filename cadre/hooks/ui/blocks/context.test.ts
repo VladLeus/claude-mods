@@ -100,6 +100,22 @@ describe('question contexts (D-203, D-236)', () => {
       lines: [...scanSummaryLines(repo, setup, '/repo', SCREEN_LIST_WORDS), 'warning: could not list src'],
       kind: 'scan',
       summary: '0 plugins, 0 MCP servers, 0 CLAUDE.md files',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: 'Repo scan (read-only):', indent: 0 },
+            { role: 'plain', text: '  stack: none; frontend: none; backend: none', indent: 0 },
+            { role: 'plain', text: '  tests: none; E2E: none', indent: 0 },
+            { role: 'field', label: 'existing .cadre/', text: 'none', indent: 2 },
+            { role: 'heading', text: 'User setup (names only):', indent: 0 },
+            { role: 'field', label: 'plugins', text: '0', indent: 2 },
+            { role: 'plain', text: '  skills: 0; agents: 0; MCP servers: none', indent: 0 },
+            { role: 'plain', text: '  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none', indent: 0 },
+            { role: 'field', label: 'warning', text: 'could not list src', indent: 0 },
+          ],
+        },
+      ],
     })
   })
 
@@ -110,6 +126,42 @@ describe('question contexts (D-203, D-236)', () => {
       lines: proposalLines(proposal.roles, proposal.changes),
       kind: 'roles',
       summary: '5 roles: pm, tl, be, qa, security',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: 'Proposed roles:', indent: 0 },
+            {
+              role: 'plain',
+              text: `${'PM (pm)'.padEnd(24)}Owns product decisions: scope, requirements and acceptance.`,
+              indent: 2,
+            },
+            {
+              role: 'plain',
+              text: `${'Team Lead (tl)'.padEnd(24)}Owns architecture and QA decisions; reviews and merges the work.`,
+              indent: 2,
+            },
+            { role: 'plain', text: `${'BE (be)'.padEnd(24)}Implements the backend and core code.`, indent: 2 },
+            { role: 'plain', text: `${'QA (qa)'.padEnd(24)}Owns tests and end-to-end checks.`, indent: 2 },
+            {
+              role: 'plain',
+              text: `${'Security (security)'.padEnd(24)}Owns security decisions and reviews.`,
+              indent: 2,
+            },
+            { role: 'heading', text: 'Changes from the scan:', indent: 0 },
+            {
+              role: 'plain',
+              text: '  kept be: source code found (TypeScript), no UI framework (package.json)',
+              indent: 0,
+            },
+            {
+              role: 'plain',
+              text: '  dropped fe: no frontend framework found (react, vue, next, svelte, angular)',
+              indent: 0,
+            },
+          ],
+        },
+      ],
     })
   })
 
@@ -123,6 +175,15 @@ describe('question contexts (D-203, D-236)', () => {
       lines: ['GSD: in use 1.2.3 (.planning/; gsd-core)', 'superpowers: not found'],
       kind: 'detection',
       summary: '1 framework found: gsd',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'field', label: 'GSD', text: 'in use 1.2.3 (.planning/; gsd-core)', indent: 0 },
+            { role: 'field', label: 'superpowers', text: 'not found', indent: 0 },
+          ],
+        },
+      ],
     })
     expect(detectionContext(detections.slice(1))).toMatchObject({ summary: 'No framework found' })
   })
@@ -138,6 +199,28 @@ describe('question contexts (D-203, D-236)', () => {
       ],
       kind: 'security',
       summary: '3 plugins to install: claude-security, security-guidance, other',
+      rows: [
+        {
+          title: null,
+          rows: [
+            {
+              role: 'field',
+              label: SECURITY_KEY,
+              text:
+                'claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or ' +
+                'newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
+              indent: 0,
+            },
+            {
+              role: 'field',
+              label: GUIDANCE_KEY,
+              text: 'security-guidance adds hooks that warn about risky edits.',
+              indent: 0,
+            },
+            { role: 'plain', text: 'other@market', indent: 0 },
+          ],
+        },
+      ],
     })
   })
 
@@ -157,6 +240,20 @@ describe('question contexts (D-203, D-236)', () => {
       ],
       kind: 'instructions',
       summary: '4 files, 1 memory',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: 'Files found by name (nothing is read before a yes):', indent: 0 },
+            { role: 'plain', text: '~/.claude/CLAUDE.md', indent: 2 },
+            { role: 'plain', text: 'repo/CLAUDE.md', indent: 2 },
+            { role: 'plain', text: '.claude/rules/security.md', indent: 2 },
+            { role: 'plain', text: 'AGENTS.md', indent: 2 },
+            { role: 'heading', text: 'Memories:', indent: 0 },
+            { role: 'plain', text: 'squad.md', indent: 2 },
+          ],
+        },
+      ],
     })
     const none = { hasGlobalClaudeMd: false, claudeMd: [], memoryFiles: [] }
     expect(instructionsContext(none, { rules: null, hasAgentsMd: false }, '/repo', SCREEN_LIST_WORDS).lines).toEqual([
@@ -174,6 +271,19 @@ describe('question contexts (D-203, D-236)', () => {
       lines: instructionLines(scan, TOPICS, RECOMMENDED),
       kind: 'instructions',
       summary: '2 topics, 0 memories, 2 recommended',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: instructionLines(scan, TOPICS, RECOMMENDED)[0], indent: 0 },
+            { role: 'field', label: 'Security rules', text: 'How secrets stay out of the repo.', indent: 2 },
+            { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 4 },
+            { role: 'recommended', label: 'recommended', text: 'security', indent: 4 },
+            { role: 'field', label: 'Git and commits', text: 'How commits are made.', indent: 2 },
+            { role: 'recommended', label: 'recommended', text: 'tl', indent: 4 },
+          ],
+        },
+      ],
     })
   })
 
@@ -187,6 +297,16 @@ describe('question contexts (D-203, D-236)', () => {
       ],
       kind: 'topic',
       summary: 'Recommended: security',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'field', label: 'Security rules', text: 'How secrets stay out of the repo.', indent: 0 },
+            { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 2 },
+            { role: 'recommended', label: 'recommended', text: 'security', indent: 2 },
+          ],
+        },
+      ],
     })
   })
 
@@ -198,6 +318,15 @@ describe('question contexts (D-203, D-236)', () => {
       lines: ['squad.md: Unsigned commits.', '  recommended: none'],
       kind: 'memory',
       summary: 'Recommended: none',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'field', label: 'squad.md', text: 'Unsigned commits.', indent: 0 },
+            { role: 'recommended', label: 'recommended', text: 'none', indent: 2 },
+          ],
+        },
+      ],
     })
     expect(context.lines.join('\n')).not.toContain(squad.folder)
   })
@@ -208,12 +337,24 @@ describe('question contexts (D-203, D-236)', () => {
       lines: ['~/.claude/CLAUDE.md and the files it imports'],
       kind: 'memory-group',
       summary: '1 file',
+      rows: [
+        { title: null, rows: [{ role: 'plain', text: '~/.claude/CLAUDE.md and the files it imports', indent: 0 }] },
+      ],
     })
     expect(memoryGroupContext('auto-memory', ['a.md', 'b.md'], SCREEN_LIST_WORDS)).toEqual({
       title: 'Auto-memories',
       lines: ['a.md', 'b.md'],
       kind: 'memory-group',
       summary: '2 files',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'plain', text: 'a.md', indent: 0 },
+            { role: 'plain', text: 'b.md', indent: 0 },
+          ],
+        },
+      ],
     })
     const many = Array.from({ length: 14 }, (_, at) => `<repo>/f${at}/CLAUDE.md`)
     const project = memoryGroupContext('project-claude-md', many, SCREEN_LIST_WORDS)
@@ -227,6 +368,16 @@ describe('question contexts (D-203, D-236)', () => {
       lines: ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL'],
       kind: 'env',
       summary: '2 env names',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: 'Env variable names in your settings (values are never read):', indent: 0 },
+            { role: 'plain', text: 'API_KEY', indent: 2 },
+            { role: 'plain', text: 'JIRA_URL', indent: 2 },
+          ],
+        },
+      ],
     })
   })
 
@@ -236,6 +387,16 @@ describe('question contexts (D-203, D-236)', () => {
       lines: ['Built CLAUDE.md files it would tidy:', '  be: .cadre/be/CLAUDE.md', '  qa: .cadre/qa/CLAUDE.md'],
       kind: 'improver-install',
       summary: '2 roles: be, qa',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'heading', text: 'Built CLAUDE.md files it would tidy:', indent: 0 },
+            { role: 'field', label: 'be', text: '.cadre/be/CLAUDE.md', indent: 2 },
+            { role: 'field', label: 'qa', text: '.cadre/qa/CLAUDE.md', indent: 2 },
+          ],
+        },
+      ],
     })
   })
 
@@ -249,6 +410,16 @@ describe('question contexts (D-203, D-236)', () => {
       ],
       kind: 'launch',
       summary: '2 launchers',
+      rows: [
+        {
+          title: null,
+          rows: [
+            { role: 'plain', text: 'Git root: the top of this repo, the same for every launcher.', indent: 0 },
+            { role: 'plain', text: 'Run folder: wherever you run a launcher from.', indent: 0 },
+            { role: 'field', label: 'Launchers', text: '.cadre/bin/pm, .cadre/bin/be', indent: 0 },
+          ],
+        },
+      ],
     })
   })
 
@@ -265,6 +436,13 @@ describe('question contexts (D-203, D-236)', () => {
     expect(launchDirContext([], SCREEN_LIST_WORDS).lines).toEqual(['No folder with code was found in this repo.'])
     expect(context).toMatchObject({ summary: '13 code folders' })
     expect(launchDirContext([], SCREEN_LIST_WORDS)).toMatchObject({ summary: '0 code folders' })
+    const rows = context.rows?.[0]?.rows ?? []
+    expect([rows[0], rows[1], rows.at(-1), rows.length]).toEqual([
+      { role: 'heading', text: 'Folders with code in this repo:', indent: 0 },
+      { role: 'plain', text: 'd00/', indent: 2 },
+      { role: 'plain', text: '+1 more', indent: 2 },
+      14,
+    ])
   })
 
   test('reviewContext is the review block, each line cleaned as a report cell (T-02.1-71)', () => {
@@ -275,6 +453,8 @@ describe('question contexts (D-203, D-236)', () => {
       summary: '25 files, 3 roles',
     })
     expect(reviewContext([], 1, 1)).toMatchObject({ summary: '1 file, 1 role' })
+    // The Review keeps its lines and their own styling: it has no rows (D-322).
+    expect(reviewContext([], 1, 1).rows).toBe(undefined)
   })
 })
 
@@ -326,3 +506,4 @@ describe('context lines kept whole (#163)', () => {
     expect(contexts.map(context => context.lines.some(line => line.includes(wide)))).toEqual(contexts.map(() => true))
   })
 })
+

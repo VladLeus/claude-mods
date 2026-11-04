@@ -423,6 +423,31 @@ export type ContextKind =
   | 'regen-part'
 
 /**
+ * What a row of a structured pane context is (D-313), which alone gives its look in the pane: a heading, an item (a
+ * name and its recommended roles), an item's description, a field (a label and its value), the recommended roles
+ * field, a placeholder for a missing value, or plain text.
+ */
+export type ContextRowRole = 'heading' | 'item' | 'description' | 'field' | 'recommended' | 'placeholder' | 'plain'
+
+/**
+ * One row of a structured pane context (D-313): its role, the label of an item or a field, its text and the spaces it
+ * is indented by. An item's label is its name and its text its roles; a field's label is the word before `: ` and its
+ * text the value. The text is data the pane draws as it is, never parsed for a look.
+ */
+export type ContextRow = {
+  readonly role: ContextRowRole
+  readonly label?: string
+  readonly text: string
+  readonly indent: number
+}
+
+/** One section of a structured pane context (D-313): its bold title, null when it has none, and its rows. */
+export type ContextSection = {
+  readonly title: string | null
+  readonly rows: readonly ContextRow[]
+}
+
+/**
  * A question as a pane surface asks it (D-255, D-310): `asked` is the question as the TUI default asks it, without a
  * refusal; `text` is what a pane surface asks in its place, the question's sentence and then its context's summary
  * (a paged Review page then its page title).
@@ -452,6 +477,12 @@ export type AskContext = {
    * context left to the pane; absent, every surface asks the question as given.
    */
   readonly pane?: PaneQuestion
+  /**
+   * What a pane surface draws (D-313, D-323): the context's sections of structured rows, built from the same data as
+   * `lines`, which the TUI default, the inline preview, fit and the transcript keep. Absent on the Review, whose lines
+   * keep their own styling (D-322).
+   */
+  readonly rows?: readonly ContextSection[]
 }
 
 /**

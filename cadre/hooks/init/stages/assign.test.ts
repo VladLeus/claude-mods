@@ -43,6 +43,24 @@ function assignedBy(
   return stageStep(io, assignStage, stateAt('assign', { roles, gathered, hints }), draft => draft.roles)
 }
 
+/** The rows of an MCP server question's context (D-313): its source field, its tools line and its recommended roles. */
+function serverRows(source: string, tools: string, roleIds: string): unknown {
+  const rows = [
+    { role: 'field', label: 'Source', text: source, indent: 0 },
+    { role: 'plain', text: tools, indent: 0 },
+    { role: 'recommended', label: 'Recommended', text: roleIds, indent: 0 },
+  ]
+
+  return [{ title: null, rows }]
+}
+
+/** The rows of a skill group question's context (D-313): the group's recommended roles, then each skill line plain. */
+function groupRows(roleIds: string, lines: readonly string[]): unknown {
+  const skills = lines.map(text => ({ role: 'plain', text, indent: 0 }))
+
+  return [{ title: null, rows: [{ role: 'recommended', label: 'Recommended', text: roleIds, indent: 0 }, ...skills] }]
+}
+
 describe('assignmentStep', () => {
   /** PM, Team Lead, BE, FE, QA and Security: a repo with a frontend and tests keeps every template role. */
   const roles = proposeRoles(FULL_SCAN).roles
@@ -81,6 +99,7 @@ describe('assignmentStep', () => {
     // (D-310).
     summary: 'Recommended: pm, tl',
     pane: { asked: JIRA_ASKED, text: withContext(JIRA_QUESTION, 'Recommended: pm, tl') },
+    rows: serverRows('session', 'Tools: none listed', 'pm, tl'),
   }
   const SENTRY_CONTEXT = {
     title: 'MCP: sentry',
@@ -88,6 +107,7 @@ describe('assignmentStep', () => {
     kind: 'mcp-server',
     summary: 'Recommended: none',
     pane: { asked: SENTRY_ASKED, text: withContext(SENTRY_QUESTION, 'Recommended: none') },
+    rows: serverRows('session', 'Tools: none listed', 'none'),
   }
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
@@ -100,6 +120,10 @@ describe('assignmentStep', () => {
     // The group question alone, with no count or uses (D-283), and its summary (D-310).
     summary: '2 skills. Recommended: none',
     pane: { asked: CODEX_ASKED, text: withContext(CODEX_PANE_QUESTION, '2 skills. Recommended: none') },
+    rows: groupRows('none', [
+      'codex:rescue: No description. Recommended: none.',
+      'codex:setup: No description. Recommended: none.',
+    ]),
   }
 
   test('every server and skill is asked; a table match is only its seed (D-249, D-280)', async () => {
@@ -331,7 +355,8 @@ describe('the assign stage (D-230)', () => {
     const question = withContext(sentence, mcpContextLine(roles))
     const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
     const pane = { asked: question, text: withContext(sentence, 'Recommended: none') }
-    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server', summary: 'Recommended: none', pane }
+    const rows = serverRows('session', 'Tools: none listed', 'none')
+    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server', summary: 'Recommended: none', pane, rows }
     const ask = { question, spec: { options: ['Yes', 'No'], header: 'MCP 1/1', context, acceptsTyped: true } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
     const group = nextStage(nextStage(state, { kind: 'answer', text: 'be' }), SKILLS_NONE)
@@ -348,6 +373,7 @@ describe('the assign stage (D-230)', () => {
       kind: 'skill-group',
       summary: codexSummary,
       pane: codexPane,
+      rows: groupRows('none', ['codex:rescue: No description. Recommended: none.']),
     }
     const typed = { acceptsTyped: true }
     expect(group.openQuestion?.spec).toEqual({ options: GROUP_OPTIONS, header: 'Skills', context: codex, ...typed })
@@ -370,6 +396,7 @@ describe('the assign stage (D-230)', () => {
       kind: 'mcp-server',
       summary: 'Recommended: qa',
       pane,
+      rows: serverRows('.mcp.json', 'Tools: 2 (events, issues)', 'qa'),
     })
   })
 
@@ -389,6 +416,9 @@ describe('the assign stage (D-230)', () => {
       kind: 'skill-group',
       summary: '1 skill. Recommended: none',
       pane: { asked: question, text: withContext(sentence, '1 skill. Recommended: none') },
+      rows: groupRows('none', [
+        'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.',
+      ]),
     })
   })
 

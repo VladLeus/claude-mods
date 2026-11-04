@@ -3,13 +3,20 @@ import { describe, expect, test } from 'claude-code/testing'
 import { lineDiff } from '../ui/diff'
 import { conflictContext } from './conflict'
 
+/** One untitled section holding each line as one plain row, as a conflict context's rows are (D-313). */
+function plainRows(lines: readonly string[]): unknown {
+  return [{ title: null, rows: lines.map(text => ({ role: 'plain', text, indent: 0 })) }]
+}
+
 describe('conflict question context (D-236)', () => {
   test("a conflict question carries the diff of that file: Take new's line counts, then the changed lines", () => {
+    const lines = ['Take new: 2 lines added, 1 removed', '- edited by hand', '+ new text', '+ more']
     expect(conflictContext('.cadre/be/ROLE.md', lineDiff('edited by hand\n', 'new text\nmore\n'))).toEqual({
       title: 'Conflict: .cadre/be/ROLE.md',
-      lines: ['Take new: 2 lines added, 1 removed', '- edited by hand', '+ new text', '+ more'],
+      lines,
       kind: 'conflict-diff',
       summary: 'Take new: 2 lines added, 1 removed',
+      rows: plainRows(lines),
     })
   })
 
@@ -42,6 +49,7 @@ describe('conflict question context (D-236)', () => {
       lines: ['Your version could not be read, so no diff is shown.'],
       kind: 'conflict-diff',
       summary: 'Your version could not be read, so no diff is shown.',
+      rows: plainRows(['Your version could not be read, so no diff is shown.']),
     })
   })
 })

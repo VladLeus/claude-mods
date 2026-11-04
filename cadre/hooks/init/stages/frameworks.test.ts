@@ -36,11 +36,22 @@ const BOTH_OPTIONS = ['GSD', 'superpowers', 'none (built-in)']
 
 /** The detection evidence of a repo where nothing was found, as each framework question carries it (D-236). */
 const GSD_LINE = 'GSD: not found (no .planning/; no gsd-core install proven)'
+/** The superpowers line of DETECTED, after its name (D-236). */
+const SUPERPOWERS_VALUE = 'not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)'
 const DETECTED = {
   title: 'Frameworks',
-  lines: [GSD_LINE, 'superpowers: not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)'],
+  lines: [GSD_LINE, `superpowers: ${SUPERPOWERS_VALUE}`],
   kind: 'detection',
   summary: 'No framework found',
+  rows: [
+    {
+      title: null,
+      rows: [
+        { role: 'field', label: 'GSD', text: 'not found (no .planning/; no gsd-core install proven)', indent: 0 },
+        { role: 'field', label: 'superpowers', text: SUPERPOWERS_VALUE, indent: 0 },
+      ],
+    },
+  ],
 }
 
 /**
@@ -336,6 +347,7 @@ describe('the GSD check (D-243)', () => {
       kind: 'detection',
       summary: line,
       pane: { asked: QUESTION, text: withContext(QUESTION, line) },
+      rows: [{ title: null, rows: [{ role: 'plain', text: line, indent: 0 }] }],
     })
   })
 
