@@ -94,6 +94,24 @@ describe('autonomy hunks', () => {
     expect(spec.context).toMatchObject({ summary: '  after:  "yolo"' })
   })
 
+  test('a hunk context line never shows in its question, and a hunk takes no typed answer (D-266, D-287)', () => {
+    const candidates: readonly HunkCandidate[] = [
+      { proposal: MODE, before: 'interactive' },
+      { proposal: CONTEXT_WARNINGS, before: NOT_SET_TEXT },
+    ]
+    for (const candidate of candidates) {
+      const { question, spec } = hunkQuestion(candidate, 1, 2)
+      const lines = spec.context?.lines ?? []
+      expect([question.split('\n'), spec.context?.kind, lines.length, 'acceptsTyped' in spec]).toEqual([
+        [`.planning/config.json: ${candidate.proposal.key}`],
+        'hunk',
+        4,
+        false,
+      ])
+      expect(lines.filter(line => question.includes(line.trim()))).toEqual([])
+    }
+  })
+
   test('the header of the last GSD hunk fits the 12 characters a dialog chip allows', () => {
     const total = GSD_AUTONOMY.length
     const header = hunkQuestion({ proposal: CONTEXT_WARNINGS, before: NOT_SET_TEXT }, total, total).spec.header

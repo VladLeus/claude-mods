@@ -2773,6 +2773,23 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.logs.filter(text => text.includes(ROLES_DISMISSED_REASON))).toEqual([])
   })
 
+  test('the TUI default previews the consent and a hunk dialog, with no Describe your own (D-266)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    await $.command.run(TUI_RUN)
+    const ats = [CLAUDE_JSON_QUESTION, '.planning/config.json: mode'].map(head => askHeads(log).indexOf(`ask ${head}`))
+    const isPreviewed = (at: number): boolean => {
+      const previews = log.askPreviews[at] ?? []
+
+      return previews.length > 0 && previews.every(preview => typeof preview === 'string' && preview !== '')
+    }
+    const typed = (at: number): boolean => (log.askOptions[at] ?? []).includes('Describe your own')
+    expect(ats.map(at => [at >= 0, isPreviewed(at), typed(at)])).toEqual([
+      [true, true, false],
+      [true, true, false],
+    ])
+  })
+
   test('with no presentation, or in fullscreen, the terminal opens the pane as before (D-208)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)

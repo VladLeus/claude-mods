@@ -97,3 +97,13 @@ describe('the consent stage (D-230)', () => {
     expect(next.effect).toEqual({ kind: 'io', call: { id: 'scan', locations: DEFAULT_LOCATIONS, readUserMcp: true } })
   })
 })
+
+describe('the consent preview (D-266, D-287)', () => {
+  test('the consent asks with a consent context and a summary, takes no typed answer, keeps its first line', () => {
+    const run = driven(consentStage.enter(stateAt('consent', CONSENT_DRAFT)), ['Yes, read names only'])
+    const [spec] = run.specs
+    const isTyped = spec === undefined || 'acceptsTyped' in spec
+    expect([spec?.context?.kind, (spec?.context?.summary ?? '') !== '', isTyped]).toEqual(['consent', true, false])
+    expect((run.asked[0] ?? '').split('\n')[0]?.startsWith('Read ~/.claude.json')).toBe(true)
+  })
+})
