@@ -263,11 +263,31 @@ export function choiceAnswer<T>(
   return { kind: 'again', question: askedText(ask.question, refusal), sub: { tries: sub.tries + 1 } }
 }
 
+/** A word character for hasWord: a Unicode letter, a Unicode digit or `_`. */
+const WORD_CHAR = /[\p{L}\p{N}_]/u
+
+/** Whether `line` holds `word` as a whole word, case-insensitive: no word character right before or after it. */
+function hasWord(line: string, word: string): boolean {
+  const text = line.toLowerCase()
+  const needle = word.toLowerCase()
+  if (needle === '') return false
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+    // A character is one or two UTF-16 units, so the two units on each side hold the neighbouring character whole.
+    const before = Array.from(text.slice(Math.max(0, at - 2), at)).at(-1) ?? ''
+    const after = Array.from(text.slice(at + needle.length, at + needle.length + 2))[0] ?? ''
+    if (!WORD_CHAR.test(before) && !WORD_CHAR.test(after)) return true
+  }
+
+  return false
+}
+
 /**
  * `spec` with each of `folds` merged into its context as a leading section (D-302): the fold's title, its lines and one
- * blank line, in the order given, before the context's own lines; every title and line cleaned and not cut, as a pane
- * block's were (clean with UNCUT, #163), so a folded scanned value cannot add a row or hide text (T-02.2-24). A spec
- * with no context, or no fold, is given back as it is; the summary and the pane text never change.
+ * blank line, in the order given, before the context's own lines, except that the title is left out when the fold's
+ * first line already names it (holds the title as a whole word, case-insensitive: the block's own heading line; user,
+ * 2026-11-04), compared after the same cleaning. Every title and line is cleaned and not cut, as a pane block's were
+ * (clean with UNCUT, #163), so a folded scanned value cannot add a row or hide text (T-02.2-24). A spec with no
+ * context, or no fold, is given back as it is; the summary and the pane text never change.
  */
 export function foldedSpec(
   spec: AskSpec,
@@ -275,7 +295,14 @@ export function foldedSpec(
 ): AskSpec {
   const { context } = spec
   if (context === undefined || folds.length === 0) return spec
-  const sections = folds.flatMap(fold => [fold.title, ...fold.lines, ''].map(line => clean(line, UNCUT)))
+  const sections = folds.flatMap(fold => {
+    const title = clean(fold.title, UNCUT)
+    const lines = fold.lines.map(line => clean(line, UNCUT))
+    const [first] = lines
+    if (first !== undefined && hasWord(first, title)) return [...lines, '']
+
+    return [title, ...lines, '']
+  })
 
   return { ...spec, context: { ...context, lines: [...sections, ...context.lines] } }
 }

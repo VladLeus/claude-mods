@@ -38,7 +38,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
-          "Scan",
           "Repo scan (read-only):",
           "  stack: none; frontend: none; backend: none",
           "  tests: none; E2E: none",
@@ -72,7 +71,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
-          "Recommendations",
           "Recommendations (print-only; init asks before it installs any):",
           "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
           "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
@@ -257,7 +255,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
-          "Scan",
           "Repo scan (read-only):",
           "  stack: TypeScript; frontend: react; backend: none",
           "  tests: JS/TS test files; E2E: none",
@@ -291,7 +288,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
-          "Recommendations",
           "Recommendations (print-only; init asks before it installs any):",
           "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
           "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
@@ -517,7 +513,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
-          "Scan",
           "Repo scan (read-only):",
           "  stack: TypeScript; frontend: react; backend: none",
           "  tests: JS/TS test files; E2E: none",
@@ -551,7 +546,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
-          "Recommendations",
           "Recommendations (print-only; init asks before it installs any):",
           "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
           "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
@@ -739,7 +733,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
-          "Scan",
           "Repo scan (read-only):",
           "  stack: none; frontend: none; backend: none",
           "  tests: none; E2E: none",
@@ -807,7 +800,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
-          "Recommendations",
           "Recommendations (print-only; init asks before it installs any):",
           "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
           "    run: claude plugin install claude-security@claude-plugins-official",
@@ -1180,7 +1172,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
-          "Scan",
           "Repo scan (read-only):",
           "  stack: none; frontend: none; backend: none",
           "  tests: none; E2E: none",
@@ -1214,7 +1205,6 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
-          "Recommendations",
           "Recommendations (print-only; init asks before it installs any):",
           "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
           "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
