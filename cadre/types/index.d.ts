@@ -503,8 +503,9 @@ export type AskSpec = {
   /** The question takes a typed answer, so the TUI default may offer "Describe your own" (D-234). */
   readonly acceptsTyped?: true
   /**
-   * How the options of a paged question are spread over its pages on a pane surface (D-306, D-307): `always` shows on
-   * every page, `dropped` on none, and every other option on the last page only.
+   * How the options of a paged question are spread over its pages on a pane surface (D-306, D-307, D-328, D-329):
+   * `always` shows on every page, `dropped` on none, and every other option on the last page only. A question with
+   * none is paged as if both were empty, its options on the last page only and a Last page move before it (D-335).
    */
   readonly pageOptions?: { readonly always: readonly string[]; readonly dropped: readonly string[] }
 }

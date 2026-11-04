@@ -532,6 +532,7 @@ export const EN = Object.freeze({
   'ui.item.mcpDescription.other': '{source}, {count} tools',
 
   'ui.paging.marker': 'page {number} of {count}',
+  'ui.paging.lastPage': 'Last page',
 
   'ui.summary.consent': '1 file, MCP server names only',
   'ui.summary.scan': '{plugins}, {servers}, {files}',
