@@ -713,7 +713,7 @@ describe('the TUI-default preview by wrapped rows (D-260)', () => {
   })
 })
 
-describe('tuiTranscriptEntries (WD-S4, D-262, D-286)', () => {
+describe('tuiTranscriptEntries (WD-S4, D-262)', () => {
   /** A context of `count` lines `line 1`, `line 2`, ... of `kind`. */
   function linesContext(count: number, kind: AskContext['kind'] = 'skills'): AskContext {
     return {
@@ -728,39 +728,32 @@ describe('tuiTranscriptEntries (WD-S4, D-262, D-286)', () => {
     expect(MAX_LOG_ENTRY_CHARS).toBe(1999)
   })
 
-  test('a title and 30 short lines give one entry: the title, then every line, joined by newlines (D-262)', () => {
+  test('a title and 30 short lines give one entry per row: the title, then every line (D-262, user 2026-11-04)', () => {
     const context = linesContext(30)
-    expect(tuiTranscriptEntries(context, null, null)).toEqual([['Lines', ...context.lines].join('\n')])
+    expect(tuiTranscriptEntries(context, null, null)).toEqual(['Lines', ...context.lines])
   })
 
-  test('4500 characters give the fewest entries under 2000, whole lines, the title in the first (D-286)', () => {
+  test('a long context is never joined: 4500 characters still give one entry per row, the title first', () => {
     const lines = Array.from({ length: 45 }, (_, at) => String(at).padStart(2, '0').padEnd(99, 'x'))
     const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '45 lines' }
     const entries = tuiTranscriptEntries(context, null, null)
-    expect(['Lines', ...lines].join('\n').length).toBe(4505)
-    expect(entries.map(entry => entry.length)).toEqual([1905, 1999, 599])
-    expect(entries.join('\n')).toBe(['Lines', ...lines].join('\n'))
-    expect(entries.map(entry => entry.split('\n')[0])).toEqual(['Lines', lines[19], lines[39]])
+    expect(entries).toEqual(['Lines', ...lines])
+    expect(entries.some(entry => entry.includes('\n'))).toBe(false)
   })
 
-  test('a line of 2500 characters is an entry of its own, never cut (D-286)', () => {
+  test('a line of 2500 characters is one entry, never cut', () => {
     const long = 'x'.repeat(2500)
     const lines = linesContext(25).lines.map((line, at) => (at === 2 ? long : line))
     const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '25 lines' }
-    expect(tuiTranscriptEntries(context, null, null)).toEqual([
-      'Lines\nline 1\nline 2',
-      long,
-      lines.slice(3).join('\n'),
-    ])
+    expect(tuiTranscriptEntries(context, null, null)).toEqual(['Lines', ...lines])
   })
 
-  test('each row is cleaned and uncut, so a scanned newline or control adds no row or title (T-02.2-09)', () => {
+  test('each row is cleaned and uncut, so a scanned newline or control adds no entry or title (T-02.2-09)', () => {
     const wide = 'x'.repeat(300)
     const rest = linesContext(PREVIEW_LINE_ROWS).lines
     const lines = [wide, `a${BIDI_OVERRIDE}b`, `c${String.fromCodePoint(10)}Forged title`, ...rest]
     const context: AskContext = { title: `Long ${BIDI_OVERRIDE}list`, lines, kind: 'skills', summary: 'Long list' }
-    const [entry = ''] = tuiTranscriptEntries(context, null, null)
-    expect(entry.split('\n')).toEqual(['Long list', wide, 'ab', 'cForged title', ...rest])
+    expect(tuiTranscriptEntries(context, null, null)).toEqual(['Long list', wide, 'ab', 'cForged title', ...rest])
   })
 
   test('a context that fits the preview, the Review and no context give no entry', () => {
@@ -771,21 +764,21 @@ describe('tuiTranscriptEntries (WD-S4, D-262, D-286)', () => {
 
   test('a context of PREVIEW_LINE_ROWS lines overflows, its title row counted (D-260)', () => {
     const context = linesContext(PREVIEW_LINE_ROWS)
-    expect(tuiTranscriptEntries(context, null, null)).toEqual([['Lines', ...context.lines].join('\n')])
+    expect(tuiTranscriptEntries(context, null, null)).toEqual(['Lines', ...context.lines])
     const wrapped = linesContext(15).lines.map(line => line.padEnd(100, 'x'))
     const wide = { ...linesContext(15), lines: wrapped }
     const entries = [tuiTranscriptEntries(wide, null, null), tuiTranscriptEntries(wide, null, 40)]
-    expect(entries).toEqual([[], [['Lines', ...wrapped].join('\n')]])
+    expect(entries).toEqual([[], ['Lines', ...wrapped]])
   })
 
-  test('the context printed last, by its title and lines, gives no entry; a changed one gives it all', () => {
+  test('the context printed last, by its title and lines, gives no entry; a changed one gives them all', () => {
     const printed = linesContext(30)
     const rebuilt = { ...printed, lines: [...printed.lines] }
     const changed = { ...printed, lines: [...printed.lines.slice(0, -1), 'line X'] }
     const retitled = { ...printed, title: 'Other' }
     expect(tuiTranscriptEntries(rebuilt, printed, null)).toEqual([])
-    expect(tuiTranscriptEntries(changed, printed, null)).toEqual([['Lines', ...changed.lines].join('\n')])
-    expect(tuiTranscriptEntries(retitled, printed, null)).toEqual([['Other', ...printed.lines].join('\n')])
+    expect(tuiTranscriptEntries(changed, printed, null)).toEqual(['Lines', ...changed.lines])
+    expect(tuiTranscriptEntries(retitled, printed, null)).toEqual(['Other', ...printed.lines])
   })
 })
 
