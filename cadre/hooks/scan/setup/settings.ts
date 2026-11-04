@@ -28,12 +28,21 @@ export type SettingsEntry = {
   readonly value: unknown
 }
 
-/** What the settings sources keep: key names, hook basenames, the carry facts and the enabled plugin keys. */
+/**
+ * What the settings sources keep: key names, hook basenames, the carry facts, the enabled plugin keys and the
+ * `.mcp.json` approval lists the MCP scan filters by (D-332).
+ */
 export type ProjectedSettings = {
   readonly settingsKeys: SetupScan['settingsKeys']
   readonly hooks: readonly HookScript[]
   readonly carry: CarryFacts
   readonly enabled: readonly string[]
+  /** The `.mcp.json` servers a settings file rejects: every `disabledMcpjsonServers` name of every source (D-332). */
+  readonly mcpDisabled: readonly string[]
+  /** The `.mcp.json` servers a settings file approves: every `enabledMcpjsonServers` name of every source (D-332). */
+  readonly mcpEnabled: readonly string[]
+  /** Whether a source sets `enableAllProjectMcpServers` to true, which approves every `.mcp.json` server (D-332). */
+  readonly isAllProjectMcpEnabled: boolean
 }
 
 /** At most this many key names are kept per settings source. */
@@ -127,6 +136,19 @@ function carryOf(user: unknown): CarryFacts {
   }
 }
 
+/**
+ * The server names of one `.mcp.json` approval list of a settings value (D-332): `key` read as an array of strings,
+ * the shape research assumption A4 takes, each name clean leaves unchanged at MAX_KEY_CHARS, as parseEnabledPlugins
+ * keeps a key, once each; anything but an array reads as none, and an entry that is not a string is skipped.
+ */
+function mcpjsonNames(value: unknown, key: 'disabledMcpjsonServers' | 'enabledMcpjsonServers'): string[] {
+  if (!isObject(value)) return []
+  const listed = value[key]
+  if (!Array.isArray(listed)) return []
+
+  return stableNames(listed.filter((name): name is string => typeof name === 'string'), MAX_KEY_CHARS)
+}
+
 /** The sources that were read as plain objects, one entry per source, in override order. */
 function readSources(sources: readonly SettingsEntry[]): SettingsEntry[] {
   return SOURCE_ORDER.flatMap(source => {
@@ -139,14 +161,17 @@ function readSources(sources: readonly SettingsEntry[]): SettingsEntry[] {
 /**
  * The settings of the sources that were read, projected to what a scan may keep (SCAN-02, D-57): the top-level key
  * names of each source (sorted, at most 100, a name clean would change is dropped), the hook script basenames, the
- * carry facts of the user source alone, and `enabled`, the enabledPlugins keys that are true after the sources are
- * folded in override order, sorted. A source that is missing or not a plain object is skipped, and no settings value is
- * kept.
+ * carry facts of the user source alone, `enabled`, the enabledPlugins keys that are true after the sources are folded
+ * in override order, sorted, and the `.mcp.json` approval lists of every source (D-332): the names of each
+ * `disabledMcpjsonServers` and `enabledMcpjsonServers` (mcpjsonNames), sorted, and whether any source sets
+ * `enableAllProjectMcpServers` to true. A source that is missing or not a plain object is skipped, and no other
+ * settings value is kept.
  */
 export function projectSettings(sources: readonly SettingsEntry[]): ProjectedSettings {
   const read = readSources(sources)
   const user = read.find(entry => entry.source === 'user')
   const flags = foldEnabledPlugins(read.flatMap(entry => parseEnabledPlugins(entry.value, entry.source)))
+  const approvesAll = read.some(entry => isObject(entry.value) && entry.value.enableAllProjectMcpServers === true)
 
   return {
     settingsKeys: read.map(entry => ({
@@ -156,6 +181,9 @@ export function projectSettings(sources: readonly SettingsEntry[]): ProjectedSet
     hooks: read.flatMap(entry => projectHooks(entry.value, entry.source)),
     carry: carryOf(user === undefined ? null : user.value),
     enabled: sortedUnique(flags.filter(flag => flag.value).map(flag => flag.key)),
+    mcpDisabled: sortedUnique(read.flatMap(entry => mcpjsonNames(entry.value, 'disabledMcpjsonServers'))),
+    mcpEnabled: sortedUnique(read.flatMap(entry => mcpjsonNames(entry.value, 'enabledMcpjsonServers'))),
+    isAllProjectMcpEnabled: approvesAll,
   }
 }
 

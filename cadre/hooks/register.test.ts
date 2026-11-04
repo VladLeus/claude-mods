@@ -3547,7 +3547,8 @@ describe('Phase 2 faked-host matrix', () => {
     const base = initWorld()
     const world = initWorld({
       onAsk: reseat,
-      settings: { user: secretUserSettings(), project: {}, local: {} },
+      // The project settings approve the .mcp.json server linear, so the scan offers it (D-332).
+      settings: { user: secretUserSettings(), project: { enabledMcpjsonServers: ['linear'] }, local: {} },
       listings: { ...base.listings, [HISTORY_DIR]: sessions },
       files: {
         ...base.files,

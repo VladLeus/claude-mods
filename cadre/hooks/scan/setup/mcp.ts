@@ -2,8 +2,9 @@
  * The MCP part of the setup scan, a layer 3 module: the servers of the repo's `.mcp.json`, of the session's tool names
  * and, only after consent, of `~/.claude.json` with its claude.ai connectors, each kept by name only and merged once by
  * name, and whether a source may have hidden a server (SCAN-02, D-57, D-58, R2, A4); desktop app connectors are left
- * out. It imports core, paths, the facts read cap and name warnings, the setup readers and settings, and the types, so
- * the setup scan, the skill and agent scans (the name cap) and /cadre start (the `~/.claude.json` cap) read here.
+ * out, and so are the servers disabled for the project (D-332). It imports core, paths, the facts read cap and name
+ * warnings, the setup readers and settings, and the types, so the setup scan, the skill and agent scans (the name cap)
+ * and /cadre start (the `~/.claude.json` cap) read here.
  */
 import type { InitIo, McpRef, McpSource } from '../../../types'
 import { fieldKeysOf, isObject } from '../../core/json'
@@ -15,6 +16,7 @@ import { hiddenNameWarnings, MAX_READ_BYTES } from '../facts/normalize'
 import { isInsideRepo, readJson, readJsonFile, shownPath } from './read'
 import type { SetupContext } from './read'
 import { stableNames, unfitNameWarnings } from './settings'
+import type { ProjectedSettings } from './settings'
 
 /**
  * The most bytes of `~/.claude.json` a scan reads: the host's own 4 MiB read cap, not the 256 KiB cap of the detect
@@ -149,11 +151,36 @@ export function connectorServerNames(value: unknown): string[] {
   if (!Array.isArray(ever)) return []
 
   return ever.slice(0, MAX_CONNECTOR_NAMES).flatMap(entry => {
-    if (typeof entry !== 'string' || !entry.startsWith(CLAUDE_AI_PREFIX)) return []
-    const rest = entry.slice(CLAUDE_AI_PREFIX.length)
+    const name = typeof entry === 'string' ? connectorNameOf(entry) : null
 
-    return rest === '' ? [] : [CONNECTOR_PREFIX + rest.replace(/[^A-Za-z0-9_-]/g, '_')]
+    return name === null ? [] : [name]
   })
+}
+
+/**
+ * The server name a terminal session gives the claude.ai connector a `~/.claude.json` entry names (R2): for an entry
+ * that starts with CLAUDE_AI_PREFIX and has a name after it, CONNECTOR_PREFIX plus that name, every character outside
+ * letters, digits, `_` and `-` replaced by `_`; null for any other entry.
+ */
+function connectorNameOf(entry: string): string | null {
+  if (!entry.startsWith(CLAUDE_AI_PREFIX)) return null
+  const rest = entry.slice(CLAUDE_AI_PREFIX.length)
+
+  return rest === '' ? null : CONNECTOR_PREFIX + rest.replace(/[^A-Za-z0-9_-]/g, '_')
+}
+
+/**
+ * The entries of the projects of a `~/.claude.json` value at any of `roots` (the repo root as given and as resolved,
+ * trailing slashes ignored); an empty root form matches no project, and anything but a plain object with a `projects`
+ * object gives none.
+ */
+function projectsAt(value: unknown, roots: readonly string[]): unknown[] {
+  if (!isObject(value) || !isObject(value.projects)) return []
+  const wanted = roots.map(trimSlash).filter(root => root !== '')
+
+  const projects = Object.entries(value.projects)
+
+  return projects.flatMap(([path, project]) => (wanted.includes(trimSlash(path)) ? [project] : []))
 }
 
 /**
@@ -162,15 +189,58 @@ export function connectorServerNames(value: unknown): string[] {
  */
 function claudeJsonNames(value: unknown, roots: readonly string[]): string[] {
   if (!isObject(value)) return []
-  const wanted = roots.map(trimSlash).filter(root => root !== '')
-  const projects = isObject(value.projects) ? Object.entries(value.projects) : []
-  const ofThisRepo = projects.filter(([path]) => wanted.includes(trimSlash(path)))
 
   return [
     ...mcpServerNames(value),
-    ...ofThisRepo.flatMap(([, project]) => fieldKeysOf(project, 'mcpServers')),
+    ...projectsAt(value, roots).flatMap(project => fieldKeysOf(project, 'mcpServers')),
     ...connectorServerNames(value),
   ]
+}
+
+/**
+ * The MCP servers the repo project disabled in a `~/.claude.json` value (D-332): the `disabledMcpServers` list of the
+ * project at any of `roots` (projectsAt), read as an array of strings, the shape research assumption A4 takes, of its
+ * first MAX_CONNECTOR_NAMES entries; a claude.ai connector, which the list names by its display name (`claude.ai
+ * Slack`), as a terminal session names its server (connectorNameOf, as connectorServerNames reads it), every other
+ * name as it is, each name clean leaves unchanged at MAX_REF_NAME_CHARS, once each. Another project's list, a list
+ * that is not an array and an entry that is not a string disable nothing; only the names are kept. userConfigMcpScan
+ * reads it only after the consent (D-58).
+ */
+export function disabledProjectServers(value: unknown, roots: readonly string[]): string[] {
+  const names = projectsAt(value, roots).flatMap(project => {
+    const listed = isObject(project) ? project.disabledMcpServers : null
+    if (!Array.isArray(listed)) return []
+
+    return listed.slice(0, MAX_CONNECTOR_NAMES).flatMap(entry => {
+      if (typeof entry !== 'string') return []
+      if (!entry.startsWith(CLAUDE_AI_PREFIX)) return [entry]
+      const name = connectorNameOf(entry)
+
+      return name === null ? [] : [name]
+    })
+  })
+
+  return stableNames(names, MAX_REF_NAME_CHARS)
+}
+
+/**
+ * Whether the scan offers an MCP server (D-332, OC-05-A): never one the repo project disabled in `~/.claude.json`
+ * (`disabled`, disabledProjectServers), by name; a `.mcp.json` server (source `project`) never when a settings file
+ * rejects it (`disabledMcpjsonServers`), else only when the session connected it (`sessionNames`) or a settings file
+ * approves it (`enableAllProjectMcpServers`, `enabledMcpjsonServers`), as one still pending approval cannot be used;
+ * every other server is offered.
+ */
+export function isOfferedServer(
+  ref: McpRef,
+  disabled: readonly string[],
+  settings: Pick<ProjectedSettings, 'mcpDisabled' | 'mcpEnabled' | 'isAllProjectMcpEnabled'>,
+  sessionNames: readonly string[],
+): boolean {
+  if (disabled.includes(ref.name)) return false
+  if (ref.source !== 'project') return true
+  if (settings.mcpDisabled.includes(ref.name)) return false
+
+  return sessionNames.includes(ref.name) || settings.isAllProjectMcpEnabled || settings.mcpEnabled.includes(ref.name)
 }
 
 /**
@@ -225,31 +295,34 @@ export async function projectMcpScan(io: InitIo, ctx: SetupContext, warnings: st
 }
 
 /**
- * The MCP servers named in `~/.claude.json`. The file is looked for only when the person consented (D-58): without
- * consent nothing is read, stat'ed or warned about. A file that is not there is quiet, one that cannot be read, is over
- * the 4 MiB cap or does not parse adds a warning. The scan is partial when the file was not read (no consent, no user
- * folder, or a file it could not read or parse) or a server name was dropped (A4); a file that is not there is not.
- * The file is the one claudeJsonPathOf names for the repo root, the root list of the scan's user folder (scanSetup),
- * whose userDirOf call already shows the warning for a CLAUDE_CONFIG_DIR the D-238 rule ignores (SR-1, WF-S3).
+ * The MCP servers named in `~/.claude.json`, and beside them the servers the repo project disabled there
+ * (disabledProjectServers, D-332). The file is looked for only when the person consented (D-58): without consent
+ * nothing is read, stat'ed or warned about, and no server is known to be disabled. A file that is not there is quiet,
+ * one that cannot be read, is over the 4 MiB cap or does not parse adds a warning. The scan is partial when the file
+ * was not read (no consent, no user folder, or a file it could not read or parse) or a server name was dropped (A4); a
+ * file that is not there is not. The file is the one claudeJsonPathOf names for the repo root, the root list of the
+ * scan's user folder (scanSetup), whose userDirOf call already shows the warning for a CLAUDE_CONFIG_DIR the D-238 rule
+ * ignores (SR-1, WF-S3).
  */
 export async function userConfigMcpScan(
   io: InitIo,
   ctx: SetupContext,
   isAllowed: boolean,
   warnings: string[],
-): Promise<McpScan> {
-  if (!isAllowed) return UNREAD_MCP
+): Promise<McpScan & { readonly disabled: readonly string[] }> {
+  const unread = { ...UNREAD_MCP, disabled: [] }
+  if (!isAllowed) return unread
   const path = claudeJsonPathOf(ctx, [ctx.root], [])
-  if (path === null) return UNREAD_MCP
+  if (path === null) return unread
   const read = await readJsonFile(io, ctx, path, CLAUDE_JSON_MAX_BYTES, warnings)
-  if (read.state === 'unknown') return UNREAD_MCP
+  if (read.state === 'unknown') return unread
   const value = read.state === 'parsed' ? read.value : null
   const roots = [ctx.root, ctx.givenRoot]
   const names = claudeJsonNames(value, roots)
   warnings.push(...hiddenNameWarnings(names, 'mcpServerName', MAX_REF_NAME_CHARS))
   warnings.push(...unfitMcpWarnings(names, shownPath(ctx, path)))
 
-  return mcpScanOf(projectClaudeJson(value, roots), names)
+  return { ...mcpScanOf(projectClaudeJson(value, roots), names), disabled: disabledProjectServers(value, roots) }
 }
 
 /** The servers once each by name, keeping the first source in the order the lists are given, sorted by name. */

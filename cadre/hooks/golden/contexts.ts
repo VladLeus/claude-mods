@@ -1932,6 +1932,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  skills: 1; agents: 0; MCP servers: sentry",
           "  global ~/.claude/CLAUDE.md: yes; memories: 1; CLAUDE.md files: repo/CLAUDE.md",
           "warning: could not list the repo root (treated as unknown)",
+          "warning: MCP servers disabled for this project could not be checked (~/.claude.json was not read).",
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
@@ -1991,6 +1992,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "warning: could not list the repo root (treated as unknown)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "warning: MCP servers disabled for this project could not be checked (~/.claude.json was not read).",
                 "indent": 0
               }
             ]

@@ -9,7 +9,7 @@ import { t } from '../../locales/t'
 import { userDirOf } from '../../paths'
 import { agentNames } from './agents'
 import { claudeMdChain, isGlobalClaudeMdThere } from './claude-md'
-import { mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './mcp'
+import { isOfferedServer, mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './mcp'
 import { memoryFileNames } from './memory'
 import type { SetupContext } from './read'
 import { hookNameWarnings, installedPluginKeys, projectSettings, readSettings, settingsNameWarnings } from './settings'
@@ -29,7 +29,11 @@ const NO_USER_DIR_WARNING = t('scan.setup.setup.noUserDirWarning')
  * a home folder, the user-level sources are skipped. `isMcpPartial` is true when an MCP server name was dropped from
  * any source, a left-out desktop app connector aside, or `~/.claude.json` was not read (A4). `plugins` holds the
  * enabled and the installed keys, `installedPlugins` the installed keys alone, so no settings file can make a plugin
- * look installed (decision #69 A1).
+ * look installed (decision #69 A1). The merged servers keep only those the project can use (isOfferedServer, D-332),
+ * so the scan block, the recommendation and the deny list never see a server disabled for the project: one the repo
+ * project disabled in `~/.claude.json`, known only after the consent, and a `.mcp.json` server a settings file rejects
+ * or that is neither connected in the session nor approved. Without the consent, a scan that found a server adds one
+ * warning that the disabled servers could not be checked.
  */
 export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllowed: boolean): Promise<SetupScan> {
   const warnings: string[] = []
@@ -44,6 +48,10 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
   const sessionServers = await sessionMcpScan(io, warnings)
   const userServers = await userConfigMcpScan(io, ctx, isClaudeJsonAllowed, warnings)
   const servers = [projectServers, sessionServers, userServers]
+  const scanned = mergeMcp(servers.map(found => found.refs))
+  const sessionNames = sessionServers.refs.map(ref => ref.name)
+  const mcp = scanned.filter(ref => isOfferedServer(ref, userServers.disabled, settings, sessionNames))
+  if (!isClaudeJsonAllowed && scanned.length > 0) warnings.push(t('scan.mcp.disabledUnchecked'))
   const agents = await agentNames(io, ctx, userDir, warnings)
   const claudeMd = await claudeMdChain(io, ctx, warnings)
   const hasGlobalClaudeMd = await isGlobalClaudeMdThere(io, ctx, userDir, warnings)
@@ -53,7 +61,7 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
     plugins: sortedUnique([...settings.enabled, ...installed]),
     installedPlugins: sortedUnique(installed),
     skills,
-    mcp: mergeMcp(servers.map(found => found.refs)),
+    mcp,
     isMcpPartial: servers.some(found => found.isPartial),
     agents,
     claudeMd,

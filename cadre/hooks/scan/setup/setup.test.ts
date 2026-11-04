@@ -63,6 +63,12 @@ const MCP_JSON_PATH = '/repo/.mcp.json'
 const USER_AGENTS = '/home/u/.claude/agents'
 const REPO_AGENTS = '/repo/.claude/agents'
 
+/** Settings that approve every server of the repo's `.mcp.json`, so the scan offers them all (D-332). */
+const APPROVE_ALL_MCP = { enableAllProjectMcpServers: true }
+
+/** The line a scan without the consent gives when it scanned a server (D-332). */
+const DISABLED_UNCHECKED = t('scan.mcp.disabledUnchecked')
+
 /** The tool entries of a session that has the jira and slack servers and the built-in Read tool. */
 const SESSION_TOOLS: readonly unknown[] = [
   { name: 'mcp__jira__search', description: 'sk-FAKE-SECRET-0123456789', mcp: true },
@@ -153,7 +159,7 @@ describe('setup sources', () => {
   test('a scan whose command list cannot be read warns once and still scans the other sources', async () => {
     for (const commands of [null, {}, 'text']) {
       const scan = await scanOf(memWorld({ commands, tools: SESSION_TOOLS }))
-      expect(scan.warnings).toEqual(['could not list commands and skills (treated as unknown)'])
+      expect(scan.warnings).toEqual(['could not list commands and skills (treated as unknown)', DISABLED_UNCHECKED])
       expect(scan.skills).toEqual([])
       expect(scan.mcp.map(server => server.name)).toEqual(['jira', 'slack'])
     }
@@ -192,8 +198,9 @@ describe('setup sources', () => {
   })
 
   test('a scan whose tool list cannot be read warns and still scans the other sources', async () => {
-    const scan = await scanOf(memWorld({ tools: null, files: { [MCP_JSON_PATH]: MCP_JSON } }))
-    expect(scan.warnings).toEqual(['could not list session tools (treated as unknown)'])
+    const settings = { user: {}, project: APPROVE_ALL_MCP, local: {} }
+    const scan = await scanOf(memWorld({ tools: null, files: { [MCP_JSON_PATH]: MCP_JSON }, settings }))
+    expect(scan.warnings).toEqual(['could not list session tools (treated as unknown)', DISABLED_UNCHECKED])
     expect(scan.mcp.map(server => server.name)).toEqual(['github', 'jira'])
   })
 
@@ -218,6 +225,7 @@ describe('setup sources', () => {
         [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { ok: {}, 'has space': {}, 'a/b': {} } }),
         [CLAUDE_JSON_PATH]: JSON.stringify({ mcpServers: { 'x y': {} } }),
       },
+      settings: { user: {}, project: APPROVE_ALL_MCP, local: {} },
       tools: [{ name: 'mcp__bad server__x' }, { name: 'mcp__jira__x' }],
     })
     const scan = await scanOf(world, true)
@@ -251,7 +259,8 @@ describe('setup sources', () => {
   })
 
   test('the .mcp.json of the repo gives project servers, and no value of it reaches the scan', async () => {
-    const { scan, reads } = await runOf(memWorld({ files: { [MCP_JSON_PATH]: MCP_JSON } }))
+    const settings = { user: {}, project: APPROVE_ALL_MCP, local: {} }
+    const { scan, reads } = await runOf(memWorld({ files: { [MCP_JSON_PATH]: MCP_JSON }, settings }))
     expect(scan.mcp).toEqual([
       { name: 'github', source: 'project' },
       { name: 'jira', source: 'project' },
@@ -447,7 +456,8 @@ describe('setup sources', () => {
   })
 
   test('an MCP server seen in two sources is listed once, under the first of project and session', async () => {
-    const world = memWorld({ files: { [MCP_JSON_PATH]: MCP_JSON }, tools: SESSION_TOOLS })
+    const settings = { user: {}, project: APPROVE_ALL_MCP, local: {} }
+    const world = memWorld({ files: { [MCP_JSON_PATH]: MCP_JSON }, settings, tools: SESSION_TOOLS })
     const scan = await scanOf(world)
     expect(scan.mcp).toEqual([
       { name: 'github', source: 'project' },
@@ -465,7 +475,7 @@ describe('setup sources', () => {
   test('the full source world names every plugin, skill, MCP server and agent, and keeps no secret', async () => {
     const user = { ...secretUserSettings(), enabledPlugins: { 'z@m': true } }
     const world = memWorld({
-      settings: { user, project: {}, local: {} },
+      settings: { user, project: APPROVE_ALL_MCP, local: {} },
       files: { [INSTALLED_PATH]: INSTALLED_PLUGINS, [MCP_JSON_PATH]: MCP_JSON },
       dirs: { [USER_AGENTS]: [entry('b.md'), entry('a.md')], [REPO_AGENTS]: [entry('c.md')] },
       commands: [
@@ -483,7 +493,7 @@ describe('setup sources', () => {
     ])
     expect(scan.mcp.map(server => server.name)).toEqual(['github', 'jira', 'slack'])
     expect(scan.agents).toEqual(['a', 'b', 'c'])
-    expect(scan.warnings).toEqual([])
+    expect(scan.warnings).toEqual([DISABLED_UNCHECKED])
     const json = jsonWithoutPurposes(scan)
     expect(leaks(json, SECRETS)).toEqual([])
     expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
@@ -653,6 +663,7 @@ describe('setup consent and instructions', () => {
         [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { 'bad\u0007json': {}, ok: {} } }),
         [CLAUDE_JSON_PATH]: JSON.stringify({ mcpServers: { 'bad\u0007cfg': {} } }),
       },
+      settings: { user: {}, project: APPROVE_ALL_MCP, local: {} },
       tools: [{ name: 'mcp__bad\u0007tool__x' }],
     })
     const scan = await scanOf(world, true)
@@ -667,6 +678,7 @@ describe('setup consent and instructions', () => {
   test('a server in the project, session and user config is listed once, under project, then session', async () => {
     const world = memWorld({
       files: { [MCP_JSON_PATH]: MCP_JSON, [CLAUDE_JSON_PATH]: CLAUDE_JSON },
+      settings: { user: {}, project: APPROVE_ALL_MCP, local: {} },
       tools: [{ name: 'mcp__linear__issues' }, { name: 'mcp__jira__search' }],
     })
     const scan = await scanOf(world, true)
@@ -832,8 +844,9 @@ describe('setup consent and instructions', () => {
   })
 
   test('the full secret world, with consent, keeps no secret fixture and no absolute home path', async () => {
+    const user = { ...secretUserSettings(), enabledPlugins: { 'z@m': true } }
     const world = memWorld({
-      settings: { user: { ...secretUserSettings(), enabledPlugins: { 'z@m': true } }, project: {}, local: {} },
+      settings: { user, project: APPROVE_ALL_MCP, local: {} },
       files: {
         [INSTALLED_PATH]: INSTALLED_PLUGINS,
         [MCP_JSON_PATH]: MCP_JSON,

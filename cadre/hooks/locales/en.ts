@@ -1154,6 +1154,8 @@ export const EN = Object.freeze({
   'scan.mcp.desktopLeftOut.other':
     `left out {count} desktop app connectors ${
     ''}(role sessions run in the terminal, where connectors are claude_ai_* servers)`,
+  'scan.mcp.disabledUnchecked':
+    'MCP servers disabled for this project could not be checked (~/.claude.json was not read).',
   'scan.settings.unfitHookNames.one': 'ignored {count} hook script name from {source} that a role.json cannot hold',
   'scan.settings.unfitHookNames.other': 'ignored {count} hook script names from {source} that a role.json cannot hold',
   'scan.settings.unfitMcpNames.one': 'ignored {count} MCP server name from {source} that a role.json cannot hold',

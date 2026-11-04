@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { SetupScan } from '../../../types'
+import type { McpRef, SetupScan } from '../../../types'
 import { disabledMcpWorld } from '../../golden/worlds'
 import { t } from '../../locales/t'
 import { BIDI_OVERRIDE, CTX, memWorld, runOf } from '../../testkit'
@@ -8,7 +8,9 @@ import type { MemWorld } from '../../testkit'
 import {
   CLAUDE_JSON_MAX_BYTES,
   connectorServerNames,
+  disabledProjectServers,
   isDesktopConnectorName,
+  isOfferedServer,
   projectClaudeJson,
   projectToolServers,
 } from './mcp'
@@ -260,5 +262,40 @@ describe('MCP servers disabled for the project (D-332)', () => {
     expect(scan.mcp.map(ref => ref.name)).toEqual(['claude_ai_Gmail', 'claude_ai_Slack', 'github', 'jira'])
     expect(scan.warnings).toEqual([DISABLED_UNCHECKED])
     expect((await scanOf(memWorld({}), false)).warnings).toEqual([])
+  })
+
+  test('disabledProjectServers reads the repo project list, a connector as the terminal names its server', () => {
+    const value = {
+      projects: {
+        '/repo/': { disabledMcpServers: ['github', 'claude.ai Slack', 'claude.ai A.b/c', 'claude.ai ', 'github'] },
+        '/other': { disabledMcpServers: ['jira'] },
+      },
+    }
+    expect(disabledProjectServers(value, ['/repo'])).toEqual(['github', 'claude_ai_Slack', 'claude_ai_A_b_c'])
+    expect(disabledProjectServers(value, [''])).toEqual([])
+  })
+
+  test('disabledProjectServers skips a list that is not an array, an entry not a string and a bad value', () => {
+    const projectWith = (listed: unknown): unknown => ({ projects: { '/repo': { disabledMcpServers: listed } } })
+    const none: readonly unknown[] = [projectWith('github'), projectWith({ github: true }), projectWith(null), null, []]
+    expect(none.flatMap(value => disabledProjectServers(value, ['/repo']))).toEqual([])
+    expect(disabledProjectServers(projectWith([42, null, {}, 'jira']), ['/repo'])).toEqual(['jira'])
+  })
+
+  test('isOfferedServer drops a disabled name; a .mcp.json server needs the session or an approval (OC-05-A)', () => {
+    const none = { mcpDisabled: [], mcpEnabled: [], isAllProjectMcpEnabled: false }
+    const project: McpRef = { name: 'db', source: 'project' }
+    const session: McpRef = { name: 'db', source: 'session' }
+    const connector: McpRef = { name: 'claude_ai_Gmail', source: 'user-config' }
+    expect([
+      isOfferedServer(session, ['db'], none, ['db']),
+      isOfferedServer(connector, [], none, []),
+      isOfferedServer(project, [], none, ['db']),
+      isOfferedServer(project, [], none, []),
+      isOfferedServer(project, [], { ...none, isAllProjectMcpEnabled: true }, []),
+      isOfferedServer(project, [], { ...none, mcpEnabled: ['db'] }, []),
+      isOfferedServer(project, [], { ...none, mcpDisabled: ['db'], isAllProjectMcpEnabled: true }, ['db']),
+      isOfferedServer(session, [], { ...none, mcpDisabled: ['db'] }, ['db']),
+    ]).toEqual([false, true, true, false, true, true, false, true])
   })
 })

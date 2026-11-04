@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SettingsSource, SetupScan } from '../../../types'
-import { ABSOLUTE_PATH_MARKERS, CTX, leaks, memWorld, runOf, SECRET_FIXTURES, secretWorld } from '../../testkit'
+import {
+  ABSOLUTE_PATH_MARKERS,
+  BIDI_OVERRIDE,
+  CTX,
+  leaks,
+  memWorld,
+  runOf,
+  SECRET_FIXTURES,
+  secretWorld,
+} from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import type { SetupContext } from './read'
 import { projectHooks, projectSettings } from './settings'
@@ -355,5 +364,25 @@ describe('setup settings', () => {
     const scan = await scanOf(settingsWorld({ enabledPlugins: { 'a\u200B@m': true, 'b@m': true } }))
     expect(scan.plugins).toEqual(['b@m'])
     expect(scan.warnings).toEqual(['ignored enabledPlugins key "a@m": its name has hidden characters or is too long'])
+  })
+})
+
+describe('the .mcp.json approval lists of the settings (D-332)', () => {
+  test('every source gives its disabled and enabled names, sorted once each, and whether it approves all', () => {
+    const local = { disabledMcpjsonServers: ['a', `b${BIDI_OVERRIDE}`], enableAllProjectMcpServers: true }
+    const out = projectSettings([
+      { source: 'user', value: { disabledMcpjsonServers: ['db', 'db'], enableAllProjectMcpServers: 'true' } },
+      { source: 'project', value: { enabledMcpjsonServers: ['github', 42, ''], disabledMcpjsonServers: 'x' } },
+      { source: 'local', value: local },
+    ])
+    expect([out.mcpDisabled, out.mcpEnabled, out.isAllProjectMcpEnabled]).toEqual([['a', 'db'], ['github'], true])
+  })
+
+  test('anything but an array of names reads as none, and only true approves every server (A4)', () => {
+    const value = { disabledMcpjsonServers: {}, enabledMcpjsonServers: 'github', enableAllProjectMcpServers: 1 }
+    const out = userOnly(value)
+    expect([out.mcpDisabled, out.mcpEnabled, out.isAllProjectMcpEnabled]).toEqual([[], [], false])
+    const empty = projectSettings([])
+    expect([empty.mcpDisabled, empty.mcpEnabled, empty.isAllProjectMcpEnabled]).toEqual([[], [], false])
   })
 })
