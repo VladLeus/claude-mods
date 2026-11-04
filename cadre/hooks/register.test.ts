@@ -2843,7 +2843,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     return initWorld(onAsk === undefined ? { commands, answers } : { commands, answers, onAsk })
   }
 
-  test('a context too long for the preview is printed right above its dialog, title first (D-228)', async ($, on) => {
+  test('a context too long for the preview is printed above its dialog in one entry (D-262)', async ($, on) => {
     const log = newLog()
     const seen: { readonly logs: readonly string[]; readonly open: unknown }[] = []
     const atSkills = async (): Promise<void> => {
@@ -2856,7 +2856,15 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const context = isObject(open) && isObject(open.context) ? open.context : {}
     const rows = [context.title, ...(Array.isArray(context.lines) ? context.lines : [])]
     expect([rows[0], rows.length > PREVIEW_ROWS + 1]).toEqual(['Your own skills', true])
-    expect(logs.slice(-rows.length)).toEqual(rows)
+    // The rows are printed as the fewest transcript entries under 2000 characters, each a whole run of rows joined by
+    // newlines, the title first, right above the dialog (D-262, D-286).
+    const head = logs.findIndex(line => line.startsWith(`${String(rows[0])}\n`))
+    const printed = logs.slice(head)
+    expect([head >= 0, printed.join('\n'), printed.every(entry => entry.length < 2000)]).toEqual([
+      true,
+      rows.join('\n'),
+      true,
+    ])
     expect(log.logs.some(line => line.includes(BIDI_OVERRIDE))).toBe(false)
     const [preview] = log.askPreviews[log.asks.findIndex(ask => ask.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))] ?? []
     const marker = typeof preview === 'string' ? preview.split('\n').at(-2) : null
@@ -2879,7 +2887,8 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     fakeHost(on, { ...manySkillsWorld(), answers }, log)
     await $.command.run(TUI_RUN)
     const asked = log.asks.filter(ask => ask.includes(OWN_SKILLS_ENTRY_PREFIX))
-    expect([asked.length, log.logs.filter(line => line === 'Your own skills').length]).toEqual([2, 1])
+    const printed = log.logs.filter(line => line.startsWith('Your own skills\n'))
+    expect([asked.length, printed.length]).toEqual([2, 1])
   })
 
   test('a pane surface prints no context as transcript rows, however long (D-228)', async ($, on) => {
