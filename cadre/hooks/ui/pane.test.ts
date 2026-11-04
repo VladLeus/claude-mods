@@ -731,13 +731,47 @@ describe('contextPages (D-305, D-306, D-308)', () => {
     expect(pages.every(page => page.every(section => section.rows[0]?.role === 'item'))).toBe(true)
   })
 
-  test('an item larger than a page alone gets a page of its own, never cut', () => {
+  test('an item larger than a page alone is split into its rows, and a row too long alone into pieces (N-04)', () => {
     const huge = itemOf('huge', 1_000)
+    const [item, about, used] = huge
     const rows = [...itemOf('a', 3), ...huge, ...itemOf('b', 3)]
-    expect(contextPages(contextOf([{ title: 'Skills', rows }]), null)).toEqual([
-      [{ title: 'Skills', rows: itemOf('a', 3) }],
-      [{ title: 'Skills', rows: huge }],
-      [{ title: 'Skills', rows: itemOf('b', 3) }],
-    ])
+    const pages = contextPages(contextOf([{ title: 'Skills', rows }]), null)
+    const paged = pages.flatMap(page => page.flatMap(section => section.rows))
+    const pieces = paged.slice(4, -4)
+    expect([...paged.slice(0, 4), ...paged.slice(-4)]).toEqual([...itemOf('a', 3), item, used, ...itemOf('b', 3)])
+    expect(pieces.length > 1 && pieces.every(row => row.role === 'description' && row.indent === 4)).toBe(true)
+    expect([pieces.map(row => row.text).join(''), fitCaps(pages, null)]).toEqual([about?.text, true])
+  })
+
+  test('one row larger than a page alone is cut into pieces that each fit a frame, joined in order (N-04)', () => {
+    const text = 'a'.repeat(9_000)
+    for (const columns of [null, 60]) {
+      const pages = contextPages(contextOf([{ title: null, rows: [{ role: 'plain', text, indent: 0 }] }]), columns)
+      const pieces = pages.flatMap(page => page.flatMap(section => section.rows))
+      expect([columns, pages.length > 1, fitCaps(pages, columns)]).toEqual([columns, true, true])
+      expect(pieces.map(piece => piece.text).join('')).toBe(text)
+    }
+  })
+
+  test('a field row too large alone keeps its role and label on its first piece; the rest are plain (N-04)', () => {
+    const row: ContextRow = { role: 'field', label: 'plugins', text: 'p'.repeat(9_000), indent: 2 }
+    const pages = contextPages(contextOf([{ title: null, rows: [row] }]), null)
+    const pieces = pages.flatMap(page => page.flatMap(section => section.rows))
+    const [first, ...rest] = pieces
+    const isPlain = (piece: ContextRow): boolean =>
+      piece.role === 'plain' && piece.indent === 2 && piece.label === undefined
+    expect([first?.role, first?.label, first?.indent]).toEqual(['field', 'plugins', 2])
+    expect([rest.length > 0, rest.every(isPlain), fitCaps(pages, null)]).toEqual([true, true, true])
+    expect(pieces.map(piece => piece.text).join('')).toBe(row.text)
+  })
+
+  test('an item whose rows under it fill more than a page is split across pages row by row, none cut (N-04)', () => {
+    const fields = Array.from({ length: 150 }, (_, at): ContextRow => {
+      return { role: 'field', label: `f${at}`, text: 'value', indent: 4 }
+    })
+    const rows: ContextRow[] = [{ role: 'item', label: 'big', text: 'be', indent: 2 }, ...fields]
+    const pages = contextPages(contextOf([{ title: 'Skills', rows }]), null)
+    expect([pages.length > 1, fitCaps(pages, null)]).toEqual([true, true])
+    expect(pages.flatMap(page => page.flatMap(section => section.rows))).toEqual(rows)
   })
 })

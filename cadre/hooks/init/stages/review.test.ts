@@ -654,6 +654,22 @@ describe('reviewPages (D-261)', () => {
     expect(reviewPages(lines, 20, null)).toEqual([lines.slice(0, 19), lines.slice(19, 38), lines.slice(38)])
     expect(reviewPages([], 20, 40)).toEqual([[]])
   })
+
+  test('no page sums more code points than maxChars, and a longer line is cut into lines in order (N-04)', () => {
+    const maxChars = 1_000
+    const lines = Array.from({ length: 12 }, (_, at) => String(at % 10).repeat(300))
+    const pages = reviewPages(lines, PANE_PAGE_ROWS, null, maxChars)
+    const sums = pages.map(page => page.reduce((sum, line) => sum + Array.from(line).length, 0))
+    expect([sums.every(sum => sum <= maxChars), pages.flat()]).toEqual([true, lines])
+    const long = 'x'.repeat(2_500)
+    const cut = reviewPages([long], PANE_PAGE_ROWS, null, maxChars).flat()
+    expect([cut.length > 1, cut.every(line => Array.from(line).length <= maxChars), cut.join('')]).toEqual([
+      true,
+      true,
+      long,
+    ])
+    expect(reviewPages(lines, PANE_PAGE_ROWS, null)).toEqual([lines])
+  })
 })
 
 describe('the paged review on a pane surface (ASKED #19, #23)', () => {
