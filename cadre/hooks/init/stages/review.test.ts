@@ -466,6 +466,17 @@ describe('review redaction (WD-S5, #163)', () => {
     expect([shown.includes(row), context.includes(row)]).toEqual([true, true])
     expect(JSON.stringify([shown, context, asking.openQuestion?.question])).not.toContain('ab12cd34ef56')
   })
+
+  test("a role title's secret-like span is hidden in its role row (N-05, E1)", async () => {
+    const [first] = REVIEW_DRAFT.roles
+    const title = 'Ops ghp_FAKEFAKEFAKEFAKEFAKE'
+    const roles = REVIEW_DRAFT.roles.map((role, at) => (at === 0 ? { ...role, title } : role))
+    const state = reviewAt({ roles })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const shown = pagedLines(asking)
+    expect(shown).toContain(`  Ops ${REDACTED} (${first?.id})`)
+    expect(JSON.stringify(shown)).not.toContain('ghp_FAKE')
+  })
 })
 
 describe('the recommendations in the review (WD-M2, ROLE-03)', () => {

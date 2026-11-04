@@ -98,6 +98,17 @@ describe('MCP server contexts (D-211)', () => {
     expect(gmail.lines).toEqual(['Source: claude.ai', 'Tools: not connected, tools unknown', 'Recommended: none'])
   })
 
+  test('the not-connected tools row and line keep their text, the row built from its own value (N-06)', () => {
+    const jira = mcpServerContext({ name: 'jira', source: 'user-config' }, [], [], SCREEN_LIST_WORDS)
+    expect(jira.rows?.[0]?.rows[1]).toEqual({
+      role: 'field',
+      label: 'Tools',
+      text: 'not connected, tools unknown',
+      indent: 0,
+    })
+    expect(jira.lines[1]).toBe('Tools: not connected, tools unknown')
+  })
+
   test('50 tools show 12 names, then how many more (T-02.1-73); a name never adds a line (T-02.1-71)', () => {
     const many = Array.from({ length: 50 }, (_, at) => `mcp__big__t${String(at).padStart(2, '0')}`)
     const tools = mcpServerContext({ name: 'big', source: 'session' }, many, [], SCREEN_LIST_WORDS).lines[1]
@@ -311,6 +322,13 @@ describe('mcpGroupContext (D-250, D-309, D-333)', () => {
     const lines = [line('a', { recommended: ['be'] }), line('d', { tools: 0, isConnected: false })]
     const drawn = drawnLines(mcpGroupContext(lines, ROLES))
     expect(drawn).toEqual(['be: BE', '  a', '', 'Not recommended', '  d (not connected)'])
+  })
+
+  test("a role section's title hides a secret-like span of the role title (N-05, E1)", () => {
+    const ops: RoleSpec = { ...templateRole('be'), title: 'Ops ghp_FAKEFAKEFAKEFAKEFAKE' }
+    const rows = mcpGroupContext([line('a', { recommended: ['be'] })], [ops]).rows ?? []
+    expect(rows[0]?.title).toBe('be: Ops [hidden]')
+    expect(JSON.stringify(rows)).not.toContain('ghp_FAKE')
   })
 })
 
