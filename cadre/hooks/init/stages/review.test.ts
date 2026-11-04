@@ -61,6 +61,7 @@ import {
   REVIEW_ROUNDS_REASON,
   REVIEW_TYPE_HINT,
   reviewContextLine,
+  reviewPages,
   reviewQuestion,
   reviewStage,
 } from './review'
@@ -625,6 +626,22 @@ describe('the paged review on the TUI default (D-233, ASKED #4)', () => {
     let state = asking
     for (let tries = 0; tries < MAX_ASKS; tries += 1) state = nextStage(state, { kind: 'answer', text: 'maybe' })
     expect(state.effect).toEqual({ kind: 'end', reply: cancelledReply(NO_USABLE_ANSWER_REASON) })
+  })
+})
+
+describe('reviewPages (D-261)', () => {
+  /** A line of `rows` rows at 40 columns: `tag` padded with x to `rows` times 40 code points, with no space. */
+  const tall = (tag: string, rows: number): string => tag.padEnd(rows * 40, 'x')
+
+  test('at 40 columns a 20-row page packs whole lines within 19 rows; a taller line gets a page of its own', () => {
+    const [a, b, c, d, e, f] = [tall('a', 9), tall('b', 8), tall('c', 3), tall('d', 2), tall('e', 25), tall('f', 1)]
+    expect(reviewPages([a, b, c, d, e, f], 20, 40)).toEqual([[a, b], [c, d], [e], [f]])
+  })
+
+  test('with no width each line is one row, so a page holds rows - 1 lines as before; no line is one page', () => {
+    const lines = Array.from({ length: 45 }, (_, at) => `line ${at + 1}`)
+    expect(reviewPages(lines, 20, null)).toEqual([lines.slice(0, 19), lines.slice(19, 38), lines.slice(38)])
+    expect(reviewPages([], 20, 40)).toEqual([[]])
   })
 })
 

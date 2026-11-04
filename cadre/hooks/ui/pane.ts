@@ -72,10 +72,11 @@ export function paneBlockOf(pane: PaneState): PaneBlock | null {
 }
 
 /**
- * The rows a page of the paged review fills on a pane surface (D-233, ASKED #19): a page holds this many less one
- * review lines and its title. The spike measured the docked pane's body at the terminal's rows less one (47 at 48
- * rows, 29 at 30), but the review stage cannot read a pane's rows and the desktop app's are not measured (UAT-04), so
- * the page uses the spike's fallback of 20 rows.
+ * The rows a page of the paged review fills on a pane surface (D-233, ASKED #19): a page holds its title and review
+ * lines of this many less one wrapped rows, each line counting the rows it wraps to at the pane's body width
+ * (reviewPages, D-261). The spike measured the docked pane's body at the terminal's rows less one (47 at 48 rows, 29
+ * at 30), but the review stage cannot read a pane's rows and the desktop app's are not measured (UAT-04), so the page
+ * uses the spike's fallback of 20 rows.
  */
 export const PANE_PAGE_ROWS = 20
 

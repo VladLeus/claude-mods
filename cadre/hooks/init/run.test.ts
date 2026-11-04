@@ -6072,10 +6072,11 @@ describe('lists on pane surfaces (D-256)', () => {
 describe('the page width reaches the stages (D-292)', () => {
   test('runInit reads the page width before each step; a run with no reader asks and replies the same', async () => {
     let reads = 0
+    // A width no line of this run wraps at, so its Review pages are those of a run with no width (D-261).
     const pageColumns = (): number | null => {
       reads += 1
 
-      return 70
+      return 500
     }
     const read = memIo(gitWorld(), INIT_ANSWERS)
     const reply = await runInit(read.io, { dryRun: true, pageColumns })

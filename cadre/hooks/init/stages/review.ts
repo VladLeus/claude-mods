@@ -14,7 +14,7 @@ import { setupAfterInstalls } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
-import { reportText } from '../../core/text'
+import { clean, reportText } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { t, tn } from '../../locales/t'
@@ -31,7 +31,7 @@ import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { scanWarningLines } from '../../ui/blocks/scan'
-import { PANE_PAGE_ROWS } from '../../ui/pane'
+import { PANE_PAGE_ROWS, UNCUT, wrapLine } from '../../ui/pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
 import { PREVIEW_ROWS } from '../../ui/preview'
 import { listWordsOf } from '../../ui/surface'
@@ -207,12 +207,30 @@ function pageRows(surface: Surface): number {
   return surface === 'tui-default' ? PREVIEW_ROWS : PANE_PAGE_ROWS
 }
 
-/** The review lines in pages of `rows - 1` lines each (D-233), the page title on the row left; one page at least. */
-function reviewPages(lines: readonly string[], rows: number): (readonly string[])[] {
+/**
+ * The review lines in pages of at most `rows - 1` rows each (D-233, D-261), the page title on the row left: whole
+ * lines in order, each counting the rows it wraps to at `columns` (wrapLine of the cleaned line, as the TUI preview
+ * and the pane draw it), one row each with no columns; a line that does not fit the rows a page has left starts the
+ * next page, and a line taller than a whole page gets a page of its own, uncut. One page at least.
+ */
+export function reviewPages(lines: readonly string[], rows: number, columns: number | null): (readonly string[])[] {
   const size = Math.max(1, rows - 1)
-  const count = Math.max(1, Math.ceil(lines.length / size))
+  const pages: (readonly string[])[] = []
+  let page: string[] = []
+  let used = 0
+  for (const line of lines) {
+    const cost = columns === null ? 1 : wrapLine(clean(line, UNCUT), columns).length
+    if (page.length > 0 && used + cost > size) {
+      pages.push(page)
+      page = []
+      used = 0
+    }
+    page.push(line)
+    used += cost
+  }
+  pages.push(page)
 
-  return Array.from({ length: count }, (_, at) => lines.slice(at * size, (at + 1) * size))
+  return pages
 }
 
 /**
@@ -391,23 +409,24 @@ function reviewPlanOf(draft: Draft): {
 }
 
 /**
- * Page `page` of the review as the stage asks it on every surface (D-233, ASKED #4, #19, #23, D-234): the review
- * question with the context line of the plan just shown, the page's options (pageChoices) with the Review chip, and
- * the page as its own context, titled with its place when there is more than one page (`Review (page i of n)`,
- * DECIDED #22), its summary counting the files of the plan and the roles; no typed answer is offered, since Change
- * something… takes the item in a note (#164). A pane surface asks REVIEW_QUESTION with that summary under it, and
- * when there is more than one page the page's place, which the Review chip does not carry, last (D-310). Its lists are
- * capped by `words` (D-256). An answer pageChoice cannot read is asked again on the same page with refusalLine on top,
- * or CHANGE_REFUSAL after Change something….
+ * Page `page` of the review as the stage asks it on every surface (D-233, ASKED #4, #19, #23, D-234), its lines paged
+ * to `rows` wrapped rows at `columns` (reviewPages, D-261): the review question with the context line of the plan just
+ * shown, the page's options (pageChoices) with the Review chip, and the page as its own context, titled with its place
+ * when there is more than one page (`Review (page i of n)`, DECIDED #22), its summary counting the files of the plan
+ * and the roles; no typed answer is offered, since Change something… takes the item in a note (#164). A pane surface
+ * asks REVIEW_QUESTION with that summary under it, and when there is more than one page the page's place, which the
+ * Review chip does not carry, last (D-310). Its lists are capped by `words` (D-256). An answer pageChoice cannot read
+ * is asked again on the same page with refusalLine on top, or CHANGE_REFUSAL after Change something….
  */
 function pagedAsk(
   draft: Draft,
   plan: Plan,
   page: number,
   rows: number,
+  columns: number | null,
   words: ListWords,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  const pages = reviewPages(reviewLines(draft, reviewPlanOf(draft).scopes, plan, words), rows)
+  const pages = reviewPages(reviewLines(draft, reviewPlanOf(draft).scopes, plan, words), rows, columns)
   const at = Math.min(Math.max(0, page), pages.length - 1)
   const choices = pageChoices(at, pages.length)
   const labels = choices.map(choice => choice.label)
@@ -434,14 +453,18 @@ function pagedAsk(
   }
 }
 
-/** The review ask of page `page`, paged to the rows of the state's surface (D-233, ASKED #19). */
+/**
+ * The review ask of page `page`, paged to the rows of the state's surface (D-233, ASKED #19) at the width its pages
+ * are drawn at, `state.pageColumns` (D-261, D-292): the preview's on the TUI default and in a pane seated inline, the
+ * pane body's when docked or on the desktop (pageColumnsOf), none when no width is known.
+ */
 function reviewAskOf(
   state: InitState,
   draft: Draft,
   plan: Plan,
   page: number,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  return pagedAsk(draft, plan, page, pageRows(state.surface), listWordsOf(state.surface))
+  return pagedAsk(draft, plan, page, pageRows(state.surface), state.pageColumns, listWordsOf(state.surface))
 }
 
 /** The round's plan of the whole draft out, an io effect (planStep, run by init/run). */
