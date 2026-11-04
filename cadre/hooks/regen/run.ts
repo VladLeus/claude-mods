@@ -18,8 +18,9 @@ import { regenScans } from './side-read'
 /**
  * How `/cadre regen <id>` runs (D-68, T-03-16): --dry-run prints the role's plan and holds no host, so it can neither
  * write nor run; plain regen writes that plan through `host`. `surface` is where the run shows its context, a pane
- * surface when absent (D-208, D-285), and `pageColumns` reads the columns its pane pages are drawn at (D-292), absent
- * in tests and `-p`.
+ * surface when absent (D-208, D-285), `pageColumns` reads the columns its pane pages are drawn at (D-292), and
+ * `isPaneInline` whether the pane is seated inline now, where no question is paged (N-02, OC-04-I); both are absent in
+ * tests and `-p`.
  */
 export type RegenOptions = (
   | { readonly id: string; readonly dryRun: true }
@@ -27,6 +28,7 @@ export type RegenOptions = (
 ) & {
   readonly surface?: Surface
   readonly pageColumns?: () => number | null
+  readonly isPaneInline?: () => boolean
 }
 
 /**
@@ -62,8 +64,13 @@ function regenCancelReply(io: InitIo, reason: string): string {
  */
 export async function runRegen(given: InitIo, options: RegenOptions): Promise<string> {
   // Every question goes through the paged port: on a pane surface a context over the frame cap is asked a page at a
-  // time (withPagedAsks, D-306).
-  const io = withPagedAsks(given, options.surface ?? 'pane', () => options.pageColumns?.() ?? null)
+  // time, and whole while the pane is seated inline (withPagedAsks, D-306, N-02).
+  const io = withPagedAsks(
+    given,
+    options.surface ?? 'pane',
+    () => options.pageColumns?.() ?? null,
+    () => options.isPaneInline?.() ?? false,
+  )
   const guard = await initGuard(io, 'regen')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard

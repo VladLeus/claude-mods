@@ -416,7 +416,8 @@ function pageColumnsNow(surface: Surface): number | null {
 /**
  * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo over `pane`. An init or regen
  * run on a pane surface opens the cadre-init pane as it starts (openPane, D-324), and both read the page width before
- * each step (pageColumnsNow, D-292); no other command opens the pane.
+ * each step (pageColumnsNow, D-292) and, at each ask, whether the pane is seated inline, where no question is paged
+ * (N-02); no other command opens the pane.
  */
 async function commandReply($: EngineInterface, args: string, pane: PaneRun): Promise<{ text: string }> {
   const command = parseCommand(args)
@@ -429,8 +430,8 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       const { surface } = pane
       const pageColumns = (): number | null => pageColumnsNow(surface)
       const options: InitOptions = command.dryRun
-        ? { dryRun: true, surface, pageColumns }
-        : { dryRun: false, host: hostIoOf($), surface, pageColumns }
+        ? { dryRun: true, surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
+        : { dryRun: false, host: hostIoOf($), surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
       if (surface === 'pane') await openPane($, pane)
 
       return { text: await runInit(initIoOf($, pane), options) }
@@ -440,8 +441,8 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       const { surface } = pane
       const pageColumns = (): number | null => pageColumnsNow(surface)
       const options: RegenOptions = command.dryRun
-        ? { id, dryRun: true, surface, pageColumns }
-        : { id, dryRun: false, host: hostIoOf($), surface, pageColumns }
+        ? { id, dryRun: true, surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
+        : { id, dryRun: false, host: hostIoOf($), surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
       if (surface === 'pane') await openPane($, pane)
 
       return { text: await runRegen(initIoOf($, pane), options) }

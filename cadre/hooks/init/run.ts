@@ -101,6 +101,11 @@ export type InitOptions = ({ readonly dryRun: true } | { readonly dryRun: false;
    * so the stages see the width the pane has now; absent in tests and `-p`, where the width is unknown.
    */
   readonly pageColumns?: () => number | null
+  /**
+   * Whether the pane is seated inline now (N-02, OC-04-I): an inline pane previews the whole context in the dialog,
+   * which pages cannot change, so no question is paged there (withPagedAsks); absent in tests and `-p`, never inline.
+   */
+  readonly isPaneInline?: () => boolean
 }
 
 /** The status line the TUI default shows while the repo scans run (D-232). */
@@ -724,8 +729,14 @@ export async function performState(io: InitIo, options: InitOptions, state: Init
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   // Every question goes through the paged port: on a pane surface a context over the frame cap is asked a page at a
-  // time, at the width the run reads before each ask (withPagedAsks, D-306).
-  const paged = withPagedAsks(io, options.surface ?? 'pane', () => options.pageColumns?.() ?? null)
+  // time, at the width the run reads before each ask, and whole while the pane is seated inline (withPagedAsks, D-306,
+  // N-02).
+  const paged = withPagedAsks(
+    io,
+    options.surface ?? 'pane',
+    () => options.pageColumns?.() ?? null,
+    () => options.isPaneInline?.() ?? false,
+  )
   let state = initialState(options.dryRun, options.surface)
   // The folds the stages gave since the last ask, and those bound to the stage that asked first after them (D-302).
   let held: readonly Extract<Output, { readonly kind: 'fold' }>[] = []

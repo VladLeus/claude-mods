@@ -92,11 +92,19 @@ function pageSpec(
  * first. An answer that names a page move the page offers, Next, Previous or Last page, asks that page and never
  * reaches the stage, so it is not a try; an option for the last page only, typed before the last page, asks the next
  * page, so nothing is accepted unseen (D-307); every other answer, a typed one too, is the stage's. The items keep
- * their order and every item is on a page (D-308).
+ * their order and every item is on a page (D-308). While `isInline` says the pane is seated inline, checked at each
+ * ask, the question is asked as given: an inline pane previews the whole context in the dialog, which pages cannot
+ * change (N-02, OC-04-I).
  */
-async function pagedAsk(io: InitIo, question: string, spec: AskSpec, columnsOf: () => number | null): Promise<string> {
+async function pagedAsk(
+  io: InitIo,
+  question: string,
+  spec: AskSpec,
+  columnsOf: () => number | null,
+  isInline: () => boolean,
+): Promise<string> {
   const { context } = spec
-  if (context === undefined || context.rows === undefined) return io.ask(question, spec)
+  if (context === undefined || context.rows === undefined || isInline()) return io.ask(question, spec)
   const pages = contextPages(context, columnsOf())
   if (pages.length < 2) return io.ask(question, spec)
   const pageOptions = spec.pageOptions ?? LAST_PAGE_ONLY
@@ -130,11 +138,18 @@ async function pagedAsk(io: InitIo, question: string, spec: AskSpec, columnsOf: 
  * The init port whose ask pages a question's context on a pane surface (D-305, D-306, D-307, D-308, D-329): every
  * question whose context frame is over the cap at the width `columnsOf` reads is asked a page at a time (pagedAsk),
  * a hand-out entry or a plugin group by its pageOptions and any other, Yes/No, diff or list, with its options on the
- * last page only (D-335); every other ask, and every other member, is the port's own. On the TUI default and on a
- * surface that shows no context the port is given back as it is.
+ * last page only (D-335); every other ask, and every other member, is the port's own. A pane seated inline, which
+ * `isInline` reads at each ask (never inline when absent), previews the whole context in the dialog, which pages
+ * cannot change (N-02, OC-04-I), so it is not paged. On the TUI default and on a surface that shows no context the
+ * port is given back as it is.
  */
-export function withPagedAsks(io: InitIo, surface: Surface, columnsOf: () => number | null): InitIo {
+export function withPagedAsks(
+  io: InitIo,
+  surface: Surface,
+  columnsOf: () => number | null,
+  isInline: () => boolean = () => false,
+): InitIo {
   if (surface !== 'pane') return io
 
-  return { ...io, ask: async (question, spec) => pagedAsk(io, question, spec, columnsOf) }
+  return { ...io, ask: async (question, spec) => pagedAsk(io, question, spec, columnsOf, isInline) }
 }
