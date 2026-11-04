@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, AskSpec } from '../../types'
+import type { AskContext, AskSpec, ContextRow } from '../../types'
 import { oversizeGroupWorld, oversizeWorld } from '../golden/worlds'
 import { runInit } from '../init/run'
 import { INIT_ANSWERS, memIo, memWorld, OWN_SKILLS_ENTRY_PREFIX } from '../testkit'
 import type { MemRun, MemWorld } from '../testkit'
-import { contextPages, MAX_PANE_FRAME_CHARS, MAX_PANE_FRAME_ROWS, paneDrawn } from './pane'
+import { contextPages, frameSize, MAX_PANE_FRAME_CHARS, MAX_PANE_FRAME_ROWS, paneBlockOf, paneDrawn } from './pane'
 import type { PaneBlock } from './pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL, withPagedAsks } from './paging'
+import { MAX_DIALOG_OPTIONS } from './preview'
 
 /** The model's replies of an oversize run: no server recommended, the first own skill recommended for the PM. */
 const OVERSIZE_REPLIES = ['{"servers":{}}', '{"skills":{"S1":["pm"]},"groups":{}}']
@@ -179,6 +180,111 @@ describe('a paged plugin group (D-328)', () => {
       const inner = memIo(memWorld({}), [NEXT_PAGE_LABEL, typed])
       expect(await withPagedAsks(inner.io, 'pane', () => null).ask(group.question, group.spec)).toBe(typed)
       expect(pageIndexes(inner)).toEqual([0, 1])
+    }
+  })
+})
+
+describe('every other question over the cap (D-329, D-335)', () => {
+  /** The start of the own skills' whole-group question of oversizeWorld. */
+  const WHOLE_PREFIX = 'Which roles get your own skills'
+
+  /** A context of `count` env names, each an item with a description row: three pages for 100, two for 60. */
+  function envContext(count: number): AskContext {
+    const rows: ContextRow[] = Array.from({ length: count }, (_, at): ContextRow[] => [
+      { role: 'item', label: `ENV_${at}`, text: 'be', indent: 2 },
+      { role: 'description', text: 'abcd abcd abcd', indent: 4 },
+    ]).flat()
+
+    return { title: 'Env', lines: [], kind: 'env', summary: `${count} names`, rows: [{ title: null, rows }] }
+  }
+
+  /** A Yes/No question with no pageOptions whose context lists `count` env names. */
+  function yesNo(count: number): AskSpec {
+    return { options: ['Yes', 'No'], header: 'Env', context: envContext(count) }
+  }
+
+  /** `spec` asked through the paged port of a pane surface at no known width, its pages answered by `answers`. */
+  async function askedPaged(
+    spec: AskSpec,
+    answers: readonly string[],
+  ): Promise<{ readonly answer: string; readonly inner: MemRun }> {
+    const inner = memIo(memWorld({}), answers)
+    const answer = await withPagedAsks(inner.io, 'pane', () => null).ask('Carry these env names?', spec)
+
+    return { answer, inner }
+  }
+
+  test('a Yes/No of three pages offers Next and Last page, then Previous too, then Previous and its own', async () => {
+    const { answer, inner } = await askedPaged(yesNo(100), ['Next page', 'Next page', 'No'])
+    expect(inner.specs.map(spec => spec.options)).toEqual([
+      ['Next page', 'Last page'],
+      ['Next page', 'Previous page', 'Last page'],
+      ['Previous page', 'Yes', 'No'],
+    ])
+    expect(answer).toBe('No')
+  })
+
+  test('with two pages, page 1 offers Next and Last page, and page 2 Previous page and its own options', async () => {
+    const { inner } = await askedPaged(yesNo(60), ['Next page', 'Yes'])
+    expect(inner.specs.map(spec => spec.options)).toEqual([
+      ['Next page', 'Last page'],
+      ['Previous page', 'Yes', 'No'],
+    ])
+  })
+
+  test('Last page asks the last page, never reaching the stage; Previous page there asks the one before', async () => {
+    const { answer, inner } = await askedPaged(yesNo(100), [' last PAGE ', 'Previous page', 'Last page', 'Yes'])
+    expect(pageIndexes(inner)).toEqual([0, 2, 1, 2])
+    expect(answer).toBe('Yes')
+  })
+
+  test('an option of its own typed before the last page asks the next page; only the last page takes it', async () => {
+    const { answer, inner } = await askedPaged(yesNo(100), ['yes', 'Yes', 'YES'])
+    expect(pageIndexes(inner)).toEqual([0, 1, 2])
+    expect(answer).toBe('YES')
+  })
+
+  test('a question of four options drops Previous page on its last page, so no dialog has more than four', async () => {
+    const spec = { options: ['a', 'b', 'c', 'd'], header: 'Pick', context: envContext(60) }
+    const { inner } = await askedPaged(spec, ['Next page', 'a'])
+    expect(inner.specs.map(asked => asked.options)).toEqual([
+      ['Next page', 'Last page'],
+      ['a', 'b', 'c', 'd'],
+    ])
+  })
+
+  test('a whole-group question has None and All roles on its last page only; a typed role list is read', async () => {
+    const answers = { ...OVERSIZE_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' }
+    const whole = await askedBefore(oversizeWorld({ replies: OVERSIZE_REPLIES }), answers, WHOLE_PREFIX)
+    const walked = memIo(memWorld({}), ['Next page', 'Next page', 'None'])
+    expect(await withPagedAsks(walked.io, 'pane', () => null).ask(whole.question, whole.spec)).toBe('None')
+    expect(walked.specs.map(spec => spec.options)).toEqual([
+      ['Next page', 'Last page'],
+      ['Next page', 'Previous page', 'Last page'],
+      ['Previous page', 'None', 'All roles'],
+    ])
+    const typed = memIo(memWorld({}), ['be, qa'])
+    expect(await withPagedAsks(typed.io, 'pane', () => null).ask(whole.question, whole.spec)).toBe('be, qa')
+    expect(pageIndexes(typed)).toEqual([0])
+  })
+
+  test('every question of the oversize worlds fits both frame caps and offers two to four options', async () => {
+    const runs: readonly (readonly [MemWorld, Readonly<Record<string, string>>])[] = [
+      [oversizeWorld({ replies: OVERSIZE_REPLIES }), OVERSIZE_ANSWERS],
+      [oversizeWorld({ replies: OVERSIZE_REPLIES }), { ...OVERSIZE_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' }],
+      [oversizeGroupWorld({ replies: GROUP_REPLIES }), INIT_ANSWERS],
+      [oversizeGroupWorld({ replies: GROUP_REPLIES }), { ...INIT_ANSWERS, [GROUP_PREFIX]: 'Accept recommendation' }],
+    ]
+    for (const [world, answers] of runs) {
+      const run = memIo(world, answers)
+      await runInit(run.io, { dryRun: true })
+      for (const spec of run.specs) {
+        expect(spec.options.length >= 2 && spec.options.length <= MAX_DIALOG_OPTIONS).toBe(true)
+        const context = spec.context ?? null
+        const block = paneBlockOf({ open: { question: '', header: '', context, acceptsTyped: false }, loader: null })
+        const size = block === null ? { rows: 0, chars: 0 } : frameSize(block, null)
+        expect(size.rows <= MAX_PANE_FRAME_ROWS && size.chars <= MAX_PANE_FRAME_CHARS).toBe(true)
+      }
     }
   })
 })
