@@ -114,7 +114,7 @@ export const SECURITY_PLUGIN_NOTES: ReadonlyMap<string, string> = new Map([
 ])
 
 /** Role ids as a context line lists them, each cleaned: `none` when there are none. */
-function roleIdsText(ids: readonly string[]): string {
+export function roleIdsText(ids: readonly string[]): string {
   return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
 }
 

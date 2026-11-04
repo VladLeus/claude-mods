@@ -7,15 +7,16 @@
  * skill and a server of the list for all the servers as item rows (itemRows of ui/blocks/context, D-311). Every
  * value is cleaned and capped here (D-222), and a description's secret-like spans are hidden (redactedText, E1); a
  * description is not cut here, as the scan capped it at MAX_REPORT_CHARS (D-312, D-330). It imports core, the UNCUT
- * rule of ui/pane, the item rows of ui/blocks/context and the types, so the assignment stage reads it here.
+ * rule of ui/pane, the item rows and role ids text of ui/blocks/context and the types, so the assignment stage reads
+ * it here.
  */
 import type { AskContext, ContextRow, ContextSection, McpRef, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
-import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
+import { asSentence, cardList, clean, shown, sortedUnique } from '../../core/text'
 import type { ListWords } from '../../core/text'
-import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
+import { keyLabel, t, tn } from '../../locales/t'
 import { UNCUT } from '../pane'
-import { itemRows } from './context'
+import { itemRows, roleIdsText } from './context'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
 export const CLAUDE_AI_SERVER_PREFIX = 'claude_ai_'
@@ -71,12 +72,6 @@ export function mcpToolNamesOf(tools: unknown, server: string): string[] {
   return sortedUnique(names)
 }
 
-/** Role ids as a context line lists them, each cleaned: `none` when there are none. */
-function roleIdsText(ids: readonly string[]): string {
-  return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
-}
-
-
 /**
  * The context of an MCP server question (D-211, D-236): the server by name, its source (mcpSourceText), the tools the
  * session lists for it (mcpToolNamesOf), counted first, then the names `words` allows and how many more (every name
@@ -118,13 +113,13 @@ export function mcpServerContext(
 }
 
 /**
- * One skill as a skill question's context lists it (D-211): its name; what it does, the caller's text standing in
- * for a skill the engine gave no description; how often the history scan saw it, as text, '' when it did not; and the
- * ids of the roles recommended for it.
+ * One skill as a skill question's context lists it (D-211): its name; what it does, null when the engine gave no
+ * description (S-03); how often the history scan saw it, as text, '' when it did not; and the ids of the roles
+ * recommended for it.
  */
 export type SkillLine = {
   readonly name: string
-  readonly purpose: string
+  readonly purpose: string | null
   readonly uses: string
   readonly recommended: readonly string[]
 }
@@ -138,24 +133,25 @@ export type SkillLine = {
 function skillLineText(skill: SkillLine): string {
   const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
   const used = skill.uses === '' ? '' : t('ui.assign.skillLineText', { uses: clean(skill.uses) })
-  const purpose = asSentence(redactedText(skill.purpose, UNCUT))
+  const purpose = asSentence(redactedText(skill.purpose ?? NO_PURPOSE_TEXT, UNCUT))
 
   return t('ui.assign.skillLineText2', { name, purpose, used, roleIds: roleIdsText(skill.recommended) })
 }
 
-/** The text a caller stands in for a skill the engine gave no description (init/answers NO_SKILL_PURPOSE, D-139). */
+/** The text a skill's TUI line shows when its purpose is null (init/answers NO_SKILL_PURPOSE, D-139, S-03). */
 const NO_PURPOSE_TEXT = t('init.answers.noSkillPurpose')
 
 /**
- * One skill as item rows (D-311): its name cut to 60 code points and the roles recommended for it, then what it does
- * as a sentence, its secret-like spans hidden (redactedText, E1, #163) and never cut (D-312, D-330), with how often it
- * was used after it (` Used ….`, user 2026-11-04). A skill the caller gave NO_PURPOSE_TEXT has the placeholder in
- * place of a description, then its uses on a row of their own when it was used.
+ * One skill as item rows (D-311), the one builder for every skill item row, own skills and plugin groups alike
+ * (S-03): its name cut to 60 code points and the roles recommended for it, then what it does as a sentence, its
+ * secret-like spans hidden (redactedText, E1, #163) and never cut (D-312, D-330), with how often it was used after it
+ * (` Used ….`, user 2026-11-04). A skill with a null purpose has the placeholder in place of a description, then its
+ * uses on a row of their own when it was used.
  */
-function skillRows(skill: SkillLine): ContextRow[] {
+export function skillItemRows(skill: SkillLine): ContextRow[] {
   const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
   const used = skill.uses === '' ? '' : t('ui.assign.skillLineText', { uses: clean(skill.uses) })
-  if (skill.purpose !== NO_PURPOSE_TEXT) {
+  if (skill.purpose !== null) {
     const purpose = asSentence(redactedText(skill.purpose, UNCUT))
 
     return itemRows(name, skill.recommended, `${purpose}${used}`)
@@ -182,7 +178,7 @@ export function skillGroupContext(
     lines,
     kind: 'skill-group',
     summary: tn('ui.summary.skillGroup', skills.length, { count: skills.length, roleIds: roleIdsText(recommended) }),
-    rows: [{ title: null, rows: skills.flatMap(skillRows) }],
+    rows: [{ title: null, rows: skills.flatMap(skillItemRows) }],
   }
 }
 
@@ -281,7 +277,7 @@ export function skillContext(skill: SkillLine, position: number, count: number):
     lines,
     kind: 'skill',
     summary: t('ui.summary.recommended', { roleIds: roleIdsText(skill.recommended) }),
-    rows: [{ title: null, rows: skillRows(skill) }],
+    rows: [{ title: null, rows: skillItemRows(skill) }],
   }
 }
 

@@ -56,15 +56,15 @@ export type AssignItem = {
 }
 
 /**
- * A skill as its question's context lists it (D-211): what it does, NO_SKILL_PURPOSE when the engine gave no
- * description, how often the history scan saw it (skillUsesText; none at 0) and the roles recommended for it.
+ * A skill as its question's context lists it (D-211): what it does, null when the engine gave no description (S-03),
+ * how often the history scan saw it (skillUsesText; none at 0) and the roles recommended for it.
  */
 function skillLineOf(skill: SkillRef, counts: ReadonlyMap<string, number>, recommended: readonly string[]): SkillLine {
   const uses = skillCount(skill.name, counts)
 
   return {
     name: skill.name,
-    purpose: skill.purpose ?? NO_SKILL_PURPOSE,
+    purpose: skill.purpose ?? null,
     uses: uses === 0 ? '' : skillUsesText(uses),
     recommended,
   }
