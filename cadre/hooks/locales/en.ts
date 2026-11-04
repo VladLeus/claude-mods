@@ -464,7 +464,7 @@ export const EN = Object.freeze({
   'ui.instructions.instructionReviewLines': 'Instructions per role:',
   'ui.instructions.instructionReviewLines2': 'Kept with the root session only: {keptTopics}, {keptMemories}',
 
-  'ui.assign.mcpServerContext': 'Tools: none listed',
+  'ui.assign.mcpNotConnected': 'Tools: not connected, tools unknown',
   'ui.assign.mcpServerContext2': 'Tools: {count} ({tools})',
   'ui.assign.mcpServerContextTitle': 'MCP: {name}',
   'ui.assign.mcpServerContext3': 'Source: {mcpSource}',

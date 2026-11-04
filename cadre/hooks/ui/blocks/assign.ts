@@ -24,18 +24,33 @@ const CLAUDE_AI_SERVER_PREFIX = 'claude_ai_'
 const MAX_CONTEXT_NAME_CHARS = 60
 
 /**
- * Where an MCP server was seen, as the person knows the place (D-211): `.mcp.json` for the repo's file,
- * `~/.claude.json` for the user's config, `claude.ai` for a session server named as a claude.ai connector, and
- * `session` for any other server of the session's tool list, which the scan cannot tell apart further.
+ * The tools line of a server the session lists no tool for (D-317, D-331): one found in config only, as a claude.ai
+ * connector of ~/.claude.json may be, is not connected, and its tools are unknown.
+ */
+const NOT_CONNECTED_LINE = t('ui.assign.mcpNotConnected')
+
+/** NOT_CONNECTED_LINE as a field row (D-313, D-317): its label, then its value, the text after the label's `: `. */
+const NOT_CONNECTED_ROW: ContextRow = {
+  role: 'field',
+  label: keyLabel('ui.assign.mcpNotConnected'),
+  text: NOT_CONNECTED_LINE.slice(NOT_CONNECTED_LINE.indexOf(': ') + 2),
+  indent: 0,
+}
+
+/**
+ * Where an MCP server was seen, as the person knows the place (D-211, D-317): `claude.ai` for a server named as a
+ * claude.ai connector, whatever list found it; else `.mcp.json` for the repo's file, `~/.claude.json` for the user's
+ * config, and `session` for any other server of the session's tool list, which the scan cannot tell apart further.
  */
 export function mcpSourceText(ref: McpRef): string {
+  if (ref.name.startsWith(CLAUDE_AI_SERVER_PREFIX)) return 'claude.ai'
   switch (ref.source) {
     case 'project':
       return '.mcp.json'
     case 'user-config':
       return '~/.claude.json'
     case 'session':
-      return ref.name.startsWith(CLAUDE_AI_SERVER_PREFIX) ? 'claude.ai' : 'session'
+      return 'session'
   }
 }
 
@@ -65,8 +80,9 @@ function roleIdsText(ids: readonly string[]): string {
 /**
  * The context of an MCP server question (D-211, D-236): the server by name, its source (mcpSourceText), the tools the
  * session lists for it (mcpToolNamesOf), counted first, then the names `words` allows and how many more (every name
- * on a pane surface, D-256), or `Tools: none listed`, and the roles recommended for it, or none, which are its summary
- * too (D-310). No other field of the server or its tools is read (T-02.1-72).
+ * on a pane surface, D-256), or, when it lists none, `Tools: not connected, tools unknown`, a field row in its rows
+ * (D-317, D-331), and the roles recommended for it, or none, which are its summary too (D-310). No other field of the
+ * server or its tools is read (T-02.1-72).
  */
 export function mcpServerContext(
   ref: McpRef,
@@ -75,15 +91,16 @@ export function mcpServerContext(
   words: ListWords,
 ): AskContext {
   const tools = mcpToolNamesOf(sessionTools, ref.name)
-  const toolsLine = tools.length === 0 ? t('ui.assign.mcpServerContext') : t('ui.assign.mcpServerContext2', {
+  const toolsLine = tools.length === 0 ? NOT_CONNECTED_LINE : t('ui.assign.mcpServerContext2', {
     count: tools.length,
     tools: cardList(tools, words),
   })
+  const toolsRow: ContextRow = tools.length === 0 ? NOT_CONNECTED_ROW : { role: 'plain', text: toolsLine, indent: 0 }
   const source = mcpSourceText(ref)
   const roleIds = roleIdsText(recommended)
   const rows: ContextRow[] = [
     { role: 'field', label: keyLabel('ui.assign.mcpServerContext3'), text: source, indent: 0 },
-    { role: 'plain', text: toolsLine, indent: 0 },
+    toolsRow,
     { role: 'recommended', label: keyLabel('ui.assign.mcpServerContext4'), text: roleIds, indent: 0 },
   ]
 
