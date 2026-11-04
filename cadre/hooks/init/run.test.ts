@@ -1235,15 +1235,18 @@ const PARTS_BLOCK = [
   '    recommended: tl',
 ]
 
-/** The rows of PARTS_BLOCK the pane draws (D-313): the heading, then each topic's field and recommended rows. */
+/**
+ * The rows of PARTS_BLOCK the pane draws (D-311, D-313): the heading, then each topic as `title → roles`, its summary
+ * and its `from` field.
+ */
 const PARTS_ROWS = [
   { role: 'heading', text: READ_HEADING_ROW, indent: 0 },
-  { role: 'field', label: 'Security rules', text: 'How secrets stay out of the repo.', indent: 2 },
+  { role: 'item', label: 'Security rules', text: 'security', indent: 2 },
+  { role: 'description', text: 'How secrets stay out of the repo.', indent: 4 },
   { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 4 },
-  { role: 'recommended', label: 'recommended', text: 'security', indent: 4 },
-  { role: 'field', label: 'Git and commits', text: 'How commits are made.', indent: 2 },
+  { role: 'item', label: 'Git and commits', text: 'tl', indent: 2 },
+  { role: 'description', text: 'How commits are made.', indent: 4 },
   { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Git', indent: 4 },
-  { role: 'recommended', label: 'recommended', text: 'tl', indent: 4 },
 ]
 
 /** The content consent context line of a world with only the global CLAUDE.md (G-02-1f). */

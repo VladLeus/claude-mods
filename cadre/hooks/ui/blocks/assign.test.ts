@@ -20,9 +20,14 @@ const GITHUB: McpRef = { name: 'github', source: 'project' }
 /** The session's tool names: two of github, one of another server, and a built-in tool. */
 const TOOLS = ['mcp__github__list_prs', 'mcp__github__create_issue', 'mcp__gitlab__merge', 'Read']
 
-/** One untitled section holding each line as one plain row (D-313). */
-function plainRows(lines: readonly string[]): unknown {
-  return [{ title: null, rows: lines.map(text => ({ role: 'plain', text, indent: 0 })) }]
+/** The item rows of one skill or server (D-311): `name → roles`, then its description or the placeholder. */
+function itemOf(name: string, roles: string, description: string | null): ContextRow[] {
+  const about: ContextRow =
+    description === null
+      ? { role: 'placeholder', text: 'no description', indent: 4 }
+      : { role: 'description', text: description, indent: 4 }
+
+  return [{ role: 'item', label: name, text: roles, indent: 2 }, about]
 }
 
 describe('MCP server contexts (D-211)', () => {
@@ -101,7 +106,15 @@ describe('skill contexts (D-211)', () => {
       lines,
       kind: 'skill-group',
       summary: '2 skills. Recommended: none',
-      rows: plainRows(lines),
+      rows: [
+        {
+          title: null,
+          rows: [
+            ...itemOf('codex:rescue', 'none', 'Delegate a stuck task. Used 3 times in the last 50 sessions.'),
+            ...itemOf('codex:setup', 'be', null),
+          ],
+        },
+      ],
     })
   })
 
@@ -113,7 +126,12 @@ describe('skill contexts (D-211)', () => {
       lines: [line],
       kind: 'skill',
       summary: 'Recommended: none',
-      rows: plainRows([line]),
+      rows: [
+        {
+          title: null,
+          rows: itemOf('codex:rescue', 'none', 'Delegate a stuck task. Used 3 times in the last 50 sessions.'),
+        },
+      ],
     })
     expect(second === undefined ? null : skillContext(second, 2, 2).lines).toEqual([
       'codex:setup: No description. Recommended: be.',
@@ -129,7 +147,7 @@ describe('skill contexts (D-211)', () => {
       lines: [`${'n'.repeat(59)}…: Do it. Recommended: qa.`],
       kind: 'skill-group',
       summary: '1 skill. Recommended: none',
-      rows: plainRows([`${'n'.repeat(59)}…: Do it. Recommended: qa.`]),
+      rows: [{ title: null, rows: itemOf(`${'n'.repeat(59)}…`, 'qa', 'Do it.') }],
     })
   })
 
@@ -194,7 +212,16 @@ describe('mcpGroupContext (D-250)', () => {
       lines: texts,
       kind: 'mcp-server',
       summary: '3 servers, 1 recommended',
-      rows: plainRows(texts),
+      rows: [
+        {
+          title: null,
+          rows: [
+            ...itemOf('github', 'tl', 'session, 2 tools'),
+            ...itemOf('sentry', 'none', '.mcp.json, 0 tools'),
+            ...itemOf('jira', 'none', 'claude.ai, 1 tool'),
+          ],
+        },
+      ],
     })
   })
 })
@@ -209,14 +236,37 @@ function drawnLines(context: AskContext): string[] {
 }
 
 describe('rows from the same data as lines (D-313, D-323)', () => {
-  test('every assignment context draws as rows the same words its lines hold, a row per line', () => {
+  test('a server question draws as rows the same words its lines hold, a row per line', () => {
     const contexts = [
       mcpServerContext(GITHUB, TOOLS, ['be', 'qa'], SCREEN_LIST_WORDS),
       mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS),
-      skillGroupContext('codex', SKILLS),
-      ...SKILLS.map((skill, at) => skillContext(skill, at + 1, SKILLS.length)),
-      mcpGroupContext([{ name: 'github', source: 'session', tools: 2, recommended: ['tl'] }]),
     ]
     for (const context of contexts) expect(drawnLines(context)).toEqual(context.lines)
+  })
+})
+
+describe('skills and servers as item rows (D-311)', () => {
+  test('a skill with no description has the placeholder, then its uses on a row of their own', () => {
+    const used = { name: 'codex:setup', purpose: 'No description.', uses: '2 times in the last 50 sessions' }
+    const skill: SkillLine = { ...used, recommended: [] }
+    expect(skillContext(skill, 1, 1).rows).toEqual([
+      {
+        title: null,
+        rows: [
+          ...itemOf('codex:setup', 'none', null),
+          { role: 'description', text: 'Used 2 times in the last 50 sessions.', indent: 4 },
+        ],
+      },
+    ])
+  })
+
+  test('the pane draws a group as `name → roles` rows, each description under its item, uncut', () => {
+    const drawn = drawnLines(skillGroupContext('codex', SKILLS))
+    expect(drawn).toEqual([
+      '  codex:rescue → none',
+      '    Delegate a stuck task. Used 3 times in the last 50 sessions.',
+      '  codex:setup → be',
+      '    no description',
+    ])
   })
 })

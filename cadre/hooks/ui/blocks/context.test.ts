@@ -277,11 +277,11 @@ describe('question contexts (D-203, D-236)', () => {
           title: null,
           rows: [
             { role: 'heading', text: instructionLines(scan, TOPICS, RECOMMENDED)[0], indent: 0 },
-            { role: 'field', label: 'Security rules', text: 'How secrets stay out of the repo.', indent: 2 },
+            { role: 'item', label: 'Security rules', text: 'security', indent: 2 },
+            { role: 'description', text: 'How secrets stay out of the repo.', indent: 4 },
             { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 4 },
-            { role: 'recommended', label: 'recommended', text: 'security', indent: 4 },
-            { role: 'field', label: 'Git and commits', text: 'How commits are made.', indent: 2 },
-            { role: 'recommended', label: 'recommended', text: 'tl', indent: 4 },
+            { role: 'item', label: 'Git and commits', text: 'tl', indent: 2 },
+            { role: 'description', text: 'How commits are made.', indent: 4 },
           ],
         },
       ],
@@ -302,9 +302,9 @@ describe('question contexts (D-203, D-236)', () => {
         {
           title: null,
           rows: [
-            { role: 'field', label: 'Security rules', text: 'How secrets stay out of the repo.', indent: 0 },
-            { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 2 },
-            { role: 'recommended', label: 'recommended', text: 'security', indent: 2 },
+            { role: 'item', label: 'Security rules', text: 'security', indent: 2 },
+            { role: 'description', text: 'How secrets stay out of the repo.', indent: 4 },
+            { role: 'field', label: 'from', text: '~/.claude/CLAUDE.md > Security', indent: 4 },
           ],
         },
       ],
@@ -323,8 +323,8 @@ describe('question contexts (D-203, D-236)', () => {
         {
           title: null,
           rows: [
-            { role: 'field', label: 'squad.md', text: 'Unsigned commits.', indent: 0 },
-            { role: 'recommended', label: 'recommended', text: 'none', indent: 2 },
+            { role: 'item', label: 'squad.md', text: 'none', indent: 2 },
+            { role: 'description', text: 'Unsigned commits.', indent: 4 },
           ],
         },
       ],
@@ -518,12 +518,10 @@ function drawnLines(context: AskContext): string[] {
 }
 
 describe('rows from the same data as lines (D-313, D-323)', () => {
-  test('every context but the Review draws as rows the same words its lines hold, a row per line', () => {
+  test('every context but the Review and the item contexts draws its lines as rows, a row per line', () => {
     const repo = repoScan({ warnings: ['could not list src'] })
     const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup: emptySetupScan() }
     const proposal = proposeRoles(SOURCE_SCAN)
-    const squad = memory('M1', `squad${BIDI}.md`, `Unsigned${BIDI} commits.`)
-    const scan: InstructionScan = { parts: [PART], files: [PART.file], memories: [squad], warnings: ['w'] }
     const detections: readonly Detection[] = [
       { id: 'gsd', name: 'GSD', status: 'in-use', version: '1.2.3', evidence: ['.planning/', 'gsd-core'] },
       { id: 'superpowers', name: 'superpowers', status: 'not-found', version: null, evidence: [] },
@@ -539,10 +537,6 @@ describe('rows from the same data as lines (D-313, D-323)', () => {
       securityContext([SECURITY_KEY, GUIDANCE_KEY, 'other@market']),
       instructionsContext(setup, { rules: ['a.md'], hasAgentsMd: true }, '/repo', SCREEN_LIST_WORDS),
       instructionsContext(none, { rules: null, hasAgentsMd: false }, '/repo', SCREEN_LIST_WORDS),
-      instructionPartsContext(scan, TOPICS, RECOMMENDED),
-      instructionPartsContext(scan, TOPICS, new Map()),
-      topicContext(SECURITY_TOPIC, [PART], ['security'], 1, 2),
-      memoryContext(squad, [], 2, 3),
       memoryGroupContext('global-claude-md', [], SCREEN_LIST_WORDS),
       memoryGroupContext('auto-memory', ['a.md', 'b.md'], SCREEN_LIST_WORDS),
       envContext(['API_KEY', 'JIRA_URL']),

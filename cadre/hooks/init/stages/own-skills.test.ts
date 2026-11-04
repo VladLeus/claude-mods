@@ -111,16 +111,22 @@ describe('own skills hand-out (G-02-1b)', () => {
   const ENTRY_ASKED = withContext(ownEntry(3), ENTRY_CONTEXT)
   /** The entry's summary, which a pane surface asks: the three skills, two of them recommended a role (D-310). */
   const OWN_SUMMARY = '3 skills, 2 recommended'
-  /** The rows of OWN_BLOCK the pane draws (D-313): the heading, then each skill's field and recommended rows. */
-  const OWN_ROWS = [
-    { role: 'heading', text: OWN_SKILLS_HEADING, indent: 0 },
-    { role: 'field', label: 'mid', text: 'Draft the weekly report.', indent: 2 },
-    { role: 'recommended', label: 'used 4 times in the last 50 sessions; recommended', text: 'be', indent: 4 },
-    { role: 'field', label: 'zeta', text: 'No description.', indent: 2 },
-    { role: 'recommended', label: 'used 4 times in the last 50 sessions; recommended', text: 'fe', indent: 4 },
-    { role: 'field', label: 'alpha', text: 'Sort the inbox.', indent: 2 },
-    { role: 'recommended', label: 'recommended', text: 'none', indent: 4 },
+  /** Each own skill's item rows (D-311): `name → roles`, then what it does with its uses, or the placeholder. */
+  const MID_ROWS = [
+    { role: 'item', label: 'mid', text: 'be', indent: 2 },
+    { role: 'description', text: 'Draft the weekly report. Used 4 times in the last 50 sessions.', indent: 4 },
   ]
+  const ZETA_ROWS = [
+    { role: 'item', label: 'zeta', text: 'fe', indent: 2 },
+    { role: 'placeholder', text: 'no description', indent: 4 },
+    { role: 'description', text: 'Used 4 times in the last 50 sessions.', indent: 4 },
+  ]
+  const ALPHA_ROWS = [
+    { role: 'item', label: 'alpha', text: 'none', indent: 2 },
+    { role: 'description', text: 'Sort the inbox.', indent: 4 },
+  ]
+  /** The rows of OWN_BLOCK the pane draws: the heading, then each skill's item rows, busiest first (D-311). */
+  const OWN_ROWS = [{ role: 'heading', text: OWN_SKILLS_HEADING, indent: 0 }, ...MID_ROWS, ...ZETA_ROWS, ...ALPHA_ROWS]
   const OWN_CONTEXT = {
     title: 'Your own skills',
     lines: OWN_BLOCK,
@@ -148,7 +154,8 @@ describe('own skills hand-out (G-02-1b)', () => {
         title: null,
         rows: [
           { role: 'recommended', label: 'Recommended', text: 'none', indent: 0 },
-          { role: 'plain', text: 'codex:rescue: No description. Recommended: none.', indent: 0 },
+          { role: 'item', label: 'codex:rescue', text: 'none', indent: 2 },
+          { role: 'placeholder', text: 'no description', indent: 4 },
         ],
       },
     ],
@@ -241,19 +248,19 @@ describe('own skills hand-out (G-02-1b)', () => {
     const { run, assigned } = await stepRun(['None', 'Go one by one', 'Yes', 'No', 'qa'])
     expect(run.asked.slice(2)).toEqual([MID_ASKED, ZETA_ASKED, ALPHA_ASKED])
     // A pane surface asks each skill's question with its summary, the roles recommended for it (D-310).
-    const specAt = (at: number, line: string, asked: string, recommended: string): unknown => {
+    const specAt = (at: number, line: string, asked: string, items: readonly unknown[]): unknown => {
       const [sentence = ''] = asked.split('\n')
-      const summary = `Recommended: ${recommended}`
+      const summary = `Recommended: ${['be', 'fe', 'none'][at - 1]}`
       const pane = { asked, text: withContext(sentence, summary) }
-      const rows = [{ title: null, rows: [{ role: 'plain', text: line, indent: 0 }] }]
+      const rows = [{ title: null, rows: items }]
       const context = { title: `Skill ${at} of 3`, lines: [line], kind: 'skill', summary, pane, rows }
 
       return { options: ['Yes', 'No'], header: `Skill ${at}/3`, context, acceptsTyped: true }
     }
     expect(run.specs.slice(2)).toEqual([
-      specAt(1, MID_LINE, MID_ASKED, 'be'),
-      specAt(2, ZETA_LINE, ZETA_ASKED, 'fe'),
-      specAt(3, ALPHA_LINE, ALPHA_ASKED, 'none'),
+      specAt(1, MID_LINE, MID_ASKED, MID_ROWS),
+      specAt(2, ZETA_LINE, ZETA_ASKED, ZETA_ROWS),
+      specAt(3, ALPHA_LINE, ALPHA_ASKED, ALPHA_ROWS),
     ])
     expect(roles.map(role => [role.id, ownOf(assigned, role.id)])).toEqual([
       ['pm', []],
@@ -282,7 +289,7 @@ describe('own skills hand-out (G-02-1b)', () => {
     const summary = '3 skills. Recommended: none'
     const pane = { asked: withContext(own, skillsContextLine(roles)), text: withContext(short, summary) }
     const lines = [ALPHA_LINE, MID_LINE, ZETA_LINE]
-    const rows = [{ title: null, rows: lines.map(text => ({ role: 'plain', text, indent: 0 })) }]
+    const rows = [{ title: null, rows: [...ALPHA_ROWS, ...MID_ROWS, ...ZETA_ROWS] }]
     const context = { title: 'Skills: your own', lines, kind: 'skill-group', summary, pane, rows }
     expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills', context, acceptsTyped: true })
     expect(assigned.map(role => ownOf(assigned, role.id))).toEqual(roles.map(() => ['alpha', 'mid', 'zeta']))

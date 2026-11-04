@@ -5,7 +5,6 @@ import { SCREEN_LIST_WORDS } from '../locales/t'
 import { EFFORTS } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { BIDI_OVERRIDE, PM, role, TL } from '../testkit'
-import { paneDrawn } from '../ui/pane'
 import { withMax } from '../ui/surface'
 import {
   ALL_ENV_OPTION,
@@ -303,24 +302,46 @@ describe('ownSkillLines', () => {
     expect(ownSkillLines(OWN_SKILLS, new Map(), new Map([['S1', ['be', 'qa']]]))).toEqual(UNUSED_ROWS)
   })
 
-  test('its rows draw the same words as its lines: each skill a field, then its roles (D-313)', () => {
-    const uses = new Map([['deploy-notes', 3]])
-    for (const recommended of [RECOMMENDED, new Map<string, readonly string[]>()]) {
-      const rows = ownSkillContextRows(OWN_SKILLS, uses, recommended)
-      const drawn = paneDrawn({ title: 'T', summary: null, rows: [{ title: null, rows }], lines: [] }, null)
-      expect(drawn.slice(1).map(row => row.spans.map(span => span.text).join(''))).toEqual(
-        ownSkillLines(OWN_SKILLS, uses, recommended),
-      )
-    }
-    expect(ownSkillContextRows(OWN_SKILLS, uses, RECOMMENDED).slice(1, 3)).toEqual([
-      { role: 'field', label: 'deploy-notes', text: 'Write the release notes for a deploy.', indent: 2 },
+  test('its rows: the heading, then each skill `name → roles` with its purpose and uses under it (D-311)', () => {
+    const uses = new Map([
+      ['deploy-notes', 3],
+      ['my-skill', 1],
+    ])
+    expect(ownSkillContextRows(OWN_SKILLS, uses, RECOMMENDED)).toEqual([
+      { role: 'heading', text: HEADING, indent: 0 },
+      { role: 'item', label: 'deploy-notes', text: 'be, qa', indent: 2 },
       {
-        role: 'recommended',
-        label: 'used 3 times in the last 50 sessions; recommended',
-        text: 'be, qa',
+        role: 'description',
+        text: 'Write the release notes for a deploy. Used 3 times in the last 50 sessions.',
         indent: 4,
       },
+      { role: 'item', label: 'my-skill', text: 'none', indent: 2 },
+      { role: 'placeholder', text: 'no description', indent: 4 },
+      { role: 'description', text: 'Used 1 time in the last 50 sessions.', indent: 4 },
     ])
+  })
+
+  test('with no use and no usable recommendation, each skill reads none and a last plain row says so (D-311)', () => {
+    const rows = ownSkillContextRows(OWN_SKILLS, new Map(), new Map())
+    expect(rows.slice(1)).toEqual([
+      { role: 'item', label: 'deploy-notes', text: 'none', indent: 2 },
+      { role: 'description', text: 'Write the release notes for a deploy.', indent: 4 },
+      { role: 'item', label: 'my-skill', text: 'none', indent: 2 },
+      { role: 'placeholder', text: 'no description', indent: 4 },
+      {
+        role: 'plain',
+        text: 'The model gave no usable recommendation: no role gets a skill unless you pick one.',
+        indent: 0,
+      },
+    ])
+  })
+
+  test("a secret-like span of a skill's purpose is hidden in its description row (E1)", () => {
+    const skills: readonly SkillRef[] = [
+      { name: 'token-tool', plugin: null, purpose: '2 APIs called with ghp_FAKEFAKEFAKEFAKEFAKE' },
+    ]
+    const [, , about] = ownSkillContextRows(skills, new Map(), new Map([['S1', []]]))
+    expect(about).toEqual({ role: 'description', text: '2 APIs called with [hidden].', indent: 4 })
   })
 
   test('a skill with no description reads NO_SKILL_PURPOSE; the sessions named are those the history reads', () => {

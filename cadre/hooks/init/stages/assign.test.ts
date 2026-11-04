@@ -54,11 +54,19 @@ function serverRows(source: string, tools: string, roleIds: string): unknown {
   return [{ title: null, rows }]
 }
 
-/** The rows of a skill group question's context (D-313): the group's recommended roles, then each skill line plain. */
-function groupRows(roleIds: string, lines: readonly string[]): unknown {
-  const skills = lines.map(text => ({ role: 'plain', text, indent: 0 }))
+/**
+ * The rows of a skill group question's context (D-311, D-313): the group's recommended roles, then each skill as its
+ * item rows, `name → none` and its description, or the placeholder when it has none.
+ */
+function groupRows(roleIds: string, skills: readonly (readonly [string, string | null])[]): unknown {
+  const items = skills.flatMap(([name, description]) => [
+    { role: 'item', label: name, text: 'none', indent: 2 },
+    description === null
+      ? { role: 'placeholder', text: 'no description', indent: 4 }
+      : { role: 'description', text: description, indent: 4 },
+  ])
 
-  return [{ title: null, rows: [{ role: 'recommended', label: 'Recommended', text: roleIds, indent: 0 }, ...skills] }]
+  return [{ title: null, rows: [{ role: 'recommended', label: 'Recommended', text: roleIds, indent: 0 }, ...items] }]
 }
 
 describe('assignmentStep', () => {
@@ -121,8 +129,8 @@ describe('assignmentStep', () => {
     summary: '2 skills. Recommended: none',
     pane: { asked: CODEX_ASKED, text: withContext(CODEX_PANE_QUESTION, '2 skills. Recommended: none') },
     rows: groupRows('none', [
-      'codex:rescue: No description. Recommended: none.',
-      'codex:setup: No description. Recommended: none.',
+      ['codex:rescue', null],
+      ['codex:setup', null],
     ]),
   }
 
@@ -373,7 +381,7 @@ describe('the assign stage (D-230)', () => {
       kind: 'skill-group',
       summary: codexSummary,
       pane: codexPane,
-      rows: groupRows('none', ['codex:rescue: No description. Recommended: none.']),
+      rows: groupRows('none', [['codex:rescue', null]]),
     }
     const typed = { acceptsTyped: true }
     expect(group.openQuestion?.spec).toEqual({ options: GROUP_OPTIONS, header: 'Skills', context: codex, ...typed })
@@ -416,9 +424,7 @@ describe('the assign stage (D-230)', () => {
       kind: 'skill-group',
       summary: '1 skill. Recommended: none',
       pane: { asked: question, text: withContext(sentence, '1 skill. Recommended: none') },
-      rows: groupRows('none', [
-        'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.',
-      ]),
+      rows: groupRows('none', [['codex:rescue', 'Delegate a stuck task. Used 3 times in the last 50 sessions.']]),
     })
   })
 

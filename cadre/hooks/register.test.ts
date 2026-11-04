@@ -2603,9 +2603,10 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
       [{ text: PANE_TITLES.skills, color: 'claude', bold: true }],
       [{ text: '1 skill, 1 recommended', dim: true }],
     ])
+    // The skill is one item, `name → roles`, its description under it (D-311).
     expect(rows.slice(-2)).toEqual([
-      [{ text: '  ' }, { text: 'deploy-notes: ', dim: true }, { text: 'Write the release notes for a deploy.' }],
-      [{ text: '    ' }, { text: 'recommended: ', dim: true }, { text: 'pm', bold: true }],
+      [{ text: '  deploy-notes → ' }, { text: 'pm', bold: true }],
+      [{ text: '    Write the release notes for a deploy.' }],
     ])
     // The heading rows are bold by their role; no row of the context is styled from its text (D-313).
     expect(rows.slice(2, -2).every(row => row.length === 1 && row[0]?.bold === true)).toBe(true)
