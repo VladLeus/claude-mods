@@ -1078,7 +1078,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
     ],
     "shown": [],
     "promptHashes": [
-      "cb5dd62cacaca9bbe9c79e5672b16198fb67be622f91b2f6cdb47c4d75e81106",
+      "a89364612765f874c3ebf9fc7baa79ff4797b916d202f79f24ebe06c5084b5ef",
       "6823fc05883d034a7f4c21868cea7b0780bbf7395d1546a1ba19fec0c9ae809a"
     ],
     "reply": [

@@ -7,13 +7,10 @@
 import type { InitIo, SkillRef } from '../../../types'
 import { isObject } from '../../core/json'
 import { NAME_PATTERN } from '../../core/names'
-import { clean, compareText } from '../../core/text'
+import { clean, compareText, MAX_REPORT_CHARS } from '../../core/text'
 import { t } from '../../locales/t'
 import { hiddenNameWarnings } from '../facts/normalize'
 import { MAX_REF_NAME_CHARS } from './mcp'
-
-/** Code points a skill's purpose keeps: its one-line description, cleaned and cut to this (D-139). */
-const MAX_SKILL_PURPOSE_CHARS = 120
 
 /** Command sources a scan does not name: the host ships its built-in commands, and an MCP server adds its prompts. */
 const UNNAMED_SOURCES: readonly string[] = ['builtin', 'mcp']
@@ -35,11 +32,12 @@ function skillItems(value: unknown): Record<string, unknown>[] {
 }
 
 /**
- * A command's description as its skill keeps it (D-139): cleaned and cut to MAX_SKILL_PURPOSE_CHARS code points; null
- * for a description that is missing, not a string, or blank once cleaned.
+ * A command's description as its skill keeps it (D-139): cleaned and cut to MAX_REPORT_CHARS (240) code points, the
+ * safety cap of a value read from disk (D-231, D-330), which the pane then shows whole (D-312); null for a description
+ * that is missing, not a string, or blank once cleaned.
  */
 function purposeOf(description: unknown): string | null {
-  const purpose = clean(description, MAX_SKILL_PURPOSE_CHARS)
+  const purpose = clean(description, MAX_REPORT_CHARS)
 
   return purpose.trim() === '' ? null : purpose
 }
@@ -72,7 +70,7 @@ function bySkill(first: SkillRef, second: SkillRef): number {
  * The skills and plugin commands of a `$.command.list()` answer, by name, the plugin that adds each and its purpose
  * (SCAN-02, D-57, D-139). Built-in commands and MCP prompts are dropped, and so is a command whose name, or whose
  * plugin, is not a plain name of at most 100 characters. A string description is kept as the skill's purpose, cleaned
- * and cut to MAX_SKILL_PURPOSE_CHARS code points, in memory only, for the questions and the recommendation call; it is
+ * and cut to MAX_REPORT_CHARS code points (D-330), in memory only, for the questions and the recommendation call; it is
  * never written (D-139), and a blank or missing one gives no purpose. A hint and every other field is never read, so
  * none can be kept. A name is listed once for each plugin, sorted by name. Anything but a list gives [].
  */

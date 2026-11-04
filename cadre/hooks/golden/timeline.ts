@@ -88,7 +88,7 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask Model and effort: same for all roles, or per role?",
     "ask Model and effort for all roles?",
     "ask Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.",
-    "prompt cb5dd62cacaca9bbe9c79e5672b16198fb67be622f91b2f6cdb47c4d75e81106",
+    "prompt a89364612765f874c3ebf9fc7baa79ff4797b916d202f79f24ebe06c5084b5ef",
     "prompt 6823fc05883d034a7f4c21868cea7b0780bbf7395d1546a1ba19fec0c9ae809a",
     "ask How do you want to hand out the instruction parts and memories?",
     "ask Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.",

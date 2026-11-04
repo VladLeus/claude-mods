@@ -5,9 +5,9 @@
  * recommended for it; the own-skills entry question holds the own-skills block, and one own skill's question that
  * skill alone. Each context also gives the structured rows the pane draws from the same values (D-313, D-323): a
  * skill and a server of the list for all the servers as item rows (itemRows of ui/blocks/context, D-311). Every
- * value is cleaned and capped here (D-222), and a description's secret-like spans are hidden (redactedText, E1) before
- * its cap (#163). It imports core, the UNCUT rule of ui/pane, the item rows of ui/blocks/context and the types, so the
- * assignment stage reads it here.
+ * value is cleaned and capped here (D-222), and a description's secret-like spans are hidden (redactedText, E1); a
+ * description is not cut here, as the scan capped it at MAX_REPORT_CHARS (D-312, D-330). It imports core, the UNCUT
+ * rule of ui/pane, the item rows of ui/blocks/context and the types, so the assignment stage reads it here.
  */
 import type { AskContext, ContextRow, McpRef } from '../../../types'
 import { redactedText } from '../../core/redact'
@@ -112,18 +112,16 @@ export type SkillLine = {
   readonly recommended: readonly string[]
 }
 
-/** The most code points of a skill's purpose in its line: the cap the purpose had, kept, now after the redaction. */
-const MAX_SKILL_PURPOSE_CHARS = 120
-
 /**
  * A skill's line (D-211): its name cut to 60 code points, then what it does as a sentence with its secret-like spans
- * hidden before the MAX_SKILL_PURPOSE_CHARS cap (redactedText, E1, #163; only the description is read for them, never
- * the name), how often it was used (left out when '') and the roles recommended for it, or none; every value cleaned.
+ * hidden (redactedText, E1, #163; only the description is read for them, never the name) and not cut, as the scan
+ * capped it already (D-312, D-330), how often it was used (left out when '') and the roles recommended for it, or
+ * none; every value cleaned.
  */
 function skillLineText(skill: SkillLine): string {
   const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
   const used = skill.uses === '' ? '' : t('ui.assign.skillLineText', { uses: clean(skill.uses) })
-  const purpose = asSentence(redactedText(skill.purpose, MAX_SKILL_PURPOSE_CHARS))
+  const purpose = asSentence(redactedText(skill.purpose, UNCUT))
 
   return t('ui.assign.skillLineText2', { name, purpose, used, roleIds: roleIdsText(skill.recommended) })
 }
@@ -133,15 +131,15 @@ const NO_PURPOSE_TEXT = t('init.answers.noSkillPurpose')
 
 /**
  * One skill as item rows (D-311): its name cut to 60 code points and the roles recommended for it, then what it does
- * as a sentence, its secret-like spans hidden before the MAX_SKILL_PURPOSE_CHARS cap (redactedText, E1, #163), with
- * how often it was used after it (` Used ….`, user 2026-11-04). A skill the caller gave NO_PURPOSE_TEXT has the
- * placeholder in place of a description, then its uses on a row of their own when it was used.
+ * as a sentence, its secret-like spans hidden (redactedText, E1, #163) and never cut (D-312, D-330), with how often it
+ * was used after it (` Used ….`, user 2026-11-04). A skill the caller gave NO_PURPOSE_TEXT has the placeholder in
+ * place of a description, then its uses on a row of their own when it was used.
  */
 function skillRows(skill: SkillLine): ContextRow[] {
   const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
   const used = skill.uses === '' ? '' : t('ui.assign.skillLineText', { uses: clean(skill.uses) })
   if (skill.purpose !== NO_PURPOSE_TEXT) {
-    const purpose = asSentence(redactedText(skill.purpose, MAX_SKILL_PURPOSE_CHARS))
+    const purpose = asSentence(redactedText(skill.purpose, UNCUT))
 
     return itemRows(name, skill.recommended, `${purpose}${used}`)
   }

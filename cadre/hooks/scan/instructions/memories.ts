@@ -7,7 +7,7 @@
  */
 import type { InitIo, InstructionScan, MemoryItem } from '../../../types'
 import { sha256Hex } from '../../core/hash'
-import { clean, compareText, isChangedByClean } from '../../core/text'
+import { clean, compareText, isChangedByClean, MAX_REPORT_CHARS } from '../../core/text'
 import { t } from '../../locales/t'
 import { joinedPath, markdownFileNames, MAX_FILE_NAME_CHARS } from '../../paths'
 import { MAX_READ_BYTES } from '../facts/normalize'
@@ -16,8 +16,11 @@ import { listingState } from '../port-read'
 /** Every line break of a text. */
 export const LINE_BREAKS = /\r\n|\r|\n/g
 
-/** The most code points a topic summary and a memory summary keep (G-02-1f). */
-export const MAX_SUMMARY_CHARS = 160
+/**
+ * The most code points a topic summary and a memory summary keep (G-02-1f): MAX_REPORT_CHARS (240), the safety cap of
+ * a value read from disk or given by the model (D-231, D-330), which the pane then shows whole (D-312).
+ */
+export const MAX_SUMMARY_CHARS = MAX_REPORT_CHARS
 
 /**
  * The index of the auto-memories of a folder (G-02-1f Memories): it lists them and is never a memory itself, so regen
@@ -73,9 +76,9 @@ function indexSummary(title: string, rest: string): string {
 
 /**
  * The one-line summaries of a MEMORY.md index (G-02-1f Memories), by file name: a line `- [<title>](<file>)` followed
- * by an em dash or a hyphen with a space on each side and a summary gives that summary, cleaned and cut to 160 code
- * points; with no summary after the link the title is the summary. A line whose summary and title are both blank, a
- * file named again and every other line are skipped.
+ * by an em dash or a hyphen with a space on each side and a summary gives that summary, cleaned and cut to
+ * MAX_SUMMARY_CHARS code points; with no summary after the link the title is the summary. A line whose summary and
+ * title are both blank, a file named again and every other line are skipped.
  */
 export function memoryIndex(text: string): ReadonlyMap<string, string> {
   const index = new Map<string, string>()
