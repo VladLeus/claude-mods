@@ -234,7 +234,7 @@ describe('launchStartStep', () => {
       `${cannotUse('../a', UNSAFE_FOLDER)}\n${DIR_ASKED}`,
       `${cannotUse('missing', NOT_A_FOLDER)}\n${DIR_ASKED}`,
     ])
-    expect(run.outputs).toEqual([{ kind: 'log', text: LAUNCH_DIR_ROUNDS_REASON }])
+    expect(run.outputs).toEqual([])
     expect(LAUNCH_DIR_ROUNDS_REASON).toBe('No usable launcher folder after 3 tries: nothing was chosen.')
   })
 

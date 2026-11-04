@@ -354,7 +354,7 @@ describe('hunkStep', () => {
       const run = await hunkRun(configWorld('{}'), 'gsd', gatheredOf(PROVEN_FACTS), answers)
       expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
       expect(run.state.draft.hunks).toEqual([])
-      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
+      expect(run.outputs).toEqual([])
     }
     expect(HUNK_DISMISSED_REASON).toBe('A hunk question was dismissed or not answered.')
   })

@@ -327,7 +327,7 @@ describe('runInit', () => {
     expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION])
     expect(run.listed).toEqual([])
     expect(run.reads).toEqual([STATUS_PATH])
-    expect(run.logged).toEqual([CONSENT_DISMISSED_REASON])
+    expect(run.logged).toEqual([])
   })
 
   test('after the consent the repo scan and user setup show in the next question, the roles (D-302)', async () => {
@@ -395,14 +395,14 @@ describe('runInit', () => {
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(ROLES_DISMISSED_REASON))
     expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION, ROLES_QUESTION])
-    expect(run.logged.at(-1)).toBe(ROLES_DISMISSED_REASON)
+    expect(run.logged).not.toContain(ROLES_DISMISSED_REASON)
   })
 
-  test('a roles step that hits its round cap prints the reason as its own line and asks nothing after it', async () => {
+  test('a roles step at its round cap prints the reason only in the reply and asks nothing after it', async () => {
     const answers = { ...INIT_ANSWERS, 'Use these roles?': 'Adjust them', 'Adjust the roles': 'Done adjusting' }
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(ROLE_ROUNDS_REASON))
-    expect(run.logged.at(-1)).toBe(ROLE_ROUNDS_REASON)
+    expect(run.logged).not.toContain(ROLE_ROUNDS_REASON)
     expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
     expect(firstLines(run.asked).filter(line => line !== ROLES_QUESTION && line !== ADJUST_QUESTION)).toEqual([
       CLAUDE_JSON_QUESTION,
@@ -554,7 +554,7 @@ describe('runInit history step (SCAN-03, D-59)', () => {
     const run = memIo(historyGitWorld(), answersWithout(HISTORY_PREFIX))
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(HISTORY_DISMISSED_REASON))
     expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
-    expect(run.logged.at(-1)).toBe(HISTORY_DISMISSED_REASON)
+    expect(run.logged).not.toContain(HISTORY_DISMISSED_REASON)
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
   })
 
@@ -758,7 +758,7 @@ describe('runInit framework and recommendations', () => {
     const answers = Object.fromEntries(kept)
     const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(FRAMEWORK_DISMISSED_REASON))
-    expect(run.logged.at(-1)).toBe(FRAMEWORK_DISMISSED_REASON)
+    expect(run.logged).not.toContain(FRAMEWORK_DISMISSED_REASON)
   })
 })
 
@@ -779,8 +779,7 @@ describe('durationStep', () => {
     const dismissed = memIo(gitWorld(), answersWithout('Autopilot duration'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(DURATION_DISMISSED_REASON))
     expect(firstLines(dismissed.asked).at(-1)).toBe(DURATION_QUESTION)
-    expect(dismissed.logged.at(-1)).toBe(DURATION_DISMISSED_REASON)
-    expect(dismissed.logged.filter(text => text === DURATION_DISMISSED_REASON)).toHaveLength(1)
+    expect(dismissed.logged).not.toContain(DURATION_DISMISSED_REASON)
   })
 })
 
@@ -812,7 +811,7 @@ describe('modelStep', () => {
     const dismissed = memIo(gitWorld(), answersWithout('Model and effort for'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(MODEL_DISMISSED_REASON))
     expect(dismissed.asked.at(-1)).toBe(MODEL_ALL)
-    expect(dismissed.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
+    expect(dismissed.logged).not.toContain(MODEL_DISMISSED_REASON)
   })
 })
 
@@ -1430,7 +1429,7 @@ describe('instruction parts (G-02-1f)', () => {
     const run = memIo(partsWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(CONTENT_DISMISSED_REASON))
     expect(firstLines(run.asked).at(-1)).toBe(CONTENT_QUESTION)
-    expect(run.logged.at(-1)).toBe(CONTENT_DISMISSED_REASON)
+    expect(run.logged).not.toContain(CONTENT_DISMISSED_REASON)
     expect(run.reads).not.toContain(GLOBAL_CLAUDE_MD)
   })
 
@@ -2962,7 +2961,7 @@ describe('hunkStep', () => {
     const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
     const dismissed = memIo(world, answersWithout('.planning/config.json:'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(HUNK_DISMISSED_REASON))
-    expect(dismissed.logged.at(-1)).toBe(HUNK_DISMISSED_REASON)
+    expect(dismissed.logged).not.toContain(HUNK_DISMISSED_REASON)
   })
 })
 
@@ -3007,7 +3006,7 @@ describe('launchStartStep', () => {
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(LAUNCH_START_DISMISSED_REASON))
     expect(firstLines(run.asked).at(-1)).toBe(LAUNCH_START_QUESTION)
-    expect(run.logged.at(-1)).toBe(LAUNCH_START_DISMISSED_REASON)
+    expect(run.logged).not.toContain(LAUNCH_START_DISMISSED_REASON)
   })
 })
 
@@ -3025,7 +3024,7 @@ function dismissedAt(world: MemWorld, prefix: string, question: string, reason: 
 }
 
 describe('runInit cancel reasons (A1)', () => {
-  test('a dismissal at each of the twelve steps cancels init and prints its reason once, last of all', async () => {
+  test('a dismissal at each of the twelve steps cancels init and prints its reason once, in the reply', async () => {
     const gsd = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
     const sentryNone = { 'Which roles get all the MCP servers': 'None', 'Which roles get codex': 'None' }
     const memory: CancelCase = {
@@ -3060,18 +3059,17 @@ describe('runInit cancel reasons (A1)', () => {
       const run = memIo(world, answers)
       expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(reason))
       expect(run.asked.at(-1)?.slice(0, question.length)).toBe(question)
-      expect(run.logged.at(-1)).toBe(reason)
-      expect(run.logged.filter(text => text === reason)).toHaveLength(1)
+      expect(run.logged).not.toContain(reason)
     }
   })
 })
 
 describe('cancel reply (S1)', () => {
-  test('three unreadable git policy answers reply with the reason, which is still logged once', async () => {
+  test('three unreadable git policy answers reply with the reason, which is never logged (D-265)', async () => {
     const refusal = refusalLine('whatever', 'definitions, all, ignore')
     const run = memIo(gitWorld(), { ...INIT_ANSWERS, 'Git policy': 'whatever', [refusal]: 'whatever' })
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(NO_USABLE_ANSWER_REASON))
-    expect(run.logged.filter(text => text === NO_USABLE_ANSWER_REASON)).toHaveLength(1)
+    expect(run.logged).not.toContain(NO_USABLE_ANSWER_REASON)
   })
 })
 
@@ -3173,8 +3171,7 @@ describe('refusal re-ask (G-02-6b)', () => {
     const at = run.asked.indexOf(all)
     expect(at).toBeGreaterThan(0)
     expect(run.asked.slice(at)).toEqual([all, `${BOTH_REFUSAL}\n${all}`, `${BOTH_REFUSAL}\n${all}`])
-    expect(run.logged.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
-    expect(run.logged.filter(text => text === NO_USABLE_ANSWER_REASON)).toHaveLength(1)
+    expect(run.logged).not.toContain(NO_USABLE_ANSWER_REASON)
   })
 
   test('Esc at the framework question still cancels init with its own dismissed reason (D-45)', async () => {
@@ -3182,7 +3179,7 @@ describe('refusal re-ask (G-02-6b)', () => {
     const run = memIo(world, answersWithout('Framework for'))
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(FRAMEWORK_DISMISSED_REASON))
     expect(firstLines(run.asked).at(-1)).toBe(FRAMEWORK_ALL_QUESTION)
-    expect(run.logged.at(-1)).toBe(FRAMEWORK_DISMISSED_REASON)
+    expect(run.logged).not.toContain(FRAMEWORK_DISMISSED_REASON)
   })
 })
 
@@ -3718,7 +3715,7 @@ describe('init plan', () => {
     const { io, events } = withEvents(run)
     expect(await runInit(io, { dryRun: true })).toBe(cancelledReply(GIT_POLICY_DISMISSED_REASON))
     expect(events.filter(event => event.includes('Scope card: '))).toEqual([])
-    expect(run.logged.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
+    expect(run.logged).not.toContain(GIT_POLICY_DISMISSED_REASON)
     // statForWrite only stats a path before a write (#44); no member of the port can write.
     expect(
       Object.keys(run.io).filter(key => key !== 'statForWrite' && /write|append|remove|delete|mkdir|rename/i.test(key)),
@@ -4115,7 +4112,7 @@ describe('reviewStep', () => {
     expect(asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
     expect(asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
     expect(asked.at(-1)).toBe(REVIEW_QUESTION)
-    expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
+    expect(run.logged).not.toContain(REVIEW_ROUNDS_REASON)
   })
 
   test('a go-back picked at the last review round cancels at once and asks none of its questions (A3)', async () => {
@@ -4124,13 +4121,13 @@ describe('reviewStep', () => {
     const asked = firstLines(run.asked)
     expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
     expect(asked.at(-1)).toBe(REVIEW_QUESTION)
-    expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
+    expect(run.logged).not.toContain(REVIEW_ROUNDS_REASON)
   })
 
   test('a dismissed review, or three answers it cannot read, cancels init with its reason (A1)', async () => {
     const dismissed = memIo(gitWorld(), answersWithout('Review the plan'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(REVIEW_DISMISSED_REASON))
-    expect(dismissed.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
+    expect(dismissed.logged).not.toContain(REVIEW_DISMISSED_REASON)
     const refusal =
       `'maybe' isn't one of: "Next page", "Confirm", "Change something…", roles, git policy, launcher start, ` +
       'or duration, model, assignments, memory, env, hunks.'
@@ -4140,7 +4137,7 @@ describe('reviewStep', () => {
     expect(reviewAsked.startsWith(`${REVIEW_QUESTION}\n`)).toBe(true)
     const again = `${refusal}\n${reviewAsked}`
     expect(unread.asked.slice(-MAX_ASKS)).toEqual([reviewAsked, again, again])
-    expect(unread.logged.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
+    expect(unread.logged).not.toContain(NO_USABLE_ANSWER_REASON)
   })
 
   test("a go-back step that is dismissed cancels init with that step's reason, printed once (A1)", async () => {
@@ -4150,8 +4147,7 @@ describe('reviewStep', () => {
       'Model and effort: same': ['Same for all roles', null],
     })
     expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(MODEL_DISMISSED_REASON))
-    expect(run.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
-    expect(run.logged.filter(text => text === MODEL_DISMISSED_REASON)).toHaveLength(1)
+    expect(run.logged).not.toContain(MODEL_DISMISSED_REASON)
   })
 
   test('one answer script gives init and --dry-run one plan but the first line, private files and end', async () => {
@@ -4699,7 +4695,7 @@ describe('init apply conflicts (D-67)', () => {
         const run = memIo(world, answers)
         expect(await runInit(run.io, { dryRun: false, host: host.io })).toBe(cancelledReply(reason))
         expect(run.asked.filter(question => question.includes(ROLE_QUESTION))).toHaveLength(asks)
-        expect(run.logged.at(-1)).toBe(reason)
+        expect(run.logged).not.toContain(reason)
         expect([host.writes, host.calls]).toEqual([[], []])
       }
       const asked = memIo(world, unread)
@@ -5001,7 +4997,7 @@ describe('security plugin installs (decision #39)', () => {
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
     expect(reply).toBe(cancelledReply(SECURITY_INSTALL_DISMISSED_REASON))
     expect(run.asked.at(-1)?.startsWith(BOTH_QUESTION_START)).toBe(true)
-    expect(run.logged.at(-1)).toBe('The security plugins question was dismissed or not answered.')
+    expect(run.logged).not.toContain('The security plugins question was dismissed or not answered.')
     expect([host.calls, host.writes]).toEqual([[], []])
   })
 

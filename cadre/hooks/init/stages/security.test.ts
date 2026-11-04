@@ -99,7 +99,7 @@ describe('security plugin installs (decision #39)', () => {
       const run = driven(securityAt(), answers)
       expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
       expect(run.asked).toHaveLength(answers.length === 0 ? 1 : MAX_ASKS)
-      expect(run.outputs).toEqual([recommendationsOf(DRAFT), { kind: 'log', text: reason }])
+      expect(run.outputs).toEqual([recommendationsOf(DRAFT)])
     }
     const refused = driven(securityAt(), ['yes', 'Install'])
     const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)

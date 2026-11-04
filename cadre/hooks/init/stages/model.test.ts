@@ -126,7 +126,7 @@ describe('modelStep', () => {
       `${modelEffortRefusal('claude-opus-5-5 high')}\n${MODEL_ALL}`,
       `${modelEffortRefusal('opus')}\n${MODEL_ALL}`,
     ])
-    expect(run.outputs).toEqual([{ kind: 'log', text: NO_USABLE_ANSWER_REASON }])
+    expect(run.outputs).toEqual([])
   })
 
   test('each role keeps its duration and the threshold 65, asked nowhere, and the input is unchanged', () => {
@@ -149,7 +149,7 @@ describe('modelStep', () => {
       const run = driven(modelAt(roles), answers)
       expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
       expect(run.state.draft.roles).toEqual(roles)
-      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
+      expect(run.outputs).toEqual([])
     }
     expect(MODEL_DISMISSED_REASON).toBe('A model and effort question was dismissed or not answered.')
   })
@@ -167,7 +167,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       `${modelEffortRefusal('sonet + high')}\n${all}`,
       `${modelEffortRefusal('opus')}\n${all}`,
     ])
-    expect(run.outputs).toEqual([{ kind: 'log', text: NO_USABLE_ANSWER_REASON }])
+    expect(run.outputs).toEqual([])
     const dismissed = driven(modelAt(roles), ['Same for all roles', 'sonet + high'])
     expect(dismissed.state.effect).toEqual({ kind: 'end', reply: cancelledReply(MODEL_DISMISSED_REASON) })
   })

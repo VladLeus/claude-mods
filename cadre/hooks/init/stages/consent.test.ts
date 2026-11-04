@@ -54,7 +54,7 @@ describe('runInit', () => {
     for (const [answers, reason] of cases) {
       const run = driven(start, answers)
       expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
-      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
+      expect(run.outputs).toEqual([])
     }
     expect(CONSENT_DISMISSED_REASON).toBe('The ~/.claude.json question was dismissed or not answered.')
   })

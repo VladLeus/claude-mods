@@ -71,14 +71,14 @@ describe('durationStep', () => {
     expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(NO_USABLE_ANSWER_REASON) })
     expect(run.asked).toHaveLength(MAX_ASKS)
     expect(run.state.draft.duration).toBeUndefined()
-    expect(run.outputs).toEqual([{ kind: 'log', text: NO_USABLE_ANSWER_REASON }])
+    expect(run.outputs).toEqual([])
   })
 
   test('a dismissed duration question is cancelled at once with the reason, which the step never prints', () => {
     const run = driven(durationAt(roles), [])
     expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(DURATION_DISMISSED_REASON) })
     expect(run.asked).toEqual([ASKED])
-    expect(run.outputs).toEqual([{ kind: 'log', text: DURATION_DISMISSED_REASON }])
+    expect(run.outputs).toEqual([])
     expect(DURATION_DISMISSED_REASON).toBe('The autopilot duration question was dismissed or not answered.')
   })
 })

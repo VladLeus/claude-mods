@@ -98,7 +98,7 @@ describe('init helpers', () => {
       const dismissed = driven(policyStage.enter(stateAt('policy', POLICY_DRAFT)), answers)
       expect(dismissed.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
       expect(dismissed.asked).toHaveLength(Math.max(1, answers.length))
-      expect(dismissed.outputs).toEqual([{ kind: 'log', text: reason }])
+      expect(dismissed.outputs).toEqual([])
     }
     expect(GIT_POLICY_DISMISSED_REASON).toBe('The git policy question was dismissed or not answered.')
   })

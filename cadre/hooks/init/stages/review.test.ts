@@ -449,7 +449,7 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const ended = nextStage({ ...asking, outputs: [] }, { kind: 'answer', text: 'Change git policy' })
     expect(ended.effect).toEqual({ kind: 'end', reply: cancelledReply(REVIEW_ROUNDS_REASON) })
-    expect(ended.outputs).toEqual([{ kind: 'log', text: REVIEW_ROUNDS_REASON }])
+    expect(ended.outputs).toEqual([])
   })
 })
 

@@ -200,7 +200,7 @@ describe('frameworkStep', () => {
     for (const [answers, reason] of scripts) {
       const run = driven(frameworksAt(ambiguous, roles), answers)
       expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
-      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
+      expect(run.outputs).toEqual([])
     }
     expect(FRAMEWORK_DISMISSED_REASON).toBe('A framework question was dismissed or not answered.')
   })

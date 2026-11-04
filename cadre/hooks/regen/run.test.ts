@@ -1128,7 +1128,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     for (const [answers, reason] of cases) {
       const { reply, run, host } = await regenPlainBe(await regenPartsWorld(changed), answers)
       expect([reply, host.writes]).toEqual([regenCancelledReply(reason), []])
-      expect(run.logged).toEqual([reason])
+      expect(run.logged).toEqual([])
     }
   })
 

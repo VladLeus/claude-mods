@@ -1545,7 +1545,7 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld({ answers: answersWithout('Git policy') }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe(cancelledReply(GIT_POLICY_DISMISSED_REASON))
-    expect(log.logs.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
+    expect(log.logs).not.toContain(GIT_POLICY_DISMISSED_REASON)
     expect(askHeads(log).filter(ask => ask === POLICY_ASK)).toHaveLength(1)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
@@ -1564,7 +1564,7 @@ describe('cadre init with a faked host', () => {
     const again = `ask ${refusal}\n${withContext(GIT_POLICY_QUESTION, line)}`
     expect(log.asks.slice(log.asks.indexOf(asked))).toEqual([asked, again, again])
     expect(refusal).toBe("'whatever' isn't one of: definitions, all, ignore.")
-    expect(log.logs.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
+    expect(log.logs).not.toContain(NO_USABLE_ANSWER_REASON)
     expect(out.text).toBe(cancelledReply(NO_USABLE_ANSWER_REASON))
   })
 
@@ -2762,6 +2762,15 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const pane = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const tui = await $.command.run(TUI_RUN)
     expect(tui.text).toBe(pane.text)
+  })
+
+  test('a TUI run cancelled at Roles shows the reason only in the reply text (D-265)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ answers: answersWithout('Use these roles?') }), log)
+    const out = await $.command.run(TUI_RUN)
+    expect(out.text).toBe(cancelledReply(ROLES_DISMISSED_REASON))
+    expect(askHeads(log).at(-1)).toBe(`ask ${ROLES_QUESTION}`)
+    expect(log.logs.filter(text => text.includes(ROLES_DISMISSED_REASON))).toEqual([])
   })
 
   test('with no presentation, or in fullscreen, the terminal opens the pane as before (D-208)', async ($, on) => {

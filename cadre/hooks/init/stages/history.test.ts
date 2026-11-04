@@ -193,7 +193,7 @@ describe('refusal re-ask (G-02-6b)', () => {
     const drive = await drivenWith(historyAt(), answers, historyCalls(run.io))
     expect(drive.state.effect).toEqual({ kind: 'end', reply: cancelledReply(NO_USABLE_ANSWER_REASON) })
     expect(drive.asked).toHaveLength(3)
-    expect([run.reads, drive.outputs]).toEqual([[], [{ kind: 'log', text: NO_USABLE_ANSWER_REASON }]])
+    expect([run.reads, drive.outputs]).toEqual([[], []])
   })
 
   test('Esc after a refused answer still cancels with the dismissed reason of the history question', async () => {
@@ -332,7 +332,7 @@ describe('history scan', () => {
     expect(drive.state.effect).toEqual({ kind: 'end', reply: cancelledReply(HISTORY_DISMISSED_REASON) })
     expect(drive.asked).toEqual([historyAsked(1)])
     expect(run.reads).toEqual([])
-    expect(drive.outputs).toEqual([{ kind: 'log', text: HISTORY_DISMISSED_REASON }])
+    expect(drive.outputs).toEqual([])
   })
 
   test('historyStage: the user folder is CLAUDE_CONFIG_DIR when set; with no user folder there is none', async () => {

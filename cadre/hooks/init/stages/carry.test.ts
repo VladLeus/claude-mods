@@ -150,7 +150,7 @@ describe('carryStep', () => {
     for (const [answers, reason] of cases) {
       const run = driven(carryAt(roles, twoNames), answers)
       expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
-      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
+      expect(run.outputs).toEqual([])
     }
     expect(ENV_DISMISSED_REASON).toBe('The env variables question was dismissed or not answered.')
   })
