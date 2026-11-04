@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, GitPolicy } from '../../types'
+import type { AskContext, AskSpec, GitPolicy } from '../../types'
 import { CLAUDE_JSON_OPTIONS, CONSENT_DISMISSED_REASON } from '../init/stages/consent'
 import { FRAMEWORK_DISMISSED_REASON } from '../init/stages/frameworks'
 import { GIT_POLICY_OPTIONS, GIT_POLICY_QUESTION, parseGitPolicy } from '../init/stages/policy'
@@ -11,6 +11,7 @@ import {
   askChoice,
   askedText,
   choiceAnswer,
+  foldedSpec,
   MAX_ASKS,
   NO_USABLE_ANSWER_REASON,
   noteLine,
@@ -322,5 +323,58 @@ describe('noteLine (D-325)', () => {
     const run = memIo(memWorld({}), [])
     await noteLine(run.io, `a${BIDI_OVERRIDE}b`)
     expect([run.logged, run.shown]).toEqual([['ab'], []])
+  })
+})
+
+describe('foldedSpec (D-302, folded heading)', () => {
+  /** The question every case folds into: a roles context with one line of its own. */
+  const spec: AskSpec = {
+    options: ['Yes', 'No'],
+    context: { title: 'Roles', lines: ['Proposed roles:'], kind: 'roles', summary: '2 roles: pm, tl' },
+  }
+
+  test('a fold whose first line does not name its title keeps the title line first', () => {
+    const folded = foldedSpec(spec, [{ title: 'Instruction parts', lines: ['Read for this run:', '  x'] }])
+    expect(folded.context?.lines).toEqual(['Instruction parts', 'Read for this run:', '  x', '', 'Proposed roles:'])
+  })
+
+  test('a fold whose first line starts with its title leaves the title out; title, kind and summary stay', () => {
+    const lines = ['Session history (names and counts only):', '  gsd-plan-phase  1']
+    const { context } = foldedSpec(spec, [{ title: 'Session history', lines }])
+    expect([context?.lines, context?.title, context?.kind, context?.summary]).toEqual([
+      [...lines, '', 'Proposed roles:'],
+      spec.context?.title,
+      spec.context?.kind,
+      spec.context?.summary,
+    ])
+  })
+
+  test('a fold whose first line holds its title mid-line, in another case, leaves the title out', () => {
+    const folded = foldedSpec(spec, [{ title: 'Scan', lines: ['Repo scan (read-only):', '  stack: none'] }])
+    expect(folded.context?.lines).toEqual(['Repo scan (read-only):', '  stack: none', '', 'Proposed roles:'])
+  })
+
+  test('a title found only inside a longer word is no whole word, so the fold keeps its title line', () => {
+    const scanner = foldedSpec(spec, [{ title: 'Scan', lines: ['Scanner list', '  x'] }])
+    const rescan = foldedSpec(spec, [{ title: 'Scan', lines: ['rescan done'] }])
+    expect([scanner.context?.lines, rescan.context?.lines]).toEqual([
+      ['Scan', 'Scanner list', '  x', '', 'Proposed roles:'],
+      ['Scan', 'rescan done', '', 'Proposed roles:'],
+    ])
+  })
+
+  test('the title and the first line are compared after cleaning; the folds keep their order and a blank each', () => {
+    const folds = [
+      { title: 'Recommendations', lines: [`Recommen${BIDI_OVERRIDE}dations (x):`, '- a'] },
+      { title: 'Notes', lines: [] },
+    ]
+    expect(foldedSpec(spec, folds).context?.lines).toEqual([
+      'Recommendations (x):',
+      '- a',
+      '',
+      'Notes',
+      '',
+      'Proposed roles:',
+    ])
   })
 })

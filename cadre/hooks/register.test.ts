@@ -1755,10 +1755,11 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const lines = openedContext(log, SECURITY_INSTALL_PREFIX)?.lines ?? []
-    // The team's recommendations fold first into the question's context, under their title (D-302).
+    // The team's recommendations fold first into the question's context, under their own heading line, the fold title
+    // not repeated (D-302).
     const own = lines.slice(lines.indexOf('') + 1)
     expect([lines[0], own.map(line => line.split(': ')[0])]).toEqual([
-      'Recommendations',
+      t('ui.recommendations.recommendationsHeading'),
       ['claude-security@claude-plugins-official', 'security-guidance@claude-plugins-official'],
     ])
     expect(lines.filter(line => line.includes('/security-review'))).toEqual([])

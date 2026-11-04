@@ -432,17 +432,25 @@ function contextLinesAt(run: MemRun, prefix: string): readonly string[] {
 }
 
 /**
- * The lines of the section titled `title` that a fold put first in the context of the first question of `run` whose
- * first line starts with `prefix` (D-302): the lines after the title up to the blank line that ends the section; none
- * when that context holds no such section.
+ * The fold's own lines, its heading line included, of the section titled `title` that a fold put first in the context
+ * of the first question of `run` whose first line starts with `prefix` (D-302). A section starts at the context's
+ * first line or right after a blank line; the fold's section is the first whose start line is `title`, or holds
+ * `title` case-insensitive (the fold's own heading line, written without the title). Its lines start after a `title`
+ * line, else at that heading line, and run up to the blank line that ends the section; none when no start matches.
  */
 function foldAt(run: MemRun, prefix: string, title: string): readonly string[] {
   const lines = contextLinesAt(run, prefix)
-  const start = lines.indexOf(title)
-  if (start === -1) return []
+  const lower = title.toLowerCase()
+  const at = lines.findIndex((line, index) => {
+    if (index > 0 && lines[index - 1] !== '') return false
+
+    return line === title || line.toLowerCase().includes(lower)
+  })
+  if (at === -1) return []
+  const start = lines[at] === title ? at + 1 : at
   const end = lines.indexOf('', start)
 
-  return lines.slice(start + 1, end === -1 ? lines.length : end)
+  return lines.slice(start, end === -1 ? lines.length : end)
 }
 
 /** The review option that asks its next page (D-233). */
@@ -544,13 +552,16 @@ describe('runInit history step (SCAN-03, D-59)', () => {
 })
 
 describe('init pane (G-02-1)', () => {
-  test('a dry run with no session shows the scan first in the roles question, titled Scan, logging none', async () => {
-    const run = memIo(gitWorld(), INIT_ANSWERS)
-    await runInit(run.io, { dryRun: true })
-    const lines = contextLinesAt(run, ROLES_QUESTION)
-    expect(lines.slice(0, 2)).toEqual([PANE_TITLES.scan, 'Repo scan (read-only):'])
-    expect(run.logged.filter(text => text.startsWith('Repo scan'))).toEqual([])
-  })
+  test(
+    'a dry run with no session shows the scan first in the roles question under its own heading, logging none',
+    async () => {
+      const run = memIo(gitWorld(), INIT_ANSWERS)
+      await runInit(run.io, { dryRun: true })
+      const lines = contextLinesAt(run, ROLES_QUESTION)
+      expect(lines[0]).toBe('Repo scan (read-only):')
+      expect(run.logged.filter(text => text.startsWith('Repo scan'))).toEqual([])
+    },
+  )
 
   test('with a session the scan shows once, in the history question, and in no later question (D-302)', async () => {
     const run = memIo(historyGitWorld(), INIT_ANSWERS)
@@ -3965,7 +3976,7 @@ describe('reviewStep', () => {
     expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
     expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
     expect(between(run.asked, REVIEW_QUESTION)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
-    const folded = run.specs.filter(spec => spec.context?.lines[0] === PANE_TITLES.recommendations)
+    const folded = run.specs.filter(spec => spec.context?.lines[0] === t('ui.recommendations.recommendationsHeading'))
     expect(folded).toHaveLength(2)
     expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
     expect(asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
@@ -6122,7 +6133,7 @@ describe('no stand-alone pane block: what it held folds into the next question (
     ]
     const lines = contextLinesAt(run, ROLES_QUESTION)
     expect(scan).toContain('warning: the root was given through a link')
-    expect(lines.slice(0, scan.length + 3)).toEqual([PANE_TITLES.scan, ...scan, '', 'Proposed roles:'])
+    expect(lines.slice(0, scan.length + 2)).toEqual([...scan, '', 'Proposed roles:'])
   })
 
   test('the TUI default drops the fold: its roles question holds the proposal alone', async () => {
@@ -6136,8 +6147,8 @@ describe('no stand-alone pane block: what it held folds into the next question (
     await runInit(run.io, { dryRun: true })
     const lines = contextLinesAt(run, ROLES_QUESTION)
     const blank = lines.indexOf('')
-    const history = [PANE_TITLES.history, t('init.history.historyHeading'), '  gsd-plan-phase  1']
-    expect([lines.slice(0, 3), lines[blank + 1]]).toEqual([history, 'Proposed roles:'])
+    const history = [t('init.history.historyHeading'), '  gsd-plan-phase  1']
+    expect([lines.slice(0, 2), lines[blank + 1]]).toEqual([history, 'Proposed roles:'])
   })
 
   test('a team that misses a security plugin has the recommendations first in the security question', async () => {
@@ -6147,11 +6158,7 @@ describe('no stand-alone pane block: what it held folds into the next question (
     const lines = contextLinesAt(run, SECURITY_INSTALL_PREFIX)
     const blank = lines.indexOf('')
     const heading = t('ui.recommendations.recommendationsHeading')
-    expect([lines[0], lines[1], lines[blank + 1]?.startsWith('claude-security@')]).toEqual([
-      PANE_TITLES.recommendations,
-      heading,
-      true,
-    ])
+    expect([lines[0], lines[blank + 1]?.startsWith('claude-security@')]).toEqual([heading, true])
   })
 
   test('an instruction read with warnings and no part puts them first in each whole-file question', async () => {
