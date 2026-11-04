@@ -1084,6 +1084,9 @@ export const EN = Object.freeze({
   'scan.hidden.agentName': 'ignored agent name "{shown}": its name has hidden characters or is too long',
   'scan.hidden.agentNameMore.one': 'ignored {rest} more agent name names that have hidden characters or are too long',
   'scan.hidden.agentNameMore.other': 'ignored {rest} more agent name names that have hidden characters or are too long',
+  'scan.ignoredPluginKey': 'ignored plugin key: {key}',
+  'scan.ignoredPluginKeyMore.one': 'ignored {rest} more plugin key',
+  'scan.ignoredPluginKeyMore.other': 'ignored {rest} more plugin keys',
 
   'scan.instructions.memories.noMemorySummary': 'No summary in MEMORY.md.',
   'scan.instructions.memories.unreadableWarning': 'could not read {file}: no role gets it',

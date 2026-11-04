@@ -34,8 +34,22 @@ export function orderedSettings(settings: unknown): RawFacts['settings'] {
 }
 
 /**
+ * Whether a plugin key is shaped `name@marketplace` (D-267): split on `@` it has exactly two parts, each non-empty,
+ * with no whitespace and neither ending in a Unicode punctuation character, so `autopilot@local-mods.` is not one.
+ * Fail closed: both plugin parsers skip a key it refuses, the setup scan names it in a warning, and the user's
+ * settings and installed_plugins.json are never rewritten.
+ */
+export function isPluginKey(key: string): boolean {
+  const parts = key.split('@')
+  if (parts.length !== 2 || /\s/.test(key)) return false
+
+  return parts.every(part => part !== '' && !/\p{P}$/u.test(part))
+}
+
+/**
  * The `enabledPlugins` flags of one settings file: boolean values only. A key that clean would change at 120 code
- * points is dropped (WR-03). Nothing else in the file is read.
+ * points is dropped (WR-03), and so is a key that is not shaped `name@marketplace` (isPluginKey, D-267). Nothing else
+ * in the file is read.
  */
 export function parseEnabledPlugins(value: unknown, source: SettingsSource): PluginFlag[] {
   if (!isObject(value) || !isObject(value.enabledPlugins)) return []
@@ -43,7 +57,7 @@ export function parseEnabledPlugins(value: unknown, source: SettingsSource): Plu
   for (const [rawKey, flagValue] of Object.entries(value.enabledPlugins)) {
     if (isChangedByClean(rawKey, MAX_KEY_CHARS)) continue
     const key = rawKey
-    if (key === '' || typeof flagValue !== 'boolean') continue
+    if (!isPluginKey(key) || typeof flagValue !== 'boolean') continue
     flags.push({ key, source, value: flagValue })
   }
 
@@ -138,14 +152,14 @@ function installedVersionOf(entries: readonly unknown[], roots: readonly string[
 /**
  * The version installed for this repo for each installed plugin key: user scope first, then a project or local entry
  * whose projectPath is the repo root as resolved or as given (WR-04). A key that clean would change at 120 code points
- * is dropped (WR-03). Only the key and the version are kept: install paths, scopes and the rest of each entry are never
- * read into Facts.
+ * is dropped (WR-03), and so is a key that is not shaped `name@marketplace` (isPluginKey, D-267). Only the key and the
+ * version are kept: install paths, scopes and the rest of each entry are never read into Facts.
  */
 export function parseInstalledPlugins(value: unknown, root: string, givenRoot: string): PluginVersion[] {
   if (!isObject(value) || !isObject(value.plugins)) return []
   const installed: PluginVersion[] = []
   for (const [key, entries] of Object.entries(value.plugins)) {
-    if (key === '' || isChangedByClean(key, MAX_KEY_CHARS) || !Array.isArray(entries)) continue
+    if (!isPluginKey(key) || isChangedByClean(key, MAX_KEY_CHARS) || !Array.isArray(entries)) continue
     const version = installedVersionOf(entries, [root, givenRoot])
     if (version !== null) installed.push({ key, version })
   }

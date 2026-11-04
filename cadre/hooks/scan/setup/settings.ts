@@ -10,10 +10,11 @@ import { fieldKeysOf, isObject, keysOf } from '../../core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS } from '../../core/names'
 import { isChangedByClean, sortedUnique } from '../../core/text'
 import { t, tn } from '../../locales/t'
-import { hiddenNameWarnings, MAX_READ_BYTES } from '../facts/normalize'
+import { hiddenNameWarnings, ignoredPluginKeyWarnings, MAX_READ_BYTES } from '../facts/normalize'
 import {
   foldEnabledPlugins,
   hookScriptsMatching,
+  isPluginKey,
   MAX_KEY_CHARS,
   parseEnabledPlugins,
   parseInstalledPlugins,
@@ -187,15 +188,18 @@ export function projectSettings(sources: readonly SettingsEntry[]): ProjectedSet
   }
 }
 
-/** One warning per settings key and enabledPlugins key that clean would change, as the Facts report them. */
+/**
+ * One warning per settings key and enabledPlugins key that clean would change, as the Facts report them, then the
+ * enabledPlugins keys isPluginKey refuses, which parseEnabledPlugins skipped, named and capped
+ * (ignoredPluginKeyWarnings, D-267).
+ */
 export function settingsNameWarnings(sources: readonly SettingsEntry[]): string[] {
+  const pluginKeys = sources.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins'))
+
   return [
     ...hiddenNameWarnings(sources.flatMap(entry => keysOf(entry.value)), 'settingsKey', MAX_KEY_CHARS),
-    ...hiddenNameWarnings(
-      sources.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins')),
-      'enabledPluginsKey',
-      MAX_KEY_CHARS,
-    ),
+    ...hiddenNameWarnings(pluginKeys, 'enabledPluginsKey', MAX_KEY_CHARS),
+    ...ignoredPluginKeyWarnings(pluginKeys.filter(key => !isPluginKey(key))),
   ]
 }
 
@@ -216,7 +220,9 @@ export async function readSettings(io: InitIo, warnings: string[]): Promise<Sett
 
 /**
  * The keys of the plugins installed for the user or for this repo, from `installed_plugins.json` in the user folder.
- * The install paths, scopes and versions in the file are read only to decide that, and are not kept.
+ * The install paths, scopes and versions in the file are read only to decide that, and are not kept. A key clean would
+ * change is named in a hidden-name warning, and a key isPluginKey refuses, which parseInstalledPlugins skipped, in an
+ * ignored-key warning (ignoredPluginKeyWarnings, D-267); the file is only read, never rewritten.
  */
 export async function installedPluginKeys(
   io: InitIo,
@@ -226,7 +232,11 @@ export async function installedPluginKeys(
 ): Promise<string[]> {
   if (userDir === null) return []
   const value = await readJson(io, ctx, `${userDir}/plugins/installed_plugins.json`, MAX_READ_BYTES, warnings)
-  warnings.push(...hiddenNameWarnings(fieldKeysOf(value, 'plugins'), 'installedPluginKey', MAX_KEY_CHARS))
+  const keys = fieldKeysOf(value, 'plugins')
+  warnings.push(
+    ...hiddenNameWarnings(keys, 'installedPluginKey', MAX_KEY_CHARS),
+    ...ignoredPluginKeyWarnings(keys.filter(key => !isPluginKey(key))),
+  )
 
   return parseInstalledPlugins(value, ctx.root, ctx.givenRoot).map(plugin => plugin.key)
 }

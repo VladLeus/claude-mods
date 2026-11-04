@@ -6,7 +6,7 @@
  */
 import type { EntryKind, Facts, RawFacts, RepoEntry } from '../../../types'
 import { fieldKeysOf, isObject } from '../../core/json'
-import { clean, isChangedByClean } from '../../core/text'
+import { clean, isChangedByClean, shown } from '../../core/text'
 import { gsdFactOf, usableCandidates } from '../../framework/gsd/identity'
 import { t, tn } from '../../locales/t'
 import { MAX_WARNING_CHARS, safeWarnings } from '../../paths'
@@ -107,6 +107,20 @@ export function hiddenNameWarnings(names: readonly string[], kind: HiddenNameKin
   if (rest === 0) return named
 
   return [...named, texts.more(rest)]
+}
+
+/**
+ * One warning per plugin key isPluginKey refused (D-267), naming the key as `shown` cleans and caps it, at most
+ * MAX_HIDDEN_NAME_WARNINGS of them, then one warning that counts the rest, as hiddenNameWarnings does. A key given
+ * twice, such as the same key in two settings files, counts once.
+ */
+export function ignoredPluginKeyWarnings(keys: readonly string[]): string[] {
+  const ignored = Array.from(new Set(keys))
+  const named = ignored.slice(0, MAX_HIDDEN_NAME_WARNINGS).map(key => t('scan.ignoredPluginKey', { key: shown(key) }))
+  const rest = ignored.length - named.length
+  if (rest === 0) return named
+
+  return [...named, tn('scan.ignoredPluginKeyMore', rest, { rest })]
 }
 
 function isEntryKind(value: unknown): value is EntryKind {
