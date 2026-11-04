@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionHandout, Plan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
+import { clean } from '../../core/text'
 import { PANE_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { recommend } from '../../roles/recommend'
@@ -33,7 +34,7 @@ import {
   rolesContext,
 } from '../../ui/blocks/context'
 import { recommendationLines } from '../../ui/blocks/recommendations'
-import { PANE_PAGE_ROWS } from '../../ui/pane'
+import { PANE_PAGE_ROWS, UNCUT, wrapLine } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
 import type { Surface } from '../../ui/surface'
 import type { Draft, PlanResult } from '../draft'
@@ -638,6 +639,28 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
     expect(second.openQuestion?.spec.context?.lines).toEqual(lines)
     expect(second.openQuestion?.spec.options).toEqual(['Next page', 'Previous page', 'Confirm', 'Change something…'])
     expect([second.rounds, second.openQuestion?.spec.acceptsTyped]).toEqual([0, undefined])
+  })
+
+  test('at the page width a page holds the whole lines whose wrapped rows fit PANE_PAGE_ROWS - 1 (D-261)', async () => {
+    const state = reviewAt({}, { pageColumns: 40 })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const lines = pagedLines(asking)
+    const pages: string[][] = [[]]
+    let used = 0
+    for (const line of lines) {
+      const rows = wrapLine(clean(line, UNCUT), 40).length
+      const page = pages.at(-1) ?? []
+      if (page.length > 0 && used + rows > PANE_PAGE_ROWS - 1) {
+        pages.push([line])
+        used = rows
+        continue
+      }
+      page.push(line)
+      used += rows
+    }
+    expect(lines.some(line => line.length > 40)).toBe(true)
+    expect(asking.openQuestion?.spec.context?.lines).toEqual(pages[0])
+    expect(asking.openQuestion?.spec.context?.title).toBe(`Review (page 1 of ${pages.length})`)
   })
 
   test('a review that fits one page offers Confirm and Change something… only, titled Review (ASKED #23)', async () => {
