@@ -719,8 +719,8 @@ export async function performState(io: InitIo, options: InitOptions, state: Init
  * conflicted file (D-67), running the accepted hunks first, then installing the plugins answered Install from the home
  * folder, and writing the plan made again from the disk (D-120), with the improver pass on each built role file before
  * the manifest (D-141), and replies with the plan as written and what the apply did (initReplyText). Every step gives a
- * StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the reason as its
- * own line and answers cancelledReply with the step's reason (D-45), so only values the person accepted reach the steps
+ * StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step answers cancelledReply
+ * with the step's reason, the one place it is printed (D-45, D-265), so only values the person accepted reach the steps
  * after it, and nothing is written or installed before Confirm. Every answer lives in memory for this one run, and
  * nothing is kept for the next (D-45, D-82). The order, the merges and the cancels are the stage machine's
  * (init/machine, D-230): runInit only shows each state's outputs, holds their folds for the questions of the next stage

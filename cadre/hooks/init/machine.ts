@@ -2,19 +2,18 @@
  * The /cadre init stage machine (D-204, D-230), a layer 10 module: STAGES, the StageDef of every InitStage;
  * initialState, a run with its first effect out; and nextStage, the one transition: the open stage takes the answer,
  * and once that stage is done the stages after it in STAGE_ORDER are entered until one sets an effect. A cancelled
- * stage has its reason logged as its own line and ends the run with cancelledReply (A1, D-45); an answer that does not
- * fit the effect that is out, or any answer once the run ended, ends it with INIT_CANCELLED (fail closed). Every stage
- * is a pure StageDef of init/stages, but for the guard and the scans, which are io effects here. Pure: it gives states
- * and never performs an effect; only init/run and the tests import it.
+ * stage ends the run with cancelledReply, the one place its reason is printed (A1, D-45, D-265); an answer that does
+ * not fit the effect that is out, or any answer once the run ended, ends it with INIT_CANCELLED (fail closed). Every
+ * stage is a pure StageDef of init/stages, but for the guard and the scans, which are io effects here. Pure: it gives
+ * states and never performs an effect; only init/run and the tests import it.
  */
 import { isObject } from '../core/json'
-import { reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
 import { proposeRoles } from '../roles/propose'
 import type { Surface } from '../ui/surface'
 import { cancelledReply, INIT_CANCELLED } from './replies'
-import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect, withOutputs } from './state'
+import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect } from './state'
 import type { Answer, Effect, InitStage, InitState, Kept, StageDef } from './state'
 import { assignStage } from './stages/assign'
 import { carryStage } from './stages/carry'
@@ -122,12 +121,11 @@ function failed(state: InitState): InitState {
 }
 
 /**
- * A run a stage cancelled (A1, D-45): its reason logged as its own line, cleaned as a report cell, the one place a
- * cancel reason is printed, then the reply that names it too (cancelledReply, batch-1 review S1).
+ * A run a stage cancelled (A1, D-45): it ends with the reply that names the reason (cancelledReply, batch-1 review
+ * S1), the one place a cancel reason is printed, so no output logs it as a line of its own (D-265).
  */
 function cancelledWith(state: InitState, reason: string): InitState {
-  const logged = withOutputs(state, [{ kind: 'log', text: reportText(reason) }])
-  const ended: InitState = { ...logged, stage: 'cancelled', sub: { kind: 'start' } }
+  const ended: InitState = { ...state, stage: 'cancelled', sub: { kind: 'start' } }
 
   return withEffect(ended, { kind: 'end', reply: cancelledReply(reason) })
 }

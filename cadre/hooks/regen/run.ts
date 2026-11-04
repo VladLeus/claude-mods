@@ -32,12 +32,10 @@ export type RegenOptions = (
 }
 
 /**
- * The reply of a regen cancelled at one of its questions: its reason logged as its own line, the one place it is
- * printed (A1), and regenCancelledReply of it, so the reply names it too (AUTO-PICK #19 Q7).
+ * The reply of a regen cancelled at one of its questions: regenCancelledReply of its reason (AUTO-PICK #19 Q7), the
+ * one place the reason is printed, so it shows once (A1, D-265).
  */
-function regenCancelReply(io: InitIo, reason: string): string {
-  io.log(reportText(reason))
-
+function regenCancelReply(reason: string): string {
   return regenCancelledReply(reason)
 }
 
@@ -51,10 +49,10 @@ function regenCancelReply(io: InitIo, reason: string): string {
  * (regenScans), a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or is not valid
  * (REGEN_BAD_MANIFEST, A2). Then it hands out what changed in the files and memories the role's records name
  * (regenHandout, G-02-1f Regen): in a session it asks about each new or changed item, and a dismissed or unanswered
- * question cancels with regenCancelledReply, its reason logged as its own line, before anything is written (AUTO-PICK
- * #19 Q7); where no one can be asked it asks and logs nothing and says what it left out. A role.json with no records
- * asks and logs nothing, as before. It plans that one role (regenPlan). --dry-run replies with the plan, the dropped
- * lines, a `warning:` line for each warning and the note that nothing was written; plain regen writes the plan
+ * question cancels with regenCancelledReply, the one place its reason is printed, before anything is written (D-265,
+ * AUTO-PICK #19 Q7); where no one can be asked it asks and logs nothing and says what it left out. A role.json with no
+ * records asks and logs nothing, as before. It plans that one role (regenPlan). --dry-run replies with the plan, the
+ * dropped lines, a `warning:` line for each warning and the note that nothing was written; plain regen writes the plan
  * (regenApply): a conflicted file is kept and its `.cadre-new` copy written, as an unanswered conflict is (D-67),
  * cadre.json is never among its files, a manifest the plan keeps as a conflict is not written, and in a session the
  * improver pass runs on the rebuilt files (D-141). It then replies with the plan, the dropped lines, the warnings and
@@ -89,7 +87,7 @@ export async function runRegen(given: InitIo, options: RegenOptions): Promise<st
   const { setup } = scans.value.gathered
   const host = options.dryRun ? null : options.host
   const handed = await regenHandout(io, host, { id, role, locations, setup })
-  if (handed.kind === 'cancelled') return regenCancelReply(io, handed.reason)
+  if (handed.kind === 'cancelled') return regenCancelReply(handed.reason)
 
   const input = { id, state, roles, roleJson, locations, scans: scans.value, handed: handed.value }
   const planned = await regenPlan(io, input)

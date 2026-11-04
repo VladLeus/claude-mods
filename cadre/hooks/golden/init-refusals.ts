@@ -121,9 +121,7 @@ export const GOLDEN_INIT_REFUSALS: Readonly<Record<string, GoldenRun>> = {
         "multiSelect": false
       }
     ],
-    "logged": [
-      "No usable answer after 3 tries."
-    ],
+    "logged": [],
     "shown": [],
     "promptHashes": [],
     "reply": [
