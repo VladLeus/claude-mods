@@ -179,6 +179,7 @@ import {
 } from '../ui/pane'
 import type { SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
+import { PANE_FULLSCREEN } from '../ui/surfaces/pane-fullscreen'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
@@ -6383,7 +6384,7 @@ describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () =>
 
   test('a pane seated inline asks the own-skills entry once, unpaged, with its own options (N-02)', async () => {
     const run = memIo(oversizeWorld({ replies }), answers)
-    await runInit(run.io, { dryRun: true, surface: PANE_DESKTOP, paneSeat: () => 'inline' })
+    await runInit(run.io, { dryRun: true, surface: PANE_FULLSCREEN, paneSeat: () => 'inline' })
     const entries = run.specs.filter((_, at) => (run.asked[at] ?? '').startsWith(OWN_SKILLS_ENTRY_PREFIX))
     expect(entries.map(spec => [spec.context?.page, spec.options])).toEqual([
       [undefined, ['Accept recommendations', 'Go one by one', 'Whole group']],

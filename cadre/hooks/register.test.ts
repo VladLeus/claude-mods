@@ -2026,6 +2026,8 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     const log = newLog()
     openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
+    // A bare /cadre selects the surface module: the terminal alone with no presentation is fullscreen (D-358).
+    await $.command.run({ command: 'cadre', args: '' })
     await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
     const before = log.askPreviews.length
     await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
@@ -2203,6 +2205,21 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
       const ask = await seatAfterRun($, DOCK_PANE)
       expect(await ask('Pick one?', PICK_SPEC)).toBe('A')
       expect(log.askOptions.at(-1)).toEqual(['A', 'B'])
+    },
+  )
+
+  test(
+    'on the desktop an inline-seated pane gives no preview and the typed answer stands (D-354)',
+    WITH_ASKER,
+    async ($, on) => {
+      const log = newLog()
+      openAsCadre(on, 'Pick one?', PICK_CONTEXT)
+      const answers = { ...INIT_ANSWERS, 'Pick one?': 'my words' }
+      fakeHost(on, initWorld({ surfaces: ['terminal', 'desktop'], answers }), log)
+      const ask = await seatAfterRun($, INLINE_PANE)
+      const before = log.askPreviews.length
+      expect(await ask('Pick one?', PICK_SPEC)).toBe('my words')
+      expect([log.askPreviews.slice(before), log.askOptions.slice(before)]).toEqual([NO_PREVIEWS, [['A', 'B']]])
     },
   )
 
