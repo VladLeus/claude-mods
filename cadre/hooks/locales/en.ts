@@ -1043,47 +1043,47 @@ export const EN = Object.freeze({
   'scan.facts.collect.locationsOf2': 'the home folder',
 
   'scan.hidden.repoEntry': 'ignored repo entry "{shown}": its name has hidden characters or is too long',
-  'scan.hidden.repoEntryMore.one': 'ignored {rest} more repo entry names that have hidden characters or are too long',
+  'scan.hidden.repoEntryMore.one': 'ignored {rest} more repo entry name that has hidden characters or is too long',
   'scan.hidden.repoEntryMore.other': 'ignored {rest} more repo entry names that have hidden characters or are too long',
   'scan.hidden.docsEntry': 'ignored docs/ entry "{shown}": its name has hidden characters or is too long',
-  'scan.hidden.docsEntryMore.one': 'ignored {rest} more docs/ entry names that have hidden characters or are too long',
+  'scan.hidden.docsEntryMore.one': 'ignored {rest} more docs/ entry name that has hidden characters or is too long',
   'scan.hidden.docsEntryMore.other':
     'ignored {rest} more docs/ entry names that have hidden characters or are too long',
   'scan.hidden.enabledPluginsKey':
     'ignored enabledPlugins key "{shown}": its name has hidden characters or is too long',
   'scan.hidden.enabledPluginsKeyMore.one':
-    'ignored {rest} more enabledPlugins key names that have hidden characters or are too long',
+    'ignored {rest} more enabledPlugins key name that has hidden characters or is too long',
   'scan.hidden.enabledPluginsKeyMore.other':
     'ignored {rest} more enabledPlugins key names that have hidden characters or are too long',
   'scan.hidden.installedPluginKey':
     'ignored installed plugin key "{shown}": its name has hidden characters or is too long',
   'scan.hidden.installedPluginKeyMore.one':
-    'ignored {rest} more installed plugin key names that have hidden characters or are too long',
+    'ignored {rest} more installed plugin key name that has hidden characters or is too long',
   'scan.hidden.installedPluginKeyMore.other':
     'ignored {rest} more installed plugin key names that have hidden characters or are too long',
   'scan.hidden.settingsKey': 'ignored settings key "{shown}": its name has hidden characters or is too long',
   'scan.hidden.settingsKeyMore.one':
-    'ignored {rest} more settings key names that have hidden characters or are too long',
+    'ignored {rest} more settings key name that has hidden characters or is too long',
   'scan.hidden.settingsKeyMore.other':
     'ignored {rest} more settings key names that have hidden characters or are too long',
   'scan.hidden.mcpServerName': 'ignored MCP server name "{shown}": its name has hidden characters or is too long',
   'scan.hidden.mcpServerNameMore.one':
-    'ignored {rest} more MCP server name names that have hidden characters or are too long',
+    'ignored {rest} more MCP server name name that has hidden characters or is too long',
   'scan.hidden.mcpServerNameMore.other':
     'ignored {rest} more MCP server name names that have hidden characters or are too long',
   'scan.hidden.commandOrPluginName':
     'ignored command or plugin name "{shown}": its name has hidden characters or is too long',
   'scan.hidden.commandOrPluginNameMore.one':
-    'ignored {rest} more command or plugin name names that have hidden characters or are too long',
+    'ignored {rest} more command or plugin name name that has hidden characters or is too long',
   'scan.hidden.commandOrPluginNameMore.other':
     'ignored {rest} more command or plugin name names that have hidden characters or are too long',
   'scan.hidden.memoryFileName': 'ignored memory file name "{shown}": its name has hidden characters or is too long',
   'scan.hidden.memoryFileNameMore.one':
-    'ignored {rest} more memory file name names that have hidden characters or are too long',
+    'ignored {rest} more memory file name name that has hidden characters or is too long',
   'scan.hidden.memoryFileNameMore.other':
     'ignored {rest} more memory file name names that have hidden characters or are too long',
   'scan.hidden.agentName': 'ignored agent name "{shown}": its name has hidden characters or is too long',
-  'scan.hidden.agentNameMore.one': 'ignored {rest} more agent name names that have hidden characters or are too long',
+  'scan.hidden.agentNameMore.one': 'ignored {rest} more agent name name that has hidden characters or is too long',
   'scan.hidden.agentNameMore.other': 'ignored {rest} more agent name names that have hidden characters or are too long',
   'scan.ignoredPluginKey': 'ignored plugin key: {key}',
   'scan.ignoredPluginKeyMore.one': 'ignored {rest} more plugin key',
@@ -1223,7 +1223,7 @@ export const EN = Object.freeze({
   'plan.text.hunkRows2': '  {pad}{file}  {change}  ({flags})',
   'plan.text.hunkRows3': '{detailIndent}run: {command}',
   'plan.text.planSummary': '0 hunks',
-  'plan.text.planSummary2.one': '{hunks} hunks ({accepted} accepted)',
+  'plan.text.planSummary2.one': '{hunks} hunk ({accepted} accepted)',
   'plan.text.planSummary2.other': '{hunks} hunks ({accepted} accepted)',
   'plan.text.planSummary3': '{create} create, {change} change, {leave} leave, {conflict} conflict',
   'plan.text.planSummary4': 'Summary: {kinds}, {hunkCount}',

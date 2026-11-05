@@ -575,7 +575,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         {
           "question": [
             "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-            "Summary: 25 create, 0 change, 0 leave, 0 conflict, 1 hunks (1 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+            "Summary: 25 create, 0 change, 0 leave, 0 conflict, 1 hunk (1 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
             "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
           ],
           "header": "Review",
@@ -628,7 +628,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         "            # <<< cadre",
         "  hunk      .planning/config.json  mode: not set (GSD default) -> \"yolo\"  (required, accepted)",
         "            run: node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo",
-        "Summary: 25 create, 0 change, 0 leave, 0 conflict, 1 hunks (1 accepted)",
+        "Summary: 25 create, 0 change, 0 leave, 0 conflict, 1 hunk (1 accepted)",
         "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
         "Launchers start in: the git root",
         "Applied: wrote 25 files (3 executable).",
