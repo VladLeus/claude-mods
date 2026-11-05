@@ -240,8 +240,9 @@ export function mcpEntry(count: number): Omit<HandoutEntry, 'context'> {
 /**
  * Each MCP server as a hand-out item (D-250), in the order given: its name as its id, its question (mcpQuestion) with
  * the team's role ids on the second line (mcpContextLine), the chip `MCP <i>/<n>`, the roles `recommended` gives it by
- * name, none when it gives none, its own context: its source, the tools the session lists for it as `words` allows
- * them and those roles, its summary those roles, which a pane surface asks (mcpServerContext, D-211, D-256, D-310).
+ * name, none when it gives none, its own context: its source, the tools the session lists for it among the scanned
+ * `serverNames` as `words` allows them and those roles, its summary those roles, which a pane surface asks
+ * (mcpServerContext, D-211, D-256, D-310, D-272 edge #8).
  */
 export function mcpServerItems(
   servers: readonly McpRef[],
@@ -249,6 +250,7 @@ export function mcpServerItems(
   recommended: ReadonlyMap<string, readonly string[]>,
   roles: readonly RoleSpec[],
   words: ListWords,
+  serverNames: readonly string[],
 ): HandoutItem[] {
   return servers.map((ref, index) => {
     const roleIds = recommended.get(ref.name) ?? []
@@ -259,7 +261,7 @@ export function mcpServerItems(
       contextLine: mcpContextLine(roles),
       header: countedChip(t('init.assign.mcpChip'), index + 1, servers.length),
       recommended: roleIds,
-      context: mcpServerContext(ref, toolNames, roleIds, words),
+      context: mcpServerContext(ref, toolNames, roleIds, words, serverNames),
     }
   })
 }

@@ -6,15 +6,16 @@
  * skill alone. Each context also gives the structured rows the pane draws from the same values (D-313, D-323): a
  * skill and a server of the list for all the servers as item rows (itemRows of ui/blocks/context, D-311). Every
  * value is cleaned and capped here (D-222), and a description's secret-like spans are hidden (redactedText, E1); a
- * description is not cut here, as the scan capped it at MAX_REPORT_CHARS (D-312, D-330). It imports core, the UNCUT
- * rule of ui/pane, the item rows and role ids text of ui/blocks/context and the types, so the assignment stage reads
- * it here.
+ * description is not cut here, as the scan capped it at MAX_REPORT_CHARS (D-312, D-330). It imports core, the engine's
+ * MCP tool name form of scope/card (mcpToolName), the UNCUT rule of ui/pane, the item rows and role ids text of
+ * ui/blocks/context and the types, so the assignment stage reads it here.
  */
 import type { AskContext, ContextRow, ContextSection, McpRef, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, shown, sortedUnique } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { keyLabel, t, tn } from '../../locales/t'
+import { mcpToolName } from '../../scope/card'
 import { UNCUT } from '../pane'
 import { itemRows, roleIdsText } from './context'
 
@@ -62,15 +63,21 @@ export function mcpSourceText(ref: McpRef): string {
 }
 
 /**
- * The tool names of one MCP server in the session's tool names (D-211): each name of the form
- * `mcp__<server>__<tool>`, its tool part cleaned and capped as a shown name, once each and sorted. Only names are
- * read, never a description; anything but a list gives none.
+ * The tool names of one MCP server in the session's tool names (D-211): each name that starts with the server's tool
+ * prefix as the engine forms it, `mcp__<server>__` with the server name normalised (mcpToolName, D-272 edge #8), its
+ * tool part cleaned and capped as a shown name, once each and sorted. A name that also starts with the prefix of a
+ * longer server among the scanned `servers` is that server's, never this one's. Only names are read, never a
+ * description; anything but a list gives none.
  */
-export function mcpToolNamesOf(tools: unknown, server: string): string[] {
+export function mcpToolNamesOf(tools: unknown, server: string, servers: readonly string[]): string[] {
   if (!Array.isArray(tools)) return []
-  const prefix = `mcp__${server}__`
+  const prefix = `${mcpToolName(server)}__`
+  const longer = servers
+    .map(other => `${mcpToolName(other)}__`)
+    .filter(other => other.length > prefix.length && other.startsWith(prefix))
   const names = tools.flatMap(name => {
     if (typeof name !== 'string' || !name.startsWith(prefix) || name.length === prefix.length) return []
+    if (longer.some(other => name.startsWith(other))) return []
 
     return [shown(name.slice(prefix.length))]
   })
@@ -80,18 +87,19 @@ export function mcpToolNamesOf(tools: unknown, server: string): string[] {
 
 /**
  * The context of an MCP server question (D-211, D-236): the server by name, its source (mcpSourceText), the tools the
- * session lists for it (mcpToolNamesOf), counted first, then the names `words` allows and how many more (every name
- * on a pane surface, D-256), or, when it lists none, `Tools: not connected, tools unknown`, a field row in its rows
- * (D-317, D-331), and the roles recommended for it, or none, which are its summary too (D-310). No other field of the
- * server or its tools is read (T-02.1-72).
+ * session lists for it among the scanned `servers` (mcpToolNamesOf), counted first, then the names `words` allows and
+ * how many more (every name on a pane surface, D-256), or, when it lists none, `Tools: not connected, tools unknown`,
+ * a field row in its rows (D-317, D-331), and the roles recommended for it, or none, which are its summary too
+ * (D-310). No other field of the server or its tools is read (T-02.1-72).
  */
 export function mcpServerContext(
   ref: McpRef,
   sessionTools: unknown,
   recommended: readonly string[],
   words: ListWords,
+  servers: readonly string[],
 ): AskContext {
-  const tools = mcpToolNamesOf(sessionTools, ref.name)
+  const tools = mcpToolNamesOf(sessionTools, ref.name, servers)
   const toolsLine = tools.length === 0 ? NOT_CONNECTED_LINE : t('ui.assign.mcpServerContext2', {
     count: tools.length,
     tools: cardList(tools, words),

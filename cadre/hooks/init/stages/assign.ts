@@ -95,14 +95,15 @@ function assignPlan(state: InitState): AssignPlan | null {
 
 /**
  * The mcp model effect (D-248): one call for every server to ask, each with the source word its question's context
- * shows (mcpSourceText), the tool names the session lists for it (mcpToolNamesOf, names only, D-211) and the roles the
- * name table seeds for it (D-249), before the first server question.
+ * shows (mcpSourceText), the tool names the session lists for it among every scanned server (mcpToolNamesOf, names
+ * only, D-211, D-272 edge #8) and the roles the name table seeds for it (D-249), before the first server question.
  */
 function mcpCalled(state: InitState, plan: AssignPlan): InitState {
+  const scanned = plan.setup.mcp.map(ref => ref.name)
   const servers = plan.mcp.names.map(name => ({
     name,
     source: mcpSourceText(mcpRefOf(plan.setup.mcp, name)),
-    tools: mcpToolNamesOf(state.toolNames, name),
+    tools: mcpToolNamesOf(state.toolNames, name, scanned),
     seed: plan.mcp.seeds.get(name) ?? [],
   }))
   const calling: InitState = { ...state, sub: { kind: 'mcp-model', done: [] } }
@@ -119,7 +120,8 @@ function mcpStart(state: InitState, plan: AssignPlan, recommended: ReadonlyMap<s
   const { names } = plan.mcp
   if (names.length === 0) return skillsStart(state, plan, [])
   const refs = names.map(name => mcpRefOf(plan.setup.mcp, name))
-  const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles, listWordsOf(state.surface))
+  const scanned = plan.setup.mcp.map(ref => ref.name)
+  const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles, listWordsOf(state.surface), scanned)
   const context = mcpGroupContext(mcpLinesOf(state, plan, recommended), plan.roles)
   const entry = { ...mcpEntry(names.length), context }
 
@@ -162,8 +164,10 @@ function mcpLinesOf(
   plan: AssignPlan,
   recommended: ReadonlyMap<string, readonly string[]>,
 ): McpLine[] {
+  const scanned = plan.setup.mcp.map(ref => ref.name)
+
   return plan.mcp.names.map(name => {
-    const tools = mcpToolNamesOf(state.toolNames, name).length
+    const tools = mcpToolNamesOf(state.toolNames, name, scanned).length
 
     return {
       name,
