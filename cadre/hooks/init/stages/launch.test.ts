@@ -122,7 +122,12 @@ const NO_DIRS_CONTEXT = {
 }
 
 /** The dialog of the folder question: Type a folder and Cancel init, and a note typed in it is the folder (D-270). */
-const DIR_SPEC = { options: ['Type a folder', 'Cancel init'], header: 'Launch dir', takesNote: true }
+const DIR_SPEC = {
+  options: ['Type a folder', 'Cancel init'],
+  header: 'Launch dir',
+  takesNote: true,
+  endingLabels: ['Cancel init'],
+}
 
 describe('launchStartStep', () => {
   test('the launcher start question is asked once for the repo with three options in a fixed order', () => {

@@ -333,14 +333,16 @@ export function withDescribeOwn(question: CheckedQuestion, preview: string, acce
 /**
  * One question askRewrite rewrote, or the open question a docked pane pairs with itself (A3, D-270): `question`, its
  * text as the caller asked it, `asked`, the text the dialog shows, which the dialog's answers and annotations are
- * keyed by, `labels`, the labels of the options it was asked with, and `takesNote`, whether a note typed in its
- * dialog is its answer (the open question's takesNote).
+ * keyed by, `labels`, the labels of the options it was asked with, `takesNote`, whether a note typed in its dialog is
+ * its answer (the open question's takesNote), and `endingLabels`, the labels whose pick stands over any typed note
+ * (the open question's endingLabels, D-350).
  */
 export type AskedQuestion = {
   readonly question: string
   readonly asked: string
   readonly labels: readonly string[]
   readonly takesNote: boolean
+  readonly endingLabels?: readonly string[]
 }
 
 /** The rewrite of an AskUserQuestion call (A1, A2): the questions the dialog shows, and each question it rewrote. */

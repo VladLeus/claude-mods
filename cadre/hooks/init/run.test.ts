@@ -3813,7 +3813,13 @@ function firstPageSpec(lines: readonly string[], asked: string | undefined, summ
   const pane = { asked, text: `${withContext(REVIEW_QUESTION, summary)}\n${title}` }
   const context = { title, lines: lines.slice(0, size), kind: 'review', summary, pane }
 
-  return { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', takesNote: true, context }
+  return {
+    options: ['Next page', 'Confirm', 'Change something…'],
+    header: 'Review',
+    takesNote: true,
+    endingLabels: ['Confirm'],
+    context,
+  }
 }
 
 /** A user-level GSD install found but not proven, as in the D-243 spec of runInit (WF-S2). */

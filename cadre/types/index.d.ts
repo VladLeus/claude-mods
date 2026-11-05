@@ -497,8 +497,8 @@ export type AskContext = {
 
 /**
  * One dialog question's options: 2 to 4 labels, an optional header chip (12 characters at most), multi-select; and,
- * kept out of the dialog, the question's own context, whether it takes a typed answer and whether a note typed in its
- * dialog is its answer (D-203, D-229, D-234, D-270).
+ * kept out of the dialog, the question's own context, whether it takes a typed answer, whether a note typed in its
+ * dialog is its answer and which options end it (D-203, D-229, D-234, D-270, D-348, D-350).
  */
 export type AskSpec = {
   readonly options: readonly string[]
@@ -514,6 +514,11 @@ export type AskSpec = {
    * options.
    */
   readonly takesNote?: true
+  /**
+   * The labels of the options whose pick ends the question (the Launch folder's Cancel init, the Review's Confirm);
+   * such a pick stands over any note typed in the dialog on every surface, one naming another option included (D-350).
+   */
+  readonly endingLabels?: readonly string[]
   /**
    * How the options of a paged question are spread over its pages on a pane surface (D-306, D-307, D-328, D-329):
    * `always` shows on every page, `dropped` on none, and every other option on the last page only. A question with
@@ -642,6 +647,8 @@ export type OpenQuestion = {
    * or a note (D-270, D-348).
    */
   readonly takesNote: boolean
+  /** The spec's endingLabels, absent when it names none (D-350). */
+  readonly endingLabels?: readonly string[]
 }
 
 /**

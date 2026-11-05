@@ -254,7 +254,7 @@ describe('the review stage (D-230)', () => {
     const own = { title, lines: lines.slice(0, PANE_PAGE_ROWS - 1), kind: 'review', summary: REVIEW_SUMMARY, pane }
     const options = ['Next page', 'Confirm', 'Change something…']
     // Change something… takes the item in a note (D-270).
-    const spec = { options, header: 'Review', takesNote: true, context: own }
+    const spec = { options, header: 'Review', takesNote: true, endingLabels: ['Confirm'], context: own }
     const ask = { question: reviewQuestion(context), spec }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
     expect(asking.openQuestion).toEqual(ask)

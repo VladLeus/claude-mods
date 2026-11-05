@@ -1931,8 +1931,9 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   /**
    * Has the host read `question` as the question cadre has open (D-239), with `context` as its own context (D-203),
    * one that takes a typed answer unless `acceptsTyped` says not (D-234) and a note when it takes a typed answer or
-   * `takesNote` says so (D-270): every read of cadre's pane state gives it open with no loader (D-303), so a dialog
-   * that asks it is cadre's own and the hook may rewrite it, as init's own questions are.
+   * `takesNote` says so (D-270), and the options that end it when `endingLabels` names them (D-350): every read of
+   * cadre's pane state gives it open with no loader (D-303), so a dialog that asks it is cadre's own and the hook may
+   * rewrite it, as init's own questions are.
    */
   function openAsCadre(
     on: HostOn,
@@ -1940,8 +1941,16 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     context: AskContext | null = PICK_CONTEXT,
     acceptsTyped = true,
     takesNote = acceptsTyped,
+    endingLabels: readonly string[] | null = null,
   ): void {
-    const open = { question, header: null, context, acceptsTyped, takesNote }
+    const open = {
+      question,
+      header: null,
+      context,
+      acceptsTyped,
+      takesNote,
+      ...(endingLabels === null ? {} : { endingLabels }),
+    }
     on('state.get', async (_$, e, next) => {
       if (e.plugin !== 'cadre' || e.key !== 'pane') return next(e)
 
@@ -2256,6 +2265,38 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     const ask = await seatAfterRun($, DOCK_PANE)
     expect(await ask('Folder?', { options: ['Type a folder', 'Cancel init'], header: 'Launch dir' })).toBe('apps/web')
   })
+
+  test('on a docked pane Cancel init stands over a typed note (D-350)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    openAsCadre(on, 'Folder?', null, false, true, ['Cancel init'])
+    const answers = { ...INIT_ANSWERS, 'Folder?': 'Cancel init' }
+    fakeHost(on, initWorld({ answers, notes: { 'Folder?': ' apps/web ' } }), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    const spec = { options: ['Type a folder', 'Cancel init'], header: 'Launch dir' }
+    expect(await ask('Folder?', spec)).toBe('Cancel init')
+  })
+
+  test('on a docked pane Confirm stands over a typed note (D-350)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    openAsCadre(on, 'Review it?', PICK_CONTEXT, false, true, ['Confirm'])
+    const answers = { ...INIT_ANSWERS, 'Review it?': 'Confirm' }
+    fakeHost(on, initWorld({ answers, notes: { 'Review it?': ' roles ' } }), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    expect(await ask('Review it?', CHANGE_SPEC)).toBe('Confirm')
+  })
+
+  test(
+    'on a docked pane a note typed with Change something… is still the answer when Confirm ends the question (D-350)',
+    WITH_ASKER,
+    async ($, on) => {
+      const log = newLog()
+      openAsCadre(on, 'Review it?', PICK_CONTEXT, false, true, ['Confirm'])
+      const answers = { ...INIT_ANSWERS, 'Review it?': 'Change something…' }
+      fakeHost(on, initWorld({ answers, notes: { 'Review it?': ' roles ' } }), log)
+      const ask = await seatAfterRun($, DOCK_PANE)
+      expect(await ask('Review it?', CHANGE_SPEC)).toBe('roles')
+    },
+  )
 
   test('a pane question with no Change something… takes no note as answer (ASKED #24)', WITH_ASKER, async ($, on) => {
     const log = newLog()
@@ -2826,6 +2867,30 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const at = askHeads(log).findIndex(ask => ask.startsWith(`ask ${dir}`))
     expect([at >= 0, log.askOptions[at]]).toEqual([true, ['Type a folder', 'Cancel init']])
     expect(out.text.split('\n')).toContain('Launchers start in: packages/api/ under the git root')
+  })
+
+  test(
+    'on the TUI default Cancel init at the Launch folder cancels init even with a typed note (D-350)',
+    async ($, on) => {
+      const log = newLog()
+      const dir = 'Type the folder the launchers start in'
+      const start = { 'Where should the role launchers start': 'Another folder in this repo', [dir]: 'Cancel init' }
+      const base = initWorld({ answers: { ...INIT_ANSWERS, ...start }, notes: { [dir]: 'packages/api' } })
+      fakeHost(on, { ...base, realPaths: { ...base.realPaths, '/repo/packages/api': '/repo/packages/api' } }, log)
+      const out = await $.command.run(TUI_RUN)
+      expect([
+        out.text.includes('The launcher folder question was dismissed or cancelled.'),
+        out.text.includes('Launchers start in'),
+      ]).toEqual([true, false])
+    },
+  )
+
+  test('on the TUI default Confirm at the Review confirms the plan even with a typed note (D-350)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ answers: INIT_ANSWERS, notes: { 'Review the plan': 'roles' } }), log)
+    const out = await $.command.run(TUI_RUN)
+    expect(askHeads(log).filter(ask => ask.startsWith('ask Review the plan'))).toHaveLength(1)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
   test('a stray note leaves the consent as chosen; a label typed as a Review note picks it (D-270)', async ($, on) => {

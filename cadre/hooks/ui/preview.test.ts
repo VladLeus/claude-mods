@@ -622,6 +622,49 @@ describe('answersFromNotes (A3)', () => {
     expect(answersFromNotes([folder], result)).toEqual({ 'Folder?': 'packages/api' })
   })
 
+  test('a picked Cancel init stands over any typed note (D-350)', () => {
+    const labels = ['Type a folder', 'Cancel init']
+    const folder: AskedQuestion = {
+      question: 'Folder?',
+      asked: 'Folder?',
+      labels,
+      takesNote: true,
+      endingLabels: ['Cancel init'],
+    }
+    const noted = { answers: { 'Folder?': 'Cancel init' }, annotations: { 'Folder?': { notes: ' packages/api ' } } }
+    expect(answersFromNotes([folder], noted)).toEqual({ 'Folder?': 'Cancel init' })
+    const named = { answers: { 'Folder?': 'Cancel init' }, annotations: { 'Folder?': { notes: 'type a folder' } } }
+    expect(answersFromNotes([folder], named)).toEqual({ 'Folder?': 'Cancel init' })
+    const typed = { answers: { 'Folder?': 'Type a folder' }, annotations: { 'Folder?': { notes: ' packages/api ' } } }
+    expect(answersFromNotes([folder], typed)).toEqual({ 'Folder?': 'packages/api' })
+    const notesOnly = { answers: { 'Folder?': '(notes only)' }, annotations: { 'Folder?': { notes: 'cancel init' } } }
+    expect(answersFromNotes([folder], notesOnly)).toEqual({ 'Folder?': 'Cancel init' })
+    const unmarked: AskedQuestion = { question: 'Folder?', asked: 'Folder?', labels, takesNote: true }
+    const plain = { answers: { 'Folder?': 'Cancel init' }, annotations: { 'Folder?': { notes: 'packages/api' } } }
+    expect(answersFromNotes([unmarked], plain)).toEqual({ 'Folder?': 'packages/api' })
+  })
+
+  test('a picked Confirm stands over any typed note; the other Review picks read it as before (D-350)', () => {
+    const labels = ['Next page', 'Confirm', 'Change something…']
+    const review: AskedQuestion = {
+      question: 'Review?',
+      asked: 'Review?',
+      labels,
+      takesNote: true,
+      endingLabels: ['Confirm'],
+    }
+    const noted = { answers: { 'Review?': 'Confirm' }, annotations: { 'Review?': { notes: ' roles ' } } }
+    expect(answersFromNotes([review], noted)).toEqual({ 'Review?': 'Confirm' })
+    const named = { answers: { 'Review?': 'Confirm' }, annotations: { 'Review?': { notes: 'change something…' } } }
+    expect(answersFromNotes([review], named)).toEqual({ 'Review?': 'Confirm' })
+    const change = { answers: { 'Review?': 'Change something…' }, annotations: { 'Review?': { notes: ' roles ' } } }
+    expect(answersFromNotes([review], change)).toEqual({ 'Review?': 'roles' })
+    const label = { answers: { 'Review?': 'Change something…' }, annotations: { 'Review?': { notes: 'confirm' } } }
+    expect(answersFromNotes([review], label)).toEqual({ 'Review?': 'Confirm' })
+    const next = { answers: { 'Review?': 'Next page' }, annotations: { 'Review?': { notes: 'roles' } } }
+    expect(answersFromNotes([review], next)).toEqual({ 'Review?': 'roles' })
+  })
+
   test('a result whose shape does not validate gives null', () => {
     const bad: unknown[] = [
       'x',
@@ -729,6 +772,28 @@ describe('dialogPlan (WD-S2)', () => {
     const noNote: OpenQuestion = { ...open, takesNote: false }
     expect(dialogPlan([PICK_QUESTION], noNote, 'pane', 'dock', 40, CHANGE_LABEL)).toBe(null)
     expect(dialogPlan([PICK_QUESTION], open, 'none', 'dock', 40, CHANGE_LABEL)).toBe(null)
+  })
+
+  test('every surface carries the options that end the open question into its notes (D-350)', () => {
+    const seats: readonly [Surface, 'dock' | 'inline' | null][] = [
+      ['tui-default', null],
+      ['pane', 'inline'],
+      ['pane', 'dock'],
+    ]
+    const open: OpenQuestion = {
+      ...PICK_OPEN,
+      context: CONTEXT,
+      acceptsTyped: false,
+      takesNote: true,
+      endingLabels: ['B'],
+    }
+    const unmarked: OpenQuestion = { ...PICK_OPEN, context: CONTEXT, acceptsTyped: false, takesNote: true }
+    for (const [surface, placement] of seats) {
+      const plan = dialogPlan([PICK_QUESTION], open, surface, placement, 40, CHANGE_LABEL)
+      expect(plan?.notes.map(note => note.endingLabels)).toEqual([['B']])
+      const plain = dialogPlan([PICK_QUESTION], unmarked, surface, placement, 40, CHANGE_LABEL)
+      expect(plain?.notes.map(note => Object.hasOwn(note, 'endingLabels'))).toEqual([false])
+    }
   })
 
   test('a multi-select question is copied unchanged and has no note', () => {
