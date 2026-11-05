@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { PANE_LIST_WORDS, SCREEN_LIST_WORDS } from '../../locales/t'
+import { memIo, memWorld } from '../../testkit'
+import type { PageView } from './contract'
+import { NO_SURFACE } from './none'
+import { PANE_DESKTOP } from './pane-desktop'
+import { PANE_FULLSCREEN } from './pane-fullscreen'
 import { surfaceModuleOf } from './select'
+import { TUI_DEFAULT } from './tui-default'
 
 /** The presentation of a command run on the terminal main screen (D-208). */
 const MAIN_SCREEN = { isFullscreen: false, columns: 120 }
@@ -49,5 +56,23 @@ describe('surfaceModuleOf (D-208, D-353)', () => {
   test('an entry of the list that is not a surface name counts as a surface beside the terminal', () => {
     expect(surfaceModuleOf(MAIN_SCREEN, ['terminal', 3]).id).toBe('pane-desktop')
     expect(surfaceModuleOf(MAIN_SCREEN, [null]).id).toBe('pane-desktop')
+  })
+})
+
+describe('the list words of each module (D-256, D-353)', () => {
+  test('a pane surface lists every name; the TUI default and a run with no surface keep the screen cap of 12', () => {
+    expect(PANE_DESKTOP.listWords).toBe(PANE_LIST_WORDS)
+    expect(PANE_FULLSCREEN.listWords).toBe(PANE_LIST_WORDS)
+    expect(TUI_DEFAULT.listWords).toBe(SCREEN_LIST_WORDS)
+    expect(NO_SURFACE.listWords).toBe(SCREEN_LIST_WORDS)
+  })
+})
+
+describe('the paged port of the modules that never page (D-306, D-353)', () => {
+  test('the TUI default and a surface that shows no context are given the port as it is', () => {
+    const { io } = memIo(memWorld({}), [])
+    const view: PageView = { columns: () => null, seat: () => null }
+    expect(TUI_DEFAULT.pagedPort(io, view)).toBe(io)
+    expect(NO_SURFACE.pagedPort(io, view)).toBe(io)
   })
 })

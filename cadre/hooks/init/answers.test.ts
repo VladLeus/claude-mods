@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec, SkillRef } from '../../types'
+import { withMax } from '../core/text'
 import { SCREEN_LIST_WORDS } from '../locales/t'
 import { EFFORTS } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { BIDI_OVERRIDE, PM, role, TL } from '../testkit'
-import { withMax } from '../ui/surface'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,

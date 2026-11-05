@@ -9,14 +9,13 @@
  */
 import type { ContextRow, Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
 import { redactSecrets } from '../core/redact'
-import { clean, idsOrNone, sortedUnique } from '../core/text'
+import { clean, idsOrNone, sortedUnique, withMax } from '../core/text'
 import type { ListWords } from '../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../locales/t'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
 import { skillItemRows } from '../ui/blocks/assign'
-import { withMax } from '../ui/surface'
 import type { NameAssignment, SkillGroup } from './assign-rules'
 
 /** The dialog button that gives an item to no role. A typed answer of the same words counts the same, in any case. */

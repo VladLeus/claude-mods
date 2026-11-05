@@ -1,8 +1,8 @@
 /**
  * The text helpers every module shares, a layer 0 leaf: clean and its display caps (reportText, shown, idLabel), list
- * wording (idsOrNone, asSentence, cardList), column padding, code unit order (compareText, sortedUnique), UTF-8 sizes
- * and ASCII lowercasing. It imports no other module, so facts, render, ask, history and every later layer can import
- * it with no cycle; ask.ts takes reportText from here, not from render.ts (C11).
+ * wording (idsOrNone, asSentence, cardList, withMax), column padding, code unit order (compareText, sortedUnique),
+ * UTF-8 sizes and ASCII lowercasing. It imports no other module, so facts, render, ask, history and every later layer
+ * can import it with no cycle; ask.ts takes reportText from here, not from render.ts (C11).
  */
 
 /** The character a cut value ends with. */
@@ -39,6 +39,16 @@ export type ListWords = {
   readonly none: string
   readonly more: (count: number) => string
   readonly max: number
+}
+
+/**
+ * The word set `words` with a smaller cap, `max` at most (D-256, D-283): the TUI default's three titles or sources and
+ * its five names in a question; a word set with no cap, a pane surface's, stays uncapped.
+ */
+export function withMax(words: ListWords, max: number): ListWords {
+  if (!Number.isFinite(words.max)) return words
+
+  return { ...words, max: Math.min(words.max, max) }
 }
 
 /**

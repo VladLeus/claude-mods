@@ -20,7 +20,6 @@ import { isObject } from '../core/json'
 import { clean } from '../core/text'
 import { ARTIFACT } from '../locales/artifact'
 import { keyLabel, labelOf, SCREEN_LIST_WORDS, t } from '../locales/t'
-import type { Surface } from './surface'
 
 /** One row the cadre init side pane draws (D-133): its cleaned text, and whether it is a block title (drawn bold). */
 export type PaneRow = {
@@ -661,24 +660,6 @@ export function panePlacement(props: unknown): 'dock' | 'inline' | null {
   const { placement } = props
 
   return placement === 'dock' || placement === 'inline' ? placement : null
-}
-
-/**
- * The columns a page of the pane is drawn at (D-292), as a run reads them before each step: the dialog's preview
- * columns on the TUI default and for a pane seated inline, which the dialog's preview draws (U-15); the pane body's
- * columns for a docked pane and for a pane with no placement, as on the desktop; null on a surface that shows no
- * context.
- */
-export function pageColumnsOf(
-  surface: Surface,
-  placement: 'dock' | 'inline' | null,
-  preview: number | null,
-  body: number | null,
-): number | null {
-  if (surface === 'none') return null
-  if (surface === 'tui-default' || placement === 'inline') return preview
-
-  return body
 }
 
 /**

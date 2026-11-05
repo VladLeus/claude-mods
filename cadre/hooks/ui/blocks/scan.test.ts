@@ -5,7 +5,9 @@ import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { scanRepo } from '../../scan/repo'
 import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, repoScan } from '../../testkit'
-import { listWordsOf } from '../surface'
+import { NO_SURFACE } from '../surfaces/none'
+import { PANE_DESKTOP } from '../surfaces/pane-desktop'
+import { TUI_DEFAULT } from '../surfaces/tui-default'
 import { scanContextLine, scanSummaryLines, truncatedLine } from './scan'
 
 /** The middle of the partial line for deeper folders listed only in part (D-137). */
@@ -157,13 +159,13 @@ describe('scanSummaryLines', () => {
       mcp: names.map(name => ({ name, source: 'session' })),
       claudeMd: names.map(name => `<repo>/${name}/CLAUDE.md`),
     })
-    expect(scanSummaryLines(repoScan(), setup, '/repo', listWordsOf('pane')).slice(5)).toEqual([
+    expect(scanSummaryLines(repoScan(), setup, '/repo', PANE_DESKTOP.listWords).slice(5)).toEqual([
       `  plugins: 14 (${plugins.join(', ')})`,
       `  skills: 0; agents: 0; MCP servers: ${names.join(', ')}`,
       `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${files.join(', ')}`,
     ])
     const twelve = (list: readonly string[]): string => [...list.slice(0, 12), '+2 more'].join(', ')
-    for (const words of [listWordsOf('tui-default'), listWordsOf('none')]) {
+    for (const words of [TUI_DEFAULT.listWords, NO_SURFACE.listWords]) {
       expect(scanSummaryLines(repoScan(), setup, '/repo', words).slice(5)).toEqual([
         `  plugins: 14 (${twelve(plugins)})`,
         `  skills: 0; agents: 0; MCP servers: ${twelve(names)}`,

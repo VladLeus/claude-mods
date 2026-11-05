@@ -155,3 +155,22 @@ describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
     }
   })
 })
+
+describe('the page columns of the surface modules (D-292, U-15, D-353)', () => {
+  test('the TUI default and an inline pane page at the preview, a docked pane and the desktop at the body', () => {
+    for (const pane of [PANE_DESKTOP, PANE_FULLSCREEN]) {
+      expect([
+        TUI_DEFAULT.pageColumns(null, 82, 62),
+        pane.pageColumns('inline', 82, 62),
+        pane.pageColumns('dock', 82, 62),
+        pane.pageColumns(null, 82, 62),
+      ]).toEqual([82, 82, 62, 62])
+    }
+  })
+
+  test('a surface that shows no context has no page width, and an unknown width stays unknown', () => {
+    for (const pane of [PANE_DESKTOP, PANE_FULLSCREEN]) {
+      expect([NO_SURFACE.pageColumns('dock', 82, 62), pane.pageColumns('dock', 82, null)]).toEqual([null, null])
+    }
+  })
+})

@@ -68,7 +68,7 @@ function entryContext(spec: AskSpec): AskContext {
 async function pagedEntry(answers: readonly string[]): Promise<{ readonly answer: string; readonly inner: MemRun }> {
   const entry = await oversizeEntry()
   const inner = memIo(memWorld({}), answers)
-  const answer = await withPagedAsks(inner.io, 'pane', () => null).ask(entry.question, entry.spec)
+  const answer = await withPagedAsks(inner.io, () => null).ask(entry.question, entry.spec)
 
   return { answer, inner }
 }
@@ -145,30 +145,24 @@ describe('withPagedAsks (D-305, D-306, D-307, D-308)', () => {
     expect([typed.answer, pageIndexes(typed.inner)]).toEqual(['be, qa', [0]])
   })
 
-  test('the TUI default and a surface that shows no context are given the port as it is', () => {
-    const { io } = memIo(memWorld({}), [])
-    expect(withPagedAsks(io, 'tui-default', () => null)).toBe(io)
-    expect(withPagedAsks(io, 'none', () => null)).toBe(io)
-  })
-
   test('a context whose frame fits is asked unchanged', async () => {
     const entry = await oversizeEntry()
     const context = entryContext(entry.spec)
     const rows = (context.rows ?? []).map(section => ({ ...section, rows: section.rows.slice(0, 2) }))
     const fitting = { ...entry.spec, context: { ...context, rows } }
     const inner = memIo(memWorld({}), ['Whole group'])
-    expect(await withPagedAsks(inner.io, 'pane', () => null).ask(entry.question, fitting)).toBe('Whole group')
+    expect(await withPagedAsks(inner.io, () => null).ask(entry.question, fitting)).toBe('Whole group')
     expect(inner.specs).toEqual([fitting])
   })
 
   test('a pane seated inline asks an over-cap context once, unpaged; else it pages as before (N-02)', async () => {
     const entry = await oversizeEntry()
     const inline = memIo(memWorld({}), ['Go one by one'])
-    const answer = await withPagedAsks(inline.io, 'pane', () => null, () => true).ask(entry.question, entry.spec)
+    const answer = await withPagedAsks(inline.io, () => null, () => true).ask(entry.question, entry.spec)
     expect([answer, inline.asked, inline.specs]).toEqual(['Go one by one', [entry.question], [entry.spec]])
     for (const isInline of [() => false, undefined]) {
       const docked = memIo(memWorld({}), [NEXT_PAGE_LABEL, NEXT_PAGE_LABEL, 'Go one by one'])
-      await withPagedAsks(docked.io, 'pane', () => null, isInline).ask(entry.question, entry.spec)
+      await withPagedAsks(docked.io, () => null, isInline).ask(entry.question, entry.spec)
       expect(pageIndexes(docked)).toEqual([0, 1, 2])
     }
   })
@@ -178,7 +172,7 @@ describe('a paged plugin group (D-328)', () => {
   test('Go one by one is on every page, Accept recommendation on the last, None and All roles on none', async () => {
     const group = await oversizeGroup()
     const inner = memIo(memWorld({}), [NEXT_PAGE_LABEL, NEXT_PAGE_LABEL, 'Accept recommendation'])
-    const answer = await withPagedAsks(inner.io, 'pane', () => null).ask(group.question, group.spec)
+    const answer = await withPagedAsks(inner.io, () => null).ask(group.question, group.spec)
     expect(inner.specs.map(spec => spec.options)).toEqual([
       ['Next page', 'Go one by one'],
       ['Next page', 'Previous page', 'Go one by one'],
@@ -191,7 +185,7 @@ describe('a paged plugin group (D-328)', () => {
     const group = await oversizeGroup()
     for (const typed of ['none', 'All roles', 'all', 'be, qa']) {
       const inner = memIo(memWorld({}), [NEXT_PAGE_LABEL, typed])
-      expect(await withPagedAsks(inner.io, 'pane', () => null).ask(group.question, group.spec)).toBe(typed)
+      expect(await withPagedAsks(inner.io, () => null).ask(group.question, group.spec)).toBe(typed)
       expect(pageIndexes(inner)).toEqual([0, 1])
     }
   })
@@ -222,7 +216,7 @@ describe('every other question over the cap (D-329, D-335)', () => {
     answers: readonly string[],
   ): Promise<{ readonly answer: string; readonly inner: MemRun }> {
     const inner = memIo(memWorld({}), answers)
-    const answer = await withPagedAsks(inner.io, 'pane', () => null).ask('Carry these env names?', spec)
+    const answer = await withPagedAsks(inner.io, () => null).ask('Carry these env names?', spec)
 
     return { answer, inner }
   }
@@ -270,14 +264,14 @@ describe('every other question over the cap (D-329, D-335)', () => {
     const answers = { ...OVERSIZE_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' }
     const whole = await askedBefore(oversizeWorld({ replies: OVERSIZE_REPLIES }), answers, WHOLE_PREFIX)
     const walked = memIo(memWorld({}), ['Next page', 'Next page', 'None'])
-    expect(await withPagedAsks(walked.io, 'pane', () => null).ask(whole.question, whole.spec)).toBe('None')
+    expect(await withPagedAsks(walked.io, () => null).ask(whole.question, whole.spec)).toBe('None')
     expect(walked.specs.map(spec => spec.options)).toEqual([
       ['Next page', 'Last page'],
       ['Next page', 'Previous page', 'Last page'],
       ['Previous page', 'None', 'All roles'],
     ])
     const typed = memIo(memWorld({}), ['be, qa'])
-    expect(await withPagedAsks(typed.io, 'pane', () => null).ask(whole.question, whole.spec)).toBe('be, qa')
+    expect(await withPagedAsks(typed.io, () => null).ask(whole.question, whole.spec)).toBe('be, qa')
     expect(pageIndexes(typed)).toEqual([0])
   })
 

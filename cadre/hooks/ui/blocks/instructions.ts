@@ -7,12 +7,11 @@
  */
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
-import { clean, idsOrNone } from '../../core/text'
+import { clean, idsOrNone, withMax } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
-import { withMax } from '../surface'
 
 /**
  * Where a part comes from, as the pane and a topic's context line show it: its file, cleaned, then its heading

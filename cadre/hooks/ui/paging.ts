@@ -2,7 +2,8 @@
  * The pages of a question on a pane surface, a layer 8 module (D-305..D-308, D-329, D-334, D-335): the init port whose
  * ask shows a question whose context frame is over the cap one page at a time, its page moves never reaching the
  * stage. It imports ui/pane (the frame cap and the pages), ui/preview (the dialog's option cap), core, the locale
- * tables and the types; init/run and regen/run ask through it, and the Review takes its page labels from it.
+ * tables and the types; the pane modules give a run its port (pagedPort, D-353), and the Review takes its page labels
+ * from it.
  */
 import type { AskContext, AskSpec, ContextSection, InitIo } from '../../types'
 import { labelled } from '../core/labelled'
@@ -10,7 +11,6 @@ import type { Labelled } from '../core/labelled'
 import { t } from '../locales/t'
 import { contextPages } from './pane'
 import { MAX_DIALOG_OPTIONS } from './preview'
-import type { Surface } from './surface'
 
 /** The option that asks a paged question's next page (D-233, D-306). */
 export const NEXT_PAGE_LABEL = t('init.review.nextPage')
@@ -135,21 +135,17 @@ async function pagedAsk(
 }
 
 /**
- * The init port whose ask pages a question's context on a pane surface (D-305, D-306, D-307, D-308, D-329): every
- * question whose context frame is over the cap at the width `columnsOf` reads is asked a page at a time (pagedAsk),
- * a hand-out entry or a plugin group by its pageOptions and any other, Yes/No, diff or list, with its options on the
- * last page only (D-335); every other ask, and every other member, is the port's own. A pane seated inline, which
- * `isInline` reads at each ask (never inline when absent), previews the whole context in the dialog, which pages
- * cannot change (N-02, OC-04-I), so it is not paged. On the TUI default and on a surface that shows no context the
- * port is given back as it is.
+ * The paged port the pane modules give a run (pagedPort, D-306, N-02, D-353), whose ask pages a question's context
+ * (D-305, D-307, D-308, D-329): every question whose context frame is over the cap at the width `columnsOf` reads is
+ * asked a page at a time (pagedAsk), a hand-out entry or a plugin group by its pageOptions and any other, Yes/No, diff
+ * or list, with its options on the last page only (D-335); every other ask, and every other member, is the port's
+ * own. A seat whose dialog previews the whole context, which `isInline` reads at each ask (never when absent), is not
+ * paged, as pages cannot change the preview (N-02, OC-04-I). A surface that does not page never calls it.
  */
 export function withPagedAsks(
   io: InitIo,
-  surface: Surface,
   columnsOf: () => number | null,
   isInline: () => boolean = () => false,
 ): InitIo {
-  if (surface !== 'pane') return io
-
   return { ...io, ask: async (question, spec) => pagedAsk(io, question, spec, columnsOf, isInline) }
 }

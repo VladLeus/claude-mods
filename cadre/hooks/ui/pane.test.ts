@@ -12,7 +12,6 @@ import {
   MAX_PANE_FRAME_ROWS,
   PANE_FALLBACK_COLUMNS,
   PANE_PAGE_ROWS,
-  pageColumnsOf,
   paneBlockOf,
   paneColumns,
   paneDrawn,
@@ -432,21 +431,6 @@ describe('questionScroll (D-209)', () => {
     expect(questionScroll('cadre-init', null, true)).toBe(null)
     expect(questionScroll('cadre-init', openWith(null), false)).toBe(null)
     expect(questionScroll('cadre-init', null, false)).toBe(null)
-  })
-})
-
-describe('pageColumnsOf (D-292, U-15)', () => {
-  test('the TUI default and an inline pane page at the preview, a docked pane and the desktop at the body', () => {
-    expect([
-      pageColumnsOf('tui-default', null, 82, 62),
-      pageColumnsOf('pane', 'inline', 82, 62),
-      pageColumnsOf('pane', 'dock', 82, 62),
-      pageColumnsOf('pane', null, 82, 62),
-    ]).toEqual([82, 82, 62, 62])
-  })
-
-  test('a surface that shows no context has no page width, and an unknown width stays unknown', () => {
-    expect([pageColumnsOf('none', 'dock', 82, 62), pageColumnsOf('pane', 'dock', 82, null)]).toEqual([null, null])
   })
 })
 

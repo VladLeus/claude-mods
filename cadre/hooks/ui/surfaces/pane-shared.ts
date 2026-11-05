@@ -10,12 +10,12 @@
  */
 import type { InitIo, OpenQuestion } from '../../../types'
 import { isObject } from '../../core/json'
+import { PANE_LIST_WORDS } from '../../locales/t'
 import { paneQuestionText } from '../ask'
-import { MAX_PANE_FRAME_CHARS, PANE_PAGE_ROWS, pageColumnsOf } from '../pane'
+import { MAX_PANE_FRAME_CHARS, PANE_PAGE_ROWS } from '../pane'
 import { withPagedAsks } from '../paging'
 import { isOpenAsked, previewedPlan } from '../preview'
 import type { AskedQuestion, DialogPlan } from '../preview'
-import { listWordsOf } from '../surface'
 import type {
   PageView,
   PaneSeat,
@@ -105,19 +105,6 @@ function paneFolds<T>(bound: readonly T[]): readonly T[] {
   return bound
 }
 
-/**
- * The paged port of a pane (D-306, N-02): a context over the frame cap is asked a page at a time at the columns `view`
- * reads, and whole while the pane is seated inline.
- */
-function panePagedPort(io: InitIo, view: PageView): InitIo {
-  return withPagedAsks(io, 'pane', view.columns, () => view.seat() === 'inline')
-}
-
-/** The columns a page of a pane is drawn at (D-292, U-15): the preview's when seated inline, else the body's. */
-function panePageColumns(seat: PaneSeat, preview: number | null, body: number | null): number | null {
-  return pageColumnsOf('pane', seat, preview, body)
-}
-
 /** A pane surface opens the cadre-init pane as an init or regen run starts, before its first question (D-324). */
 function paneRunStartEffects(): readonly SurfaceEffect[] {
   return [{ kind: 'open-pane' }]
@@ -152,19 +139,23 @@ function paneLogEffects(text: string, isLoading: boolean): readonly SurfaceEffec
 
 /**
  * The module of a pane surface `id` (D-353), built from the members both panes share: it lists every name (D-256),
- * asks the pane text of a question's context (paneQuestionText, D-255, D-310), pages its Review at PANE_PAGE_ROWS under
- * the frame's character cap (N-04), and gives the open question's call the dialog of the strategy `seats` holds for
- * the seat the terminal reported last (seatStrategy, D-354), looked up once per call.
+ * asks the pane text of a question's context (paneQuestionText, D-255, D-310) and pages its Review at PANE_PAGE_ROWS
+ * under the frame's character cap (N-04). Its dialog plan, page columns and paging are the strategy `seats` holds for
+ * the seat the terminal reported last (seatStrategy, D-354), looked up once per call: a context over the frame cap is
+ * asked a page at a time at the columns the view reads, and whole where the seat previews it (withPagedAsks, D-306,
+ * N-02), the seat read again at each ask.
  */
 export function paneModule(id: SurfaceId, seats: SeatTable): SurfaceModule {
   return Object.freeze({
     id,
-    listWords: listWordsOf('pane'),
+    listWords: PANE_LIST_WORDS,
     askedText: paneQuestionText,
     foldsOf: paneFolds,
-    pagedPort: panePagedPort,
+    pagedPort: (io: InitIo, view: PageView): InitIo =>
+      withPagedAsks(io, view.columns, () => seatStrategy(seats, view.seat()).previews),
     reviewPaging: PANE_REVIEW_PAGING,
-    pageColumns: panePageColumns,
+    pageColumns: (seat: PaneSeat, preview: number | null, body: number | null): number | null =>
+      seatStrategy(seats, seat).pageColumns(preview, body),
     dialogPlan: (raw: unknown, open: OpenQuestion, seat: PaneSeat, columns: number | null, changeLabel: string) =>
       seatStrategy(seats, seat).plan(raw, open, columns, changeLabel),
     runStartEffects: paneRunStartEffects,

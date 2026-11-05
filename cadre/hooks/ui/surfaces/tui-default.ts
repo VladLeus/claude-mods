@@ -8,12 +8,10 @@
  * calls them from.
  */
 import type { AskContext, InitIo, OpenQuestion } from '../../../types'
-import { pageColumnsOf } from '../pane'
-import { withPagedAsks } from '../paging'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { PREVIEW_LINE_ROWS, PREVIEW_ROWS, previewedPlan, tuiTranscriptEntries } from '../preview'
 import type { DialogPlan } from '../preview'
-import { listWordsOf } from '../surface'
-import type { PageView, PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
+import type { PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
 
 /** The Review pages of the TUI default (D-233, ASKED #19): PREVIEW_ROWS rows, any number of code points. */
 const TUI_REVIEW_PAGING: ReviewPaging = Object.freeze({ rows: PREVIEW_ROWS, maxChars: Number.POSITIVE_INFINITY })
@@ -28,14 +26,17 @@ function tuiFolds<T>(_bound: readonly T[]): readonly T[] {
   return []
 }
 
-/** The TUI default pages no question: the preview carries the context, fitted to its rows (D-228, D-306). */
-function tuiPagedPort(io: InitIo, view: PageView): InitIo {
-  return withPagedAsks(io, 'tui-default', view.columns, () => view.seat() === 'inline')
+/**
+ * The TUI default pages no question, so a run asks through its port as it is: the preview carries the context, fitted
+ * to its rows (D-228, D-306).
+ */
+function tuiPagedPort(io: InitIo): InitIo {
+  return io
 }
 
-/** The columns a Review page is drawn at on the TUI default: the dialog preview's columns (D-292, U-15). */
-function tuiPageColumns(seat: PaneSeat, preview: number | null, body: number | null): number | null {
-  return pageColumnsOf('tui-default', seat, preview, body)
+/** The columns a page is drawn at on the TUI default: the dialog preview's, whatever the seat (D-292, U-15). */
+function tuiPageColumns(_seat: PaneSeat, preview: number | null): number | null {
+  return preview
 }
 
 /**
@@ -95,7 +96,7 @@ function tuiLogEffects(text: string): readonly SurfaceEffect[] {
  */
 export const TUI_DEFAULT: SurfaceModule = Object.freeze({
   id: 'tui-default',
-  listWords: listWordsOf('tui-default'),
+  listWords: SCREEN_LIST_WORDS,
   askedText: tuiAskedText,
   foldsOf: tuiFolds,
   pagedPort: tuiPagedPort,

@@ -5,11 +5,10 @@
  * bound fold (row 14) and the screen's list words (row 15).
  */
 import type { InitIo } from '../../../types'
-import { PANE_PAGE_ROWS, pageColumnsOf } from '../pane'
-import { withPagedAsks } from '../paging'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
+import { PANE_PAGE_ROWS } from '../pane'
 import type { DialogPlan } from '../preview'
-import { listWordsOf } from '../surface'
-import type { PageView, PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
+import type { ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
 
 /** The Review pages of a run with no surface (D-233): PANE_PAGE_ROWS rows, any number of code points. */
 const NONE_REVIEW_PAGING: ReviewPaging = Object.freeze({ rows: PANE_PAGE_ROWS, maxChars: Number.POSITIVE_INFINITY })
@@ -24,14 +23,14 @@ function noneFolds<T>(bound: readonly T[]): readonly T[] {
   return bound
 }
 
-/** A run with no surface pages no question: it shows no context (D-306). */
-function nonePagedPort(io: InitIo, view: PageView): InitIo {
-  return withPagedAsks(io, 'none', view.columns, () => view.seat() === 'inline')
+/** A run with no surface pages no question, so it asks through its port as it is: it shows no context (D-306). */
+function nonePagedPort(io: InitIo): InitIo {
+  return io
 }
 
 /** A run with no surface draws no page, so it has no page width (D-292). */
-function nonePageColumns(seat: PaneSeat, preview: number | null, body: number | null): number | null {
-  return pageColumnsOf('none', seat, preview, body)
+function nonePageColumns(): number | null {
+  return null
 }
 
 /** A run with no surface rewrites no dialog: every call and its result pass through untouched (WD-S2, D-239). */
@@ -55,7 +54,7 @@ function noneLogEffects(text: string): readonly SurfaceEffect[] {
  */
 export const NO_SURFACE: SurfaceModule = Object.freeze({
   id: 'none',
-  listWords: listWordsOf('none'),
+  listWords: SCREEN_LIST_WORDS,
   askedText: noneAskedText,
   foldsOf: noneFolds,
   pagedPort: nonePagedPort,

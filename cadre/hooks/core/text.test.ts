@@ -16,6 +16,7 @@ import {
   shown,
   sortedUnique,
   utf8Bytes,
+  withMax,
 } from './text'
 
 describe('clean', () => {
@@ -167,6 +168,14 @@ describe('shown and cardList', () => {
 
   test("the screen's cap SCREEN_LIST_MAX stays the card cap MAX_CARD_LIST (D-256)", () => {
     expect(SCREEN_LIST_MAX).toBe(MAX_CARD_LIST)
+  })
+})
+
+describe('withMax (D-256)', () => {
+  test('withMax lowers the cap of a capped list and leaves an uncapped list uncapped', () => {
+    expect(withMax(SCREEN_LIST_WORDS, 3)).toEqual({ ...SCREEN_LIST_WORDS, max: 3 })
+    expect(withMax(SCREEN_LIST_WORDS, 30).max).toBe(12)
+    expect(withMax(PANE_LIST_WORDS, 3)).toBe(PANE_LIST_WORDS)
   })
 })
 
