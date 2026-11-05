@@ -42,6 +42,7 @@ import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from '
 import { paneDrawn, paneRows, wrapLine } from './ui/pane'
 import type { PaneBlock, PaneSpan } from './ui/pane'
 import { NOTE_WORDING, OTHER_WORDING, OWN_ANSWER_HINT, PREVIEW_LINE_ROWS, PREVIEW_ROWS } from './ui/preview'
+import { PANE_TYPED_WORDING } from './ui/surfaces/pane-shared'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -3089,21 +3090,21 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
   test('the Adjust dialog says where to type, as a note on the TUI default (WD-M1)', async ($, on) => {
     const answers = { ...INIT_ANSWERS, [ROLES_QUESTION]: 'Adjust them' }
     const [pane, tui] = await typedDialogs($, on, answers, 'Adjust the roles')
-    const wording = [pane.includes(OTHER_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
+    const wording = [pane.includes(PANE_TYPED_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
     expect([pane !== '', tui !== '', ...wording]).toEqual([true, true, true, true, false])
   })
 
   test('the Describe dialog says where to type, as a note on the TUI default (WD-M1)', async ($, on) => {
     const answers = { ...INIT_ANSWERS, [ROLES_QUESTION]: 'Describe my own structure' }
     const [pane, tui] = await typedDialogs($, on, answers, 'Describe your role structure')
-    const wording = [pane.includes(OTHER_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
+    const wording = [pane.includes(PANE_TYPED_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
     expect([pane !== '', tui !== '', ...wording]).toEqual([true, true, true, true, false])
   })
 
   test('the launcher folder dialog says where to type, as a note on the TUI default (WD-M1)', async ($, on) => {
     const answers = { ...INIT_ANSWERS, 'Where should the role launchers start': 'Another folder in this repo' }
     const [pane, tui] = await typedDialogs($, on, answers, 'Type the folder the launchers start in')
-    const wording = [pane.includes(OTHER_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
+    const wording = [pane.includes(PANE_TYPED_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
     expect([pane !== '', tui !== '', ...wording]).toEqual([true, true, true, true, false])
   })
 
@@ -3209,6 +3210,58 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     })
     const notesOnly = askHeads(log).some(ask => ask.includes('(notes only)'))
     expect([notesOnly, lines.some(line => line.includes('devops'))]).toEqual([false, true])
+  })
+
+  test('no docked or unplaced pane asks a text with a note or press n (D-353, D-359)', async ($, on) => {
+    const log = newLog()
+    // The session's surfaces, read at each command: the second run is drawn on the desktop too (D-353).
+    const surfaces = ['terminal']
+    const answers = { ...INIT_ANSWERS, 'Review the plan': 'Change something…', 'Name the item to change': 'roles' }
+    fakeHost(on, initWorld({ surfaces, answers }), log)
+    // The asks of one run in the fullscreen layout, where no Pane render seats the pane.
+    const runAsks = async (): Promise<string[]> => {
+      const at = log.asks.length
+      await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
+
+      return log.asks.slice(at)
+    }
+    const fullscreen = await runAsks()
+    surfaces.push('desktop')
+    const desktop = await runAsks()
+    for (const asks of [fullscreen, desktop]) {
+      const refusal = asks.find(ask => ask.startsWith('ask Name the item to change')) ?? ''
+      const noted = asks.filter(ask => ask.includes(NOTE_WORDING) || ask.includes('press n'))
+      expect([noted, refusal.includes(PANE_TYPED_WORDING)]).toEqual([[], true])
+    }
+  })
+
+  test('a fullscreen run words a typed answer for the seat the pane was drawn at (D-359, D-360)', async ($, on) => {
+    const log = newLog()
+    let props: MountTarget<'terminal', 'Pane'>['props'] = INLINE_PANE
+    let isDrawn = false
+    // At a run's first ask only, the terminal draws the pane with `props`, which seats it (D3).
+    const onAsk = async (): Promise<void> => {
+      if (isDrawn) return
+      isDrawn = true
+      const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props })
+      await ui.unmount()
+    }
+    const answers = { ...INIT_ANSWERS, 'Review the plan': 'Change something…', 'Name the item to change': 'roles' }
+    fakeHost(on, initWorld({ answers, onAsk }), log)
+    // The first line of the refusal a fullscreen run asks after Change something….
+    const refusal = async (): Promise<string> => {
+      const at = log.asks.length
+      isDrawn = false
+      await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
+      const asked = log.asks.slice(at).find(ask => ask.startsWith('ask Name the item to change')) ?? ''
+
+      return asked.split('\n')[0] ?? ''
+    }
+    const inline = await refusal()
+    props = DOCK_PANE
+    const docked = await refusal()
+    // Seated inline the fullscreen pane previews, so the item goes in its notes; docked, under Type something. (D-354).
+    expect([inline.includes(NOTE_WORDING), docked.includes(PANE_TYPED_WORDING)]).toEqual([true, true])
   })
 })
 

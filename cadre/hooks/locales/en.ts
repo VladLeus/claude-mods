@@ -409,6 +409,8 @@ export const EN = Object.freeze({
   'ui.preview.otherWording': 'under Other',
   'ui.preview.noteWording': 'as a note (press n)',
 
+  'ui.pane.typedWording': 'under "Type something."',
+
   'ui.scan.safetyCap': 'the scan stopped at the {toLocaleString}-entry safety cap',
   'ui.scan.stoppedEarly': 'the scan stopped early; stack, tests and E2E may be incomplete',
   'ui.scan.mayBeIncomplete': 'may be incomplete: {facts}',

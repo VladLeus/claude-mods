@@ -319,8 +319,9 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       const { options, header, multiSelect, context, acceptsTyped, takesNote, endingLabels } = spec
       // The selected module decides the text the dialog asks (D-353): a pane surface asks the pane text of the
       // question's context, its sentence and summary, plus the page marker on a paged question (paneQuestionText,
-      // D-310); the TUI default and a run with no surface ask it as given.
-      const text = pane.surface.askedText(question, context ?? null)
+      // D-310), for the seat the pane was drawn at last (D-359); the TUI default and a run with no surface ask it as
+      // given.
+      const text = pane.surface.askedText(question, context ?? null, lastPlacement)
       const open: OpenQuestion = {
         question: text,
         header: header ?? null,

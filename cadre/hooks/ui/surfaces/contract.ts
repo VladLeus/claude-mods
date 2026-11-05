@@ -82,8 +82,11 @@ export type SurfaceModule = {
   readonly id: SurfaceId
   /** The words the run's lists are shown with (D-256). */
   readonly listWords: ListWords
-  /** The text a dialog asks for `question` with its own `context` (D-255, D-310). */
-  readonly askedText: (question: string, context: AskContext | null) => string
+  /**
+   * The text a dialog asks for `question` with its own `context`, at the `seat` the pane was drawn at last (D-255,
+   * D-310, D-359).
+   */
+  readonly askedText: (question: string, context: AskContext | null, seat: PaneSeat) => string
   /** The folds a question is asked with of those `bound` to its stage (D-302). */
   readonly foldsOf: <T>(bound: readonly T[]) => readonly T[]
   /** The port a run asks through, paging a context over the frame cap where the surface pages (D-306, N-02). */

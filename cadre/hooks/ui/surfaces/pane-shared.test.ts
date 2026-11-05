@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { AskContext, OpenQuestion } from '../../../types'
-import { askRewrite, PREVIEW_ROWS } from '../preview'
+import { askRewrite, NOTE_WORDING, OTHER_WORDING, PREVIEW_ROWS } from '../preview'
 import type { CheckedQuestion } from '../preview'
 import type { PaneSeat, SurfaceModule } from './contract'
 import { NO_SURFACE } from './none'
 import { PANE_DESKTOP } from './pane-desktop'
 import { PANE_FULLSCREEN } from './pane-fullscreen'
+import { PANE_TYPED_WORDING } from './pane-shared'
 import { TUI_DEFAULT } from './tui-default'
 
 /** One single-select AskUserQuestion question with two options and no preview, as a model asks it (D3). */
@@ -146,6 +147,38 @@ describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
     expect(plan?.notes.map(note => note.question)).toEqual(['Pick one?'])
     // The desktop pane previews nothing on any seat, so it plans no dialog (D-354).
     expect(PANE_DESKTOP.dialogPlan([PICK_QUESTION, MULTI], open, 'inline', null)).toBe(null)
+  })
+})
+
+describe('the asked text of the pane modules (D-353, D-359)', () => {
+  test('a pane surface words a typed answer with the wording of its seat (D-353, D-359)', () => {
+    const question = `Name it ${OTHER_WORDING}, or type a word ${OTHER_WORDING}.`
+    const text = `${question}\n2 roles: be, fe`
+    const context: AskContext = {
+      title: 'Roles',
+      lines: ['BE (be)', 'FE (fe)'],
+      kind: 'roles',
+      summary: '2 roles: be, fe',
+      pane: { asked: question, text },
+    }
+    // Each pane module and seat with the words a typed answer is asked with there: under Type something. where the
+    // dialog previews nothing, and as a note where the fullscreen pane seated inline previews (D-354, D-357).
+    const seats: readonly (readonly [SurfaceModule, PaneSeat, string])[] = [
+      [PANE_DESKTOP, 'dock', PANE_TYPED_WORDING],
+      [PANE_DESKTOP, 'inline', PANE_TYPED_WORDING],
+      [PANE_DESKTOP, null, PANE_TYPED_WORDING],
+      [PANE_FULLSCREEN, 'dock', PANE_TYPED_WORDING],
+      [PANE_FULLSCREEN, null, PANE_TYPED_WORDING],
+      [PANE_FULLSCREEN, 'inline', NOTE_WORDING],
+    ]
+    for (const [pane, seat, wording] of seats) {
+      const asked = [pane.askedText(question, null, seat), pane.askedText(question, context, seat)]
+      const worded = [question, text].map(given => given.replaceAll(OTHER_WORDING, wording))
+      expect([pane.id, seat, asked]).toEqual([pane.id, seat, worded])
+      const isNoted = wording === NOTE_WORDING
+      const noted = asked.map(shown => shown.includes(NOTE_WORDING))
+      expect([pane.id, seat, noted]).toEqual([pane.id, seat, [isNoted, isNoted]])
+    }
   })
 })
 

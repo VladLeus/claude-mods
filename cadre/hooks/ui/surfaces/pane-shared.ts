@@ -9,7 +9,7 @@
  * changes a pane module's dialog, page columns and paging only through the module's own seat table (D-354).
  */
 import type { InitIo, OpenQuestion } from '../../../types'
-import { PANE_LIST_WORDS } from '../../locales/t'
+import { PANE_LIST_WORDS, t } from '../../locales/t'
 import { paneQuestionText } from '../ask'
 import { MAX_PANE_FRAME_CHARS, PANE_PAGE_ROWS } from '../pane'
 import { withPagedAsks } from '../paging'
@@ -25,6 +25,13 @@ import type {
   SurfaceId,
   SurfaceModule,
 } from './contract'
+
+/**
+ * What a pane surface says in place of OTHER_WORDING where its dialog previews nothing (D-357, Q13): a docked or
+ * unplaced pane, and the desktop pane on any seat, has no notes field, and the engine's free-typing row, `Type
+ * something.`, is where a typed answer goes.
+ */
+export const PANE_TYPED_WORDING = t('ui.pane.typedWording')
 
 /** Room, in code points, a pane Review frame keeps for its title, summary and page-marker rows (N-04). */
 const REVIEW_FRAME_RESERVE = 200
