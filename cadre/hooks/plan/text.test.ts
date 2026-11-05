@@ -118,7 +118,7 @@ describe('renderPlan', () => {
       '  hunk      .planning/config.json  mode: interactive -> yolo  (required, accepted)',
       '            run: runme',
       'warning: w',
-      'Summary: 0 create, 0 change, 0 leave, 1 conflict, 1 hunks (1 accepted)',
+      'Summary: 0 create, 0 change, 0 leave, 1 conflict, 1 hunk (1 accepted)',
     ])
   })
 

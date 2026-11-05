@@ -17,6 +17,8 @@ import { ARTIFACT } from './locales/artifact'
 import { CONTRACTS, ITERM_LINES, TERMINAL_APP_LINES } from './locales/contracts'
 import { EN } from './locales/en'
 import { MCP_SYSTEM, PROMPTS, RECOMMEND_SYSTEM, REGEN_RECOMMEND_SYSTEM, SKILLS_SYSTEM } from './locales/prompts'
+import { tn } from './locales/t'
+import type { PluralBase } from './locales/t'
 import { DRY_RUN_NOTE } from './plan/text'
 import { INSTALL_COMMANDS } from './roles/recommend'
 import { PROPOSE_SYSTEM } from './suggest/propose'
@@ -268,5 +270,39 @@ describe('generated files hold no screen text (D-221)', () => {
     )
 
     expect(found).toEqual([])
+  })
+})
+
+describe('counted texts at a count of one (D-272, edge #24)', () => {
+  /** The bases of the hidden-name lines that count the names a scan left out (scan/facts/normalize). */
+  const HIDDEN_MORE: readonly Extract<PluralBase, `scan.hidden.${string}More`>[] = [
+    'scan.hidden.repoEntryMore',
+    'scan.hidden.docsEntryMore',
+    'scan.hidden.enabledPluginsKeyMore',
+    'scan.hidden.installedPluginKeyMore',
+    'scan.hidden.settingsKeyMore',
+    'scan.hidden.mcpServerNameMore',
+    'scan.hidden.commandOrPluginNameMore',
+    'scan.hidden.memoryFileNameMore',
+    'scan.hidden.agentNameMore',
+  ]
+  /** How such a line ends at a count of one, one name left out. */
+  const ONE_END = ' name that has hidden characters or is too long'
+  /** How such a line ends at any other count. */
+  const OTHER_END = ' names that have hidden characters or are too long'
+
+  test('one hunk reads 1 hunk; two read as before', () => {
+    expect(tn('plan.text.planSummary2', 1, { hunks: 1, accepted: 1 })).toBe('1 hunk (1 accepted)')
+    expect(tn('plan.text.planSummary2', 2, { hunks: 2, accepted: 1 })).toBe('2 hunks (1 accepted)')
+  })
+
+  test('a line that counts one hidden name left out names it in the singular; two read as before', () => {
+    const keys = Object.keys(EN).filter(key => /^scan\.hidden\.\w+More\.one$/.test(key))
+    expect(keys).toEqual(HIDDEN_MORE.map(base => `${base}.one`))
+    for (const base of HIDDEN_MORE) {
+      const one = tn(base, 1, { rest: 1 })
+      expect([one.startsWith('ignored 1 more '), one.endsWith(ONE_END)]).toEqual([true, true])
+      expect(tn(base, 2, { rest: 2 }).endsWith(OTHER_END)).toBe(true)
+    }
   })
 })
