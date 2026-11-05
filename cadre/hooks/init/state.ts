@@ -293,6 +293,9 @@ export type EachCursor = {
  * - `describe`: the describe question is out, asked `tries` times so far, after proposal `rounds` of `roles` with
  *   their scan `changes`, which its context shows (D-236).
  * - `describe-model`: the model call for the described structure is out, after proposal `rounds`.
+ * - `roles-gsd-check`: GSD's own check question, or the check itself after a Yes, is out for an Adjust answer that
+ *   sets a role to gsd (D-269, edge #35), asked `tries` times so far; `pending` keeps that answer and the Adjust cursor
+ *   it was typed at, so the Adjust is taken again once the check answered.
  * - `mcp-model`: the model call that recommends roles for every MCP server is out, before the server questions, with
  *   the names given before it (`done`, D-248).
  * - `mcp-handout`, `mcp-whole`: the MCP servers' hand-out at `cursor` (D-250), or the question for all the servers at
@@ -353,6 +356,17 @@ export type StageSub =
       readonly changes: readonly RoleChange[]
     }
   | { readonly kind: 'describe-model'; readonly rounds: number }
+  | {
+      readonly kind: 'roles-gsd-check'
+      readonly tries: number
+      readonly pending: {
+        readonly answer: string
+        readonly rounds: number
+        readonly round: number
+        readonly roles: readonly RoleSpec[]
+        readonly changes: readonly RoleChange[]
+      }
+    }
   | { readonly kind: 'mcp-model'; readonly done: readonly NameAssignment[] }
   | { readonly kind: 'mcp-handout'; readonly cursor: HandoutCursor; readonly done: readonly NameAssignment[] }
   | {

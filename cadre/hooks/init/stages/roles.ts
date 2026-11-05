@@ -3,14 +3,17 @@
  * question with the proposal and its scan changes (proposalLines, rolesContextLine), the Adjust loop over the
  * frameworks installed for the repo, the Describe question whose text the model turns into roles
  * (a describe-roles model effect), and rolesStage, the pure stage whose cursor is the proposal, Adjust or Describe
- * until the person answers Use these roles. Pure: it gives states and never performs an effect, imports core, roles,
- * suggest types, ui/ask, init/state and the duration and frameworks stages, and never imports init/machine or init/run.
+ * until the person answers Use these roles. An Adjust that sets a role to gsd while GSD is found but not proven asks
+ * GSD's own check first and takes the change once the check answered (D-269, edge #35). Pure: it gives states and
+ * never performs an effect, imports core, framework, roles, suggest types, ui/ask, init/state and the duration and
+ * frameworks stages, and never imports init/machine or init/run.
  */
 import type { FrameworkId, RoleChange, RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
+import { needsGsdCheck } from '../../framework/gsd/identity'
 import { t, tn } from '../../locales/t'
 import { ADJUST_WORDS, applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
@@ -18,9 +21,15 @@ import { ASK_HEADERS, askedText, choiceAnswer, orList, paneQuestionOf, quotedLab
 import type { ChoiceAsk } from '../../ui/ask'
 import { rolesContext } from '../../ui/blocks/context'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
-import type { Answer, InitState, StageDef } from '../state'
+import type { Answer, InitState, IoResult, StageDef } from '../state'
 import { idsOf } from './duration'
-import { FRAMEWORK_LABELS } from './frameworks'
+import {
+  FRAMEWORK_LABELS,
+  GSD_CHECK_DISMISSED_REASON,
+  gsdCheckAsk,
+  withGsdCheck,
+  withGsdIdentityChecked,
+} from './frameworks'
 
 /** The roles question init asks after it shows the proposal (D-46). */
 export const ROLES_QUESTION = t('init.roles.rolesQuestion')
@@ -287,10 +296,93 @@ function afterAdjust(
   const choice = labelled(ADJUST_CHOICES, answer)
   if (choice === 'done') return proposed(state, cursor.roles, cursor.changes, cursor.rounds)
   if (choice === 'show') return adjustAgain(state, cursor, cursor.roles, null)
+  if (isGsdCheckDue(state, cursor.roles, installed, answer)) {
+    const { rounds, round, roles, changes } = cursor
+
+    return rolesGsdCheckAsked(state, { answer, rounds, round, roles, changes }, 1, null)
+  }
   const result = adjusted(cursor.roles, answer, installed)
   if (result.kind === 'error') return adjustAgain(state, cursor, cursor.roles, reportText(result.message))
 
   return adjustAgain(state, cursor, result.roles, null)
+}
+
+/** Where the GSD check an Adjust asked is (D-269, edge #35): the check out, with the Adjust answer it waits on. */
+type RolesGsdCheck = Extract<InitState['sub'], { readonly kind: 'roles-gsd-check' }>
+
+/** The Adjust answer that named gsd, with the Adjust cursor it was typed at (D-269, edge #35). */
+type PendingAdjust = RolesGsdCheck['pending']
+
+/**
+ * Whether an Adjust answer waits for GSD's own check first (D-269, edge #35): it sets a role of the team to gsd while
+ * gsd is not installed for the repo, the check was not asked yet or was skipped (D-295), and the scan found a
+ * user-level GSD that is not proven and whose runtime is built (needsGsdCheck).
+ */
+function isGsdCheckDue(
+  state: InitState,
+  roles: readonly RoleSpec[],
+  installed: readonly FrameworkId[],
+  answer: string,
+): boolean {
+  const op = parseAdjust(answer)
+  const facts = state.draft.gathered?.facts.facts
+  const { gsdCheck } = state.draft
+  if (op === null || op.kind !== 'framework' || op.framework !== 'gsd' || installed.includes('gsd')) return false
+  if (!roles.some(role => role.id === op.id) || facts === undefined) return false
+  if (gsdCheck !== undefined && gsdCheck !== 'skipped') return false
+
+  return needsGsdCheck(facts)
+}
+
+/**
+ * GSD's own check asked for the pending Adjust (gsdCheckAsk, D-269, edge #35), asked `tries` times so far; `question`
+ * is its text after a refusal.
+ */
+function rolesGsdCheckAsked(
+  state: InitState,
+  pending: PendingAdjust,
+  tries: number,
+  question: string | null,
+): InitState {
+  const facts = state.draft.gathered?.facts.facts
+  if (facts === undefined) return stageFailed(state)
+  const ask = gsdCheckAsk(facts)
+  const sub: InitState['sub'] = { kind: 'roles-gsd-check', tries, pending }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/**
+ * The answer to the GSD check an Adjust asked (choiceAnswer, D-269, edge #35): Yes hands the runner the `gsd-identity`
+ * io effect; No keeps `declined` and takes the pending Adjust again, so it is refused with notInstalledMessage as
+ * before; an answer that is not offered is asked again; a dismissal cancels with GSD_CHECK_DISMISSED_REASON.
+ */
+function afterRolesGsdCheck(state: InitState, sub: RolesGsdCheck, answer: string | null): InitState {
+  if (answer === null) return stageCancelled(state, GSD_CHECK_DISMISSED_REASON)
+  const facts = state.draft.gathered?.facts.facts
+  const { locations, installed } = state.draft
+  if (facts === undefined || locations === undefined || installed === undefined) return stageFailed(state)
+  const next = choiceAnswer(gsdCheckAsk(facts), sub, answer)
+  if (next.kind === 'again') return rolesGsdCheckAsked(state, sub.pending, next.sub.tries, next.question)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (next.value) return withEffect(state, { kind: 'io', call: { id: 'gsd-identity', locations } })
+  const { answer: typed, ...cursor } = sub.pending
+
+  return afterAdjust(withGsdCheck(state, 'declined'), cursor, installed, typed)
+}
+
+/**
+ * The result of GSD's own check an Adjust asked (D-269, edge #35): merged into the facts with `installed` and the
+ * choice read again (withGsdIdentityChecked) and `run` kept, then the pending Adjust taken again, so a role is set to
+ * a GSD the check proved, and an Adjust to one it did not prove is refused as before.
+ */
+function afterRolesGsdChecked(state: InitState, pending: PendingAdjust, result: IoResult): InitState {
+  const checked = withGsdIdentityChecked(state, result)
+  const installed = checked?.draft.installed
+  if (checked === null || installed === undefined) return stageFailed(state)
+  const { answer, ...cursor } = pending
+
+  return afterAdjust(withGsdCheck(checked, 'run'), cursor, installed, answer)
 }
 
 /** Where the describe question is: the proposal it came after, with its roles and their scan changes, and its tries. */
@@ -398,6 +490,8 @@ function rolesAnswer(state: InitState, answer: Answer): InitState {
   const { sub } = state
   const isDescribed = answer.kind === 'model' && answer.result.id === 'describe-roles' && sub.kind === 'describe-model'
   if (isDescribed) return afterDescribed(state, sub.rounds, answer.result.result)
+  const isGsdChecked = answer.kind === 'io' && sub.kind === 'roles-gsd-check'
+  if (isGsdChecked) return afterRolesGsdChecked(state, sub.pending, answer.result)
   if (answer.kind !== 'answer' || installed === undefined) return stageFailed(state)
   switch (sub.kind) {
     case 'roles':
@@ -406,6 +500,8 @@ function rolesAnswer(state: InitState, answer: Answer): InitState {
       return afterAdjust(state, sub, installed, answer.text)
     case 'describe':
       return afterDescribe(state, sub, answer.text)
+    case 'roles-gsd-check':
+      return afterRolesGsdCheck(state, sub, answer.text)
     default:
       return stageFailed(state)
   }
