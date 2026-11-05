@@ -260,9 +260,10 @@ async function renderedLines(
  * with the record's links and copies, and the record is written to the git dir with its links and copies joined, once
  * each, with those this run made, also when the mirror stopped, so the next run and the epic's removal find them. A
  * stopped mirror replies with its failure, then one `warning: ` line per mirror warning as epicCreatedText prints them
- * (D-240), and renders nothing; else the reply is epicCreatedText with what this run linked and copied, the mirror's
- * warnings and the epicNoRecordWarning line when the record write failed, then the lines of the render stage
- * (renderedLines), which renders each picked role into the worktree and opens it there.
+ * (D-240) and the epicNoRecordWarning line when the record write failed (D-272, #37), and renders nothing; else the
+ * reply is epicCreatedText with what this run linked and copied, the mirror's warnings and the epicNoRecordWarning line
+ * when the record write failed, then the lines of the render stage (renderedLines), which renders each picked role
+ * into the worktree and opens it there.
  */
 async function mirroredReply(
   io: InitIo,
@@ -302,8 +303,10 @@ async function mirroredReply(
   const isRecorded = await host.write(epicRecordPath(gitDir), epicRecordText({ ...record, links, copies }))
   if (mirrored.failure !== null) {
     const warningLines = mirrored.warnings.map(warning => t('epic.create.epicCreatedText4', { warning }))
+    // A record write that failed is named after the mirror warnings, so the failure never hides it (D-272, #37).
+    const recordLines = isRecorded ? [] : [t('epic.create.epicCreatedText4', { warning: epicNoRecordWarning(key) })]
 
-    return [mirrored.failure, ...warningLines].join('\n')
+    return [mirrored.failure, ...warningLines, ...recordLines].join('\n')
   }
   const warnings = [...mirrored.warnings, ...(isRecorded ? [] : [epicNoRecordWarning(key)])]
   const { title, branch, outcome } = worktree
