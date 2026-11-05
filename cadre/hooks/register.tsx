@@ -255,7 +255,7 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
     ask: async (question, spec) => {
-      const { options, header, multiSelect, context, acceptsTyped, takesNote } = spec
+      const { options, header, multiSelect, context, acceptsTyped, takesNote, endingLabels } = spec
       // A pane surface asks the pane text of the question's context: its sentence and summary, plus the page marker
       // on a paged question (paneQuestionText, D-310); the TUI default and a run with no surface ask it as given.
       const text = pane.surface === 'pane' ? paneQuestionText(question, context ?? null) : question
@@ -266,6 +266,8 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
         acceptsTyped: acceptsTyped === true,
         // A question that takes a typed answer takes a note too (D-270).
         takesNote: acceptsTyped === true || takesNote === true,
+        // A pick of an option that ends the question stands over a typed note (D-350).
+        ...(endingLabels === undefined ? {} : { endingLabels }),
       }
       // One write puts the question in the pane state with no loader (D-303); the pane draws only its context (D-299).
       // No step runs while it is open, so a line logged after it goes to the transcript (D-325).

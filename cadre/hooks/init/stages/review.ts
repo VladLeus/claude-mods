@@ -172,6 +172,12 @@ const CHANGE_REFUSAL = t('init.review.changeRefusal', {
 export const REVIEW_OPTIONS: readonly string[] = Object.freeze(REVIEW_PAGE_CHOICES.map(entry => entry.label))
 
 /**
+ * The review option that ends it, Confirm, offered on every page (pageChoices), whose pick stands over any typed note
+ * (D-350).
+ */
+const REVIEW_ENDING: readonly string[] = Object.freeze([CONFIRM_LABEL])
+
+/**
  * Each item word a person may type, under "Other" or in a note, with the item it goes back to; mcp and skills mean
  * assignments, and the labels of the former buttons still read as their items (D-233).
  */
@@ -438,7 +444,8 @@ function reviewPlanOf(draft: Draft): {
  * to `rows` wrapped rows at `columns` (reviewPages, D-261): the review question with the context line of the plan just
  * shown, the page's options (pageChoices) with the Review chip, and the page as its own context, titled with its place
  * when there is more than one page (`Review (page i of n)`, DECIDED #22), its summary counting the files of the plan
- * and the roles; no typed answer is offered, since Change something… takes the item in a note (#164, takesNote, D-270).
+ * and the roles; no typed answer is offered, since Change something… takes the item in a note (#164, takesNote, D-270);
+ * a picked Confirm stands over any note (endingLabels, D-350).
  * A pane surface
  * asks REVIEW_QUESTION with that summary under it, and when there is more than one page the page's place, which the
  * Review chip does not carry, last (D-310). Its lists are capped by `words` (D-256). An answer pageChoice cannot read
@@ -472,6 +479,7 @@ function pagedAsk(
       options: labels,
       header: ASK_HEADERS.review,
       takesNote: true,
+      endingLabels: REVIEW_ENDING,
       context: { ...context, pane: { asked: question, text } },
     },
     parse: answer => pageChoice(choices, answer),

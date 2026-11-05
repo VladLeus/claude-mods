@@ -415,7 +415,8 @@ export type DialogPlan = {
  * the open question that offers an option labelled `changeLabel` (the review's Change something…, D-233) or that
  * takes a note (`takesNote`: a typed answer, the Launch folder, D-348) is passed through as asked (questions null),
  * and its one note pairs the open question with itself, with the call's labels and its takesNote, so a note typed in
- * it becomes its answer (ASKED #24, D-270, D-348). Every other call gets null.
+ * it becomes its answer (ASKED #24, D-270, D-348). Every note it pairs, previewed or docked, carries the open
+ * question's endingLabels (D-350). Every other call gets null.
  */
 export function dialogPlan(
   raw: unknown,
@@ -437,8 +438,15 @@ export function dialogPlan(
   const isPaneNote = !isPreviewed && surface === 'pane' && (offersChange || open.takesNote)
   const offered = Array.isArray(options) ? options.filter(isObject) : []
   const labels = offered.flatMap(option => (typeof option.label === 'string' ? [option.label] : []))
-  const paneNote: AskedQuestion = { question: open.question, asked: open.question, labels, takesNote: open.takesNote }
-  const notes = rewrite?.asked ?? (isPaneNote ? [paneNote] : null)
+  const ending = open.endingLabels === undefined ? {} : { endingLabels: open.endingLabels }
+  const paneNote: AskedQuestion = {
+    question: open.question,
+    asked: open.question,
+    labels,
+    takesNote: open.takesNote,
+    ...ending,
+  }
+  const notes = rewrite?.asked.map(entry => ({ ...entry, ...ending })) ?? (isPaneNote ? [paneNote] : null)
   if (notes === null) return null
 
   return { questions: rewrite?.questions ?? null, notes }
@@ -462,13 +470,17 @@ function typedNotes(annotations: Record<string, unknown> | undefined, asked: str
 }
 
 /**
- * What one previewed question answers (A3, D-270, edges #6, #14): typed notes that name one of its option labels,
- * trimmed and in any case (labelled), give that label; other typed notes are the answer only on a question that takes
- * a note (`entry.takesNote`), and are ignored on any other, so the chosen answer stands; else '' for
- * DESCRIBE_OWN_LABEL picked with nothing typed, else the answer as chosen; undefined when there is neither an answer
- * nor notes that count. A note never silently replaces the option chosen on a question that takes none.
+ * What one previewed question answers (A3, D-270, edges #6, #14): a picked option that ends the question
+ * (`entry.endingLabels`, D-350) stands, whatever note was typed, one naming another option included; else typed notes
+ * that name one of its option labels, trimmed and in any case (labelled), give that label; other typed notes are the
+ * answer only on a question that takes a note (`entry.takesNote`), and are ignored on any other, so the chosen answer
+ * stands; else '' for DESCRIBE_OWN_LABEL picked with nothing typed, else the answer as chosen; undefined when there is
+ * neither an answer nor notes that count. A note never silently replaces the option chosen on a question that takes
+ * none.
  */
 function ownAnswer(notes: string, answer: string | undefined, entry: AskedQuestion): string | undefined {
+  const ending = entry.endingLabels ?? []
+  if (answer !== undefined && ending.includes(answer)) return answer
   const label = labelled(entry.labels.map(text => ({ label: text, value: text })), notes)
   if (label !== null) return label
   if (notes !== '' && entry.takesNote) return notes
@@ -480,8 +492,9 @@ function ownAnswer(notes: string, answer: string | undefined, entry: AskedQuesti
 /**
  * The answers of an AskUserQuestion result after a dialog askRewrite rewrote (A3), or null to leave the result as it
  * is. $.ui.ask resolves to the answer under the question's text as asked and reads no notes, so for each question in
- * `asked` (ownAnswer, D-270, edges #6, #14): notes typed in the dialog, trimmed and not empty, that name one of its
- * option labels in any case answer that label; other notes become its answer only when it takes a note
+ * `asked` (ownAnswer, D-270, edges #6, #14): an option that ends the question picked (endingLabels: Cancel init,
+ * Confirm, D-350) stands whatever was typed; else notes typed in the dialog, trimmed and not empty, that name one of
+ * its option labels in any case answer that label; other notes become its answer only when it takes a note
  * (`takesNote`: it takes a typed answer, or it is the Launch folder or the Review question) and are ignored on any
  * other question, so the option chosen there stands; else DESCRIBE_OWN_LABEL becomes '', which cadre's own parsers
  * refuse and ask again; else the answer is kept. That answer

@@ -82,6 +82,11 @@ const LAUNCH_DIR_CHOICES: readonly Labelled<'type' | 'cancel'>[] = Object.freeze
  */
 export const LAUNCH_DIR_OPTIONS: readonly string[] = Object.freeze(LAUNCH_DIR_CHOICES.map(entry => entry.label))
 
+/** The folder question's option that ends it, Cancel init, whose pick stands over any typed note (D-350). */
+const LAUNCH_DIR_ENDING: readonly string[] = Object.freeze(
+  LAUNCH_DIR_CHOICES.filter(entry => entry.value === 'cancel').map(entry => entry.label),
+)
+
 /** Why init cancels when the launcher start question is dismissed; unread answers give NO_USABLE_ANSWER_REASON. */
 export const LAUNCH_START_DISMISSED_REASON = t('init.launch.launchStartDismissedReason')
 
@@ -118,9 +123,15 @@ const LAUNCH_START_ACCEPTS = t('init.launch.launchStartAccepts', {
 
 /**
  * The dialog of the folder question: its two buttons, Type a folder and Cancel init, with the Launch dir chip; a note
- * typed in it is the folder on every surface, a docked pane included (takesNote, D-270, D-348).
+ * typed in it is the folder on every surface, a docked pane included (takesNote, D-270, D-348); Cancel init ends it,
+ * even with a note typed (endingLabels, D-350).
  */
-const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir, takesNote: true })
+const LAUNCH_DIR_SPEC = Object.freeze({
+  options: LAUNCH_DIR_OPTIONS,
+  header: ASK_HEADERS.launchDir,
+  takesNote: true,
+  endingLabels: LAUNCH_DIR_ENDING,
+})
 
 /**
  * The launcher start question as the stage asks it (A2, D-136): LAUNCH_START_QUESTION with the ids of `roles` on its
