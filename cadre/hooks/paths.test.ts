@@ -152,6 +152,12 @@ describe('screenPath (D-226)', () => {
   test('the folder name is cleaned as any shown value', () => {
     expect(screenPath('<repo>/CLAUDE.md', `/home/u/re${BIDI_OVERRIDE}po`)).toBe('repo/CLAUDE.md')
   })
+
+  test('#34: a folder name that cleans to nothing keeps the <repo> mask; only a root of / reads / (D-272)', () => {
+    expect(screenPath('<repo>/x', '/')).toBe('/x')
+    expect(screenPath('<repo>/x', `/home/u/${BIDI_OVERRIDE}`)).toBe('<repo>/x')
+    expect(screenPath('<repo>', `/home/u/${BIDI_OVERRIDE}/`)).toBe('<repo>')
+  })
 })
 
 describe('memoryFoldersOf (D-238)', () => {
