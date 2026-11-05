@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, RoleChange, RoleProposal, RoleSpec } from '../../../types'
+import type { FrameworkId, GsdFact, RawGsdCandidate, RoleChange, RoleProposal, RoleSpec } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
@@ -9,6 +9,8 @@ import { PROPOSE_SYSTEM, rolesFromProposal } from '../../suggest/propose'
 import type { Proposed } from '../../suggest/propose'
 import {
   DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
+  emptySetupScan,
   firstLines,
   FRAMEWORKS,
   FULL_SCAN,
@@ -21,14 +23,18 @@ import {
   stageRun,
   stateAt,
   templateRole,
+  wholeDraft,
   withEvents,
 } from '../../testkit'
 import type { MemRun } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import { proposalLines, rolesContext } from '../../ui/blocks/context'
+import type { Draft } from '../draft'
 import { nextStage } from '../machine'
+import { cancelledReply } from '../replies'
 import type { Answer, InitState } from '../state'
+import { frameworksStage, GSD_CHECK_DISMISSED_REASON, GSD_CHECK_QUESTION, gsdCheckAsk } from './frameworks'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
@@ -640,5 +646,111 @@ describe('kept model results on Change roles (D-235, ASKED #14)', () => {
     expect(purposed.draft.roles?.map(role => `${role.id}: ${role.purpose}`)).toContain('tl: Leads another team.')
     expect(purposed.draft.roles?.map(role => role.id)).toEqual(roleIds)
     expect(purposed.kept).toBeNull()
+  })
+})
+
+describe('the GSD check an Adjust that names gsd asks (D-269, edge #35)', () => {
+  const full = proposeRoles(FULL_SCAN)
+  /** A user-level GSD found but not proven, as facts gives it. */
+  const UNPROVEN: GsdFact = {
+    location: 'user',
+    dir: '~/.claude/gsd-core',
+    version: null,
+    identity: 'unknown',
+    runtimeIdentityTried: false,
+  }
+  /** The user-level candidate as GSD's own check reads it: its runtime identity proves it. */
+  const PROBED: RawGsdCandidate = {
+    location: 'user',
+    dir: '/home/u/.claude/gsd-core',
+    isPresent: true,
+    versionText: null,
+    identityText: null,
+    manifest: null,
+    runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}',
+    runtimeTried: true,
+  }
+  /** The scans of a repo with nothing in use and that GSD found at the user level. */
+  const GATHERED = {
+    facts: { facts: { ...EMPTY_FACTS, gsd: [UNPROVEN] }, gsdUserDir: '/home/u/.claude/gsd-core' },
+    repo: FULL_SCAN,
+    setup: emptySetupScan(),
+  }
+  /** The Adjust line that sets PM to gsd. */
+  const GSD_ADJUST = 'framework pm gsd'
+  /** Its refusal while gsd is not installed for the repo (A5). */
+  const REFUSAL =
+    'Cannot set pm to gsd: it is not installed for this repo (installed: none (built-in)). pm keeps its framework.'
+
+  /** The Adjust question of the roles stage on the FULL_SCAN proposal, with the draft fields of `over`. */
+  function adjusting(over: Partial<Draft> = {}): InitState {
+    const draft: Partial<Draft> = {
+      proposal: full,
+      installed: ['none'],
+      gathered: GATHERED,
+      locations: DEFAULT_LOCATIONS,
+      ...over,
+    }
+
+    return nextStage(rolesStage.enter(stateAt('roles', draft)), { kind: 'answer', text: 'Adjust them' })
+  }
+
+  /** The Adjust question asked again with `refusal` on top, the roles unchanged. */
+  function refusedWith(state: InitState, refusal: string): boolean {
+    return state.openQuestion?.question.startsWith(`${refusal}\n${ADJUST_QUESTION}`) === true
+  }
+
+  test('an Adjust that names gsd while GSD is found but not proven asks the GSD check first', () => {
+    const asked = nextStage(adjusting(), { kind: 'answer', text: GSD_ADJUST })
+    expect([asked.sub.kind, asked.openQuestion?.question]).toEqual(['roles-gsd-check', GSD_CHECK_QUESTION])
+    expect(asked.openQuestion?.spec).toEqual(gsdCheckAsk(GATHERED.facts.facts).spec)
+  })
+
+  test('Yes runs the check; once it proves GSD, installed and the choice are read again, the Adjust taken', () => {
+    const asked = nextStage(adjusting(), { kind: 'answer', text: GSD_ADJUST })
+    const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
+    expect(yes.effect).toEqual({ kind: 'io', call: { id: 'gsd-identity', locations: DEFAULT_LOCATIONS } })
+    const checked = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: PROBED } })
+    const pm = checked.sub.kind === 'adjust' ? checked.sub.roles.find(role => role.id === 'pm') : undefined
+    const installedOnly = { kind: 'installed-only', ids: ['gsd'] }
+    const after = [checked.draft.installed, checked.draft.choice, checked.draft.gsdCheck, pm?.framework]
+    expect(after).toEqual([['gsd', 'none'], installedOnly, 'run', 'gsd'])
+    expect(checked.openQuestion?.question.startsWith(ADJUST_QUESTION)).toBe(true)
+  })
+
+  test('a Yes whose check proves nothing keeps installed and refuses the Adjust, as before', () => {
+    const asked = nextStage(adjusting(), { kind: 'answer', text: GSD_ADJUST })
+    const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
+    const nothing: RawGsdCandidate = { ...PROBED, runtimeStdout: null }
+    const checked = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: nothing } })
+    expect([checked.draft.installed, checked.draft.gsdCheck, refusedWith(checked, REFUSAL)]).toEqual([
+      ['none'],
+      'run',
+      true,
+    ])
+  })
+
+  test('No refuses the Adjust as before and keeps declined, so the frameworks stage asks the check no more', () => {
+    const asked = nextStage(adjusting(), { kind: 'answer', text: GSD_ADJUST })
+    const no = nextStage(asked, { kind: 'answer', text: 'No, skip the check' })
+    expect([no.sub.kind, no.draft.gsdCheck, refusedWith(no, REFUSAL)]).toEqual(['adjust', 'declined', true])
+    const later = frameworksStage.enter(stateAt('frameworks', wholeDraft({ gathered: GATHERED, gsdCheck: 'declined' })))
+    expect(later.openQuestion).toBeNull()
+  })
+
+  test('a dismissed GSD check cancels init with its own reason', () => {
+    const asked = nextStage(adjusting(), { kind: 'answer', text: GSD_ADJUST })
+    const dismissed = nextStage(asked, { kind: 'answer', text: null })
+    expect(dismissed.effect).toEqual({ kind: 'end', reply: cancelledReply(GSD_CHECK_DISMISSED_REASON) })
+  })
+
+  test('D-295: after a skipped check the Adjust still asks it; after a No or a run it is refused, asks nothing', () => {
+    const skipped = nextStage(adjusting({ gsdCheck: 'skipped' }), { kind: 'answer', text: GSD_ADJUST })
+    expect(skipped.sub.kind).toBe('roles-gsd-check')
+    const asked: readonly ('declined' | 'run')[] = ['declined', 'run']
+    for (const gsdCheck of asked) {
+      const refused = nextStage(adjusting({ gsdCheck }), { kind: 'answer', text: GSD_ADJUST })
+      expect([refused.sub.kind, refusedWith(refused, REFUSAL)]).toEqual(['adjust', true])
+    }
   })
 })

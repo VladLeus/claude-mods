@@ -4136,6 +4136,28 @@ describe('reviewStep', () => {
     expect([reply.startsWith(INIT_CANCELLED), run.gsdIdentityCalls.length, refusals]).toEqual([false, 1, []])
   })
 
+  test('#35 after #36: a go-back Adjust to gsd asks a skipped check, and none after its No (D-295)', async () => {
+    const superpowers: Facts = {
+      ...EMPTY_FACTS,
+      repoEntries: [{ name: 'docs', kind: 'dir', isLink: false }],
+      docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
+      gsd: [UNPROVEN],
+    }
+    const run = queuedIo(gitWorld({ facts: { facts: superpowers, gsdUserDir: '/home/u/.claude/gsd-core' } }), {
+      ...INIT_ANSWERS,
+      'Use these roles?': ['Use these roles', 'Adjust them', 'Use these roles', 'Adjust them', 'Use these roles'],
+      'Adjust the roles': 'framework pm gsd',
+      'Cannot set pm to gsd': 'Done adjusting',
+      'Review the plan': ['Change roles', 'Change roles', 'Confirm'],
+    })
+    const reply = await runInit(run.io, { dryRun: true })
+    const checks = run.asked.filter(question => question.startsWith("Run GSD's own check"))
+    const refusals = run.asked.filter(question => question.startsWith('Cannot set pm to gsd'))
+    const ends = [reply.startsWith(INIT_CANCELLED), checks.length, refusals.length, run.gsdIdentityCalls.length]
+
+    expect(ends).toEqual([false, 1, 2, 0])
+  })
+
   test('Change launcher start, or typing launcher start, re-asks where launchers start (A2)', async () => {
     for (const word of ['Change launcher start', 'launcher start']) {
       const run = queuedIo(gitWorld(), {

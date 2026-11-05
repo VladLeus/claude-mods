@@ -17,7 +17,7 @@ import { cancelledReply } from './init/replies'
 import { MODEL_PROGRESS, SCAN_PROGRESS, SCAN_SUMMARY } from './init/run'
 import { CLAUDE_JSON_QUESTION } from './init/stages/consent'
 import { DURATION_QUESTION } from './init/stages/duration'
-import { FRAMEWORK_QUESTION_PREFIX } from './init/stages/frameworks'
+import { FRAMEWORK_QUESTION_PREFIX, GSD_CHECK_QUESTION } from './init/stages/frameworks'
 import { NO_HISTORY_NOTE } from './init/stages/history'
 import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
@@ -749,6 +749,18 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect --adapters' })
     expect(out.text).toContain('Adapter contract')
     expect(out.text).toContain('built-in (none)')
+  })
+
+  test('a desktop detect run names the GSD install in its check dialog text (#39, D-310)', async ($, on) => {
+    const log = newLog()
+    const world = gsdOnlyWorld({
+      surfaces: ['desktop'],
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      answers: { "Run GSD's own check": 'No, skip the check' },
+    })
+    fakeHost(on, world, log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.asks).toEqual([`ask ${withContext(GSD_CHECK_QUESTION, '~/.claude/gsd-core: found, not proven')}`])
   })
 
   test('a session at the home folder is refused before any listing, read, settings or process call', async ($, on) => {
