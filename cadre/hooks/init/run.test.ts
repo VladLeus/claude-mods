@@ -4110,6 +4110,32 @@ describe('reviewStep', () => {
     },
   )
 
+  test('#30: once a Yes proved GSD, a Change roles round takes an Adjust that sets a role to gsd (D-269)', async () => {
+    const facts = { facts: { ...EMPTY_FACTS, gsd: [UNPROVEN] }, gsdUserDir: '/home/u/.claude/gsd-core' }
+    const probedGsd: RawGsdCandidate = {
+      location: 'user',
+      dir: '/home/u/.claude/gsd-core',
+      isPresent: true,
+      versionText: null,
+      identityText: null,
+      manifest: null,
+      runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}',
+      runtimeTried: true,
+    }
+    const run = queuedIo(gitWorld({ facts, probedGsd }), {
+      ...INIT_ANSWERS,
+      "Run GSD's own check": 'Yes, run the check',
+      'Use these roles?': ['Use these roles', 'Adjust them', 'Use these roles'],
+      'Adjust the roles': ['framework pm gsd', 'Done adjusting'],
+      'Cannot set pm to gsd': 'Done adjusting',
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    const reply = await runInit(run.io, { dryRun: true })
+    const refusals = run.asked.filter(question => question.startsWith('Cannot set pm to gsd'))
+
+    expect([reply.startsWith(INIT_CANCELLED), run.gsdIdentityCalls.length, refusals]).toEqual([false, 1, []])
+  })
+
   test('Change launcher start, or typing launcher start, re-asks where launchers start (A2)', async () => {
     for (const word of ['Change launcher start', 'launcher start']) {
       const run = queuedIo(gitWorld(), {

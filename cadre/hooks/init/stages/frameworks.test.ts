@@ -431,6 +431,17 @@ describe('the GSD check only when it can run and matter (D-269)', () => {
   const NO = 'No, skip the check'
   /** The template roles with Team Lead set to gsd by an Adjust. */
   const gsdRole = roles.map(role => (role.id === 'tl' ? withFramework(role, 'gsd') : role))
+  /** The user-level candidate as GSD's own check reads it: its runtime identity proves it. */
+  const PROBED: RawGsdCandidate = {
+    location: 'user',
+    dir: '/home/u/.claude/gsd-core',
+    isPresent: true,
+    versionText: null,
+    identityText: null,
+    manifest: null,
+    runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}',
+    runtimeTried: true,
+  }
 
   /** The state the frameworks stage is entered with for `team` and `choice`, whose facts are `over` with `gsd`. */
   function entryWith(
@@ -493,6 +504,15 @@ describe('the GSD check only when it can run and matter (D-269)', () => {
     const declined = frameworksStage.answer({ ...entry, sub: { kind: 'ask', tries: 1 } }, { kind: 'answer', text: NO })
     expect([entered.openQuestion, entered.sub, entered.draft.gsdCheck]).toEqual([null, { kind: 'done' }, undefined])
     expect(asNo(entered)).toEqual(asNo(declined))
+  })
+
+  test('#30: a Yes whose check proves GSD reads installed again with gsd in it, beside the choice', () => {
+    const asked = frameworksStage.enter(entryWith([UNPROVEN], {}, { kind: 'none' }, roles))
+    const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
+    const merged = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: PROBED } })
+    const installedOnly = { kind: 'installed-only', ids: ['gsd'] }
+    const after = [merged.draft.installed, merged.draft.choice, merged.draft.gsdCheck]
+    expect(after).toEqual([['gsd', 'none'], installedOnly, 'run'])
   })
 })
 
