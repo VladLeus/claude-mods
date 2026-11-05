@@ -22,6 +22,9 @@ const GITHUB: McpRef = { name: 'github', source: 'project' }
 /** The session's tool names: two of github, one of another server, and a built-in tool. */
 const TOOLS = ['mcp__github__list_prs', 'mcp__github__create_issue', 'mcp__gitlab__merge', 'Read']
 
+/** The names of the MCP servers the scan found, as init passes them to tell one server's tools from another's (#8). */
+const SERVERS = ['github', 'gitlab']
+
 /** The item rows of one skill or server (D-311): `name → roles`, then its description or the placeholder. */
 function itemOf(name: string, roles: string, description: string | null): ContextRow[] {
   const about: ContextRow =
@@ -44,20 +47,36 @@ describe('MCP server contexts (D-211)', () => {
   })
 
   test("mcpToolNamesOf keeps one server's tool names without the prefix, cleaned and capped, once each", () => {
-    expect(mcpToolNamesOf([...TOOLS, 'mcp__github__list_prs', 'mcp__github__', 42], 'github')).toEqual([
+    expect(mcpToolNamesOf([...TOOLS, 'mcp__github__list_prs', 'mcp__github__', 42], 'github', SERVERS)).toEqual([
       'create_issue',
       'list_prs',
     ])
     const bidi = String.fromCodePoint(0x202e)
-    expect(mcpToolNamesOf([`mcp__github__ev${bidi}il`, `mcp__github__${'t'.repeat(200)}`], 'github')).toEqual([
+    const long = `mcp__github__${'t'.repeat(200)}`
+    expect(mcpToolNamesOf([`mcp__github__ev${bidi}il`, long], 'github', SERVERS)).toEqual([
       'evil',
       `${'t'.repeat(109)}…`,
     ])
-    expect([mcpToolNamesOf(null, 'github'), mcpToolNamesOf({ name: 'mcp__github__x' }, 'github')]).toEqual([[], []])
+    const notLists = [null, { name: 'mcp__github__x' }].map(tools => mcpToolNamesOf(tools, 'github', SERVERS))
+    expect(notLists).toEqual([[], []])
+  })
+
+  test('#8: a tool name matches its server by the exact normalised prefix, never a prefix of another server', () => {
+    const tools = ['mcp__my_server__a', 'mcp__my__b', 'mcp__my_server_x__c']
+    const servers = ['my.server', 'my']
+    expect(mcpToolNamesOf(tools, 'my.server', servers)).toEqual(['a'])
+    expect(mcpToolNamesOf(tools, 'my', servers)).toEqual(['b'])
+  })
+
+  test('#8: a tool of a longer server whose prefix starts with a shorter one goes to the longer server only', () => {
+    const tools = ['mcp__my__b', 'mcp__my__x__c']
+    const servers = ['my', 'my__x']
+    expect(mcpToolNamesOf(tools, 'my', servers)).toEqual(['b'])
+    expect(mcpToolNamesOf(tools, 'my__x', servers)).toEqual(['c'])
   })
 
   test('a .mcp.json server lists its source, its tool names and the recommended roles, and nothing else', () => {
-    expect(mcpServerContext(GITHUB, TOOLS, ['be', 'qa'], SCREEN_LIST_WORDS)).toEqual({
+    expect(mcpServerContext(GITHUB, TOOLS, ['be', 'qa'], SCREEN_LIST_WORDS, SERVERS)).toEqual({
       title: 'MCP: github',
       lines: ['Source: .mcp.json', 'Tools: 2 (create_issue, list_prs)', 'Recommended: be, qa'],
       kind: 'mcp-server',
@@ -76,7 +95,7 @@ describe('MCP server contexts (D-211)', () => {
   })
 
   test('a server the session lists no tool for reads not connected, and no recommendation reads none (D-317)', () => {
-    const sentry = mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS)
+    const sentry = mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS, SERVERS)
     expect(sentry.lines).toEqual(['Source: session', 'Tools: not connected, tools unknown', 'Recommended: none'])
     expect(sentry).toMatchObject({ summary: 'Recommended: none' })
     expect(sentry.rows?.[0]?.rows[1]).toEqual({
@@ -94,12 +113,13 @@ describe('MCP server contexts (D-211)', () => {
       { name: 'claude_ai_Slack', source: 'session' },
     ]
     expect(refs.map(mcpSourceText)).toEqual(['claude.ai', 'claude.ai', 'claude.ai'])
-    const gmail = mcpServerContext({ name: 'claude_ai_Gmail', source: 'user-config' }, TOOLS, [], SCREEN_LIST_WORDS)
+    const gmailRef: McpRef = { name: 'claude_ai_Gmail', source: 'user-config' }
+    const gmail = mcpServerContext(gmailRef, TOOLS, [], SCREEN_LIST_WORDS, SERVERS)
     expect(gmail.lines).toEqual(['Source: claude.ai', 'Tools: not connected, tools unknown', 'Recommended: none'])
   })
 
   test('the not-connected tools row and line keep their text, the row built from its own value (N-06)', () => {
-    const jira = mcpServerContext({ name: 'jira', source: 'user-config' }, [], [], SCREEN_LIST_WORDS)
+    const jira = mcpServerContext({ name: 'jira', source: 'user-config' }, [], [], SCREEN_LIST_WORDS, SERVERS)
     expect(jira.rows?.[0]?.rows[1]).toEqual({
       role: 'field',
       label: 'Tools',
@@ -111,10 +131,10 @@ describe('MCP server contexts (D-211)', () => {
 
   test('50 tools show 12 names, then how many more (T-02.1-73); a name never adds a line (T-02.1-71)', () => {
     const many = Array.from({ length: 50 }, (_, at) => `mcp__big__t${String(at).padStart(2, '0')}`)
-    const tools = mcpServerContext({ name: 'big', source: 'session' }, many, [], SCREEN_LIST_WORDS).lines[1]
+    const tools = mcpServerContext({ name: 'big', source: 'session' }, many, [], SCREEN_LIST_WORDS, SERVERS).lines[1]
     expect(tools).toBe('Tools: 50 (t00, t01, t02, t03, t04, t05, t06, t07, t08, t09, t10, t11, +38 more)')
     const newline = String.fromCodePoint(10)
-    const forged = mcpServerContext({ name: `x${newline}y`, source: 'project' }, [], [], SCREEN_LIST_WORDS)
+    const forged = mcpServerContext({ name: `x${newline}y`, source: 'project' }, [], [], SCREEN_LIST_WORDS, SERVERS)
     expect([forged.title, forged.lines.length]).toEqual(['MCP: xy', 3])
   })
 })
@@ -344,8 +364,8 @@ function drawnLines(context: AskContext): string[] {
 describe('rows from the same data as lines (D-313, D-323)', () => {
   test('a server question draws as rows the same words its lines hold, a row per line', () => {
     const contexts = [
-      mcpServerContext(GITHUB, TOOLS, ['be', 'qa'], SCREEN_LIST_WORDS),
-      mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS),
+      mcpServerContext(GITHUB, TOOLS, ['be', 'qa'], SCREEN_LIST_WORDS, SERVERS),
+      mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS, SERVERS),
     ]
     for (const context of contexts) expect(drawnLines(context)).toEqual(context.lines)
   })
