@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { DesiredFile, Manifest, ManifestEntry, Plan, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
+import { t } from '../locales/t'
 import { MANIFEST_PATH } from '../plan/classify'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { isSafeOpPath, planReadPaths, planWithManifest } from '../plan/plan'
@@ -29,7 +30,7 @@ import { CONFLICT_OPTIONS, conflictPaths, conflictQuestion, parseConflictAnswer 
 import type { ConflictChoice } from './conflict'
 import type { ApplyStep } from './private'
 import { chmodArgv } from './safety'
-import { applySteps } from './steps'
+import { applySteps, planMismatchProblem } from './steps'
 
 /** The repo root of the fixtures, as memWorld has it. */
 const ROOT = '/repo'
@@ -445,5 +446,47 @@ describe('improved keys as the plan keys files (D-241)', () => {
 
     expect(writtenManifest(steps)?.files.map(entry => entry.path)).toEqual([BUILT])
     expect(steps.filter(step => step.path === 'CLAUDE.md')).toEqual([])
+  })
+})
+
+describe('a plan and desired files that disagree (D-272, edge #33)', () => {
+  /** The files of the consistent plan: a launcher and a plain file. */
+  const DESIRED = [file(LAUNCHER, '#!/bin/sh\n', 'exec'), file(A, 'a\n')]
+
+  test('#33: a consistent plan has no problem, and its steps stay as they were', async () => {
+    const { plan, manifest } = await planWithManifest(input({ desired: DESIRED }))
+    const steps = await applySteps({ plan, desired: DESIRED, manifest, gitignore: null, choices: NO_CHOICES })
+
+    expect(planMismatchProblem(plan, DESIRED)).toBeNull()
+    expect(steps.map(stepLine)).toEqual([
+      `write ${A}`,
+      `write ${LAUNCHER}`,
+      `chmod ${LAUNCHER}`,
+      `manifest ${MANIFEST_PATH}`,
+    ])
+  })
+
+  test('#33: a create or a change with no desired file and no beside original is the problem', async () => {
+    const created = await planWithManifest(input({ desired: DESIRED }))
+    const old = await planWithManifest(input({ desired: [file(A, 'old\n')] }))
+    const disk = new Map([[A, text('old\n')]])
+    const changed = await planWithManifest(
+      input({ desired: DESIRED, disk, manifest: old.manifest, manifestState: 'present' }),
+    )
+
+    expect(summary(changed.plan)).toContain(`change ${A}`)
+    for (const { plan } of [created, changed]) {
+      expect(planMismatchProblem(plan, [file(LAUNCHER, '#!/bin/sh\n', 'exec')])).toBe(t('apply.steps.planMismatch'))
+    }
+  })
+
+  test('#33: the manifest, the .gitignore and a .cadre-new copy beside its original are no problem', async () => {
+    const bare = await planWithManifest(input({ gitignore: { disk: ABSENT, lines: ['thoughts/'] } }))
+    const { planned } = await editedRolePlan(VERSION)
+
+    expect(summary(bare.plan)).toEqual([`create ${MANIFEST_PATH}`, 'create .gitignore'])
+    expect(planMismatchProblem(bare.plan, [])).toBeNull()
+    expect(summary(planned.plan)).toContain(`create ${BESIDE}`)
+    expect(planMismatchProblem(planned.plan, [NEW_ROLE, SAME_INDEX])).toBeNull()
   })
 })
