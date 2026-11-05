@@ -842,6 +842,17 @@ describe('improver other changes (G-02-1f, D-141)', () => {
     expect(run.logged.slice(-rows.length)).toEqual(rows)
   })
 
+  test("#18: an unchanged file's other-file rows are one note each, once, and no block (D-302, D-325)", async () => {
+    const disk = roleFolderDisk()
+    const edits = { [beFile('role.json')]: '{"id":"be","edited":true}\n', [beFile('notes.md')]: 'a note\n' }
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]))
+    const run = diskIo(disk)
+    await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    const rows = otherFilesLines('.cadre/be', ['.cadre/be/notes.md', '.cadre/be/role.json'])
+    expect(rows.map(row => run.logged.filter(line => line === row).length)).toEqual(rows.map(() => 1))
+    expect(run.shown).toEqual([])
+  })
+
   test('a run with no other change adds no warning and no other-files rows', async () => {
     const disk = roleFolderDisk()
     const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))
