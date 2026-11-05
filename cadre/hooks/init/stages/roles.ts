@@ -68,6 +68,12 @@ const DESCRIBE_CHOICES: readonly Labelled<DescribeChoice>[] = Object.freeze([
 /** The buttons of the describe question; the description itself is typed in the text field. */
 export const DESCRIBE_OPTIONS: readonly string[] = Object.freeze(DESCRIBE_CHOICES.map(entry => entry.label))
 
+/**
+ * The describe question's options that end it, both of its buttons, whose pick stands over any typed note (D-350 rule,
+ * Q11): Use the template instead and Cancel init.
+ */
+const DESCRIBE_ENDING: readonly string[] = Object.freeze(DESCRIBE_CHOICES.map(entry => entry.label))
+
 /** What the describe question takes, as its refusal lists it: a typed description or one of its buttons (D-136). */
 const DESCRIBE_ACCEPTS = t('init.roles.describeAccepts', { quotedLabels: quotedLabels(DESCRIBE_OPTIONS) })
 
@@ -85,6 +91,13 @@ const ADJUST_CHOICES: readonly Labelled<AdjustChoice>[] = Object.freeze([
 
 /** The buttons of the Adjust question; a change itself is typed in the text field. */
 export const ADJUST_OPTIONS: readonly string[] = Object.freeze(ADJUST_CHOICES.map(entry => entry.label))
+
+/**
+ * The Adjust question's option that ends it, Done adjusting, whose pick stands over any typed note (D-350 rule, Q11).
+ */
+const ADJUST_ENDING: readonly string[] = Object.freeze(
+  ADJUST_CHOICES.filter(entry => entry.value === 'done').map(entry => entry.label),
+)
 
 /** The context line of the Adjust question (D-136): the ids of the roles as they are now, after the changes so far. */
 export function adjustContextLine(roles: readonly RoleSpec[]): string {
@@ -209,18 +222,33 @@ function rolesAsk(roles: readonly RoleSpec[], changes: readonly RoleChange[]): R
 /**
  * The describe question (ROLE-02, D-136): DESCRIBE_QUESTION with DESCRIBE_CONTEXT on its second line, its two buttons
  * with the Describe chip, a typed description that is not blank (parseDescribeAnswer), and DESCRIBE_CANCELLED_REASON
- * for a dismissal.
+ * for a dismissal. On the TUI default a description typed in the notes is the answer (takesNote, RF-01); a pick of
+ * either button stands over a typed note (endingLabels, D-350).
  */
 const DESCRIBE_ASK = Object.freeze({
   question: withContext(DESCRIBE_QUESTION, DESCRIBE_CONTEXT),
-  spec: Object.freeze({ options: DESCRIBE_OPTIONS, header: ASK_HEADERS.describe }),
+  spec: Object.freeze({
+    options: DESCRIBE_OPTIONS,
+    header: ASK_HEADERS.describe,
+    takesNote: true,
+    endingLabels: DESCRIBE_ENDING,
+  }),
   parse: parseDescribeAnswer,
   accepts: DESCRIBE_ACCEPTS,
   dismissedReason: DESCRIBE_CANCELLED_REASON,
 })
 
-/** The dialog of the Adjust question: its two buttons with the Adjust chip; a change is typed in the text field. */
-const ADJUST_SPEC = Object.freeze({ options: ADJUST_OPTIONS, header: ASK_HEADERS.adjust })
+/**
+ * The dialog of the Adjust question: its two buttons with the Adjust chip; a change is typed in the text field. On the
+ * TUI default a change typed in the notes is the answer (takesNote, RF-01); a pick of Done adjusting stands over a
+ * typed note (endingLabels, D-350).
+ */
+const ADJUST_SPEC = Object.freeze({
+  options: ADJUST_OPTIONS,
+  header: ASK_HEADERS.adjust,
+  takesNote: true,
+  endingLabels: ADJUST_ENDING,
+})
 
 /** The Adjust cursor: the proposal it came from, how many Adjust answers so far, and the roles as adjusted so far. */
 type AdjustCursor = {

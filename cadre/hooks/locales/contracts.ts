@@ -45,6 +45,12 @@ export const CONTRACTS = Object.freeze({
 }) satisfies Record<string, string>
 
 /**
+ * The answer the engine gives a dialog submitted from its notes field with no option chosen (seen on 2.1.318, RF-01):
+ * an engine protocol token, never translated (D-221).
+ */
+export const NOTES_ONLY_ANSWER = '(notes only)'
+
+/**
  * The AppleScript lines that open a new Terminal window running the shell text, the last argv item, which `do script`
  * reads through `on run argv` (D-126). Terminal.app cannot make a tab without System Events, so it is a window.
  */

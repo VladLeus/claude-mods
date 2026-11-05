@@ -10,6 +10,7 @@ import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { labelled } from '../core/labelled'
 import { clean } from '../core/text'
+import { NOTES_ONLY_ANSWER } from '../locales/contracts'
 import { t } from '../locales/t'
 import { UNCUT, wrapLine } from './pane'
 
@@ -458,9 +459,10 @@ function typedNotes(annotations: Record<string, unknown> | undefined, asked: str
  * (`entry.endingLabels`, D-350) stands, whatever note was typed, one naming another option included; else typed notes
  * that name one of its option labels, trimmed and in any case (labelled), give that label; other typed notes are the
  * answer only on a question that takes a note (`entry.takesNote`), and are ignored on any other, so the chosen answer
- * stands; else '' for DESCRIBE_OWN_LABEL picked with nothing typed, else the answer as chosen; undefined when there is
- * neither an answer nor notes that count. A note never silently replaces the option chosen on a question that takes
- * none.
+ * stands; else a `(notes only)` answer whose note is not taken gives '', which the stage refuses and asks again
+ * (NOTES_ONLY_ANSWER, RF-01, Q12); else '' for DESCRIBE_OWN_LABEL picked with nothing typed, else the answer as
+ * chosen; undefined when there is neither an answer nor notes that count. A note never silently replaces the option
+ * chosen on a question that takes none.
  */
 function ownAnswer(notes: string, answer: string | undefined, entry: AskedQuestion): string | undefined {
   const ending = entry.endingLabels ?? []
@@ -468,6 +470,7 @@ function ownAnswer(notes: string, answer: string | undefined, entry: AskedQuesti
   const label = labelled(entry.labels.map(text => ({ label: text, value: text })), notes)
   if (label !== null) return label
   if (notes !== '' && entry.takesNote) return notes
+  if (answer === NOTES_ONLY_ANSWER) return ''
   if (answer === DESCRIBE_OWN_LABEL) return ''
 
   return answer
@@ -480,8 +483,9 @@ function ownAnswer(notes: string, answer: string | undefined, entry: AskedQuesti
  * Confirm, D-350) stands whatever was typed; else notes typed in the dialog, trimmed and not empty, that name one of
  * its option labels in any case answer that label; other notes become its answer only when it takes a note
  * (`takesNote`: it takes a typed answer, or it is the Launch folder or the Review question) and are ignored on any
- * other question, so the option chosen there stands; else DESCRIBE_OWN_LABEL becomes '', which cadre's own parsers
- * refuse and ask again; else the answer is kept. That answer
+ * other question, so the option chosen there stands; else a `(notes only)` answer whose note is not taken becomes ''
+ * (NOTES_ONLY_ANSWER, RF-01, Q12), and so does DESCRIBE_OWN_LABEL, which cadre's own parsers refuse and ask again;
+ * else the answer is kept. That answer
  * is stored under the question's text as asked, and the key of the text the dialog showed is dropped, so $.ui.ask
  * resolves to it as it does to an answer typed under Other. Every other answer is kept as is. The result is untrusted:
  * null unless it is an object whose `answers` is an object of strings and whose `annotations` is absent or an object.

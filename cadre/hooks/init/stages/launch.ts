@@ -50,6 +50,12 @@ const LAUNCH_STARTS: readonly LaunchStartEntry[] = Object.freeze([
  */
 export const LAUNCH_START_OPTIONS: readonly string[] = Object.freeze(LAUNCH_STARTS.map(entry => entry.label))
 
+/**
+ * The launcher start question's options that end it, all three (D-350 rule, Q11): a pick stands over any typed note, so
+ * a note counts only when the dialog is submitted from its notes field.
+ */
+const LAUNCH_START_ENDING: readonly string[] = LAUNCH_START_OPTIONS
+
 /** Each launcher start dialog label with what it picks. */
 const LAUNCH_START_LABELS: readonly Labelled<LaunchChoice>[] = Object.freeze(
   LAUNCH_STARTS.map(entry => ({ label: entry.label, value: entry.choice })),
@@ -137,7 +143,8 @@ const LAUNCH_DIR_SPEC = Object.freeze({
  * second line (launchContextLine), the three starts with the Launch chip and what the git root and the run folder
  * mean as its own context (launchContext, its launcher map as `words` allows it, D-236, D-256), whose summary a pane
  * surface asks in place of that line (D-310), parseLaunchChoice, what its refusal lists, and the reason a dismissal
- * cancels with.
+ * cancels with. On the TUI default a start word typed in the notes is the answer (takesNote, RF-01); a pick of any of
+ * its options stands over a typed note (endingLabels, D-350).
  */
 function launchStartAsk(
   roles: readonly RoleSpec[],
@@ -149,7 +156,13 @@ function launchStartAsk(
 
   return {
     question: pane.asked,
-    spec: { options: LAUNCH_START_OPTIONS, header: ASK_HEADERS.launch, context: { ...context, pane } },
+    spec: {
+      options: LAUNCH_START_OPTIONS,
+      header: ASK_HEADERS.launch,
+      takesNote: true,
+      endingLabels: LAUNCH_START_ENDING,
+      context: { ...context, pane },
+    },
     parse: parseLaunchChoice,
     accepts: LAUNCH_START_ACCEPTS,
     dismissedReason: LAUNCH_START_DISMISSED_REASON,
