@@ -405,6 +405,19 @@ describe('plugin keys not shaped name@marketplace (D-267)', () => {
       [...keys.slice(0, 5).map(key => `ignored plugin key: ${key}`), 'ignored 2 more plugin keys'],
     ])
   })
+
+  test('an enabledPlugins key with a line break gets only its hidden-name warning (D-349)', async () => {
+    const scan = await scanOf(settingsWorld({ enabledPlugins: { 'a\n@m': true, 'b@m': true } }))
+    expect(scan.plugins).toEqual(['b@m'])
+    expect(scan.warnings).toEqual(['ignored enabledPlugins key "a@m": its name has hidden characters or is too long'])
+  })
+
+  test('an installed_plugins.json key with a line break gets only its hidden-name warning (D-349)', async () => {
+    const files = { [INSTALLED_PATH]: installedText(['a\n@m', 'b@m']) }
+    const scan = await scanOf(memWorld({ files }))
+    expect(scan.installedPlugins).toEqual(['b@m'])
+    expect(scan.warnings).toEqual(['ignored installed plugin key "a@m": its name has hidden characters or is too long'])
+  })
 })
 
 describe('the .mcp.json approval lists of the settings (D-332)', () => {
