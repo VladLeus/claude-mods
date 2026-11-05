@@ -670,6 +670,10 @@ export const EN = Object.freeze({
   'apply.safety.chmodProblem': '{path} was not made executable: its write was refused or failed',
   'apply.safety.outsideReason': 'outside the repo and the role memory folders',
 
+  'apply.steps.planMismatch':
+    `cadre stopped before writing: the file plan and the files built for it disagree, so nothing was written. ${
+    ''}Run the command again.`,
+
   'regen.review.yes': 'Yes',
   'regen.review.no': 'No',
   'regen.review.regenDismissedReason': 'A regen question on instruction parts was dismissed or not answered.',

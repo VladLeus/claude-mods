@@ -34,9 +34,9 @@ import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
 import { noHomeInstallText, setupAfterInstalls } from '../apply/installs'
 import type { ApplyInput } from '../apply/private'
-import { installPlugins, privatePlanOf, writeWithImprover } from '../apply/run'
+import { installPlugins, NOTHING_APPLIED, privatePlanOf, writeWithImprover } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
-import { applySteps } from '../apply/steps'
+import { applySteps, planMismatchProblem } from '../apply/steps'
 import { sha256Hex } from '../core/hash'
 import { needsGsdCheck, provenUserDir, withGsdIdentity } from '../framework/gsd/identity'
 import { desiredFiles } from '../generate/files'
@@ -315,7 +315,9 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  *    each role's private text file and hand-out record in its role memory folder, once the folder is made and made
  *    private (G-02-1f, D-140 q2-a, N13), and the manifest last. Take new overwrites the person's file and the manifest
  *    records its new hash; Keep mine keeps the file and writes its `.cadre-new` copy, as it does for a file that
- *    became a conflict after the questions.
+ *    became a conflict after the questions. A fresh plan whose create or change ops and desired files disagree
+ *    (planMismatchProblem) runs no step at all, not 6a either: the outcome is NOTHING_APPLIED with that refusal and
+ *    the manifest skipped (D-272 edge #33, D-293).
  * 6a. When claude-md-management is installed, before init or by step 4 with no install problem (the setup made
  *    again from the installs), and a built role file holds a part (builtRoleFiles: the `.cadre/<id>/CLAUDE.md` of a
  *    role with a repo part 5a kept, watching the role's private files and guarded from its `.runtime` folder, and
@@ -395,15 +397,20 @@ async function applyConfirmed(
     repoParts: tracked.repoParts,
   })
   const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
-  const steps = await applySteps(input)
+  // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).
+  const problem = planMismatchProblem(input.plan, input.desired)
+  const steps = problem === null ? await applySteps(input) : []
   const withParts = new Set(Array.from(tracked.repoParts).flatMap(([id, parts]) => (parts.length > 0 ? [id] : [])))
   const isImproverReady = setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
   const privateFolders = new Set(privatePlan.privates.flatMap(role => (role.parts.length > 0 ? [role.folder] : [])))
   const filter = { repoIds: withParts, privateFolders, roleFolders: privatePlan.folders }
-  const offered = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
+  const offered = problem === null && isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
   const allowed = privatePlan.allowed
   if (offered.length > 0) await io.progress(IMPROVER_PROGRESS, countsText([['files', offered.length]]))
-  const written = await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
+  const written =
+    problem === null
+      ? await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
+      : { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
   const outcome: ApplyOutcome = {
     ...written,

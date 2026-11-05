@@ -126,7 +126,7 @@ export type ApplyOutcome = {
 }
 
 /** The outcome of an apply that did nothing: no write, no run, no problem and no improver pass. */
-const NOTHING_APPLIED: ApplyOutcome = Object.freeze({
+export const NOTHING_APPLIED: ApplyOutcome = Object.freeze({
   written: [],
   executable: [],
   failed: [],

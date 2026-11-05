@@ -18,9 +18,9 @@ import type {
 } from '../../types'
 import { builtRoleFiles } from '../apply/improver'
 import type { ApplyInput } from '../apply/private'
-import { appliedLines, privatePaths, regenManifestSkippedNote, writeWithImprover } from '../apply/run'
+import { appliedLines, NOTHING_APPLIED, privatePaths, regenManifestSkippedNote, writeWithImprover } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
-import { applySteps } from '../apply/steps'
+import { applySteps, planMismatchProblem } from '../apply/steps'
 import { sha256Hex } from '../core/hash'
 import { withoutUnprovenUserWarning } from '../framework/gsd/identity'
 import { desiredFiles } from '../generate/files'
@@ -160,7 +160,9 @@ export function regenReplyText(planned: RegenPlanned, id: string, applied: Apply
  * watching its private files when its role memory folder is known and guarded from its `.runtime` folder, and its
  * private text file with a global part; 02-GAPS-B3 M1, C1), the improver pass runs on them in a session
  * (writeImproved, D-141, D-142); where no one can be asked it does not start, and the outcome carries
- * improverNotOfferedWarning. The warnings of the hand-out's git check are its untrackedParts.
+ * improverNotOfferedWarning. The warnings of the hand-out's git check are its untrackedParts. A plan whose create or
+ * change ops and desired files disagree (planMismatchProblem) writes nothing: the outcome is NOTHING_APPLIED with that
+ * refusal and the manifest skipped (D-272 edge #33, D-293).
  */
 export async function regenApply(
   io: InitIo,
@@ -177,6 +179,9 @@ export async function regenApply(
   const { privateRole, role } = handed
   const privates = privateRole === null ? [] : [privateRole]
   const applyInput: ApplyInput = { plan, desired, manifest, gitignore: null, choices: new Map(), privates }
+  // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).
+  const problem = planMismatchProblem(plan, desired)
+  if (problem !== null) return { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const steps = await applySteps(applyInput)
   const allowed = privatePaths(privates.map(owed => owed.folder))
   const withParts = new Set(handed.repoParts !== null && handed.repoParts.length > 0 ? [role.id] : [])

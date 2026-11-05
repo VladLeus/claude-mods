@@ -2,13 +2,15 @@
  * The apply steps, a layer 9 module: the writes of a plan the person confirmed, in order (D-105, LNCH-01): the files
  * the plan creates or changes in plan order, a chmod right after each launcher, the root `.gitignore` block, the
  * private steps and the manifest last, so an apply that stops early never leaves a manifest that claims a file it did
- * not write; an edited file is written only on Take new (D-67). It imports core, paths, plan/classify, the private
- * role files, the conflict choice and the types, so the apply runner and init plan their writes here.
+ * not write; an edited file is written only on Take new (D-67). Before any of that, an apply checks that the plan and
+ * the desired files agree (planMismatchProblem, D-293). It imports core, the locale texts, paths, plan/classify, the
+ * private role files, the conflict choice and the types, so the apply runner and init plan their writes here.
  */
 import type { DesiredFile, FileMode, FileOp, Manifest, ManifestEntry, Plan } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
+import { t } from '../locales/t'
 import { BESIDE_SUFFIX, GITIGNORE_FILE } from '../paths'
 import { MANIFEST_PATH } from '../plan/classify'
 import type { ConflictChoice } from './conflict'
@@ -85,6 +87,25 @@ function opSteps(op: FileOp, input: ApplyInput, files: ReadonlyMap<string, Desir
   if (original === null || !isCreateOrChange(op) || input.choices.get(original.path) === 'new') return []
 
   return [{ kind: 'write', path: op.path, text: original.content }]
+}
+
+/**
+ * Why the two inputs of an apply disagree, checked before anything is written (D-272 edge #33, D-293): the text of
+ * `apply.steps.planMismatch` for the first create or change op of the plan whose path has no desired file
+ * (desiredByPath) and no `.cadre-new` original (besideOriginal); null when every such op has one. The manifest op
+ * (MANIFEST_PATH) and the `.gitignore` op (GITIGNORE_FILE) have no desired file by design and are skipped, and so are
+ * the hunk ops.
+ */
+export function planMismatchProblem(plan: Plan, desired: readonly DesiredFile[]): string | null {
+  const files = desiredByPath(desired, plan)
+  for (const op of plan.ops) {
+    if (op.kind === 'hunk' || op.path === MANIFEST_PATH || op.path === GITIGNORE_FILE || !isCreateOrChange(op)) continue
+    if (files.has(op.path.toLowerCase()) || besideOriginal(op.path, files) !== null) continue
+
+    return t('apply.steps.planMismatch')
+  }
+
+  return null
 }
 
 /** The plan's op for the manifest; null when the plan has none. */
