@@ -14,6 +14,7 @@ import type {
 import { parseCommand } from './command/command'
 import { helpText } from './command/usage'
 import { isObject } from './core/json'
+import { settledWithin } from './core/settle'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
@@ -87,6 +88,11 @@ const REFUSED_IDENTITY_RUN: IdentityRunResult = { stdout: null, problem: 'could-
 const COMPLETE_MAX_TOKENS = 2048
 /** How long one model completion for init may take before it is given up (D-83). */
 const COMPLETE_TIMEOUT_MS = 60_000
+/**
+ * The longest a question waits for the pane scroll before it is asked (D-271, edge #1): a scroll that never settles
+ * holds no question longer than this.
+ */
+const SCROLL_WAIT_MS = 2_000
 
 /**
  * The runtime identity call, run with the GSD folder as its working folder so it never runs in the repo (WR-01). A
@@ -145,12 +151,17 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 /**
  * One command run's pane handle: whether it opened the cadre-init pane (D2), set when an init or regen run on a pane
  * surface opens it as it starts (openPane, D-324) and read once the run settles, where the run shows its context
- * (D-208), decided before anything opens, the context the TUI default printed last, whether the run set a status
- * line, and whether a step runs now.
+ * (D-208), decided before anything opens, whether the command came with a presentation (D-271), the context the TUI
+ * default printed last, whether the run set a status line, and whether a step runs now.
  */
 type PaneRun = {
   isOpened: boolean
   readonly surface: Surface
+  /**
+   * Whether the command came with a presentation, as a command a person ran does: on a host with no surfaces method
+   * the run counts as interactive then (isInteractive, D-271, edge #11).
+   */
+  readonly hasPresentation: boolean
   /** The context the TUI default last printed above a dialog this run (WD-S4); null before any. */
   printed: AskContext | null
   /**
@@ -166,17 +177,55 @@ type PaneRun = {
 }
 
 /**
+ * The surfaces the session draws on, as the host answers them (D-271, edge #11): null when the host refuses to say,
+ * and undefined when the call itself throws, as on a host with no surfaces method, so the caller can tell a host that
+ * cannot say from one that never could and fall back to the command's presentation (surfaceOf, isInteractive).
+ */
+async function surfacesRead($: EngineInterface): Promise<readonly string[] | null | undefined> {
+  try {
+    return await $.session.surfaces().catch(() => null)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Sets the status line to `text`, or clears it when `text` is undefined; a throw from the host is caught and ignored,
+ * as a status line is cosmetic and never cancels init (D-271, edge #10).
+ */
+function safeStatus($: EngineInterface, text: string | undefined): void {
+  try {
+    $.ui.status(text)
+  } catch {
+    // A status line the host cannot set or clear changes nothing else (D-271).
+  }
+}
+
+/**
+ * Logs `text` to the transcript; a throw from the host is caught and ignored, as a transcript line is cosmetic and
+ * never cancels init (D-271, edge #10).
+ */
+function safeLog($: EngineInterface, text: string): void {
+  try {
+    $.ui.log(text)
+  } catch {
+    // A line the host cannot log changes nothing else (D-271).
+  }
+}
+
+/**
  * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
  * the preview drawn at `columns` right above the dialog, one transcript entry per row, its title first, each line
  * cleaned and uncut, as the terminal draws no newline inside an entry (D-262). It prints once per question: a question
  * asked again with the context the run printed last prints nothing (tuiTranscriptEntries, D-228, D-260, D-262,
- * WD-S4); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing.
+ * WD-S4); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing. A
+ * status or log call the host throws on is ignored (safeStatus, safeLog, D-271).
  */
 function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext | null, columns: number | null): void {
-  $.ui.status(undefined)
+  safeStatus($, undefined)
   const entries = tuiTranscriptEntries(context, pane.printed, columns)
   if (entries.length === 0) return
-  for (const entry of entries) $.ui.log(entry)
+  for (const entry of entries) safeLog($, entry)
   pane.printed = context
 }
 
@@ -186,8 +235,9 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * into absent (statForWrite answers absent only when the host says the path is not there), and none reads an error
  * message. `ask` rejects when the person dismisses the dialog (D-45); it writes the question with its header, context
  * and typed-answer flag into the pane state in one update before the dialog, no loader with it, and the idle state in
- * one update after it (D-303), scrolls a pane the run opened back to its start for each question (questionScroll,
- * D-209; a scroll the host refuses is swallowed), and gives the dialog only its options, header and multi-select
+ * one update after it, whatever happens in between (D-303, D-271), scrolls a pane the run opened back to its start for
+ * each question (questionScroll, D-209; a scroll the host refuses is swallowed, and one that never settles holds the
+ * question at most SCROLL_WAIT_MS, D-271), and gives the dialog only its options, header and multi-select
  * (D-203, D-229). On a pane surface it asks, and keeps as the open question's text, the pane text of the question's
  * context: its sentence and summary, plus the page marker on a paged question, with the refusal line on top of a
  * refusal (paneQuestionText, D-255, D-310), so the dialog hook still pairs the dialog with it. `show` draws nothing on
@@ -199,7 +249,8 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * itself is opened by the command handler as an init or regen run starts (openPane, D-324), which also writes the idle
  * state and closes the pane once the run settles (D2, D-304). On the TUI default `progress` sets the one status line,
  * the label alone (`$.ui.status`), `log` logs every line, and `ask` clears the status line before each dialog (D-232)
- * and prints a context too long for the preview above it (beforeTuiDialog, D-228).
+ * and prints a context too long for the preview above it (beforeTuiDialog, D-228). A status or log call the host
+ * throws on is ignored (safeStatus, safeLog), so no cosmetic host failure cancels init (D-271).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
@@ -220,13 +271,15 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       // No step runs while it is open, so a line logged after it goes to the transcript (D-325).
       pane.isLoading = false
       await update($, paneState, () => ({ open, loader: null })).catch(() => undefined)
-      // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
-      const scroll = questionScroll(PANE, open, pane.isOpened)
-      if (scroll !== null) await $.ui.scroll(scroll).catch(() => undefined)
-      // The preview is drawn at the newest width a terminal reported, as the dialog hook draws it (D-260).
-      const columns = latestColumns(viewportColumns, presentationColumns)
-      if (pane.surface === 'tui-default') beforeTuiDialog($, pane, open.context, columns)
+      // From here on the finally writes the idle state, so no host failure leaves the question open (D-271).
       try {
+        // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it,
+        // and one that never settles holds it at most SCROLL_WAIT_MS (settledWithin, D-271).
+        const scroll = questionScroll(PANE, open, pane.isOpened)
+        if (scroll !== null) await settledWithin($.ui.scroll(scroll), $.clock.sleep(SCROLL_WAIT_MS))
+        // The preview is drawn at the newest width a terminal reported, as the dialog hook draws it (D-260).
+        const columns = latestColumns(viewportColumns, presentationColumns)
+        if (pane.surface === 'tui-default') beforeTuiDialog($, pane, open.context, columns)
         const dialog = {
           options,
           ...(header === undefined ? {} : { header }),
@@ -247,7 +300,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
         ).catch(() => undefined)
         return
       }
-      $.ui.log(text)
+      safeLog($, text)
     },
     // Kept for the port (D-326): the pane draws only the open question's context or the loader (D-299).
     show: async () => undefined,
@@ -258,7 +311,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       pane.isLoading = text !== null
       if (pane.surface === 'tui-default') {
         if (text !== null) pane.hasStatus = true
-        $.ui.status(text ?? undefined)
+        safeStatus($, text ?? undefined)
         return
       }
       if (pane.surface !== 'pane') return
@@ -284,8 +337,11 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
 
       return result !== null && result.isAnswered ? result.text : null
     },
+    // A host with no surfaces method counts a command that came with a presentation as interactive, and cannot say
+    // for one with none (D-271, edge #11).
     isInteractive: async () => {
-      const surfaces = await $.session.surfaces().catch(() => null)
+      const surfaces = await surfacesRead($)
+      if (surfaces === undefined) return pane.hasPresentation ? true : null
 
       return surfaces === null ? null : surfaces.length > 0
     },
@@ -503,18 +559,23 @@ export const register: Register = on => {
     presentationColumns = isObject(presentation) ? presentation.columns : null
     viewportColumns = null
     paneBodyColumns = null
-    runSurface = surfaceOf(presentation, await $.session.surfaces().catch(() => null))
-    const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null, hasStatus: false, isLoading: false }
+    // A host with no surfaces method leaves them undefined: the surface comes from the presentation (D-271, edge #11).
+    runSurface = surfaceOf(presentation, await surfacesRead($))
+    const pane: PaneRun = {
+      isOpened: false,
+      surface: runSurface,
+      hasPresentation: isObject(presentation),
+      printed: null,
+      hasStatus: false,
+      isLoading: false,
+    }
     try {
       return await commandReply($, e.args, pane)
     } finally {
       pane.isLoading = false
       await update($, paneState, () => IDLE_PANE).catch(() => undefined)
-      try {
-        if (pane.hasStatus) $.ui.status(undefined)
-      } catch {
-        // A status line the host cannot clear never fails the run's end.
-      }
+      // A status line the host cannot clear never fails the run's end (edge #2, D-271).
+      if (pane.hasStatus) safeStatus($, undefined)
       if (pane.isOpened) await closePane($)
     }
   })

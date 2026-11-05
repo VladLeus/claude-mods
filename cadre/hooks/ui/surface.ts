@@ -22,10 +22,12 @@ export type Surface = 'pane' | 'tui-default' | 'none'
  * unknown: no surface, or surfaces that are not a list, is `none`; any surface beside the terminal, a name that is
  * not one included, is `pane`; the terminal alone is `pane` in the fullscreen layout and `tui-default` on the main
  * screen; with no presentation, or one whose `isFullscreen` is not a boolean, it is `pane`, as before (DECIDED #7).
+ * Surfaces left undefined, as from a host with no surfaces method, are unknown, not none: the surface then comes from
+ * the presentation alone, as for the terminal alone (D-271, U-29).
  */
 export function surfaceOf(presentation: unknown, surfaces: unknown): Surface {
-  if (!Array.isArray(surfaces) || surfaces.length === 0) return 'none'
-  if (surfaces.some(surface => surface !== 'terminal')) return 'pane'
+  if (surfaces !== undefined && (!Array.isArray(surfaces) || surfaces.length === 0)) return 'none'
+  if (Array.isArray(surfaces) && surfaces.some(surface => surface !== 'terminal')) return 'pane'
   if (!isObject(presentation) || typeof presentation.isFullscreen !== 'boolean') return 'pane'
 
   return presentation.isFullscreen ? 'pane' : 'tui-default'
