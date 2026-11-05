@@ -6,6 +6,7 @@ import type { EnKey } from '../locales/en'
 import { keyLabel, labelOf } from '../locales/t'
 import { BIDI_OVERRIDE } from '../testkit'
 import {
+  bodyRowsOf,
   contextPages,
   frameSize,
   MAX_PANE_FRAME_CHARS,
@@ -135,6 +136,22 @@ describe('paneColumns (D-231)', () => {
     const invalid: unknown[] = [{}, null, undefined, 'x', { bodyColumns: 0 }, { bodyColumns: -3 }, { bodyColumns: 1.5 }]
     for (const props of [...invalid, { bodyColumns: '60' }, { bodyColumns: Number.POSITIVE_INFINITY }]) {
       expect(paneColumns(props)).toBe(null)
+    }
+  })
+})
+
+describe('bodyRowsOf (RF-05)', () => {
+  test('bodyRowsOf reads the rows the pane body shows (RF-05)', () => {
+    expect(bodyRowsOf({ scroll: { offset: 0, bodyRows: 12 } })).toBe(12)
+    const invalid: unknown[] = [
+      { scroll: { offset: 0, bodyRows: 0 } },
+      { scroll: { offset: 0, bodyRows: 2.5 } },
+      { scroll: { offset: 0, bodyRows: '12' } },
+      { bodyColumns: 60 },
+      null,
+    ]
+    for (const props of invalid) {
+      expect(bodyRowsOf(props)).toBe(null)
     }
   })
 })
@@ -759,5 +776,19 @@ describe('contextPages (D-305, D-306, D-308)', () => {
     const pages = contextPages(contextOf([{ title: 'Skills', rows }]), null)
     expect([pages.length > 1, fitCaps(pages, null)]).toEqual([true, true])
     expect(pages.flatMap(page => page.flatMap(section => section.rows))).toEqual(rows)
+  })
+
+  test('contextPages keeps every frame within a given row cap (RF-05)', () => {
+    // 30 one-row items at 60 columns: 32 rows with the title and the summary, over a cap of 12 rows.
+    const rows = Array.from({ length: 30 }, (_, at): ContextRow => {
+      return { role: 'item', label: `s${at}`, text: 'be', indent: 2 }
+    })
+    const pages = contextPages(contextOf([{ title: null, rows }]), 60, 12)
+    const sizes = pages.map((page, index) => {
+      const block = { title: 'T', summary: 'S', rows: page, lines: [], page: { index, count: pages.length } }
+
+      return frameSize(block, 60).rows
+    })
+    expect([pages.length > 1, sizes.every(size => size <= 12)]).toEqual([true, true])
   })
 })

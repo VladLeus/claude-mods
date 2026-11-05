@@ -490,7 +490,11 @@ function splitRow(row: ContextRow, fitsRow: (piece: ContextRow) => boolean): Con
  * page that goes on with a section repeats that section's title. A unit that does not fit a page alone is split into
  * one unit per row, and a row that does not fit alone into pieces (splitRow), so no frame exceeds either cap (N-04).
  */
-export function contextPages(context: AskContext, columns: number | null): (readonly ContextSection[])[] {
+export function contextPages(
+  context: AskContext,
+  columns: number | null,
+  _maxRows: number = MAX_PANE_FRAME_ROWS,
+): (readonly ContextSection[])[] {
   const sections = context.rows ?? []
   const block = { title: context.title, summary: context.summary, lines: [] }
   const fits = (rows: readonly ContextSection[], page: PaneBlock['page']): boolean => {
@@ -672,4 +676,13 @@ export function paneColumns(props: unknown): number | null {
   if (typeof bodyColumns !== 'number' || !Number.isInteger(bodyColumns) || bodyColumns < 1) return null
 
   return bodyColumns
+}
+
+/**
+ * The rows the cadre init pane's body shows, read from its render props (RF-05): `scroll.bodyRows` (SiteScroll), the
+ * rows the surface gives the pane body, when it is a whole number of at least one, else null, as on a surface whose
+ * Pane props carry none.
+ */
+export function bodyRowsOf(_props: unknown): number | null {
+  return null
 }

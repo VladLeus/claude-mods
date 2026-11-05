@@ -29,6 +29,11 @@ export type RegenOptions = (
   readonly surface?: SurfaceModule
   readonly pageColumns?: () => number | null
   readonly paneSeat?: () => PaneSeat
+  /**
+   * The rows the pane body shows at its last render (RF-05): the module's paged port reads it at each ask; absent in
+   * tests and `-p`, where no render is known.
+   */
+  readonly pageRows?: () => number | null
 }
 
 /**

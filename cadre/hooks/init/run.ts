@@ -107,6 +107,11 @@ export type InitOptions = ({ readonly dryRun: true } | { readonly dryRun: false;
    * where no seat is known.
    */
   readonly paneSeat?: () => PaneSeat
+  /**
+   * The rows the pane body shows at its last render (RF-05): the surface module's paged port reads it at each ask;
+   * absent in tests and `-p`, where no render is known.
+   */
+  readonly pageRows?: () => number | null
 }
 
 /** The status line the TUI default shows while the repo scans run (D-232). */

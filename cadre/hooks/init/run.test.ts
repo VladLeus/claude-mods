@@ -6391,6 +6391,26 @@ describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () =>
     ])
   })
 
+  test(
+    'on fullscreen a context taller than the pane rows is paged where the desktop asks it whole (RF-05)',
+    async () => {
+      const fullscreen = memIo(oversizeWorld({ replies }), answers)
+      await runInit(fullscreen.io, { dryRun: true, surface: PANE_FULLSCREEN, pageRows: () => 12 })
+      const desktop = memIo(oversizeWorld({ replies }), answers)
+      await runInit(desktop.io, { dryRun: true, surface: PANE_DESKTOP, pageRows: () => 12 })
+      const pagedOf = (run: MemRun): AskContext[] =>
+        run.specs.flatMap(({ context }) => (context === undefined || context.page === undefined ? [] : [context]))
+      const paged = pagedOf(fullscreen)
+      const frames = paged.map(context => {
+        const open = { question: '', header: '', context, acceptsTyped: false, takesNote: false }
+        const block = paneBlockOf({ open, loader: null })
+
+        return block === null ? 0 : frameSize(block, 60).rows
+      })
+      expect([paged.length > pagedOf(desktop).length, frames.every(rows => rows <= 12)]).toEqual([true, true])
+    },
+  )
+
   test("every question's frame fits both caps at the fallback width, and each page ends with its marker", async () => {
     const run = memIo(oversizeWorld({ replies }), answers)
     await runInit(run.io, { dryRun: true })

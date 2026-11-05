@@ -1416,7 +1416,9 @@ describe('cadre init with a faked host', () => {
 
       return at < 0 ? [] : [at]
     })
-    expect(order).toEqual(prefixes.map((_, index) => index))
+    // A run with no presentation is a fullscreen run (D-358): the roles context is taller than the 20 rows its pane
+    // shows before any render, so the roles question is asked on each of its two pages (RF-05).
+    expect(order).toEqual([0, 1, 1, 2, 3, 4, 5, 6, 7])
   })
 
   test('a GSD repo with no config file asks two hunks after the model questions, before the policy', async ($, on) => {
@@ -2354,7 +2356,9 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     fakeHost(on, { ...world, onAsk: askAtRoles }, log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const at = log.asks.indexOf('ask Pick one?')
-    expect(answers).toEqual(['A'])
+    // A run with no presentation is a fullscreen run (D-358): the roles question is asked on each of its two pages
+    // (RF-05), and ASKER asks its question at each.
+    expect(answers).toEqual(['A', 'A'])
     expect([log.askOptions[at], log.askPreviews[at]]).toEqual([['A', 'B'], [undefined, undefined]])
   })
 
@@ -2591,7 +2595,10 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    expect(open).toEqual([{ drawn: contextDrawn(log, ROLES_QUESTION), header: 'Roles' }])
+    // The roles context is taller than the 20 rows the fullscreen pane shows before any render, so the roles question
+    // is asked a page at a time and the pane draws each page while it is open, its marker row last (RF-05).
+    const pages = [20, 10].map(rows => ({ drawn: { first: 'Roles', rows }, header: 'Roles' }))
+    expect(open).toEqual(pages)
     // The question's last write is the one that landed: the line logged on the scan's loader (D-325) moved the state's
     // version under the first one, which update tried again.
     const at = log.paneStates.map(headerOf).lastIndexOf('Roles')
@@ -2605,7 +2612,9 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, DOCK_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    expect(open).toEqual([{ drawn: contextDrawn(log, ROLES_QUESTION), header: 'Roles' }])
+    // The roles question is asked a page at a time, as for the inline pane, each page drawn while it is open (RF-05).
+    const pages = [20, 10].map(rows => ({ drawn: { first: 'Roles', rows }, header: 'Roles' }))
+    expect(open).toEqual(pages)
     // The question's last write is the one that landed, as for the inline pane (D-325).
     const at = log.paneStates.map(headerOf).lastIndexOf('Roles')
     expect(log.paneStates.slice(at + 1, at + 2)).toEqual([IDLE_STATE])
@@ -3125,14 +3134,19 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
     const opened = log.paneStates.map(openOf).filter(isObject)
     const contextual = opened.filter(open => isObject(open.context))
-    // Its sentence, its context's summary on the next line, and on a paged Review page the page's title last.
+    // Its sentence, its context's summary on the next line, and on a paged Review page the page's title last; on a page
+    // of a context the fullscreen pane pages to its rows, as the roles context is (RF-05), the page marker last.
     const unsummarised = contextual.flatMap(open => {
       const context = isObject(open.context) ? open.context : {}
       const [sentence, line, ...rest] = String(open.question).split('\n')
       const isPaged = context.kind === 'review' && rest.length === 1 && rest[0] === context.title
+      const page = isObject(context.page) ? context.page : null
+      const number = page === null ? 0 : Number(page.index) + 1
+      const marker = page === null ? null : t('ui.paging.marker', { number, count: Number(page.count) })
+      const isPortPaged = marker !== null && rest.length === 1 && rest[0] === marker
       const hasSummary = typeof context.summary === 'string' && context.summary !== '' && line === context.summary
 
-      return hasSummary && (rest.length === 0 || isPaged) ? [] : [sentence]
+      return hasSummary && (rest.length === 0 || isPaged || isPortPaged) ? [] : [sentence]
     })
     expect([contextual.length > 10, unsummarised]).toEqual([true, []])
     // The dialog asks the open question's text itself, so the dialog hook pairs the two (dialogPlan). A write that
@@ -3155,6 +3169,32 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
       expect(heads.some(ask => ask.includes('Could not read'))).toBe(false)
     },
   )
+
+  test('a fullscreen run pages the open context to the rows the docked pane shows (RF-05)', async ($, on) => {
+    const log = newLog()
+    // The session's surfaces, read at each command: the second run is drawn on the desktop too (D-353).
+    const surfaces = ['terminal']
+    let isDrawn = false
+    // At a run's first ask only, the terminal draws the docked pane with a body of 12 rows (SiteScroll bodyRows).
+    const onAsk = async (): Promise<void> => {
+      if (isDrawn) return
+      isDrawn = true
+      const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: { ...DOCK_PANE, scroll: { offset: 0, bodyRows: 12 } } })
+      await ui.unmount()
+    }
+    fakeHost(on, initWorld({ surfaces, onAsk }), log)
+    // The asks of one fullscreen run, the Review's left out, that show the first page marker of a paged question.
+    const pagedAsks = async (): Promise<string[]> => {
+      const at = log.asks.length
+      isDrawn = false
+      await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
+
+      return log.asks.slice(at).filter(ask => !ask.startsWith(`ask ${REVIEW_QUESTION}`) && ask.includes('page 1 of'))
+    }
+    const docked = await pagedAsks()
+    surfaces.push('desktop')
+    expect([docked.length > 0, await pagedAsks()]).toEqual([true, []])
+  })
 })
 
 describe('cadre regen with a faked host', () => {
