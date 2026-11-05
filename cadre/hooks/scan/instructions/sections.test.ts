@@ -60,8 +60,21 @@ describe('splitSections', () => {
     expect(splitSections(`## ${'h'.repeat(100)}\nx`).map(section => section.heading)).toEqual([`${'h'.repeat(79)}…`])
   })
 
-  test('the sections joined give the text back, line ends included', () => {
+  test('the sections joined give the text back with LF line ends', () => {
     const texts = [GLOBAL_TEXT, 'Intro\n# A\r\nx\r\n## B\ny', '# A\n```\n# x\n```\n## B\n']
-    for (const text of texts) expect(splitSections(text).map(section => section.text).join('')).toBe(text)
+    for (const text of texts) {
+      expect(splitSections(text).map(section => section.text).join('')).toBe(text.replaceAll('\r\n', '\n'))
+    }
+  })
+
+  test('#44: a CRLF text gives sections with LF line ends; an LF text and so its part hashes are unchanged', () => {
+    const crlf = '# Security\r\nNever commit secrets.\r\n## Git\r\nUse signed commits.\r\n'
+    const lf = ['# Security\nNever commit secrets.\n', '## Git\nUse signed commits.\n']
+    expect(splitSections(GLOBAL_TEXT).map(section => section.text)).toEqual(lf)
+    expect(splitSections(crlf)).toEqual(splitSections(GLOBAL_TEXT))
+    expect(splitSections('Intro\r\n# A\r\nlast\r')).toEqual([
+      { heading: '', text: 'Intro\n' },
+      { heading: 'A', text: '# A\nlast' },
+    ])
   })
 })
