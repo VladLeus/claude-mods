@@ -1,13 +1,26 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, Facts, GsdFact, RawGsdCandidate, RepoEntry, RoleSpec } from '../../../types'
+import type {
+  Choice,
+  Detection,
+  DetectStatus,
+  Facts,
+  FrameworkId,
+  GsdFact,
+  RawGsdCandidate,
+  RepoEntry,
+  RoleSpec,
+  UnsupportedId,
+} from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
+import { detectAll } from '../../framework/registry'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
 import {
   DEFAULT_LOCATIONS,
   driven,
+  EMPTY_FACTS,
   emptySetupScan,
   facts,
   firstLines,
@@ -29,6 +42,7 @@ import {
   frameworkRoleQuestion,
   frameworksStage,
   GSD_CHECK_QUESTION,
+  installedFrameworks,
   isGsdCheckUseful,
 } from './frameworks'
 import { teamContextLine } from './model'
@@ -479,5 +493,37 @@ describe('the GSD check only when it can run and matter (D-269)', () => {
     const declined = frameworksStage.answer({ ...entry, sub: { kind: 'ask', tries: 1 } }, { kind: 'answer', text: NO })
     expect([entered.openQuestion, entered.sub, entered.draft.gsdCheck]).toEqual([null, { kind: 'done' }, undefined])
     expect(asNo(entered)).toEqual(asNo(declined))
+  })
+})
+
+/** A detection of one framework or marker with this status, as detectAll gives it. */
+function detection(id: FrameworkId | UnsupportedId, status: DetectStatus): Detection {
+  return { id, name: id, status, version: null, evidence: [] }
+}
+
+/** Facts where GSD (.planning/) and superpowers (docs/superpowers/) are both in use, so the choice is ambiguous. */
+const AMBIGUOUS_FACTS: Facts = {
+  ...EMPTY_FACTS,
+  repoEntries: [
+    { name: '.planning', kind: 'dir', isLink: false },
+    { name: 'docs', kind: 'dir', isLink: false },
+  ],
+  docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
+}
+
+describe('installedFrameworks (A5)', () => {
+  test('installedFrameworks lists the supported ones in use or installed, in SUPPORTED_IDS order, then none', () => {
+    expect(installedFrameworks([])).toEqual(['none'])
+    expect(installedFrameworks([detection('superpowers', 'installed'), detection('gsd', 'in-use')])).toEqual([
+      'gsd',
+      'superpowers',
+      'none',
+    ])
+    expect(installedFrameworks([detection('gsd', 'not-found'), detection('superpowers', 'in-use')])).toEqual([
+      'superpowers',
+      'none',
+    ])
+    expect(installedFrameworks([detection('aidlc', 'unsupported'), detection('gsd', 'not-found')])).toEqual(['none'])
+    expect(installedFrameworks(detectAll(AMBIGUOUS_FACTS))).toEqual(['gsd', 'superpowers', 'none'])
   })
 })

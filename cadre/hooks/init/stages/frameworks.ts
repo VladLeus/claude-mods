@@ -8,7 +8,7 @@
  * effect, imports core, detect, framework, ui/ask, init/state and init/stages/model (the answer modes and
  * teamContextLine), and never imports init/machine or init/run.
  */
-import type { AskContext, Choice, ContextRow, Facts, FrameworkId, GsdFact, RoleSpec } from '../../../types'
+import type { AskContext, Choice, ContextRow, Detection, Facts, FrameworkId, GsdFact, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -215,6 +215,17 @@ function frameworkAnswer(state: InitState, answer: Answer): InitState {
     default:
       return stageFailed(state)
   }
+}
+
+/**
+ * The frameworks an Adjust line may set a role to (A5): each supported framework this repo has in use or installed,
+ * in SUPPORTED_IDS order, then `none`, the built-in fallback, which is always there.
+ */
+export function installedFrameworks(detections: readonly Detection[]): FrameworkId[] {
+  const isThere = (id: FrameworkId): boolean =>
+    detections.some(found => found.id === id && (found.status === 'in-use' || found.status === 'installed'))
+
+  return [...SUPPORTED_IDS.filter(isThere), 'none']
 }
 
 /** The GSD check question (D-243): it names the command it runs, before anything runs. */

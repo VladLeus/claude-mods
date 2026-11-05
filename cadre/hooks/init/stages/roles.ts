@@ -1,13 +1,12 @@
 /**
  * The roles stage of init (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83, D-230, A1, A6), a layer 10 module: the roles
  * question with the proposal and its scan changes (proposalLines, rolesContextLine), the Adjust loop over the
- * frameworks installed for the repo (installedFrameworks), the Describe question whose text the model turns into roles
+ * frameworks installed for the repo, the Describe question whose text the model turns into roles
  * (a describe-roles model effect), and rolesStage, the pure stage whose cursor is the proposal, Adjust or Describe
  * until the person answers Use these roles. Pure: it gives states and never performs an effect, imports core, roles,
  * suggest types, ui/ask, init/state and the duration and frameworks stages, and never imports init/machine or init/run.
  */
-import type { Detection, FrameworkId, RoleChange, RoleSpec } from '../../../types'
-import { SUPPORTED_IDS } from '../../core/framework-id'
+import type { FrameworkId, RoleChange, RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
@@ -138,17 +137,6 @@ function parseDescribeAnswer(answer: string): DescribeAnswer | null {
 /** The message for a typed line that is none of the four changes (D-47). */
 function unreadChange(answer: string): string {
   return t('init.roles.unreadChange', { trim: answer.trim(), verbs: orList(Object.values(ADJUST_WORDS)) })
-}
-
-/**
- * The frameworks an Adjust line may set a role to (A5): each supported framework this repo has in use or installed,
- * in SUPPORTED_IDS order, then `none`, the built-in fallback, which is always there.
- */
-export function installedFrameworks(detections: readonly Detection[]): FrameworkId[] {
-  const isThere = (id: FrameworkId): boolean =>
-    detections.some(found => found.id === id && (found.status === 'in-use' || found.status === 'installed'))
-
-  return [...SUPPORTED_IDS.filter(isThere), 'none']
 }
 
 /** The message for an Adjust line that sets a role to a framework this repo does not have installed (A5). */

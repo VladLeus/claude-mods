@@ -1,17 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  Detection,
-  DetectStatus,
-  Facts,
-  FrameworkId,
-  RoleChange,
-  RoleProposal,
-  RoleSpec,
-  UnsupportedId,
-} from '../../../types'
+import type { FrameworkId, RoleChange, RoleProposal, RoleSpec } from '../../../types'
 import { REDACTED } from '../../core/redact'
-import { detectAll } from '../../framework/registry'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
 import { MAX_PROPOSE_ATTEMPTS } from '../../suggest/checked'
@@ -19,7 +9,6 @@ import { PROPOSE_SYSTEM, rolesFromProposal } from '../../suggest/propose'
 import type { Proposed } from '../../suggest/propose'
 import {
   DEFAULT_LOCATIONS,
-  EMPTY_FACTS,
   firstLines,
   FRAMEWORKS,
   FULL_SCAN,
@@ -50,7 +39,6 @@ import {
   DESCRIBE_CONTEXT,
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
-  installedFrameworks,
   MAX_ADJUST_ROUNDS,
   MAX_ROLE_ROUNDS,
   ROLE_ROUNDS_REASON,
@@ -74,11 +62,6 @@ const DESCRIBED_ROLES = rolesFromProposal([
 
 /** The person's description the describe tests type. */
 const DESCRIPTION = 'we have a BE and a docs writer'
-
-/** A detection of one framework or marker with this status, as detectAll gives it. */
-function detection(id: FrameworkId | UnsupportedId, status: DetectStatus): Detection {
-  return { id, name: id, status, version: null, evidence: [] }
-}
 
 /** The roles stage at its start: `proposal` with the frameworks `installed`, from `start` when asked again (A6). */
 function rolesAt(proposal: RoleProposal, installed: readonly FrameworkId[], start?: RoleProposal): InitState {
@@ -354,21 +337,6 @@ describe('adjustLoop', () => {
     expect(run.logged).toEqual([])
   })
 
-  test('installedFrameworks lists the supported ones in use or installed, in SUPPORTED_IDS order, then none', () => {
-    expect(installedFrameworks([])).toEqual(['none'])
-    expect(installedFrameworks([detection('superpowers', 'installed'), detection('gsd', 'in-use')])).toEqual([
-      'gsd',
-      'superpowers',
-      'none',
-    ])
-    expect(installedFrameworks([detection('gsd', 'not-found'), detection('superpowers', 'in-use')])).toEqual([
-      'superpowers',
-      'none',
-    ])
-    expect(installedFrameworks([detection('aidlc', 'unsupported'), detection('gsd', 'not-found')])).toEqual(['none'])
-    expect(installedFrameworks(detectAll(AMBIGUOUS_FACTS))).toEqual(['gsd', 'superpowers', 'none'])
-  })
-
   test('the adjust question gives an example of each change', () => {
     expect(ADJUST_QUESTION).toBe(
       'Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, ' +
@@ -531,16 +499,6 @@ describe('rolesStep', () => {
     expect(lines.slice(-2)).toEqual(['Changes from the scan:', '  none'])
   })
 })
-
-/** Facts where GSD (.planning/) and superpowers (docs/superpowers/) are both in use, so the choice is ambiguous. */
-const AMBIGUOUS_FACTS: Facts = {
-  ...EMPTY_FACTS,
-  repoEntries: [
-    { name: '.planning', kind: 'dir', isLink: false },
-    { name: 'docs', kind: 'dir', isLink: false },
-  ],
-  docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
-}
 
 describe('refusal re-ask (G-02-6b)', () => {
   test('the Adjust loop puts the message of a change it cannot apply on top of the next ask', async () => {
