@@ -71,6 +71,7 @@ export async function runRegen(given: InitIo, options: RegenOptions): Promise<st
   const io = (options.surface ?? PANE_DESKTOP).pagedPort(given, {
     columns: () => options.pageColumns?.() ?? null,
     seat: () => options.paneSeat?.() ?? null,
+    rows: () => options.pageRows?.() ?? null,
   })
   const guard = await initGuard(io, 'regen')
   if (guard.kind === 'refuse') return guard.text

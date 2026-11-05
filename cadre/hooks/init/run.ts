@@ -747,6 +747,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
   const paged = (options.surface ?? PANE_DESKTOP).pagedPort(io, {
     columns: () => options.pageColumns?.() ?? null,
     seat: () => options.paneSeat?.() ?? null,
+    rows: () => options.pageRows?.() ?? null,
   })
   let state = initialState(options.dryRun, options.surface)
   // The folds the stages gave since the last ask, and those bound to the stage that asked first after them (D-302).

@@ -484,23 +484,24 @@ function splitRow(row: ContextRow, fitsRow: (piece: ContextRow) => boolean): Con
 }
 
 /**
- * The pages of a context's rows on a pane surface at `columns` (D-305, D-306): one page when its whole frame fits
- * MAX_PANE_FRAME_ROWS and MAX_PANE_FRAME_CHARS, else pages filled in order, each as large as fits with the title, the
- * summary and the page marker row reserved (frameSize). An item and the rows under it stay together on a page, and a
- * page that goes on with a section repeats that section's title. A unit that does not fit a page alone is split into
- * one unit per row, and a row that does not fit alone into pieces (splitRow), so no frame exceeds either cap (N-04).
+ * The pages of a context's rows on a pane surface at `columns` (D-305, D-306): one page when its whole frame fits the
+ * row cap `maxRows`, MAX_PANE_FRAME_ROWS unless the caller gives fewer (the rows the fullscreen pane shows, RF-05), and
+ * MAX_PANE_FRAME_CHARS, else pages filled in order, each as large as fits with the title, the summary and the page
+ * marker row reserved (frameSize). An item and the rows under it stay together on a page, and a page that goes on with
+ * a section repeats that section's title. A unit that does not fit a page alone is split into one unit per row, and a
+ * row that does not fit alone into pieces (splitRow), so no frame exceeds either cap (N-04).
  */
 export function contextPages(
   context: AskContext,
   columns: number | null,
-  _maxRows: number = MAX_PANE_FRAME_ROWS,
+  maxRows: number = MAX_PANE_FRAME_ROWS,
 ): (readonly ContextSection[])[] {
   const sections = context.rows ?? []
   const block = { title: context.title, summary: context.summary, lines: [] }
   const fits = (rows: readonly ContextSection[], page: PaneBlock['page']): boolean => {
     const size = frameSize(page === undefined ? { ...block, rows } : { ...block, rows, page }, columns)
 
-    return size.rows <= MAX_PANE_FRAME_ROWS && size.chars <= MAX_PANE_FRAME_CHARS
+    return size.rows <= maxRows && size.chars <= MAX_PANE_FRAME_CHARS
   }
   if (fits(sections, undefined)) return [sections]
   const sectionsOf = (parts: readonly RowUnit[]): ContextSection[] =>
@@ -683,6 +684,10 @@ export function paneColumns(props: unknown): number | null {
  * rows the surface gives the pane body, when it is a whole number of at least one, else null, as on a surface whose
  * Pane props carry none.
  */
-export function bodyRowsOf(_props: unknown): number | null {
-  return null
+export function bodyRowsOf(props: unknown): number | null {
+  if (!isObject(props) || !isObject(props.scroll)) return null
+  const { bodyRows } = props.scroll
+  if (typeof bodyRows !== 'number' || !Number.isInteger(bodyRows) || bodyRows < 1) return null
+
+  return bodyRows
 }

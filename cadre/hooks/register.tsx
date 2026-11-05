@@ -30,7 +30,7 @@ import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
-import { paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
+import { bodyRowsOf, paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
 import { answersFromNotes, latestColumns } from './ui/preview'
 import type { SurfaceEffect, SurfaceModule } from './ui/surfaces/contract'
 import { PANE_DESKTOP } from './ui/surfaces/pane-desktop'
@@ -70,6 +70,11 @@ let viewportColumns: unknown = null
  * `/cadre` command, so a run never pages to the width of an earlier one.
  */
 let paneBodyColumns: number | null = null
+/**
+ * The rows the body of the newest Pane render showed (bodyRowsOf, RF-05); null before any, and reset to null at each
+ * `/cadre` command, so a run never pages to the rows of an earlier one.
+ */
+let paneBodyRows: number | null = null
 /**
  * The surface module the last `/cadre` command selected (surfaceModuleOf, D-208, D-353), as the command.run hook
  * selected it before anything opened; the desktop pane before any. The AskUserQuestion hook asks it for the dialog of
@@ -531,9 +536,10 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
     case 'init': {
       const { surface } = pane
       const pageColumns = (): number | null => pageColumnsNow(surface)
+      const pageRows = (): number | null => paneBodyRows
       const options: InitOptions = command.dryRun
-        ? { dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement }
-        : { dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement }
+        ? { dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
+        : { dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
       await runEffects($, pane, surface.runStartEffects(), null)
 
       return { text: await runInit(initIoOf($, pane), options) }
@@ -542,9 +548,10 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       const { id } = command
       const { surface } = pane
       const pageColumns = (): number | null => pageColumnsNow(surface)
+      const pageRows = (): number | null => paneBodyRows
       const options: RegenOptions = command.dryRun
-        ? { id, dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement }
-        : { id, dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement }
+        ? { id, dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
+        : { id, dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
       await runEffects($, pane, surface.runStartEffects(), null)
 
       return { text: await runRegen(initIoOf($, pane), options) }
@@ -604,6 +611,7 @@ export const register: Register = on => {
     presentationColumns = isObject(presentation) ? presentation.columns : null
     viewportColumns = null
     paneBodyColumns = null
+    paneBodyRows = null
     // A host with no surfaces method leaves them undefined: the surface comes from the presentation (D-271, edge #11).
     // The one selection point of the surface modules (D-353).
     runSurface = surfaceModuleOf(presentation, await surfacesRead($))
@@ -641,6 +649,7 @@ export const register: Register = on => {
     if (e.surface === 'terminal' && isObject(e.viewport)) viewportColumns = e.viewport.columns
     const columns = paneColumns(e.props)
     paneBodyColumns = columns
+    paneBodyRows = bodyRowsOf(e.props)
     const block = paneBlockOf(state)
     if (block === null) return <Text>{t('register.paneEmpty')}</Text>
 

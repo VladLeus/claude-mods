@@ -18,12 +18,13 @@ export type SurfaceId = 'tui-default' | 'pane-fullscreen' | 'pane-desktop' | 'no
 export type PaneSeat = 'dock' | 'inline' | null
 
 /**
- * What a paged port reads at each ask (D-306, N-02, D-353): the columns a page is drawn at now, and where the pane is
- * seated now.
+ * What a paged port reads at each ask (D-306, N-02, D-353): the columns a page is drawn at now, where the pane is
+ * seated now, and the rows the pane body showed at its last render, null when none is known (RF-05).
  */
 export type PageView = {
   readonly columns: () => number | null
   readonly seat: () => PaneSeat
+  readonly rows: () => number | null
 }
 
 /**
