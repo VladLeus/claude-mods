@@ -4,14 +4,14 @@
  * 12-15): the members both panes share (pane-shared) and its own seat table (D-354).
  */
 import type { SeatTable, SurfaceModule } from './contract'
-import { paneModule, PREVIEWED_SEAT, TYPED_SEAT } from './pane-shared'
+import { paneModule, TYPED_SEAT } from './pane-shared'
 
 /**
- * The seat strategies of the desktop pane (D-354), today's: a pane seated inline is previewed in the dialog, a docked
- * pane, or one with no placement, is typed under the dialog. Part 2 makes every seat TYPED_SEAT, as the desktop never
- * uses previews or notes (D-354).
+ * The seat strategies of the desktop pane (D-354): the desktop pane has no notes field on any seat; a typed answer
+ * always goes through the engine's free-typing row, and a pane that scrolls never needs the inline preview (D-354,
+ * D-353).
  */
-const DESKTOP_SEATS: SeatTable = Object.freeze({ dock: TYPED_SEAT, inline: PREVIEWED_SEAT, unplaced: TYPED_SEAT })
+const DESKTOP_SEATS: SeatTable = Object.freeze({ dock: TYPED_SEAT, inline: TYPED_SEAT, unplaced: TYPED_SEAT })
 
 /**
  * The desktop app's pane module (D-353): selected for a session drawn on any surface beside the terminal (Q1), and the
