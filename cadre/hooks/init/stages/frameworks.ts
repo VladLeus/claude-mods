@@ -4,9 +4,10 @@
  * when exactly one framework is in use, else asks once for every role or per role, with the team's role ids on the
  * question's second line, and gives each role the framework it picked (withFramework). Before that it asks the GSD
  * check when a user-level GSD is found but not proven (D-243, ASKED #20), only when the check can run and its answer
- * can change something (isGsdCheckUseful, D-269). Pure: it gives states and never performs an
- * effect, imports core, detect, framework, ui/ask, init/state and init/stages/model (the answer modes and
- * teamContextLine), and never imports init/machine or init/run.
+ * can change something (isGsdCheckUseful, D-269); its result reads again the choice and the frameworks installed for
+ * the repo (installedFrameworks), which the roles stage's Adjust loop offers (withGsdIdentityChecked, edge #30). Pure:
+ * it gives states and never performs an effect, imports core, detect, framework, ui/ask, init/state and
+ * init/stages/model (the answer modes and teamContextLine), and never imports init/machine or init/run.
  */
 import type { AskContext, Choice, ContextRow, Detection, Facts, FrameworkId, GsdFact, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
@@ -356,17 +357,36 @@ function gsdCheckAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The result of GSD's own check, merged into the facts (withGsdIdentity) before the framework step, which then reads
- * the framework choice again from the merged facts, so a GSD install the check proved counts for the framework
- * question (D-243).
+ * The state with GSD's own check merged into the facts (withGsdIdentity) and `installed` and `choice` read again from
+ * the merged facts (D-243, D-269, edge #30), so a GSD install the check proved counts for the framework question and
+ * for a later Adjust; null when the result is not a gsd-identity result or the draft has no gathered facts or
+ * locations.
+ */
+export function withGsdIdentityChecked(state: InitState, result: IoResult): InitState | null {
+  const { gathered, locations } = state.draft
+  if (result.id !== 'gsd-identity' || gathered === undefined || locations === undefined) return null
+  const facts = withGsdIdentity(gathered.facts, result.result, locations)
+  const detections = detectAll(facts.facts)
+  const draft = {
+    ...state.draft,
+    gathered: { ...gathered, facts },
+    installed: installedFrameworks(detections),
+    choice: chooseFramework(detections, null),
+  }
+
+  return { ...state, draft }
+}
+
+/**
+ * The result of GSD's own check, merged into the facts with `installed` and `choice` read again
+ * (withGsdIdentityChecked) before the framework step, so a GSD install the check proved counts for the framework
+ * question (D-243) and for an Adjust after a go-back (D-269, edge #30); a result it cannot take fails the stage.
  */
 function gsdChecked(state: InitState, result: IoResult): InitState {
-  const { gathered, locations } = state.draft
-  if (result.id !== 'gsd-identity' || gathered === undefined || locations === undefined) return stageFailed(state)
-  const facts = withGsdIdentity(gathered.facts, result.result, locations)
-  const choice = chooseFramework(detectAll(facts.facts), null)
+  const checked = withGsdIdentityChecked(state, result)
+  if (checked === null) return stageFailed(state)
 
-  return frameworkStep({ ...state, draft: { ...state.draft, gathered: { ...gathered, facts }, choice } })
+  return frameworkStep(checked)
 }
 
 /**
