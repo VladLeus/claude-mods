@@ -8,12 +8,12 @@
  * Review pages under the frame's character cap (row 13), the folds (row 14) and the pane's list words (row 15). A seat
  * changes a pane module's dialog, page columns and paging only through the module's own seat table (D-354).
  */
-import type { InitIo, OpenQuestion } from '../../../types'
+import type { AskContext, InitIo, OpenQuestion } from '../../../types'
 import { PANE_LIST_WORDS, t } from '../../locales/t'
 import { paneQuestionText } from '../ask'
 import { MAX_PANE_FRAME_CHARS, PANE_PAGE_ROWS } from '../pane'
 import { withPagedAsks } from '../paging'
-import { previewedPlan } from '../preview'
+import { NOTE_WORDING, OTHER_WORDING, previewedPlan } from '../preview'
 import type { DialogPlan } from '../preview'
 import type {
   PageView,
@@ -46,12 +46,14 @@ const PANE_REVIEW_PAGING: ReviewPaging = Object.freeze({
 })
 
 /**
- * A seat where the dialog previews the open question's whole context (D-354): its plan is the previewed dialog with no
- * rows to fit (previewedPlan, D3, D-203), no question is paged there (N-02), and a page is drawn at the preview's
- * columns (D-292, U-15).
+ * A seat where the dialog previews the open question's whole context (D-354): a typed answer goes in the dialog's
+ * notes field, so a question asked there says NOTE_WORDING (D-359, R4); its plan is the previewed dialog with no rows
+ * to fit (previewedPlan, D3, D-203), no question is paged there (N-02), and a page is drawn at the preview's columns
+ * (D-292, U-15).
  */
 export const PREVIEWED_SEAT: SeatStrategy = Object.freeze({
   previews: true,
+  typedWording: NOTE_WORDING,
   plan: (raw: unknown, open: OpenQuestion, columns: number | null): DialogPlan | null =>
     previewedPlan(raw, open, columns, null),
   pageColumns: (preview: number | null): number | null => preview,
@@ -61,11 +63,12 @@ export const PREVIEWED_SEAT: SeatStrategy = Object.freeze({
  * A seat where the dialog previews nothing and the person types under the dialog (D-354): a docked or unplaced pane
  * shows no preview and so no notes field; its typed input is the engine's free-typing row, whose text the dialog
  * answers as given, so it plans no dialog (RF-04, probe 2026-11-05, D-353; supersedes D-348 and ASKED #24's docked
- * pairing). A context over the frame cap is paged there (D-306), and a page is drawn at the pane body's columns
- * (D-292).
+ * pairing), and a question asked there says PANE_TYPED_WORDING (D-357, D-359). A context over the frame cap is paged
+ * there (D-306), and a page is drawn at the pane body's columns (D-292).
  */
 export const TYPED_SEAT: SeatStrategy = Object.freeze({
   previews: false,
+  typedWording: PANE_TYPED_WORDING,
   plan: (): DialogPlan | null => null,
   pageColumns: (_preview: number | null, body: number | null): number | null => body,
 })
@@ -118,16 +121,18 @@ function paneLogEffects(text: string, isLoading: boolean): readonly SurfaceEffec
 /**
  * The module of a pane surface `id` (D-353), built from the members both panes share: it lists every name (D-256),
  * asks the pane text of a question's context (paneQuestionText, D-255, D-310) and pages its Review at PANE_PAGE_ROWS
- * under the frame's character cap (N-04). Its dialog plan, page columns and paging are the strategy `seats` holds for
- * the seat the terminal reported last (seatStrategy, D-354), looked up once per call: a context over the frame cap is
- * asked a page at a time at the columns the view reads, and whole where the seat previews it (withPagedAsks, D-306,
- * N-02), the seat read again at each ask.
+ * under the frame's character cap (N-04). Its asked text, dialog plan, page columns and paging are the strategy `seats`
+ * holds for the seat the terminal reported last (seatStrategy, D-354), looked up once per call: the asked text says
+ * the seat's typedWording for every OTHER_WORDING, as a pane with no notes field takes a typed answer in its
+ * free-typing row (D-353, D-359, Q13, Q14); a context over the frame cap is asked a page at a time at the columns the
+ * view reads, and whole where the seat previews it (withPagedAsks, D-306, N-02), the seat read again at each ask.
  */
 export function paneModule(id: SurfaceId, seats: SeatTable): SurfaceModule {
   return Object.freeze({
     id,
     listWords: PANE_LIST_WORDS,
-    askedText: paneQuestionText,
+    askedText: (question: string, context: AskContext | null, seat: PaneSeat): string =>
+      paneQuestionText(question, context).replaceAll(OTHER_WORDING, seatStrategy(seats, seat).typedWording),
     foldsOf: paneFolds,
     pagedPort: (io: InitIo, view: PageView): InitIo =>
       withPagedAsks(io, view.columns, () => seatStrategy(seats, view.seat()).previews),

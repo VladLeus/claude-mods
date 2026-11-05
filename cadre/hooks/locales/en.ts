@@ -299,7 +299,7 @@ export const EN = Object.freeze({
   'init.review.nextPage': 'Next page',
   'init.review.previousPage': 'Previous page',
   'init.review.itemWords': '{buttonWords}, or {typedWords}',
-  'init.review.changeRefusal': 'Name the item to change in a note (press n): {words}.',
+  'init.review.changeRefusal': 'Name the item to change under Other: {words}.',
   'init.review.reviewDismissedReason': 'The review question was dismissed or not answered.',
   'init.review.reviewRoundsReason':
     'The review question was asked {maxReviewRounds} times without "Confirm": nothing was chosen.',

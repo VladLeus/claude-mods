@@ -29,11 +29,13 @@ export type PageView = {
 
 /**
  * How a pane module treats one seat of its pane (D-353, D-354): whether the dialog previews the open question's whole
- * context there, so no question is paged (N-02), the dialog plan it gives the open question's call there, and the
- * columns a page is drawn at there, the dialog's preview columns or the pane body's (D-292).
+ * context there, so no question is paged (N-02), the words a question asked there says in place of OTHER_WORDING for a
+ * typed answer (D-359), the dialog plan it gives the open question's call there, and the columns a page is drawn at
+ * there, the dialog's preview columns or the pane body's (D-292).
  */
 export type SeatStrategy = {
   readonly previews: boolean
+  readonly typedWording: string
   readonly plan: (raw: unknown, open: OpenQuestion, columns: number | null) => DialogPlan | null
   readonly pageColumns: (preview: number | null, body: number | null) => number | null
 }

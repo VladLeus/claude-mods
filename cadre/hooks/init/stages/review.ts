@@ -152,7 +152,8 @@ const REVIEW_ITEM_WORDS = t('init.review.itemWords', {
 
 /**
  * The first line of the paged review asked again after Change something… with no item named (ASKED #4, DECIDED #22):
- * where the item goes and the item words.
+ * where the item goes and the item words. It says the neutral OTHER_WORDING, which each surface module words as it
+ * asks (Q14, Q15): as a note (press n) on the TUI default, under "Type something." on a pane that previews nothing.
  */
 const CHANGE_REFUSAL = t('init.review.changeRefusal', {
   words: orList([...BUTTON_ITEM_WORDS, ...TYPED_ITEM_WORDS].map(entry => entry.label)),
