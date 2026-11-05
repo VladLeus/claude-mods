@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { GsdFact, GsdReadTarget, RawGsdCandidate } from '../../../types'
 import { EMPTY_FACTS, PROVEN_FACTS, PROVEN_USER_GSD } from '../../testkit'
 import {
+  gsdFactOf,
   isGsdIdentitySource,
   isRuntimeCallAllowed,
   isRuntimeIdentityArgv,
@@ -15,6 +16,7 @@ import {
   runtimeSkipProblem,
   withGsdIdentity,
 } from './identity'
+import type { ProbedGsdCandidate } from './identity'
 
 /** The user-level GSD install under /home/u, as the host reads it. */
 const USER_TARGET: GsdReadTarget = {
@@ -226,5 +228,35 @@ describe('the GSD check (D-243)', () => {
     expect(after.facts.gsd).toEqual([proven])
     expect([after.facts.warnings, after.gsdUserDir]).toEqual([['other'], '/x'])
     expect(withGsdIdentity(before, null, DISPLAY)).toBe(before)
+  })
+})
+
+describe('the GSD check of an install whose runtime is not built (D-269, edge #31)', () => {
+  /** A present user-level install nothing proves, its compiled runtime missing, as the facts collector reads it. */
+  const UNBUILT: ProbedGsdCandidate = {
+    location: 'user',
+    dir: '/home/u/.claude/gsd-core',
+    isPresent: true,
+    versionText: null,
+    identityText: null,
+    manifest: null,
+    runtimeStdout: null,
+    runtimeTried: false,
+    runtimeProblem: 'not-built',
+  }
+  /** Where the facts are shown from: the repo and the home folder. */
+  const RAW = { root: '/repo', home: '/home/u' }
+  /** The user-level install found but not proven, as gsdFactOf gives it with no runtime problem. */
+  const UNPROVEN: GsdFact = { ...PROVEN_USER_GSD, version: null, identity: 'unknown' }
+
+  test('gsdFactOf keeps a known runtime problem on the fact; a candidate with none keeps the shape it had', () => {
+    const fact = gsdFactOf(UNBUILT, RAW, null, [])
+    expect(fact).toEqual({ ...UNPROVEN, runtimeProblem: 'not-built' })
+    expect(Object.keys(gsdFactOf({ ...UNBUILT, runtimeProblem: null }, RAW, null, []))).toEqual(Object.keys(UNPROVEN))
+  })
+
+  test('needsGsdCheck is false for an install whose runtime is not built, true when it could not run', () => {
+    expect(needsGsdCheck({ ...EMPTY_FACTS, gsd: [{ ...UNPROVEN, runtimeProblem: 'not-built' }] })).toBe(false)
+    expect(needsGsdCheck({ ...EMPTY_FACTS, gsd: [{ ...UNPROVEN, runtimeProblem: 'could-not-run' }] })).toBe(true)
   })
 })

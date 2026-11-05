@@ -3407,7 +3407,9 @@ describe('Phase 2 faked-host matrix', () => {
     'GSD only with a runtime-proven install: init --dry-run makes only the one identity call (D-82)',
     async ($, on) => {
       const log = newLog()
+      // No .planning/ is in use, so proving GSD changes the framework choice: the check is asked (D-269, edge #36).
       const world = gsdOnlyWorld({
+        listings: { '/repo': [] },
         denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
         runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
         answers: { ...INIT_ANSWERS, ...GSD_CHECK_YES },

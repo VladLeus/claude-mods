@@ -719,9 +719,19 @@ describe('runInit framework and recommendations', () => {
       identity: 'unknown',
       runtimeIdentityTried: false,
     }
-    const facts = { facts: { ...AMBIGUOUS_FACTS, gsd: [unproven] }, gsdUserDir: '/home/u/.claude/gsd-core' }
+    // superpowers is installed and nothing is in use, so proving GSD changes the framework choice: the check is asked
+    // (D-269, edge #36).
+    const facts: InitFacts = {
+      facts: {
+        ...EMPTY_FACTS,
+        enabledPlugins: [{ key: 'superpowers@claude-plugins-official', source: 'user', value: true }],
+        gsd: [unproven],
+      },
+      gsdUserDir: '/home/u/.claude/gsd-core',
+    }
     const check = "ask Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)"
-    const framework = 'ask Which framework do the roles use? (asked because more than one framework is in use)'
+    const framework =
+      'ask Which framework do the roles use? (asked because none is in use here, but some are installed for you)'
     const cases: readonly (readonly [string, number])[] = [['No, skip the check', 0], ['Yes, run the check', 1]]
     for (const [answer, runs] of cases) {
       const run = memIo(gitWorld({ facts }), { ...INIT_ANSWERS, "Run GSD's own check": answer })
@@ -3871,6 +3881,15 @@ describe('consentedGsdCheck (D-243, WF-S6)', () => {
     const identities = facts.facts.gsd.filter(fact => fact.location === 'user').map(fact => fact.identity)
 
     expect([identities, run.gsdIdentityCalls, run.asked.length]).toEqual([['proven'], [DEFAULT_LOCATIONS], 1])
+  })
+
+  test('#31: an install whose runtime is not built is not asked about; the facts come back (D-269)', async () => {
+    const gsd: readonly GsdFact[] = [{ ...UNPROVEN, runtimeProblem: 'not-built' }]
+    const notBuilt: InitFacts = { ...FACTS, facts: { ...FACTS.facts, gsd } }
+    const run = checkRun(true, { [CHECK]: 'Yes, run the check' })
+    const facts = await consentedGsdCheck(run.io, notBuilt, DEFAULT_LOCATIONS)
+
+    expect([facts, run.gsdIdentityCalls, run.asked.length]).toEqual([notBuilt, [], 0])
   })
 })
 

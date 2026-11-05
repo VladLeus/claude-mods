@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, GsdFact, RawGsdCandidate, RepoEntry, RoleSpec } from '../../../types'
+import type { Choice, Facts, GsdFact, RawGsdCandidate, RepoEntry, RoleSpec } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
@@ -28,6 +28,8 @@ import {
   frameworkReason,
   frameworkRoleQuestion,
   frameworksStage,
+  GSD_CHECK_QUESTION,
+  isGsdCheckUseful,
 } from './frameworks'
 import { teamContextLine } from './model'
 
@@ -383,5 +385,99 @@ describe('the GSD check (D-243)', () => {
     for (const gsd of cases) {
       expect(gsdAt(gsd).sub).toEqual({ kind: 'done' })
     }
+  })
+})
+
+describe('the GSD check only when it can run and matter (D-269)', () => {
+  /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
+  const roles = proposeRoles(repoScan()).roles
+  /** A user-level GSD found but not proven, as facts gives it. */
+  const UNPROVEN: GsdFact = {
+    location: 'user',
+    dir: '~/.claude/gsd-core',
+    version: null,
+    identity: 'unknown',
+    runtimeIdentityTried: false,
+  }
+  /** The same install with no compiled runtime, so GSD's own check could run nothing (edge #31). */
+  const NOT_BUILT: GsdFact = { ...UNPROVEN, runtimeProblem: 'not-built' }
+  /** The repo entries of a repo with superpowers in use (docs/superpowers/) and nothing else. */
+  const SUPERPOWERS_IN_USE: Partial<Facts> = {
+    repoEntries: [{ name: 'docs', kind: 'dir', isLink: false }],
+    docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
+  }
+  /** The choice of that repo: superpowers, the one framework in use. */
+  const CHOSEN_SUPERPOWERS: Choice = {
+    kind: 'chosen',
+    id: 'superpowers',
+    pickedBy: 'only-one-in-use',
+    reason: 'only superpowers is in use',
+  }
+  /** The decline of the GSD check, as its dialog shows it. */
+  const NO = 'No, skip the check'
+  /** The template roles with Team Lead set to gsd by an Adjust. */
+  const gsdRole = roles.map(role => (role.id === 'tl' ? withFramework(role, 'gsd') : role))
+
+  /** The state the frameworks stage is entered with for `team` and `choice`, whose facts are `over` with `gsd`. */
+  function entryWith(
+    gsd: readonly GsdFact[],
+    over: Partial<Facts>,
+    choice: Choice,
+    team: readonly RoleSpec[],
+  ): InitState {
+    const gathered = {
+      facts: { facts: facts({ ...over, gsd }), gsdUserDir: '/home/u/.claude/gsd-core' },
+      repo: repoScan(),
+      setup: emptySetupScan(),
+    }
+
+    return stateAt('frameworks', wholeDraft({ gathered, choice, roles: team }))
+  }
+
+  /** What a skip shares with a No (D-295): the gathered facts, the choice, the facts' warnings and the outputs. */
+  function asNo(state: InitState): unknown {
+    return [state.draft.gathered, state.draft.choice, state.draft.gathered?.facts.facts.warnings, state.outputs]
+  }
+
+  test('isGsdCheckUseful: a gsd role, or a choice that proving GSD changes; never a choice it leaves as it is', () => {
+    const inUse = facts({ ...SUPERPOWERS_IN_USE, gsd: [UNPROVEN] })
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    expect(isGsdCheckUseful(inUse, roles)).toBe(false)
+    expect(isGsdCheckUseful(inUse, gsdRole)).toBe(true)
+    expect(isGsdCheckUseful(facts({ gsd: [UNPROVEN] }), roles)).toBe(true)
+    expect(isGsdCheckUseful(facts({ repoEntries: [planning], gsd: [UNPROVEN] }), roles)).toBe(false)
+  })
+
+  test('#36: superpowers in use and no gsd role: init asks no GSD check and keeps skipped (D-295)', () => {
+    const state = frameworksStage.enter(entryWith([UNPROVEN], SUPERPOWERS_IN_USE, CHOSEN_SUPERPOWERS, roles))
+    const after = [state.openQuestion, state.sub, state.draft.gsdCheck, state.draft.repoDefault]
+    expect(after).toEqual([null, { kind: 'done' }, 'skipped', 'superpowers'])
+  })
+
+  test('#36: from one entry state the skip gives what a No gives; only the gsdCheck marker differs (D-295)', () => {
+    const entry = entryWith([UNPROVEN], SUPERPOWERS_IN_USE, CHOSEN_SUPERPOWERS, roles)
+    const skipped = frameworksStage.enter(entry)
+    const declined = frameworksStage.answer({ ...entry, sub: { kind: 'ask', tries: 1 } }, { kind: 'answer', text: NO })
+    expect(asNo(skipped)).toEqual(asNo(declined))
+    expect([skipped.draft.gsdCheck, declined.draft.gsdCheck]).toEqual(['skipped', 'declined'])
+  })
+
+  test('a gsd role, or a choice that proving GSD changes, still asks the GSD check first', () => {
+    const entries = [
+      entryWith([UNPROVEN], SUPERPOWERS_IN_USE, CHOSEN_SUPERPOWERS, gsdRole),
+      entryWith([UNPROVEN], {}, { kind: 'none' }, roles),
+    ]
+    for (const entry of entries) {
+      const state = frameworksStage.enter(entry)
+      expect([state.sub, state.openQuestion?.question]).toEqual([{ kind: 'ask', tries: 1 }, GSD_CHECK_QUESTION])
+    }
+  })
+
+  test('#31: an install whose runtime is not built is not asked about; gsdCheck stays unset, as a No leaves it', () => {
+    const entry = entryWith([NOT_BUILT], {}, { kind: 'none' }, roles)
+    const entered = frameworksStage.enter(entry)
+    const declined = frameworksStage.answer({ ...entry, sub: { kind: 'ask', tries: 1 } }, { kind: 'answer', text: NO })
+    expect([entered.openQuestion, entered.sub, entered.draft.gsdCheck]).toEqual([null, { kind: 'done' }, undefined])
+    expect(asNo(entered)).toEqual(asNo(declined))
   })
 })
