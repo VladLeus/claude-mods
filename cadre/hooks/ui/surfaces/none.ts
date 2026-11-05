@@ -4,10 +4,9 @@
  * dialog plan (row 8), no page columns (row 12), Review pages at PANE_PAGE_ROWS with no character cap (row 13), every
  * bound fold (row 14) and the screen's list words (row 15).
  */
-import type { InitIo, OpenQuestion } from '../../../types'
+import type { InitIo } from '../../../types'
 import { PANE_PAGE_ROWS, pageColumnsOf } from '../pane'
 import { withPagedAsks } from '../paging'
-import { dialogPlan } from '../preview'
 import type { DialogPlan } from '../preview'
 import { listWordsOf } from '../surface'
 import type { PageView, PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
@@ -35,15 +34,9 @@ function nonePageColumns(seat: PaneSeat, preview: number | null, body: number | 
   return pageColumnsOf('none', seat, preview, body)
 }
 
-/** A run with no surface rewrites no dialog: every call passes through untouched (WD-S2, D-239). */
-function noneDialogPlan(
-  raw: unknown,
-  open: OpenQuestion,
-  seat: PaneSeat,
-  columns: number | null,
-  changeLabel: string,
-): DialogPlan | null {
-  return dialogPlan(raw, open, 'none', seat, columns, changeLabel)
+/** A run with no surface rewrites no dialog: every call and its result pass through untouched (WD-S2, D-239). */
+function noneDialogPlan(): DialogPlan | null {
+  return null
 }
 
 /** A run with no surface opens nothing as it starts, scrolls nothing and shows no progress. */

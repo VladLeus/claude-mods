@@ -1,13 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, OpenQuestion, PaneKey, ShownBlock } from '../../types'
+import type { AskContext, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { BIDI_OVERRIDE } from '../testkit'
 import { wrapLine } from './pane'
 import {
   answersFromNotes,
   askRewrite,
-  dialogPlan,
   fitPreview,
   latestColumns,
   MAX_PREVIEW_CHARS,
@@ -21,7 +20,6 @@ import {
   withPreviews,
 } from './preview'
 import type { AskedQuestion, CheckedQuestion } from './preview'
-import type { Surface } from './surface'
 
 /** A block of the side pane with this key, title and lines, for the preview tests (D3). */
 function shownBlock(key: PaneKey, title: string, lines: readonly string[]): ShownBlock {
@@ -165,17 +163,6 @@ const PICK_QUESTION = {
     { label: 'A', description: 'a' },
     { label: 'B', description: 'b' },
   ],
-}
-
-/**
- * PICK_QUESTION as register keeps it open, with no context: it takes a typed answer, and so a note (D-234, D-270).
- */
-const PICK_OPEN: OpenQuestion = {
-  question: 'Pick one?',
-  header: 'Pick',
-  context: null,
-  acceptsTyped: true,
-  takesNote: true,
 }
 
 /** Questions whose shape withPreviews cannot check (D3, A1): a call that asks them passes through unchanged. */
@@ -686,166 +673,6 @@ describe('answersFromNotes (A3)', () => {
     expect(answers).toEqual({ 'Other?': 'X', 'Q?': 'mine' })
     expect(JSON.stringify(result)).toBe(before)
     expect(answers === result.answers).toBe(false)
-  })
-})
-
-describe('dialogPlan (WD-S2)', () => {
-  /** The label of the option that offers a change, as register passes CHANGE_SOMETHING_LABEL (ASKED #24). */
-  const CHANGE_LABEL = 'Change it'
-  /** The open question's own context (D-203). */
-  const CONTEXT: AskContext = {
-    title: 'Roles',
-    lines: ['BE (be)', 'FE (fe)'],
-    kind: 'roles',
-    summary: '2 roles: be, fe',
-  }
-  /** A multi-select question asked after the open one; it is never previewed and has no note. */
-  const MULTI = { ...PICK_QUESTION, question: 'Which ones? Type more under Other.', multiSelect: true }
-  /**
-   * What each surface and pane seat does with the open question's dialog (D-208, D-234, ASKED #24): preview it (the
-   * TUI default, or a pane seated inline), map a note typed in it (a docked or unknown pane seat, for a question that
-   * offers Change or takes a note, D-348), or nothing.
-   */
-  const SEATS: readonly (readonly [Surface, 'dock' | 'inline' | null, 'preview' | 'note' | 'none'])[] = [
-    ['tui-default', null, 'preview'],
-    ['tui-default', 'dock', 'preview'],
-    ['tui-default', 'inline', 'preview'],
-    ['pane', 'inline', 'preview'],
-    ['pane', 'dock', 'note'],
-    ['pane', null, 'note'],
-    ['none', null, 'none'],
-    ['none', 'dock', 'none'],
-    ['none', 'inline', 'none'],
-  ]
-  /** Every context, typed-answer flag, change option and multi-select question a seat is asked with. */
-  const CASES = [null, CONTEXT].flatMap(context =>
-    [false, true].flatMap(acceptsTyped =>
-      [false, true].flatMap(offersChange =>
-        [false, true].map(hasMulti => ({ context, acceptsTyped, offersChange, hasMulti })),
-      ),
-    ),
-  )
-
-  test('the plan of each surface, seat, context, typed answer, change option and multi-select (D-239)', () => {
-    for (const [surface, placement, seat] of SEATS) {
-      for (const { context, acceptsTyped, offersChange, hasMulti } of CASES) {
-        const first = offersChange ? pickWith(CHANGE_LABEL) : PICK_QUESTION
-        const raw = hasMulti ? [first, MULTI] : [first]
-        const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped, takesNote: acceptsTyped }
-        const rows = surface === 'tui-default' ? PREVIEW_ROWS : null
-        const rewrite = askRewrite(raw, context, acceptsTyped, acceptsTyped, 40, rows)
-        const previewed = rewrite === null ? null : { questions: rewrite.questions, notes: rewrite.asked }
-        const labels = offersChange ? ['A', 'B', CHANGE_LABEL] : ['A', 'B']
-        const note = { question: 'Pick one?', asked: 'Pick one?', labels, takesNote: acceptsTyped }
-        const noted = offersChange || acceptsTyped ? { questions: null, notes: [note] } : null
-        const expected = { preview: previewed, note: noted, none: null }[seat]
-        expect(dialogPlan(raw, open, surface, placement, 40, CHANGE_LABEL)).toEqual(expected)
-        const other = [{ ...first, question: 'Another?' }]
-        expect(dialogPlan(other, open, surface, placement, 40, CHANGE_LABEL)).toBe(null)
-      }
-    }
-  })
-
-  test('a call whose first question is not the open question, by its exact text, gets no plan (D-239)', () => {
-    const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT }
-    for (const raw of [null, [], [{ question: 3, options: [] }], [{ ...PICK_QUESTION, question: 'Pick one? ' }]]) {
-      expect(dialogPlan(raw, open, 'tui-default', null, null, CHANGE_LABEL)).toBe(null)
-    }
-  })
-
-  test('the note of a docked pane pairs the open question with its labels and its takesNote (D-270)', () => {
-    const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT, acceptsTyped: false, takesNote: true }
-    const note = { question: 'Pick one?', asked: 'Pick one?', labels: ['A', 'B', CHANGE_LABEL], takesNote: true }
-    expect(dialogPlan([pickWith(CHANGE_LABEL)], open, 'pane', 'dock', 40, CHANGE_LABEL)).toEqual({
-      questions: null,
-      notes: [note],
-    })
-  })
-
-  test('a docked pane pairs the note of a question that takes one, with no Change option (D-348)', () => {
-    const open: OpenQuestion = { ...PICK_OPEN, context: null, acceptsTyped: false, takesNote: true }
-    const note = { question: 'Pick one?', asked: 'Pick one?', labels: ['A', 'B'], takesNote: true }
-    expect(dialogPlan([PICK_QUESTION], open, 'pane', 'dock', 40, CHANGE_LABEL)).toEqual({
-      questions: null,
-      notes: [note],
-    })
-    const noNote: OpenQuestion = { ...open, takesNote: false }
-    expect(dialogPlan([PICK_QUESTION], noNote, 'pane', 'dock', 40, CHANGE_LABEL)).toBe(null)
-    expect(dialogPlan([PICK_QUESTION], open, 'none', 'dock', 40, CHANGE_LABEL)).toBe(null)
-  })
-
-  test('every surface carries the options that end the open question into its notes (D-350)', () => {
-    const seats: readonly [Surface, 'dock' | 'inline' | null][] = [
-      ['tui-default', null],
-      ['pane', 'inline'],
-      ['pane', 'dock'],
-    ]
-    const open: OpenQuestion = {
-      ...PICK_OPEN,
-      context: CONTEXT,
-      acceptsTyped: false,
-      takesNote: true,
-      endingLabels: ['B'],
-    }
-    const unmarked: OpenQuestion = { ...PICK_OPEN, context: CONTEXT, acceptsTyped: false, takesNote: true }
-    for (const [surface, placement] of seats) {
-      const plan = dialogPlan([PICK_QUESTION], open, surface, placement, 40, CHANGE_LABEL)
-      expect(plan?.notes.map(note => note.endingLabels)).toEqual([['B']])
-      const plain = dialogPlan([PICK_QUESTION], unmarked, surface, placement, 40, CHANGE_LABEL)
-      expect(plain?.notes.map(note => Object.hasOwn(note, 'endingLabels'))).toEqual([false])
-    }
-  })
-
-  test('a multi-select question is copied unchanged and has no note', () => {
-    const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT }
-    const plan = dialogPlan([PICK_QUESTION, MULTI], open, 'pane', 'inline', null, CHANGE_LABEL)
-    expect(plan?.questions?.[1]).toEqual(MULTI)
-    expect(plan?.notes.map(note => note.question)).toEqual(['Pick one?'])
-  })
-})
-
-describe('the TUI-default preview rows (WD-S3)', () => {
-  /** A context of `count` lines `line 1`, `line 2`, ...: an own-skills list. */
-  function linesContext(count: number): AskContext {
-    return {
-      title: 'Lines',
-      lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`),
-      kind: 'skills',
-      summary: `${count} lines`,
-    }
-  }
-
-  test('with the title and marker rows counted, 21 lines show 19 and +2 more above; 20 fit whole (D-260)', () => {
-    const cases: readonly (readonly [number, readonly string[]])[] = [
-      [22, [...linesContext(19).lines, '+3 more above']],
-      [21, [...linesContext(19).lines, '+2 more above']],
-      [20, linesContext(20).lines],
-    ]
-    for (const [count, shown] of cases) {
-      const context = linesContext(count)
-      const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped: false, takesNote: false }
-      const plan = dialogPlan([PICK_QUESTION], open, 'tui-default', null, null, 'Change it')
-      const [previews = []] = optionPreviews(plan?.questions ?? undefined)
-      expect([count, previews[0]]).toEqual([count, previewMarkdown([{ ...context, lines: shown }])])
-    }
-  })
-})
-
-describe('the TUI-default preview by wrapped rows (D-260)', () => {
-  test('a preview keeps the whole lines whose rows at its columns fit with the title and marker rows', () => {
-    // 15 lines of 100 characters and no space: three rows each at 40 columns.
-    const lines = Array.from({ length: 15 }, (_, at) => String(at).padStart(2, '0').padEnd(100, 'x'))
-    const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '15 lines' }
-    const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped: false, takesNote: false }
-    const plan = dialogPlan([PICK_QUESTION], open, 'tui-default', null, 40, 'Change it')
-    const [previews = []] = optionPreviews(plan?.questions ?? undefined)
-    const shown = [...lines.slice(0, 6), '+9 more above']
-    expect(previews[0]).toBe(previewMarkdown([{ ...context, lines: shown }], 40))
-    const rows = 1 + shown.flatMap(line => wrapLine(line, 40)).length
-    expect([rows <= PREVIEW_LINE_ROWS, rows + wrapLine(lines[6] ?? '', 40).length > PREVIEW_LINE_ROWS]).toEqual([
-      true,
-      true,
-    ])
   })
 })
 

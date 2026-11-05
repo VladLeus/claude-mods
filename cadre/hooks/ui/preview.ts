@@ -1,9 +1,10 @@
 /**
  * The option preview, a layer 8 module: the open question's own context as the markdown preview of a dialog option on
  * the terminal main screen (D3, D-203), its lines wrapped to the width of the preview box (D-231), the rewrite of an
- * AskUserQuestion call with its previews and the Describe your own option (A1, A2, R3, R4), the dialog plan of the
- * open question's call on each surface (dialogPlan, WD-S2), and the answers typed as notes (A3). It imports core, the
- * line wrap of ui/pane, the Surface type of ui/surface and the types, so register's AskUserQuestion hook reads it here.
+ * AskUserQuestion call with its previews and the Describe your own option (A1, A2, R3, R4), the previewed plan of the
+ * open question's call, which the surface modules pick (previewedPlan, WD-S2, D-353), and the answers typed as notes
+ * (A3). It imports core, the line wrap of ui/pane and the types, so the surface modules and register's
+ * AskUserQuestion hook read it here.
  */
 import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
@@ -11,7 +12,6 @@ import { labelled } from '../core/labelled'
 import { clean } from '../core/text'
 import { t } from '../locales/t'
 import { UNCUT, wrapLine } from './pane'
-import type { Surface } from './surface'
 
 /**
  * The most characters, by String length, the preview of a dialog option holds (D3): the engine replaces a preview
@@ -402,54 +402,39 @@ export type DialogPlan = {
 }
 
 /**
- * The dialog register's AskUserQuestion hook gives a call (WD-S2), or null so the call and its result pass through
- * untouched. It acts only on the question cadre has open, the call's first question by its exact text: any other
- * AskUserQuestion, the model's own or another plugin's, during a run or after it, gets null (D-239). Only on the TUI
- * default, where no pane opens (D-208), or while the terminal main screen seats the pane inline (`placement`), where
- * the engine hides it behind a dialog, and only for an open question with a context of its own: each single-select
- * question gets that context as the preview of every option (D3, D-203), wrapped to `columns` (D-231) and on the TUI
- * default fitted to PREVIEW_LINE_ROWS (D-228, WD-S3), and, when it takes a typed answer (D-234), a Describe your own
- * option or the hint line (A2), and its notes are the questions the rewrite paired, so notes typed in the dialog
- * become the answer under the question's text as asked (A3). A question with no context (a hunk, the claude.json
- * consent) keeps its dialog as asked, Other row included: null. On a pane surface that previews nothing, the dialog of
- * the open question that offers an option labelled `changeLabel` (the review's Change something…, D-233) or that
- * takes a note (`takesNote`: a typed answer, the Launch folder, D-348) is passed through as asked (questions null),
- * and its one note pairs the open question with itself, with the call's labels and its takesNote, so a note typed in
- * it becomes its answer (ASKED #24, D-270, D-348). Every note it pairs, previewed or docked, carries the open
- * question's endingLabels (D-350). Every other call gets null.
+ * Whether an AskUserQuestion call asks the question cadre has open (D-239): its first question, by its exact text, is
+ * the open question. Any other call, the model's own or another plugin's, during a run or after it, does not.
  */
-export function dialogPlan(
-  raw: unknown,
-  open: OpenQuestion,
-  surface: Surface,
-  placement: 'dock' | 'inline' | null,
-  columns: number | null,
-  changeLabel: string,
-): DialogPlan | null {
+export function isOpenAsked(raw: unknown, open: OpenQuestion): boolean {
   const first: unknown = Array.isArray(raw) ? raw[0] : undefined
   const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
-  if (asked !== open.question) return null
-  const isPreviewed = surface === 'tui-default' || (surface === 'pane' && placement === 'inline')
-  const rows = surface === 'tui-default' ? PREVIEW_LINE_ROWS : null
-  const rewrite = isPreviewed ? askRewrite(raw, open.context, open.acceptsTyped, open.takesNote, columns, rows) : null
-  const options: unknown = isObject(first) ? first.options : null
-  const isChange = (option: unknown): boolean => isObject(option) && option.label === changeLabel
-  const offersChange = Array.isArray(options) && options.some(isChange)
-  const isPaneNote = !isPreviewed && surface === 'pane' && (offersChange || open.takesNote)
-  const offered = Array.isArray(options) ? options.filter(isObject) : []
-  const labels = offered.flatMap(option => (typeof option.label === 'string' ? [option.label] : []))
-  const ending = open.endingLabels === undefined ? {} : { endingLabels: open.endingLabels }
-  const paneNote: AskedQuestion = {
-    question: open.question,
-    asked: open.question,
-    labels,
-    takesNote: open.takesNote,
-    ...ending,
-  }
-  const notes = rewrite?.asked.map(entry => ({ ...entry, ...ending })) ?? (isPaneNote ? [paneNote] : null)
-  if (notes === null) return null
 
-  return { questions: rewrite?.questions ?? null, notes }
+  return asked === open.question
+}
+
+/**
+ * The previewed dialog of the open question's call (WD-S2), which both the TUI default, where no pane opens (D-208),
+ * with `rows` PREVIEW_LINE_ROWS, and a pane seated inline, which the engine hides behind a dialog, with no `rows`, give
+ * it (D3, D-203, D-228, D-234, A3, D-270, D-350, D-353); null, so the call and its result pass through untouched,
+ * unless the call asks the open question (isOpenAsked, D-239) and the open question has a context of its own. Each
+ * single-select question gets that context as the preview of every option (D-203), wrapped to `columns` (D-231) and,
+ * given `rows`, fitted to them (D-228, WD-S3), and, when it takes a typed answer (D-234), a Describe your own option or
+ * the hint line (A2); its notes are the questions the rewrite paired, so notes typed in the dialog become the answer
+ * under the question's text as asked (A3), each carrying the open question's endingLabels (D-350). A question with no
+ * context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included: null.
+ */
+export function previewedPlan(
+  raw: unknown,
+  open: OpenQuestion,
+  columns: number | null,
+  rows: number | null,
+): DialogPlan | null {
+  if (!isOpenAsked(raw, open)) return null
+  const rewrite = askRewrite(raw, open.context, open.acceptsTyped, open.takesNote, columns, rows)
+  if (rewrite === null) return null
+  const ending = open.endingLabels === undefined ? {} : { endingLabels: open.endingLabels }
+
+  return { questions: rewrite.questions, notes: rewrite.asked.map(entry => ({ ...entry, ...ending })) }
 }
 
 /** Whether a value is the answers of an AskUserQuestion result (A3): an object, not an array, of strings only. */

@@ -10,7 +10,7 @@
 import type { AskContext, InitIo, OpenQuestion } from '../../../types'
 import { pageColumnsOf } from '../pane'
 import { withPagedAsks } from '../paging'
-import { dialogPlan, PREVIEW_ROWS, tuiTranscriptEntries } from '../preview'
+import { PREVIEW_LINE_ROWS, PREVIEW_ROWS, previewedPlan, tuiTranscriptEntries } from '../preview'
 import type { DialogPlan } from '../preview'
 import { listWordsOf } from '../surface'
 import type { PageView, PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
@@ -39,17 +39,18 @@ function tuiPageColumns(seat: PaneSeat, preview: number | null, body: number | n
 }
 
 /**
- * The previewed dialog the TUI default gives the open question's call, its context fitted to PREVIEW_LINE_ROWS (D3,
- * D-203, D-228, D-234, A3, D-270, D-350).
+ * The previewed dialog the TUI default gives the open question's call, its context fitted to PREVIEW_LINE_ROWS
+ * (previewedPlan, D3, D-203, D-228, D-234, A3, D-270, D-350): no pane opens here, so no seat and no change option
+ * changes it.
  */
 function tuiDialogPlan(
   raw: unknown,
   open: OpenQuestion,
-  seat: PaneSeat,
+  _seat: PaneSeat,
   columns: number | null,
-  changeLabel: string,
+  _changeLabel: string,
 ): DialogPlan | null {
-  return dialogPlan(raw, open, 'tui-default', seat, columns, changeLabel)
+  return previewedPlan(raw, open, columns, PREVIEW_LINE_ROWS)
 }
 
 /** The TUI default opens no pane: the option preview carries each context (D-208). */
