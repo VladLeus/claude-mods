@@ -28,9 +28,17 @@ describe('surfaceOf (D-208)', () => {
   })
 
   test('surfaces that are not a list, as from a host that refused to say, are none', () => {
-    for (const surfaces of [null, undefined, 'terminal', { 0: 'terminal' }]) {
+    for (const surfaces of [null, 'terminal', { 0: 'terminal' }]) {
       expect(surfaceOf(MAIN_SCREEN, surfaces)).toBe('none')
     }
+  })
+
+  test('no surfaces read, as from a host with no surfaces method, takes the presentation alone (D-271, U-29)', () => {
+    expect(surfaceOf({ isFullscreen: false }, undefined)).toBe('tui-default')
+    expect(surfaceOf({ isFullscreen: true }, undefined)).toBe('pane')
+    expect(surfaceOf(null, undefined)).toBe('pane')
+    expect(surfaceOf(MAIN_SCREEN, [])).toBe('none')
+    expect(surfaceOf(MAIN_SCREEN, null)).toBe('none')
   })
 
   test('the terminal alone with no presentation, or a malformed one, is a pane surface, as today (DECIDED #7)', () => {
