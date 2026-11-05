@@ -447,6 +447,20 @@ describe('improved keys as the plan keys files (D-241)', () => {
     expect(writtenManifest(steps)?.files.map(entry => entry.path)).toEqual([BUILT])
     expect(steps.filter(step => step.path === 'CLAUDE.md')).toEqual([])
   })
+
+  test('#38: paths that differ only in case are one file, as on a case-insensitive file system (D-272)', async () => {
+    const other = '.cadre/be/claude.md'
+    const desired = [file(BUILT, '# be\n'), file(other, '# other\n')]
+    const planned = await planWithManifest(input({ desired }))
+    const improved = new Map([[other, IMPROVED_TEXT]])
+    const steps = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES, improved })
+
+    const entry = { path: BUILT, sha256: await sha256Hex(IMPROVED_TEXT), mode: 'file' }
+    expect(summary(planned.plan)).toEqual([`create ${BUILT}`, `create ${MANIFEST_PATH}`])
+    expect(planned.plan.warnings).toEqual([t('plan.plan.twiceWarning', { path: other })])
+    expect(steps.map(stepLine)).toEqual([`write ${BUILT}`, `manifest ${MANIFEST_PATH}`])
+    expect(writtenManifest(steps)?.files).toEqual([entry])
+  })
 })
 
 describe('a plan and desired files that disagree (D-272, edge #33)', () => {

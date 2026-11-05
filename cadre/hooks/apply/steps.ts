@@ -21,7 +21,10 @@ import type { ApplyInput, ApplyStep } from './private'
  * The desired files the plan accepted, keyed as plan's acceptFiles keys them (D-241): by the path in lower case, so a
  * path is looked up with `path.toLowerCase()` and a path in another case finds the file the plan accepted. A desired
  * file is accepted when the plan has a file op for its exact path; a refused one (outside `.cadre/`, or a second path
- * that differs only in case) has none, so it is not here at all.
+ * that differs only in case) has none, so it is not here at all. The folding assumes a case-insensitive file system,
+ * where two paths that differ only in case name one file (D-272 edge #38): on a case-sensitive one they name two, and
+ * a path or an improved key in another case would be mapped onto an accepted file it does not name. No run reaches
+ * that today, since every op path and improved key is a path cadre built itself.
  */
 function desiredByPath(desired: readonly DesiredFile[], plan: Plan): ReadonlyMap<string, DesiredFile> {
   const planned = new Set(plan.ops.flatMap(op => (op.kind === 'hunk' ? [] : [op.path])))
