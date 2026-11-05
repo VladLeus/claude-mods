@@ -11,7 +11,8 @@ import { isObject } from '../core/json'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
 import { proposeRoles } from '../roles/propose'
-import type { Surface } from '../ui/surface'
+import type { SurfaceModule } from '../ui/surfaces/contract'
+import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect } from './state'
 import type { Answer, Effect, InitStage, InitState, Kept, StageDef } from './state'
@@ -214,10 +215,11 @@ function isAnswerTo(effect: Effect, answer: Answer): boolean {
 }
 
 /**
- * A run before its first answer (D-230): the guard entered, its effect out, nothing to show yet, on the surface the run
- * was given, a pane surface when none is given (D-208), with no page width yet (D-292).
+ * A run before its first answer (D-230): the guard entered, its effect out, nothing to show yet, on the surface module
+ * the run was given, with no page width yet (D-292). A run given no surface, as the tests and the golden capture, runs
+ * on the desktop pane, today's default (D-208, D-353).
  */
-export function initialState(dryRun: boolean, surface: Surface = 'pane'): InitState {
+export function initialState(dryRun: boolean, surface: SurfaceModule = PANE_DESKTOP): InitState {
   const blank: InitState = {
     stage: 'guard',
     sub: { kind: 'start' },

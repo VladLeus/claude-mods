@@ -14,7 +14,6 @@ import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { envContext } from '../../ui/blocks/context'
-import { listWordsOf } from '../../ui/surface'
 import { ALL_ENV_OPTION, envPaneQuestion, envQuestion, NONE_OPTION, parseEnvNames } from '../answers'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
@@ -90,7 +89,7 @@ function carryAnswer(state: InitState, answer: Answer): InitState {
   const isOpen = answer.kind === 'answer' && state.sub.kind === 'ask'
   if (!isOpen || roles === undefined || gathered === undefined) return stageFailed(state)
   const { setup } = gathered
-  const ask = envAsk(setup.carry.envNames, roles, listWordsOf(state.surface))
+  const ask = envAsk(setup.carry.envNames, roles, state.surface.listWords)
   const next = choiceAnswer(ask, state.sub, answer.text)
   if (next.kind === 'again') return asking(state, next.question, ask.spec, next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
@@ -114,7 +113,7 @@ export const carryStage: StageDef = Object.freeze({
     const { setup } = gathered
     const names = setup.carry.envNames
     if (names.length === 0) return carriedDone(state, roles, setup, [])
-    const ask = envAsk(names, roles, listWordsOf(state.surface))
+    const ask = envAsk(names, roles, state.surface.listWords)
 
     return asking(state, ask.question, ask.spec, 1)
   },

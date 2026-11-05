@@ -36,7 +36,9 @@ import {
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { PANE_PAGE_ROWS, UNCUT, wrapLine } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
-import type { Surface } from '../../ui/surface'
+import type { SurfaceModule } from '../../ui/surfaces/contract'
+import { PANE_DESKTOP } from '../../ui/surfaces/pane-desktop'
+import { TUI_DEFAULT } from '../../ui/surfaces/tui-default'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
 import { nextStage, STAGES } from '../machine'
@@ -503,7 +505,7 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
    */
   async function reviewed(
     draft: Draft,
-    surface: Surface,
+    surface: SurfaceModule,
   ): Promise<{ readonly lines: readonly string[]; readonly pages: readonly (readonly string[])[] }> {
     const entered = reviewStage.enter(stateAt('review', draft, { surface }))
     let state = nextStage(entered, planAnswer(await plannedFor(entered)))
@@ -520,7 +522,7 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
     const fe = templateRole('fe')
     const draft = draftWith([...REVIEW_DRAFT.roles, fe])
     const shown = recommendedLines(draft)
-    const { lines } = await reviewed(draft, 'pane')
+    const { lines } = await reviewed(draft, PANE_DESKTOP)
     const at = lines.indexOf(shown[0] ?? '')
     expect(lines.slice(at - 1, at + shown.length + 1)).toEqual([
       'warning: could not list src',
@@ -534,7 +536,7 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
 
   test('a team with nothing to recommend shows the one line the security stage shows for none', async () => {
     const draft = draftWith([withFramework(templateRole('pm'), 'superpowers')])
-    const { lines } = await reviewed(draft, 'pane')
+    const { lines } = await reviewed(draft, PANE_DESKTOP)
     expect(recommendedLines(draft)).toEqual(['Recommendations: none'])
     const at = lines.indexOf('Recommendations: none')
     expect(lines.slice(at - 1, at + 1)).toEqual(['warning: could not list src', 'Recommendations: none'])
@@ -543,11 +545,11 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
   test('the paged review reaches the recommendations on some page before Confirm, on each surface', async () => {
     const draft = draftWith([...REVIEW_DRAFT.roles, templateRole('fe')])
     const shown = recommendedLines(draft)
-    for (const surface of ['pane', 'tui-default'] satisfies Surface[]) {
+    for (const surface of [PANE_DESKTOP, TUI_DEFAULT]) {
       const { pages } = await reviewed(draft, surface)
       const flat = pages.flat()
       const at = flat.indexOf(shown[0] ?? '')
-      expect([surface, at >= 0, flat.slice(at, at + shown.length)]).toEqual([surface, true, shown])
+      expect([surface.id, at >= 0, flat.slice(at, at + shown.length)]).toEqual([surface.id, true, shown])
     }
   })
 })
@@ -555,7 +557,7 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
 describe('the paged review on the TUI default (D-233, ASKED #4)', () => {
   /** The review asked on the TUI default over REVIEW_DRAFT: the state with its first page out, and the review lines. */
   async function tuiReview(state: Partial<InitState> = {}): Promise<{ readonly asking: InitState; lines: string[] }> {
-    const entered = reviewAt({}, { surface: 'tui-default', ...state })
+    const entered = reviewAt({}, { surface: TUI_DEFAULT, ...state })
     const asking = nextStage(entered, planAnswer(await plannedFor(entered)))
     const lines = pagedLines(asking)
 

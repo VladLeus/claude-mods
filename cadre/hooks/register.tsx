@@ -31,11 +31,11 @@ import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
-import { paneQuestionText } from './ui/ask'
-import { pageColumnsOf, paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
-import { answersFromNotes, dialogPlan, latestColumns, tuiTranscriptEntries } from './ui/preview'
-import { surfaceOf } from './ui/surface'
-import type { Surface } from './ui/surface'
+import { paneBlockOf, paneColumns, paneDrawn, panePlacement, questionScroll } from './ui/pane'
+import { answersFromNotes, latestColumns } from './ui/preview'
+import type { SurfaceEffect, SurfaceModule } from './ui/surfaces/contract'
+import { PANE_DESKTOP } from './ui/surfaces/pane-desktop'
+import { surfaceModuleOf } from './ui/surfaces/select'
 
 /** The id of the cadre init side pane (D-133). */
 const PANE = 'cadre-init'
@@ -72,10 +72,11 @@ let viewportColumns: unknown = null
  */
 let paneBodyColumns: number | null = null
 /**
- * Where the last `/cadre` command shows its context (D-208), as the command.run hook decided it before anything
- * opened; a pane surface before any. The AskUserQuestion hook previews the open question's context on the TUI default.
+ * The surface module the last `/cadre` command selected (surfaceModuleOf, D-208, D-353), as the command.run hook
+ * selected it before anything opened; the desktop pane before any. The AskUserQuestion hook asks it for the dialog of
+ * the open question (dialogPlan).
  */
-let runSurface: Surface = 'pane'
+let runSurface: SurfaceModule = PANE_DESKTOP
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -149,14 +150,15 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 }
 
 /**
- * One command run's pane handle: whether it opened the cadre-init pane (D2), set when an init or regen run on a pane
- * surface opens it as it starts (openPane, D-324) and read once the run settles, where the run shows its context
- * (D-208), decided before anything opens, whether the command came with a presentation (D-271), the context the TUI
- * default printed last, whether the run set a status line, and whether a step runs now.
+ * One command run's pane handle: whether it opened the cadre-init pane (D2), set when an init or regen run opens it as
+ * it starts, where the selected module asks for it (runStartEffects, openPane, D-324, D-353), and read once the run
+ * settles, the module of the surface the run shows its context on (D-208, D-353), selected before anything opens,
+ * whether the command came with a presentation (D-271), the context the TUI default printed last, whether the run set
+ * a status line, and whether a step runs now.
  */
 type PaneRun = {
   isOpened: boolean
-  readonly surface: Surface
+  readonly surface: SurfaceModule
   /**
    * Whether the command came with a presentation, as a command a person ran does: on a host with no surfaces method
    * the run counts as interactive then (isInteractive, D-271, edge #11).
@@ -165,13 +167,14 @@ type PaneRun = {
   /** The context the TUI default last printed above a dialog this run (WD-S4); null before any. */
   printed: AskContext | null
   /**
-   * Whether the run set a status line on the TUI default, set by its first progress with a text and read once the run
-   * settles, which then clears the line; a run that set none clears none (D-257, edge #2, U-11).
+   * Whether the run set a status line, set by the first status effect with a text (the TUI default's progress, D-353)
+   * and read once the run settles, which then clears the line; a run that set none clears none (D-257, edge #2, U-11).
    */
   hasStatus: boolean
   /**
    * Whether a long step runs now: set by a progress with a text, cleared by progress(null), by each ask and by the
-   * run's end. While it is set, a line the run logs on a pane surface is the loader's summary line (D-325).
+   * run's end. The selected module reads it for each logged line: while it is set, a line the run logs on a pane
+   * surface is the loader's summary line (logEffects, D-325, D-353).
    */
   isLoading: boolean
 }
@@ -179,7 +182,7 @@ type PaneRun = {
 /**
  * The surfaces the session draws on, as the host answers them (D-271, edge #11): null when the host refuses to say,
  * and undefined when the call itself throws, as on a host with no surfaces method, so the caller can tell a host that
- * cannot say from one that never could and fall back to the command's presentation (surfaceOf, isInteractive).
+ * cannot say from one that never could and fall back to the command's presentation (surfaceModuleOf, isInteractive).
  */
 async function surfacesRead($: EngineInterface): Promise<readonly string[] | null | undefined> {
   try {
@@ -214,19 +217,72 @@ function safeLog($: EngineInterface, text: string): void {
 }
 
 /**
- * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
- * the preview drawn at `columns` right above the dialog, one transcript entry per row, its title first, each line
- * cleaned and uncut, as the terminal draws no newline inside an entry (D-262). It prints once per question: a question
- * asked again with the context the run printed last prints nothing (tuiTranscriptEntries, D-228, D-260, D-262,
- * WD-S4); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing. A
- * status or log call the host throws on is ignored (safeStatus, safeLog, D-271).
+ * The effects of a logged line (logEffects, D-325, D-353), run at once, as the init port's log is synchronous: a
+ * transcript line (safeLog), or the summary line of the loader shown now, written in one update the line does not wait
+ * for, a write the host refuses swallowed (the OC-03-N pick). Any other effect is not one a logged line gives, and is
+ * ignored.
  */
-function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext | null, columns: number | null): void {
-  safeStatus($, undefined)
-  const entries = tuiTranscriptEntries(context, pane.printed, columns)
-  if (entries.length === 0) return
-  for (const entry of entries) safeLog($, entry)
-  pane.printed = context
+function runLogEffects($: EngineInterface, _pane: PaneRun, effects: readonly SurfaceEffect[]): void {
+  for (const effect of effects) {
+    if (effect.kind === 'transcript') safeLog($, effect.text)
+    if (effect.kind !== 'loader-summary') continue
+    const { text } = effect
+    void update($, paneState, state =>
+      state.loader === null ? state : { ...state, loader: { ...state.loader, summary: text } },
+    ).catch(() => undefined)
+  }
+}
+
+/**
+ * Executes the host effects of the run's surface module in order (D-353), each as the run made it before the split:
+ * the status line set, which marks that the run set one (D-257), or cleared (safeStatus, D-232); a transcript line and
+ * the loader's summary line (runLogEffects, D-325); the context printed last above a dialog (WD-S4); the pane loader
+ * written in one update, its label and summary, or cleared on a null label (D-301, D-327); the pane the run opened
+ * scrolled back to its start for `open` (questionScroll, D-209), a scroll the host refuses swallowed and one that
+ * never settles holding the question at most SCROLL_WAIT_MS (settledWithin, D-271); and the cadre-init pane opened as
+ * an init or regen run starts (openPane, D-324). A status, log or state write the host refuses is swallowed, so no
+ * cosmetic host failure cancels init (D-271, T-02-50).
+ */
+async function runEffects(
+  $: EngineInterface,
+  pane: PaneRun,
+  effects: readonly SurfaceEffect[],
+  open: OpenQuestion | null,
+): Promise<void> {
+  for (const effect of effects) {
+    switch (effect.kind) {
+      case 'status':
+        if (effect.text !== null) pane.hasStatus = true
+        safeStatus($, effect.text ?? undefined)
+        break
+      case 'transcript':
+      case 'loader-summary':
+        runLogEffects($, pane, [effect])
+        break
+      case 'printed':
+        pane.printed = effect.context
+        break
+      case 'loader': {
+        const { label, summary } = effect
+        await update($, paneState, state =>
+          label === null ? { ...state, loader: null } : { open: state.open, loader: { label, summary } },
+        ).catch(() => undefined)
+        break
+      }
+      case 'scroll-start': {
+        const scroll = questionScroll(PANE, open, pane.isOpened)
+        if (scroll !== null) await settledWithin($.ui.scroll(scroll), $.clock.sleep(SCROLL_WAIT_MS))
+        break
+      }
+      case 'open-pane':
+        await openPane($, pane)
+        break
+      default: {
+        const unreachable: never = effect
+        return unreachable
+      }
+    }
+  }
 }
 
 /**
@@ -235,30 +291,32 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * into absent (statForWrite answers absent only when the host says the path is not there), and none reads an error
  * message. `ask` rejects when the person dismisses the dialog (D-45); it writes the question with its header, context
  * and typed-answer flag into the pane state in one update before the dialog, no loader with it, and the idle state in
- * one update after it, whatever happens in between (D-303, D-271), scrolls a pane the run opened back to its start for
- * each question (questionScroll, D-209; a scroll the host refuses is swallowed, and one that never settles holds the
- * question at most SCROLL_WAIT_MS, D-271), and gives the dialog only its options, header and multi-select
- * (D-203, D-229). On a pane surface it asks, and keeps as the open question's text, the pane text of the question's
- * context: its sentence and summary, plus the page marker on a paged question, with the refusal line on top of a
- * refusal (paneQuestionText, D-255, D-310), so the dialog hook still pairs the dialog with it. `show` draws nothing on
- * any surface: it stays for the port (D-326), as the pane draws only the open question's context or the loader
- * (D-299). On a pane surface `progress` writes the step's label and summary as the loader in one update, which the
- * pane draws alone between questions (D-301, D-327), and `log` writes a line logged while that step runs as the
- * loader's summary line in one update and prints nothing (D-325, OC-03-N); a line logged with no step running goes to
- * the transcript. A state write the host refuses is swallowed, so it never cancels init (D-133, T-02-50). The pane
- * itself is opened by the command handler as an init or regen run starts (openPane, D-324), which also writes the idle
- * state and closes the pane once the run settles (D2, D-304). On the TUI default `progress` sets the one status line,
- * the label alone (`$.ui.status`), `log` logs every line, and `ask` clears the status line before each dialog (D-232)
- * and prints a context too long for the preview above it (beforeTuiDialog, D-228). A status or log call the host
- * throws on is ignored (safeStatus, safeLog), so no cosmetic host failure cancels init (D-271).
+ * one update after it, whatever happens in between (D-303, D-271), and gives the dialog only its options, header and
+ * multi-select (D-203, D-229). What differs by surface the run's selected module decides, and runEffects executes
+ * (D-353): the text `ask` asks and keeps as the open question's text (askedText: on a pane surface the pane text of
+ * the question's context, its sentence and summary, plus the page marker on a paged question, with the refusal line
+ * on top of a refusal, paneQuestionText, D-255, D-310, so the dialog hook still pairs the dialog with it); what a
+ * dialog does as it opens (dialogOpenEffects: a pane the run opened scrolls back to its start for each question,
+ * questionScroll, D-209, a scroll the host refuses swallowed and one that never settles holding the question at most
+ * SCROLL_WAIT_MS, D-271; the TUI default clears the status line, D-232, and prints a context too long for the preview
+ * above the dialog, D-228); `progress` (progressEffects: on a pane surface the step's label and summary as the loader
+ * in one update, which the pane draws alone between questions, D-301, D-327; on the TUI default the one status line,
+ * the label alone, `$.ui.status`); and `log` (logEffects: on a pane surface a line logged while that step runs is the
+ * loader's summary line, written in one update and not printed, D-325, OC-03-N; every other line goes to the
+ * transcript). `show` draws nothing on any surface: it stays for the port (D-326), as the pane draws only the open
+ * question's context or the loader (D-299). A state write the host refuses is swallowed, so it never cancels init
+ * (D-133, T-02-50). The pane itself is opened by the command handler as an init or regen run starts (runStartEffects,
+ * openPane, D-324), which also writes the idle state and closes the pane once the run settles (D2, D-304). A status or
+ * log call the host throws on is ignored (safeStatus, safeLog), so no cosmetic host failure cancels init (D-271).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
     ask: async (question, spec) => {
       const { options, header, multiSelect, context, acceptsTyped, takesNote, endingLabels } = spec
-      // A pane surface asks the pane text of the question's context: its sentence and summary, plus the page marker
-      // on a paged question (paneQuestionText, D-310); the TUI default and a run with no surface ask it as given.
-      const text = pane.surface === 'pane' ? paneQuestionText(question, context ?? null) : question
+      // The selected module decides the text the dialog asks (D-353): a pane surface asks the pane text of the
+      // question's context, its sentence and summary, plus the page marker on a paged question (paneQuestionText,
+      // D-310); the TUI default and a run with no surface ask it as given.
+      const text = pane.surface.askedText(question, context ?? null)
       const open: OpenQuestion = {
         question: text,
         header: header ?? null,
@@ -275,13 +333,12 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       await update($, paneState, () => ({ open, loader: null })).catch(() => undefined)
       // From here on the finally writes the idle state, so no host failure leaves the question open (D-271).
       try {
-        // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it,
-        // and one that never settles holds it at most SCROLL_WAIT_MS (settledWithin, D-271).
-        const scroll = questionScroll(PANE, open, pane.isOpened)
-        if (scroll !== null) await settledWithin($.ui.scroll(scroll), $.clock.sleep(SCROLL_WAIT_MS))
         // The preview is drawn at the newest width a terminal reported, as the dialog hook draws it (D-260).
         const columns = latestColumns(viewportColumns, presentationColumns)
-        if (pane.surface === 'tui-default') beforeTuiDialog($, pane, open.context, columns)
+        // What the dialog does as it opens is the selected module's (D-353): a pane scrolls back to its start for each
+        // new question (D-209); the TUI default clears its status line and prints a context too long for the preview
+        // above the dialog (D-228, D-232).
+        await runEffects($, pane, pane.surface.dialogOpenEffects(open.context, pane.printed, columns), open)
         const dialog = {
           options,
           ...(header === undefined ? {} : { header }),
@@ -293,35 +350,19 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
         await update($, paneState, () => IDLE_PANE).catch(() => undefined)
       }
     },
-    // A line logged on a pane surface while a step runs is the loader's summary line and is not printed (D-325, the
-    // OC-03-N pick); a state write the host refuses is swallowed. Any other line goes to the transcript.
-    log: text => {
-      if (pane.surface === 'pane' && pane.isLoading) {
-        void update($, paneState, state =>
-          state.loader === null ? state : { ...state, loader: { ...state.loader, summary: text } },
-        ).catch(() => undefined)
-        return
-      }
-      safeLog($, text)
-    },
+    // The selected module decides a logged line (D-353): on a pane surface, while a step runs, it is the loader's
+    // summary line and is not printed (D-325, the OC-03-N pick); a state write the host refuses is swallowed. Any
+    // other line goes to the transcript.
+    log: text => runLogEffects($, pane, pane.surface.logEffects(text, pane.isLoading)),
     // Kept for the port (D-326): the pane draws only the open question's context or the loader (D-299).
     show: async () => undefined,
-    // Progress is one status line on the TUI default, the label alone (D-232), and, on a pane surface, the loader in
-    // the pane state, the label and the step's summary drawn alone between questions (D-301, D-327); a state write the
-    // host refuses is swallowed. A text says a step runs, null that none does (D-325).
+    // The selected module decides the progress (D-353): one status line on the TUI default, the label alone (D-232),
+    // and, on a pane surface, the loader in the pane state, the label and the step's summary drawn alone between
+    // questions (D-301, D-327); a state write the host refuses is swallowed. A text says a step runs, null that none
+    // does (D-325).
     progress: async (text, summary) => {
       pane.isLoading = text !== null
-      if (pane.surface === 'tui-default') {
-        if (text !== null) pane.hasStatus = true
-        safeStatus($, text ?? undefined)
-        return
-      }
-      if (pane.surface !== 'pane') return
-      await update($, paneState, state =>
-        text === null
-          ? { ...state, loader: null }
-          : { open: state.open, loader: { label: text, summary: summary ?? null } },
-      ).catch(() => undefined)
+      await runEffects($, pane, pane.surface.progressEffects(text, summary ?? null), null)
     },
     complete: async (prompt, system) => {
       const model = await $.session.model().catch(() => null)
@@ -452,11 +493,11 @@ function hostIoOf($: EngineInterface): HostIo {
 }
 
 /**
- * Opens the cadre-init pane as an init or regen run on a pane surface starts (D-324), before its first question, so
- * the ~/.claude.json consent shows its context: the pane state is written idle first, so the pane draws its empty
- * frame until a question opens or a step runs, the open is recorded in the run's pane handle (D2), and the placement
- * an earlier run reported is dropped (D3). A write or an open the host refuses is swallowed, so neither cancels the run
- * (T-02-50).
+ * Opens the cadre-init pane as an init or regen run on a pane surface starts, the open-pane effect of its module
+ * (D-324, D-353), before its first question, so the ~/.claude.json consent shows its context: the pane state is
+ * written idle first, so the pane draws its empty frame until a question opens or a step runs, the open is recorded in
+ * the run's pane handle (D2), and the placement an earlier run reported is dropped (D3). A write or an open the host
+ * refuses is swallowed, so neither cancels the run (T-02-50).
  */
 async function openPane($: EngineInterface, pane: PaneRun): Promise<void> {
   await update($, paneState, () => IDLE_PANE).catch(() => undefined)
@@ -466,18 +507,20 @@ async function openPane($: EngineInterface, pane: PaneRun): Promise<void> {
 }
 
 /**
- * The columns a page of the cadre-init pane is drawn at now on `surface` (pageColumnsOf, D-292): from where the pane
- * is seated, the dialog's preview columns and the body columns the newest Pane render reported.
+ * The columns a page of the cadre-init pane is drawn at now on the surface of `surface` (its pageColumns, D-292,
+ * D-353): from where the pane is seated, the dialog's preview columns and the body columns the newest Pane render
+ * reported.
  */
-function pageColumnsNow(surface: Surface): number | null {
-  return pageColumnsOf(surface, lastPlacement, latestColumns(viewportColumns, presentationColumns), paneBodyColumns)
+function pageColumnsNow(surface: SurfaceModule): number | null {
+  return surface.pageColumns(lastPlacement, latestColumns(viewportColumns, presentationColumns), paneBodyColumns)
 }
 
 /**
  * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo over `pane`. An init or regen
- * run on a pane surface opens the cadre-init pane as it starts (openPane, D-324), and both read the page width before
- * each step (pageColumnsNow, D-292) and, at each ask, whether the pane is seated inline, where no question is paged
- * (N-02); no other command opens the pane.
+ * run starts as the run's selected module says (runStartEffects, D-353): on a pane surface it opens the cadre-init
+ * pane (openPane, D-324). Both read the page width before each step (pageColumnsNow, D-292) and, at each ask, where the
+ * pane is seated, which the module's paged port reads, as no question is paged where the dialog previews it (paneSeat,
+ * N-02); no other command opens the pane.
  */
 async function commandReply($: EngineInterface, args: string, pane: PaneRun): Promise<{ text: string }> {
   const command = parseCommand(args)
@@ -490,9 +533,9 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       const { surface } = pane
       const pageColumns = (): number | null => pageColumnsNow(surface)
       const options: InitOptions = command.dryRun
-        ? { dryRun: true, surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
-        : { dryRun: false, host: hostIoOf($), surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
-      if (surface === 'pane') await openPane($, pane)
+        ? { dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement }
+        : { dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement }
+      await runEffects($, pane, surface.runStartEffects(), null)
 
       return { text: await runInit(initIoOf($, pane), options) }
     }
@@ -501,9 +544,9 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       const { surface } = pane
       const pageColumns = (): number | null => pageColumnsNow(surface)
       const options: RegenOptions = command.dryRun
-        ? { id, dryRun: true, surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
-        : { id, dryRun: false, host: hostIoOf($), surface, pageColumns, isPaneInline: () => lastPlacement === 'inline' }
-      if (surface === 'pane') await openPane($, pane)
+        ? { id, dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement }
+        : { id, dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement }
+      await runEffects($, pane, surface.runStartEffects(), null)
 
       return { text: await runRegen(initIoOf($, pane), options) }
     }
@@ -552,9 +595,10 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A run decides its surface before it opens anything (D-208), and once it settles (finished, cancelled, refused or
-  // thrown) no step runs any more (D-325), it writes the idle pane state, whatever its surface (D-304), clears the
-  // status line when it set one (D-257, edge #2), and closes the cadre-init pane if it opened it (D2).
+  // A run selects its surface module once, before it opens anything (surfaceModuleOf, D-208, D-353), and once it
+  // settles (finished, cancelled, refused or thrown) no step runs any more (D-325), it writes the idle pane state,
+  // whatever its surface (D-304), clears the status line when it set one (D-257, edge #2), and closes the cadre-init
+  // pane if it opened it (D2).
   on('command.run', { command: 'cadre' }, async ($, e) => {
     // A command a test kit runs, or one from a host that stamps no presentation, may carry none (previewColumns).
     const presentation: unknown = e.presentation
@@ -562,7 +606,8 @@ export const register: Register = on => {
     viewportColumns = null
     paneBodyColumns = null
     // A host with no surfaces method leaves them undefined: the surface comes from the presentation (D-271, edge #11).
-    runSurface = surfaceOf(presentation, await surfacesRead($))
+    // The one selection point of the surface modules (D-353).
+    runSurface = surfaceModuleOf(presentation, await surfacesRead($))
     const pane: PaneRun = {
       isOpened: false,
       surface: runSurface,
@@ -629,19 +674,19 @@ export const register: Register = on => {
     return await next(e)
   })
 
-  // The dialog of the question cadre has open is decided by dialogPlan (WD-S2); this hook reads the open question of
-  // the pane state, which the init port's ask writes, and writes no state (R1, D-203, D-303). With no open question or
-  // no plan the call passes through untouched, and so does its result (D-239). Else the dialog shows the plan's
-  // questions, or the call's own when the plan has none, and notes typed in it become the answers of the plan's notes
-  // (A3, ASKED #24). A deny, an error and a result of another shape pass through unchanged. Apart from the read of the
-  // open question, the hook has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a
-  // fail-safe pass-through (C1).
+  // The dialog of the question cadre has open is decided by the selected module's dialogPlan (WD-S2, D-353); this hook
+  // reads the open question of the pane state, which the init port's ask writes, and writes no state (R1, D-203,
+  // D-303). With no open question or no plan the call passes through untouched, and so does its result (D-239). Else
+  // the dialog shows the plan's questions, or the call's own when the plan has none, and notes typed in it become the
+  // answers of the plan's notes (A3, ASKED #24). A deny, an error and a result of another shape pass through
+  // unchanged. Apart from the read of the open question, the hook has no .catch on purpose: a hook that throws is
+  // skipped and next(e) runs in its place, a fail-safe pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
     const open = (await read($, paneState).catch(() => null))?.open ?? null
     if (open === null) return await next(e)
     const columns = latestColumns(viewportColumns, presentationColumns)
-    const plan = dialogPlan(raw, open, runSurface, lastPlacement, columns, CHANGE_SOMETHING_LABEL)
+    const plan = runSurface.dialogPlan(raw, open, lastPlacement, columns, CHANGE_SOMETHING_LABEL)
     if (plan === null) return await next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no

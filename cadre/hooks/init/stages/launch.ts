@@ -16,7 +16,6 @@ import { isSafeRelativePath } from '../../paths'
 import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { launchContext, launchDirContext } from '../../ui/blocks/context'
-import { listWordsOf } from '../../ui/surface'
 import { asking, stageCancelled, stageDone, stageFailed, withEffect } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
@@ -163,7 +162,7 @@ function launchStartAsk(
  * LAUNCH_DIR_CONTEXT (D-310), `tries` so far.
  */
 function dirAsked(state: InitState, tries: number, refusal: string | null): InitState {
-  const context = launchDirContext(state.draft.gathered?.repo.codeDirs ?? [], listWordsOf(state.surface))
+  const context = launchDirContext(state.draft.gathered?.repo.codeDirs ?? [], state.surface.listWords)
   const pane = paneQuestionOf(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT, context.summary)
   const question = askedText(pane.asked, refusal)
   const sub: InitState['sub'] = { kind: 'launch-dir', tries }
@@ -191,7 +190,7 @@ function dirRefused(state: InitState, tries: number, answer: string, problem: st
 function afterStart(state: InitState, answer: string | null): InitState {
   const { roles } = state.draft
   if (state.sub.kind !== 'ask' || roles === undefined) return stageFailed(state)
-  const ask = launchStartAsk(roles, listWordsOf(state.surface))
+  const ask = launchStartAsk(roles, state.surface.listWords)
   const next = choiceAnswer(ask, state.sub, answer)
   if (next.kind === 'again') return asking(state, next.question, ask.spec, next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
@@ -253,7 +252,7 @@ export const launchStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
     const { roles } = state.draft
     if (roles === undefined) return stageFailed(state)
-    const ask = launchStartAsk(roles, listWordsOf(state.surface))
+    const ask = launchStartAsk(roles, state.surface.listWords)
 
     return asking(state, ask.question, ask.spec, 1)
   },

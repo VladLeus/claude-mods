@@ -9,6 +9,7 @@ import { contextPages, frameSize, MAX_PANE_FRAME_CHARS, MAX_PANE_FRAME_ROWS, pan
 import type { PaneBlock } from './pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL, withPagedAsks } from './paging'
 import { MAX_DIALOG_OPTIONS } from './preview'
+import { TUI_DEFAULT } from './surfaces/tui-default'
 
 /** The model's replies of an oversize run: no server recommended, the first own skill recommended for the PM. */
 const OVERSIZE_REPLIES = ['{"servers":{}}', '{"skills":{"S1":["pm"]},"groups":{}}']
@@ -35,7 +36,7 @@ async function askedBefore(
   prefix: string,
 ): Promise<{ readonly question: string; readonly spec: AskSpec }> {
   const run = memIo(world, answers)
-  await runInit(run.io, { dryRun: true, surface: 'tui-default' })
+  await runInit(run.io, { dryRun: true, surface: TUI_DEFAULT })
   const at = run.asked.findIndex(question => question.startsWith(prefix))
   const spec = run.specs[at]
   if (spec === undefined) throw new Error(`the run asked no question starting ${prefix}`)

@@ -88,6 +88,7 @@ import { compileScope } from './scope/compile'
 import { infraViolations, roleOwnPaths } from './scope/lint'
 import { scopesFor } from './team'
 import type { StepResult } from './ui/ask'
+import { PANE_DESKTOP } from './ui/surfaces/pane-desktop'
 
 /**
  * Support for the Phase 2 tests, not a test itself: it is deliberately not named `*.test.ts`, so `claude plugin test`
@@ -1627,7 +1628,7 @@ export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Part
     kept: null,
     toolNames: [],
     dryRun: true,
-    surface: 'pane',
+    surface: PANE_DESKTOP,
     pageColumns: null,
     ...over,
   }

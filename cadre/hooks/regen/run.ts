@@ -9,26 +9,26 @@ import { reportText } from '../core/text'
 import { initGuard } from '../guards/repo'
 import { t } from '../locales/t'
 import { readTeam, regenBadRole } from '../team'
-import { withPagedAsks } from '../ui/paging'
-import type { Surface } from '../ui/surface'
+import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
+import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { regenApply, regenPlan, regenReplyText } from './plan'
 import { regenHandout } from './review'
 import { regenScans } from './side-read'
 
 /**
  * How `/cadre regen <id>` runs (D-68, T-03-16): --dry-run prints the role's plan and holds no host, so it can neither
- * write nor run; plain regen writes that plan through `host`. `surface` is where the run shows its context, a pane
- * surface when absent (D-208, D-285), `pageColumns` reads the columns its pane pages are drawn at (D-292), and
- * `isPaneInline` whether the pane is seated inline now, where no question is paged (N-02, OC-04-I); both are absent in
- * tests and `-p`.
+ * write nor run; plain regen writes that plan through `host`. `surface` is the module of the surface the run shows its
+ * context on, the desktop pane when absent (D-208, D-285, D-353), `pageColumns` reads the columns its pane pages are
+ * drawn at (D-292), and `paneSeat` where the pane is seated now, which the module's paged port reads at each ask
+ * (N-02, OC-04-I); both are absent in tests and `-p`.
  */
 export type RegenOptions = (
   | { readonly id: string; readonly dryRun: true }
   | { readonly id: string; readonly dryRun: false; readonly host: HostIo }
 ) & {
-  readonly surface?: Surface
+  readonly surface?: SurfaceModule
   readonly pageColumns?: () => number | null
-  readonly isPaneInline?: () => boolean
+  readonly paneSeat?: () => PaneSeat
 }
 
 /**
@@ -61,14 +61,12 @@ function regenCancelReply(reason: string): string {
  * and a dry run compares no private record (AUTO-PICK #19 Q5) and asks git nothing.
  */
 export async function runRegen(given: InitIo, options: RegenOptions): Promise<string> {
-  // Every question goes through the paged port: on a pane surface a context over the frame cap is asked a page at a
-  // time, and whole while the pane is seated inline (withPagedAsks, D-306, N-02).
-  const io = withPagedAsks(
-    given,
-    options.surface ?? 'pane',
-    () => options.pageColumns?.() ?? null,
-    () => options.isPaneInline?.() ?? false,
-  )
+  // Every question goes through the surface module's paged port: on a pane surface a context over the frame cap is
+  // asked a page at a time, and whole while the pane is seated inline (pagedPort, D-306, N-02, D-353).
+  const io = (options.surface ?? PANE_DESKTOP).pagedPort(given, {
+    columns: () => options.pageColumns?.() ?? null,
+    seat: () => options.paneSeat?.() ?? null,
+  })
   const guard = await initGuard(io, 'regen')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard

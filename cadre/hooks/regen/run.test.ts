@@ -77,6 +77,7 @@ import {
 } from '../testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
+import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { improverNotOfferedWarning } from './plan'
 import {
   memoryDroppedLine,
@@ -813,7 +814,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const plain = memIo(await regenPartsWorld(changed), answers)
     const plainReply = await runRegen(plain.io, { id: 'be', dryRun: true })
     const given = memIo(await regenPartsWorld(changed), answers)
-    const reply = await runRegen(given.io, { id: 'be', dryRun: true, surface: 'pane', pageColumns: () => 60 })
+    const reply = await runRegen(given.io, { id: 'be', dryRun: true, surface: PANE_DESKTOP, pageColumns: () => 60 })
     expect([reply, given.asked, given.specs]).toEqual([plainReply, plain.asked, plain.specs])
   })
 

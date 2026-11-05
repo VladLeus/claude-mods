@@ -12,6 +12,8 @@ import {
   TOPICS,
   wholeDraft,
 } from '../testkit'
+import { NO_SURFACE } from '../ui/surfaces/none'
+import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
 import { initialState, nextStage, STAGES } from './machine'
 import { INIT_CANCELLED } from './replies'
 import type { Answer, InitState } from './state'
@@ -47,13 +49,13 @@ describe('init stage machine (D-230)', () => {
   })
 
   test('initialState has no page width yet: the run reads it before each step (D-292)', () => {
-    expect([initialState(true).pageColumns, initialState(false, 'tui-default').pageColumns]).toEqual([null, null])
+    expect([initialState(true).pageColumns, initialState(false, TUI_DEFAULT).pageColumns]).toEqual([null, null])
   })
 
   test('initialState keeps the surface the run was given, a pane surface when none is given (D-208)', () => {
-    expect(initialState(true, 'tui-default').surface).toBe('tui-default')
-    expect(initialState(false, 'none').surface).toBe('none')
-    expect(initialState(true).surface).toBe('pane')
+    expect(initialState(true, TUI_DEFAULT).surface.id).toBe('tui-default')
+    expect(initialState(false, NO_SURFACE).surface.id).toBe('none')
+    expect(initialState(true).surface.id).toBe('pane-desktop')
   })
 
   test('an answer whose kind does not match the open effect cancels init with the cancel reply (fail closed)', () => {

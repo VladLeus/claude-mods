@@ -27,7 +27,6 @@ import {
   ownSkillsContext,
 } from '../../ui/blocks/assign'
 import type { McpLine } from '../../ui/blocks/assign'
-import { listWordsOf } from '../../ui/surface'
 import { assignToRoles, ownSkillContextRows, ownSkillLines, parseRoleList } from '../answers'
 import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
@@ -121,7 +120,7 @@ function mcpStart(state: InitState, plan: AssignPlan, recommended: ReadonlyMap<s
   if (names.length === 0) return skillsStart(state, plan, [])
   const refs = names.map(name => mcpRefOf(plan.setup.mcp, name))
   const scanned = plan.setup.mcp.map(ref => ref.name)
-  const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles, listWordsOf(state.surface), scanned)
+  const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles, state.surface.listWords, scanned)
   const context = mcpGroupContext(mcpLinesOf(state, plan, recommended), plan.roles)
   const entry = { ...mcpEntry(names.length), context }
 

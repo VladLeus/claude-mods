@@ -78,8 +78,8 @@ import {
 } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
-import { withPagedAsks } from '../ui/paging'
-import type { Surface } from '../ui/surface'
+import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
+import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import type { PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
@@ -91,21 +91,22 @@ import type { Answer, Effect, InitStage, InitState, IoCall, IoResult, ModelCall,
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
- * run; plain init writes the plan through `host` after Confirm. `surface` is where the run shows its context, a pane
- * surface when absent (D-208); the init state carries it to the stages.
+ * run; plain init writes the plan through `host` after Confirm. `surface` is the module of the surface the run shows
+ * its context on, the desktop pane when absent (D-208, D-353); the init state carries it to the stages.
  */
 export type InitOptions = ({ readonly dryRun: true } | { readonly dryRun: false; readonly host: HostIo }) & {
-  readonly surface?: Surface
+  readonly surface?: SurfaceModule
   /**
    * The columns a pane page or a Review page is drawn at (D-292): read before each step into the state the step gets,
    * so the stages see the width the pane has now; absent in tests and `-p`, where the width is unknown.
    */
   readonly pageColumns?: () => number | null
   /**
-   * Whether the pane is seated inline now (N-02, OC-04-I): an inline pane previews the whole context in the dialog,
-   * which pages cannot change, so no question is paged there (withPagedAsks); absent in tests and `-p`, never inline.
+   * Where the pane is seated now (N-02, OC-04-I, D-353): the surface module's paged port reads it at each ask, as a
+   * pane seated inline previews the whole context in the dialog, which pages cannot change; absent in tests and `-p`,
+   * where no seat is known.
    */
-  readonly isPaneInline?: () => boolean
+  readonly paneSeat?: () => PaneSeat
 }
 
 /** The status line the TUI default shows while the repo scans run (D-232). */
@@ -735,15 +736,13 @@ export async function performState(io: InitIo, options: InitOptions, state: Init
  * effect and feeds the answer back.
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
-  // Every question goes through the paged port: on a pane surface a context over the frame cap is asked a page at a
-  // time, at the width the run reads before each ask, and whole while the pane is seated inline (withPagedAsks, D-306,
-  // N-02).
-  const paged = withPagedAsks(
-    io,
-    options.surface ?? 'pane',
-    () => options.pageColumns?.() ?? null,
-    () => options.isPaneInline?.() ?? false,
-  )
+  // Every question goes through the surface module's paged port: on a pane surface a context over the frame cap is
+  // asked a page at a time, at the width the run reads before each ask, and whole while the pane is seated inline
+  // (pagedPort, D-306, N-02, D-353).
+  const paged = (options.surface ?? PANE_DESKTOP).pagedPort(io, {
+    columns: () => options.pageColumns?.() ?? null,
+    seat: () => options.paneSeat?.() ?? null,
+  })
   let state = initialState(options.dryRun, options.surface)
   // The folds the stages gave since the last ask, and those bound to the stage that asked first after them (D-302).
   let held: readonly Extract<Output, { readonly kind: 'fold' }>[] = []
@@ -763,7 +762,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
       boundStage = null
       bound = []
     }
-    const folds = state.surface === 'tui-default' ? [] : bound
+    const folds = state.surface.foldsOf(bound)
     const open = openQuestion === null ? null : { ...openQuestion, spec: foldedSpec(openQuestion.spec, folds) }
     const answer = await performState(paged, options, { ...state, openQuestion: open })
     if (answer === null) return INIT_CANCELLED

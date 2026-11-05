@@ -30,7 +30,7 @@ import { ASK_HEADERS, choiceAnswer, countedChip, PANE_TITLES, paneQuestionOf, qu
 import type { ChoiceAsk } from '../../ui/ask'
 import { instructionPartsContext, instructionsContext, memoryContext, topicContext } from '../../ui/blocks/context'
 import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/blocks/instructions'
-import { listWordsOf, withMax } from '../../ui/surface'
+import { withMax } from '../../ui/surface'
 import { ACCEPT_RECOMMENDATIONS, handoutAnswer, handoutEnter } from '../handout'
 import type { HandoutEntry, HandoutItem, HandoutNext } from '../handout'
 import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
@@ -353,7 +353,7 @@ function contentAsked(
   tries: number,
   question: string | null,
 ): InitState {
-  const ask = contentAsk(input.setup, repo, input.locations.root, listWordsOf(state.surface))
+  const ask = contentAsk(input.setup, repo, input.locations.root, state.surface.listWords)
   const asking: InitState = { ...state, sub: { kind: 'content', tries, repo } }
 
   return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
@@ -370,7 +370,7 @@ function grouped(state: InitState, keep: InstructionHandout, next: MemoryNext): 
 
 /** The whole-file questions of D-63 (memoryEnter), handed out as `keep`, their names capped for the run's surface. */
 function wholeFiles(state: InitState, input: InstructionInput, keep: InstructionHandout): InitState {
-  return grouped(state, keep, memoryEnter(input.roles, input.setup, input.locations.root, listWordsOf(state.surface)))
+  return grouped(state, keep, memoryEnter(input.roles, input.setup, input.locations.root, state.surface.listWords))
 }
 
 /**
@@ -400,7 +400,7 @@ function partsHandedOut(state: InitState, input: InstructionInput, found: PartsF
  */
 function handOutParts(state: InitState, input: InstructionInput, found: PartsFound): InitState {
   const { scan, topics, recommended } = found
-  const words = listWordsOf(state.surface)
+  const words = state.surface.listWords
   const items = [...topicItems(scan, topics, recommended, words), ...memoryItems(scan.memories, recommended)]
   const entry = { ...instructionsEntry(scan, topics), context: instructionPartsContext(scan, topics, recommended) }
   const next = handoutEnter(entry, items, input.roles, HANDOUT_DISMISSED_REASON)
@@ -476,7 +476,7 @@ function afterContent(
   sub: { readonly tries: number; readonly repo: RepoNames },
   answer: string | null,
 ): InitState {
-  const words = listWordsOf(state.surface)
+  const words = state.surface.listWords
   const next = choiceAnswer(contentAsk(input.setup, sub.repo, input.locations.root, words), sub, answer)
   if (next.kind === 'again') return contentAsked(state, input, sub.repo, next.sub.tries, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
@@ -529,7 +529,7 @@ function instructionsAnswer(state: InitState, answer: Answer): InitState {
     }
     case 'memory':
       const root = input.locations.root
-      const words = listWordsOf(state.surface)
+      const words = state.surface.listWords
 
       return grouped(state, sub.keep, memoryAnswer(input.roles, input.setup, sub.cursor, answer.text, root, words))
     default:

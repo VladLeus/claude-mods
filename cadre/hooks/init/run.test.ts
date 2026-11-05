@@ -177,7 +177,9 @@ import {
   paneBlockOf,
   paneDrawn,
 } from '../ui/pane'
-import type { Surface } from '../ui/surface'
+import type { SurfaceModule } from '../ui/surfaces/contract'
+import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
+import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
@@ -6113,7 +6115,7 @@ describe('lists on pane surfaces (D-256)', () => {
    * `surface`: the MCP server line and CLAUDE.md line of the history question's context, the scan block (D-302), and
    * the tools line of the mcp01 question's context.
    */
-  async function listsOn(surface: Surface): Promise<readonly string[]> {
+  async function listsOn(surface: SurfaceModule): Promise<readonly string[]> {
     const dirs = { '/repo/.git': [], [HISTORY_DIR]: [{ ...entry('a.jsonl'), mtimeMs: 1 }] }
     const run = memIo(manyNamesWorld({ dirs }), MANY_ANSWERS)
     await runInit(run.io, { dryRun: true, surface })
@@ -6129,7 +6131,7 @@ describe('lists on pane surfaces (D-256)', () => {
   }
 
   test('a pane surface lists all 14 MCP servers, CLAUDE.md files and tools of manyNamesWorld', async () => {
-    expect(await listsOn('pane')).toEqual([
+    expect(await listsOn(PANE_DESKTOP)).toEqual([
       `  skills: 14; agents: 0; MCP servers: ${fourteen('mcp').join(', ')}`,
       `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${files.join(', ')}`,
       `Tools: 14 (${fourteen('tool').join(', ')})`,
@@ -6137,7 +6139,7 @@ describe('lists on pane surfaces (D-256)', () => {
   })
 
   test('the TUI default lists 12 of each of those lists, then +2 more', async () => {
-    expect(await listsOn('tui-default')).toEqual([
+    expect(await listsOn(TUI_DEFAULT)).toEqual([
       `  skills: 14; agents: 0; MCP servers: ${twelve(fourteen('mcp'))}`,
       `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${twelve(files)}`,
       `Tools: 14 (${twelve(fourteen('tool'))})`,
@@ -6314,7 +6316,7 @@ describe('no stand-alone pane block: what it held folds into the next question (
 
   test('the TUI default drops the fold: its roles question holds the proposal alone', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
-    await runInit(run.io, { dryRun: true, surface: 'tui-default' })
+    await runInit(run.io, { dryRun: true, surface: TUI_DEFAULT })
     expect(contextLinesAt(run, ROLES_QUESTION)[0]).toBe('Proposed roles:')
   })
 
@@ -6381,7 +6383,7 @@ describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () =>
 
   test('a pane seated inline asks the own-skills entry once, unpaged, with its own options (N-02)', async () => {
     const run = memIo(oversizeWorld({ replies }), answers)
-    await runInit(run.io, { dryRun: true, surface: 'pane', isPaneInline: () => true })
+    await runInit(run.io, { dryRun: true, surface: PANE_DESKTOP, paneSeat: () => 'inline' })
     const entries = run.specs.filter((_, at) => (run.asked[at] ?? '').startsWith(OWN_SKILLS_ENTRY_PREFIX))
     expect(entries.map(spec => [spec.context?.page, spec.options])).toEqual([
       [undefined, ['Accept recommendations', 'Go one by one', 'Whole group']],
@@ -6432,7 +6434,7 @@ describe('an oversize plugin group on a pane surface (D-328)', () => {
       const paged = memIo(oversizeGroupWorld({ replies }), answers)
       const unpaged = memIo(oversizeGroupWorld({ replies }), answers)
       const reply = await runInit(paged.io, { dryRun: true })
-      expect(reply).toBe(await runInit(unpaged.io, { dryRun: true, surface: 'tui-default' }))
+      expect(reply).toBe(await runInit(unpaged.io, { dryRun: true, surface: TUI_DEFAULT }))
       const groups = paged.specs.filter((_, at) => (paged.asked[at] ?? '').startsWith(prefix))
       expect(groups.map(spec => spec.options)).toEqual([['Next page', 'Go one by one']])
     }

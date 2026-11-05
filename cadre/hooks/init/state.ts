@@ -36,7 +36,7 @@ import type { McpPromptServer } from '../suggest/mcp'
 import type { SkillPromptGroup, SkillsRecommendation } from '../suggest/skills'
 import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
-import type { Surface } from '../ui/surface'
+import type { SurfaceModule } from '../ui/surfaces/contract'
 import type { NameAssignment } from './assign-rules'
 import type { Draft, DraftBase, PlanResult, Reviewed } from './draft'
 import type { HandoutCursor } from './handout'
@@ -452,8 +452,8 @@ export type InitState = {
   readonly toolNames: readonly string[]
   /** --dry-run: Confirm replies with the plan and nothing is written or installed (D-82, D-105). */
   readonly dryRun: boolean
-  /** Where the run shows its context (D-208): the side pane, the TUI default's option preview, or nowhere. */
-  readonly surface: Surface
+  /** The module of the surface the run shows its context on, chosen once by register (D-208, D-353). */
+  readonly surface: SurfaceModule
   /**
    * The columns a pane page or a Review page is drawn at (D-292), as the run read them before this step; null before
    * the first step and when the width is unknown (tests, `-p`).

@@ -26,7 +26,6 @@ import { ASK_HEADERS, choiceAnswer, PANE_TITLES, paneQuestionOf, quotedLabels } 
 import type { ChoiceAsk } from '../../ui/ask'
 import { scanContext } from '../../ui/blocks/context'
 import { scanContextLine } from '../../ui/blocks/scan'
-import { listWordsOf } from '../../ui/surface'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, Output, SessionListing, StageDef } from '../state'
 
@@ -170,7 +169,7 @@ function withHints(state: InitState, history: HistoryScan | 'skipped'): InitStat
 function skippedWith(state: InitState, note: string): InitState {
   const { gathered, locations } = state.draft
   if (gathered === undefined || locations === undefined) return stageFailed(state)
-  const scan = scanContext(locations, gathered, listWordsOf(state.surface))
+  const scan = scanContext(locations, gathered, state.surface.listWords)
   const rows = (scan.rows ?? []).flatMap(section => section.rows)
   const fold: Output = { kind: 'fold', title: PANE_TITLES.scan, lines: scan.lines, rows }
 
@@ -181,7 +180,7 @@ function skippedWith(state: InitState, note: string): InitState {
 function historyAsked(state: InitState, listing: SessionListing, question: string | null, tries: number): InitState {
   const { gathered, locations } = state.draft
   if (gathered === undefined || locations === undefined) return stageFailed(state)
-  const ask = historyAsk(listing.total, locations, gathered, listWordsOf(state.surface))
+  const ask = historyAsk(listing.total, locations, gathered, state.surface.listWords)
   const sub: InitState['sub'] = { kind: 'history', tries, listing }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
@@ -211,7 +210,7 @@ function afterConsent(state: InitState, answer: string | null): InitState {
     return stageFailed(state)
   }
   const { listing } = state.sub
-  const words = listWordsOf(state.surface)
+  const words = state.surface.listWords
   const next = choiceAnswer(historyAsk(listing.total, locations, gathered, words), state.sub, answer)
   if (next.kind === 'again') return historyAsked(state, listing, next.question, next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)

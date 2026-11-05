@@ -31,11 +31,8 @@ import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { scanWarningLines } from '../../ui/blocks/scan'
-import { MAX_PANE_FRAME_CHARS, PANE_PAGE_ROWS, UNCUT, wrapLine } from '../../ui/pane'
+import { UNCUT, wrapLine } from '../../ui/pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
-import { PREVIEW_ROWS } from '../../ui/preview'
-import { listWordsOf } from '../../ui/surface'
-import type { Surface } from '../../ui/surface'
 import type { Draft, PlanResult, Reviewed } from '../draft'
 import { initReplyText } from '../initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
@@ -204,17 +201,6 @@ export function parseReviewItem(answer: string): ReviewItem | null {
  * cancels at once, asking nothing more, so no answer is asked for and then thrown away (A3).
  */
 export const MAX_REVIEW_ROUNDS = 10
-
-/**
- * The rows a page of the review fills on the run's surface (D-233, ASKED #19): the TUI default's preview rows, else
- * the pane's page rows.
- */
-function pageRows(surface: Surface): number {
-  return surface === 'tui-default' ? PREVIEW_ROWS : PANE_PAGE_ROWS
-}
-
-/** Room, in code points, a pane Review frame keeps for its title, summary and page-marker rows (N-04). */
-const REVIEW_FRAME_RESERVE = 200
 
 /**
  * The review lines in pages of at most `rows - 1` rows each (D-233, D-261), the page title on the row left: whole
@@ -490,10 +476,10 @@ function pagedAsk(
 }
 
 /**
- * The review ask of page `page`, paged to the rows of the state's surface (D-233, ASKED #19) at the width its pages
- * are drawn at, `state.pageColumns` (D-261, D-292): the preview's on the TUI default and in a pane seated inline, the
- * pane body's when docked or on the desktop (pageColumnsOf), none when no width is known. On a pane surface a page
- * also keeps under the frame's character cap, less REVIEW_FRAME_RESERVE (reviewPages, N-04).
+ * The review ask of page `page`, paged to the rows and the code points of the state's surface module (reviewPaging,
+ * D-233, ASKED #19, N-04, D-353) at the width its pages are drawn at, `state.pageColumns` (D-261, D-292): the
+ * preview's on the TUI default and in a pane seated inline, the pane body's when docked or on the desktop (the
+ * module's pageColumns), none when no width is known.
  */
 function reviewAskOf(
   state: InitState,
@@ -501,9 +487,9 @@ function reviewAskOf(
   plan: Plan,
   page: number,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  const maxChars = state.surface === 'pane' ? MAX_PANE_FRAME_CHARS - REVIEW_FRAME_RESERVE : Number.POSITIVE_INFINITY
+  const { rows, maxChars } = state.surface.reviewPaging
 
-  return pagedAsk(draft, plan, page, pageRows(state.surface), state.pageColumns, listWordsOf(state.surface), maxChars)
+  return pagedAsk(draft, plan, page, rows, state.pageColumns, state.surface.listWords, maxChars)
 }
 
 /** The round's plan of the whole draft out, an io effect (planStep, run by init/run). */
