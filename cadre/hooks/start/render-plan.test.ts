@@ -13,6 +13,8 @@ import { compileScope } from '../scope/compile'
 import { BIDI_OVERRIDE, emptySetupScan, entry, link, ROOT, templateRole } from '../testkit'
 import {
   NO_MEMORY_LINKS,
+  notReplacedText,
+  notReplacedWarning,
   privateLinkRefusal,
   renderPaths,
   renderSteps,
@@ -711,5 +713,19 @@ describe('start review fixes (#63)', () => {
     expect(removals(folder(done))).toEqual([])
     expect(removals(null)).toEqual([])
     expect(renderSteps(input({ stats: rendered({ [done]: folder(done) }) })).refusal).toBeNull()
+  })
+})
+
+describe('the not-replaced warning (D-272, edge #28)', () => {
+  /** How the warning ends, after the path it names. */
+  const END = ' is a real file or folder, not a link: not replaced'
+
+  test('#28: notReplacedText names a shown path as it is; notReplacedWarning makes a raw path repo-relative', () => {
+    expect(notReplacedText('~/.claude/cadre/repo-1a2b3c4d/be/squad.md')).toBe(
+      `~/.claude/cadre/repo-1a2b3c4d/be/squad.md${END}`,
+    )
+    expect(notReplacedText('/repo/x')).toBe(`/repo/x${END}`)
+    expect(notReplacedWarning('/repo', '/repo/x')).toBe(`x${END}`)
+    expect(notReplacedWarning('/repo', `/repo/a${BIDI_OVERRIDE}b`)).toBe(notReplacedText(`a${BIDI_OVERRIDE}b`))
   })
 })
