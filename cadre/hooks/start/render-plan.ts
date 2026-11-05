@@ -329,9 +329,21 @@ export function repoRelative(root: string, path: string): string {
   return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path
 }
 
-/** The warning for a planned link path that holds a real file or folder, which a render keeps (Pitfall 2). */
+/**
+ * The warning for a link path that holds a real file or folder, which a render keeps (Pitfall 2), naming the path as
+ * `shown` gives it, cleaned as a report cell: a path already in the form a screen shows, such as a memory link's `~/`
+ * display path, is named as it is and never made repo-relative (D-272, edge #28).
+ */
+export function notReplacedText(shown: string): string {
+  return t('start.renderPlan.notReplacedWarning', { repoRelative: reportText(shown) })
+}
+
+/**
+ * The warning for a planned link path that holds a real file or folder, which a render keeps (Pitfall 2): the raw path
+ * named below the repo root (repoRelative, notReplacedText).
+ */
 export function notReplacedWarning(root: string, path: string): string {
-  return t('start.renderPlan.notReplacedWarning', { repoRelative: reportText(repoRelative(root, path)) })
+  return notReplacedText(repoRelative(root, path))
 }
 
 /** A step that removes a path. */

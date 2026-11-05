@@ -18,7 +18,7 @@ import { fill, t } from '../locales/t'
 import { displayPath, INSTRUCTIONS_RECORD_FILE, MARKDOWN_EXTENSION, memoryFolderOf, roleMemoryDir } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { isMemoryIndexName, MEMORY_INDEX_FILE } from '../scan/instructions/memories'
-import { isPlainName, isRealEntry, notReplacedWarning } from './render-plan'
+import { isPlainName, isRealEntry, notReplacedText } from './render-plan'
 import type { MemoryLinks } from './render-plan'
 
 /** The begin marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract, as IGNORE_BEGIN is. */
@@ -167,7 +167,8 @@ type MemoryLinkOutcome = {
  * name may not be a link name (isLinkableMemory, unsafeMemoryNameWarning); when its folder is not a memory folder of
  * this repo, of the root as resolved or as given, or of the main checkout (`mainRoot`, 03.1-W3 M1), or its original
  * cannot be read as a file (memoryGoneWarning); or when a real file or folder holds its link path in the role memory
- * folder, which is never replaced (notReplacedWarning). Else it is linked, `<role memory folder>/<file>` to `<its
+ * folder, which is never replaced (notReplacedText, the path named in its display form, as the role memory folder is
+ * never below the repo root: D-272 edge #28). Else it is linked, `<role memory folder>/<file>` to `<its
  * folder>/<file>`, never copied, with memoryChangedWarning when its original's text is over MAX_READ_BYTES or no longer
  * has the hash of the record. The original is read for its hash alone.
  */
@@ -183,7 +184,7 @@ async function memoryLinkOf(
   if (!repoFolders.includes(memory.folder)) return { link: null, warning: memoryGoneWarning(memory.file) }
   const path = `${folder}/${memory.file}`
   if (isRealEntry(await io.stat(path))) {
-    return { link: null, warning: notReplacedWarning(user.root, displayPath(path, user.home, user.root)) }
+    return { link: null, warning: notReplacedText(displayPath(path, user.home, user.root)) }
   }
   const target = `${memory.folder}/${memory.file}`
   const original = await io.read(target, MAX_READ_BYTES)
