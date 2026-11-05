@@ -1,12 +1,16 @@
 /**
  * The section split, a layer 3 module: an instruction file's sections, each started by a `# ` or `## ` line outside a
  * fenced block, the text before the first heading one section of its own, so the sections joined give the text back
- * (G-02-1f Part unit). Pure: it reads nothing. It imports core, so the instruction reads split a file here.
+ * with LF line ends (G-02-1f Part unit, D-272 edge #44). Pure: it reads nothing. It imports core, so the instruction
+ * reads split a file here.
  */
 import { MAX_HEADING_CHARS } from '../../core/names'
 import { clean } from '../../core/text'
 
-/** A section of an instruction file: its heading, '' for the text before the first one, and its text as read. */
+/**
+ * A section of an instruction file: its heading, '' for the text before the first one, and its text as read with LF
+ * line ends.
+ */
 export type Section = {
   readonly heading: string
   readonly text: string
@@ -50,9 +54,12 @@ function headingOf(line: string): string | null {
   return clean(line.replace(/^#+/, '').trim(), MAX_HEADING_CHARS)
 }
 
-/** Adds a section to the list, unless it is the text before the first heading and that text is blank. */
+/**
+ * Adds a section to the list, unless it is the text before the first heading and that text is blank. Its text gets LF
+ * line ends: each `\r\n` becomes `\n`, and a `\r` that ends the text is dropped (D-272 edge #44).
+ */
 function addSection(sections: Section[], heading: string | null, lines: readonly string[]): void {
-  const text = lines.join('')
+  const text = lines.join('').replaceAll('\r\n', '\n').replace(/\r$/, '')
   if (heading === null && text.trim() === '') return
   sections.push({ heading: heading ?? '', text })
 }
@@ -61,8 +68,9 @@ function addSection(sections: Section[], heading: string | null, lines: readonly
  * An instruction file's sections (G-02-1f Part unit): a line that starts with `# ` or `## ` outside a fenced block
  * starts a section, headed by its text after the hashes; `### ` does not split, and no line in a fenced block does.
  * The text before the first heading is one section with heading '' when it is not blank. Each section's text is as
- * read, its heading line included, so the sections joined give the text back (but a blank text before the first
- * heading).
+ * read with LF line ends (addSection), its heading line included, so the sections joined give the text back with LF
+ * line ends (but a blank text before the first heading): a CRLF file gives the same sections as its LF twin, and an
+ * LF file's sections, and so its part hashes, are as before (D-272 edge #44).
  */
 export function splitSections(text: string): Section[] {
   const sections: Section[] = []
