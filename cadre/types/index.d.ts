@@ -174,6 +174,11 @@ export type GsdFact = {
   readonly identity: 'proven' | 'absent' | 'unknown'
   /** Whether the runtime identity command was tried for this candidate. */
   readonly runtimeIdentityTried: boolean
+  /**
+   * Why the runtime identity check gave no answer (D-269): `not-built` when the install's compiled runtime is missing,
+   * so GSD's own check could run nothing, `could-not-run` when the call threw; absent when no problem is known.
+   */
+  readonly runtimeProblem?: 'not-built' | 'could-not-run'
 }
 
 /** Everything detection reads, normalised. It is the only input to adapters and to rendering. */

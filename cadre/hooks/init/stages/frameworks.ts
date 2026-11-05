@@ -3,11 +3,12 @@
  * and questions, why each question is asked (frameworkReason), and frameworksStage, the pure stage that asks nothing
  * when exactly one framework is in use, else asks once for every role or per role, with the team's role ids on the
  * question's second line, and gives each role the framework it picked (withFramework). Before that it asks the GSD
- * check when a user-level GSD is found but not proven (D-243, ASKED #20). Pure: it gives states and never performs an
+ * check when a user-level GSD is found but not proven (D-243, ASKED #20), only when the check can run and its answer
+ * can change something (isGsdCheckUseful, D-269). Pure: it gives states and never performs an
  * effect, imports core, detect, framework, ui/ask, init/state and init/stages/model (the answer modes and
  * teamContextLine), and never imports init/machine or init/run.
  */
-import type { AskContext, Choice, ContextRow, Facts, FrameworkId, RoleSpec } from '../../../types'
+import type { AskContext, Choice, ContextRow, Facts, FrameworkId, GsdFact, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -255,9 +256,36 @@ export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismi
   }
 }
 
-/** The state with the answer to the GSD check kept in its draft (WF-S2). */
-function withGsdCheck(state: InitState, gsdCheck: 'declined' | 'run'): InitState {
+/**
+ * The state with the GSD check's outcome kept in its draft (WF-S2): `declined` after a No, `run` after a Yes, and
+ * `skipped` when the check was not asked because its answer could not change the framework choice (D-269, D-295).
+ */
+export function withGsdCheck(state: InitState, gsdCheck: 'declined' | 'run' | 'skipped'): InitState {
   return { ...state, draft: { ...state.draft, gsdCheck } }
+}
+
+/** A framework choice by its kind and the framework ids it chose or found, so two choices can be compared (D-269). */
+function choiceIds(choice: Choice): string {
+  if (choice.kind === 'none') return choice.kind
+  if (choice.kind === 'chosen') return `${choice.kind} ${choice.id}`
+
+  return `${choice.kind} ${choice.ids.join(' ')}`
+}
+
+/**
+ * Whether GSD's own check can change anything (D-269, edge #36, OC-05-U): some role names gsd as its framework, or the
+ * framework choice with every user-level GSD found but not proven counted as proven differs, by its kind and its
+ * chosen or found ids, from the choice as found.
+ */
+export function isGsdCheckUseful(facts: Facts, roles: readonly RoleSpec[]): boolean {
+  if (roles.some(role => role.framework === 'gsd')) return true
+  const gsd = facts.gsd.map((fact): GsdFact =>
+    fact.location === 'user' && fact.identity === 'unknown' ? { ...fact, identity: 'proven' } : fact,
+  )
+  const found = chooseFramework(detectAll(facts), null)
+  const proven = chooseFramework(detectAll({ ...facts, gsd }), null)
+
+  return choiceIds(proven) !== choiceIds(found)
 }
 
 /** The GSD check asked `tries` times so far; `question` is its text after a refusal. */
@@ -332,14 +360,17 @@ function gsdChecked(state: InitState, result: IoResult): InitState {
 
 /**
  * The framework stage (DET-03, D-73, D-17, D-230): the GSD check first when the scan found a user-level GSD that is not
- * proven (D-243, ASKED #20), then the framework step (frameworkStep, frameworkAnswer). The GSD check is asked at most
- * once per run: its answer stays in the draft, so a review go-back goes straight to the framework step (WF-S2).
+ * proven (D-243, ASKED #20) and whose runtime is built (needsGsdCheck, D-269, edge #31), then the framework step
+ * (frameworkStep, frameworkAnswer). A check whose answer cannot change anything (isGsdCheckUseful, edge #36) is not
+ * asked: the draft keeps `skipped`, which gives the facts, warnings and choice of a No (D-295). The GSD check is asked
+ * at most once per run: its answer stays in the draft, so a review go-back goes straight to the framework step (WF-S2).
  */
 export const frameworksStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
     if (state.draft.gsdCheck !== undefined) return frameworkStep(state)
     const facts = state.draft.gathered?.facts.facts
     if (facts === undefined || !needsGsdCheck(facts)) return frameworkStep(state)
+    if (!isGsdCheckUseful(facts, state.draft.roles ?? [])) return frameworkStep(withGsdCheck(state, 'skipped'))
 
     return gsdCheckAsked(state, facts, 1, null)
   },

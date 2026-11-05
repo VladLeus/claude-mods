@@ -240,7 +240,8 @@ function isUnprovenWarningOf(warning: string, dir: string): boolean {
 /**
  * One GSD candidate as a fact. The version is the VERSION text, else the manifest, else the runtime identity.
  * A present install that nothing proves adds a warning, which names the install by its cleaned display path and the
- * runtime problem when one is known.
+ * runtime problem when one is known. The fact keeps that runtime problem, only when there is one (D-269), so a fact
+ * with no known problem keeps its shape.
  */
 export function gsdFactOf(
   candidate: ProbedGsdCandidate,
@@ -262,15 +263,19 @@ export function gsdFactOf(
     version,
     identity,
     runtimeIdentityTried: candidate.runtimeTried,
+    ...(candidate.runtimeProblem === null ? {} : { runtimeProblem: candidate.runtimeProblem }),
   }
 }
 
 /**
  * Whether init and detect ask before GSD's own check (D-243): the facts hold a user-level GSD install that is found
- * but not proven. A repo-local candidate is never run (D-28), so it is never asked about.
+ * but not proven, and whose runtime is built, since the check of an install whose runtime is not built runs nothing
+ * (D-269, edge #31). A repo-local candidate is never run (D-28), so it is never asked about.
  */
 export function needsGsdCheck(facts: Facts): boolean {
-  return facts.gsd.some(fact => fact.location === 'user' && fact.identity === 'unknown')
+  return facts.gsd.some(
+    fact => fact.location === 'user' && fact.identity === 'unknown' && fact.runtimeProblem !== 'not-built',
+  )
 }
 
 /**

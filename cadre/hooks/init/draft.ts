@@ -71,9 +71,11 @@ export type Draft = {
   readonly launchStart: LaunchStart
   /**
    * The answer to GSD's own check question, kept for the run so a review go-back never asks it again (D-243 "one
-   * question", WF-S2); never written.
+   * question", WF-S2); never written. `skipped` means the check was not asked because its answer could not change the
+   * framework choice (D-269, edge #36): it yields the facts, warnings and choice of `declined`, but it is not a No, so
+   * an Adjust that names gsd still asks the check (D-295, edge #35).
    */
-  readonly gsdCheck?: 'declined' | 'run'
+  readonly gsdCheck?: 'declined' | 'run' | 'skipped'
 }
 
 /** What the person confirmed in the review (D-43, D-105): the draft the plan was built from, and that plan. */
