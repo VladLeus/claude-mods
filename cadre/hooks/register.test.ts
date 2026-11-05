@@ -2184,14 +2184,18 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'C', 'D'])
   })
 
-  test('a docked pane adds no option and takes no note as the answer (A1)', WITH_ASKER, async ($, on) => {
-    const log = newLog()
-    openAsCadre(on, PICK_QUESTION.question)
-    fakeHost(on, pickWorld('A', '  my words  '), log)
-    const ask = await seatAfterRun($, DOCK_PANE)
-    expect(await ask('Pick one?', PICK_SPEC)).toBe('A')
-    expect(log.askOptions.at(-1)).toEqual(['A', 'B'])
-  })
+  test(
+    'a docked pane adds no option, and a note on a question that takes one is its answer (A1, D-348)',
+    WITH_ASKER,
+    async ($, on) => {
+      const log = newLog()
+      openAsCadre(on, PICK_QUESTION.question)
+      fakeHost(on, pickWorld('A', '  my words  '), log)
+      const ask = await seatAfterRun($, DOCK_PANE)
+      expect(await ask('Pick one?', PICK_SPEC)).toBe('my words')
+      expect(log.askOptions.at(-1)).toEqual(['A', 'B'])
+    },
+  )
 
   test('a dismissed dialog still rejects $.ui.ask: the deny passes through', WITH_ASKER, async ($, on) => {
     const log = newLog()
@@ -2242,6 +2246,15 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     const ask = await seatAfterRun($, DOCK_PANE)
     expect(await ask('Review it?', CHANGE_SPEC)).toBe('roles')
     expect([log.asks.at(-1), log.askPreviews.at(-1)]).toEqual(['ask Review it?', [undefined, undefined]])
+  })
+
+  test('on a docked pane a note typed after Type a folder is the folder (D-348, S-01)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    openAsCadre(on, 'Folder?', null, false, true)
+    const answers = { ...INIT_ANSWERS, 'Folder?': 'Type a folder' }
+    fakeHost(on, initWorld({ answers, notes: { 'Folder?': ' apps/web ' } }), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    expect(await ask('Folder?', { options: ['Type a folder', 'Cancel init'], header: 'Launch dir' })).toBe('apps/web')
   })
 
   test('a pane question with no Change something… takes no note as answer (ASKED #24)', WITH_ASKER, async ($, on) => {

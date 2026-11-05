@@ -660,7 +660,8 @@ describe('dialogPlan (WD-S2)', () => {
   const MULTI = { ...PICK_QUESTION, question: 'Which ones? Type more under Other.', multiSelect: true }
   /**
    * What each surface and pane seat does with the open question's dialog (D-208, D-234, ASKED #24): preview it (the
-   * TUI default, or a pane seated inline), map a note typed in it (a docked or unknown pane seat), or nothing.
+   * TUI default, or a pane seated inline), map a note typed in it (a docked or unknown pane seat, for a question that
+   * offers Change or takes a note, D-348), or nothing.
    */
   const SEATS: readonly (readonly [Surface, 'dock' | 'inline' | null, 'preview' | 'note' | 'none'])[] = [
     ['tui-default', null, 'preview'],
@@ -691,9 +692,9 @@ describe('dialogPlan (WD-S2)', () => {
         const rows = surface === 'tui-default' ? PREVIEW_ROWS : null
         const rewrite = askRewrite(raw, context, acceptsTyped, acceptsTyped, 40, rows)
         const previewed = rewrite === null ? null : { questions: rewrite.questions, notes: rewrite.asked }
-        const labels = ['A', 'B', CHANGE_LABEL]
+        const labels = offersChange ? ['A', 'B', CHANGE_LABEL] : ['A', 'B']
         const note = { question: 'Pick one?', asked: 'Pick one?', labels, takesNote: acceptsTyped }
-        const noted = offersChange ? { questions: null, notes: [note] } : null
+        const noted = offersChange || acceptsTyped ? { questions: null, notes: [note] } : null
         const expected = { preview: previewed, note: noted, none: null }[seat]
         expect(dialogPlan(raw, open, surface, placement, 40, CHANGE_LABEL)).toEqual(expected)
         const other = [{ ...first, question: 'Another?' }]
@@ -716,6 +717,18 @@ describe('dialogPlan (WD-S2)', () => {
       questions: null,
       notes: [note],
     })
+  })
+
+  test('a docked pane pairs the note of a question that takes one, with no Change option (D-348)', () => {
+    const open: OpenQuestion = { ...PICK_OPEN, context: null, acceptsTyped: false, takesNote: true }
+    const note = { question: 'Pick one?', asked: 'Pick one?', labels: ['A', 'B'], takesNote: true }
+    expect(dialogPlan([PICK_QUESTION], open, 'pane', 'dock', 40, CHANGE_LABEL)).toEqual({
+      questions: null,
+      notes: [note],
+    })
+    const noNote: OpenQuestion = { ...open, takesNote: false }
+    expect(dialogPlan([PICK_QUESTION], noNote, 'pane', 'dock', 40, CHANGE_LABEL)).toBe(null)
+    expect(dialogPlan([PICK_QUESTION], open, 'none', 'dock', 40, CHANGE_LABEL)).toBe(null)
   })
 
   test('a multi-select question is copied unchanged and has no note', () => {
