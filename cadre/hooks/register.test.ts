@@ -2194,14 +2194,14 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   })
 
   test(
-    'a docked pane adds no option, and a note on a question that takes one is its answer (A1, D-348)',
+    'a docked pane adds no option and reads no note: the picked option is the answer (RF-04, D-353)',
     WITH_ASKER,
     async ($, on) => {
       const log = newLog()
       openAsCadre(on, PICK_QUESTION.question)
       fakeHost(on, pickWorld('A', '  my words  '), log)
       const ask = await seatAfterRun($, DOCK_PANE)
-      expect(await ask('Pick one?', PICK_SPEC)).toBe('my words')
+      expect(await ask('Pick one?', PICK_SPEC)).toBe('A')
       expect(log.askOptions.at(-1)).toEqual(['A', 'B'])
     },
   )
@@ -2247,24 +2247,33 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   /** The review as a pane surface asks it on its last page: Confirm and Change something… (D-233, ASKED #24). */
   const CHANGE_SPEC: AskSpec = { options: ['Confirm', 'Change something…'], header: 'Review' }
 
-  test('on a pane surface a note typed with Change something… is the answer (ASKED #24)', WITH_ASKER, async ($, on) => {
-    const log = newLog()
-    openAsCadre(on, 'Review it?', PICK_CONTEXT, false, true)
-    const answers = { ...INIT_ANSWERS, 'Review it?': 'Change something…' }
-    fakeHost(on, initWorld({ answers, notes: { 'Review it?': ' roles ' } }), log)
-    const ask = await seatAfterRun($, DOCK_PANE)
-    expect(await ask('Review it?', CHANGE_SPEC)).toBe('roles')
-    expect([log.asks.at(-1), log.askPreviews.at(-1)]).toEqual(['ask Review it?', [undefined, undefined]])
-  })
+  test(
+    'on a docked pane a note typed with Change something… is not read: the pick is the answer (RF-04, D-353)',
+    WITH_ASKER,
+    async ($, on) => {
+      const log = newLog()
+      openAsCadre(on, 'Review it?', PICK_CONTEXT, false, true)
+      const answers = { ...INIT_ANSWERS, 'Review it?': 'Change something…' }
+      fakeHost(on, initWorld({ answers, notes: { 'Review it?': ' roles ' } }), log)
+      const ask = await seatAfterRun($, DOCK_PANE)
+      expect(await ask('Review it?', CHANGE_SPEC)).toBe('Change something…')
+      expect([log.asks.at(-1), log.askPreviews.at(-1)]).toEqual(['ask Review it?', [undefined, undefined]])
+    },
+  )
 
-  test('on a docked pane a note typed after Type a folder is the folder (D-348, S-01)', WITH_ASKER, async ($, on) => {
-    const log = newLog()
-    openAsCadre(on, 'Folder?', null, false, true)
-    const answers = { ...INIT_ANSWERS, 'Folder?': 'Type a folder' }
-    fakeHost(on, initWorld({ answers, notes: { 'Folder?': ' apps/web ' } }), log)
-    const ask = await seatAfterRun($, DOCK_PANE)
-    expect(await ask('Folder?', { options: ['Type a folder', 'Cancel init'], header: 'Launch dir' })).toBe('apps/web')
-  })
+  test(
+    'on a docked pane a note typed after Type a folder is not read: the pick is the answer (RF-04, D-353)',
+    WITH_ASKER,
+    async ($, on) => {
+      const log = newLog()
+      openAsCadre(on, 'Folder?', null, false, true)
+      const answers = { ...INIT_ANSWERS, 'Folder?': 'Type a folder' }
+      fakeHost(on, initWorld({ answers, notes: { 'Folder?': ' apps/web ' } }), log)
+      const ask = await seatAfterRun($, DOCK_PANE)
+      const spec = { options: ['Type a folder', 'Cancel init'], header: 'Launch dir' }
+      expect(await ask('Folder?', spec)).toBe('Type a folder')
+    },
+  )
 
   test('on a docked pane Cancel init stands over a typed note (D-350)', WITH_ASKER, async ($, on) => {
     const log = newLog()
@@ -2286,7 +2295,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   })
 
   test(
-    'on a docked pane a note typed with Change something… is still the answer when Confirm ends the question (D-350)',
+    'on a docked pane a note typed with Change something… is not read when Confirm ends the question (RF-04, D-353)',
     WITH_ASKER,
     async ($, on) => {
       const log = newLog()
@@ -2294,7 +2303,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
       const answers = { ...INIT_ANSWERS, 'Review it?': 'Change something…' }
       fakeHost(on, initWorld({ answers, notes: { 'Review it?': ' roles ' } }), log)
       const ask = await seatAfterRun($, DOCK_PANE)
-      expect(await ask('Review it?', CHANGE_SPEC)).toBe('roles')
+      expect(await ask('Review it?', CHANGE_SPEC)).toBe('Change something…')
     },
   )
 
@@ -3115,6 +3124,20 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const asked = opened.map(open => `ask ${String(open.question)}`)
     expect(asked.filter((text, at) => text !== asked[at - 1])).toEqual(log.asks)
   })
+
+  test(
+    'on fullscreen a Review item typed under Type something. after Change something… goes back to it (RF-04, D-353)',
+    async ($, on) => {
+      const log = newLog()
+      const answers = { ...INIT_ANSWERS, 'Review the plan': 'Change something…', 'Name the item to change': 'roles' }
+      fakeHost(on, initWorld({ answers }), log)
+      await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
+      const heads = askHeads(log)
+      const at = heads.findIndex(ask => ask.startsWith('ask Name the item to change'))
+      expect([at >= 0, heads[at + 1]?.startsWith(`ask ${ROLES_QUESTION}`)]).toEqual([true, true])
+      expect(heads.some(ask => ask.includes('Could not read'))).toBe(false)
+    },
+  )
 })
 
 describe('cadre regen with a faked host', () => {
