@@ -22,7 +22,6 @@ import { isRuntimeIdentityArgv } from './framework/gsd/identity'
 import { detectRefusal } from './guards/refusals'
 import { consentedGsdCheck, runInit } from './init/run'
 import type { InitOptions } from './init/run'
-import { CHANGE_SOMETHING_LABEL } from './init/stages/review'
 import { setMissingSlotSink, t } from './locales/t'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
@@ -678,7 +677,7 @@ export const register: Register = on => {
   // reads the open question of the pane state, which the init port's ask writes, and writes no state (R1, D-203,
   // D-303). With no open question or no plan the call passes through untouched, and so does its result (D-239). Else
   // the dialog shows the plan's questions, or the call's own when the plan has none, and notes typed in it become the
-  // answers of the plan's notes (A3, ASKED #24). A deny, an error and a result of another shape pass through
+  // answers of the plan's notes (A3). A deny, an error and a result of another shape pass through
   // unchanged. Apart from the read of the open question, the hook has no .catch on purpose: a hook that throws is
   // skipped and next(e) runs in its place, a fail-safe pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
@@ -686,7 +685,7 @@ export const register: Register = on => {
     const open = (await read($, paneState).catch(() => null))?.open ?? null
     if (open === null) return await next(e)
     const columns = latestColumns(viewportColumns, presentationColumns)
-    const plan = runSurface.dialogPlan(raw, open, lastPlacement, columns, CHANGE_SOMETHING_LABEL)
+    const plan = runSurface.dialogPlan(raw, open, lastPlacement, columns)
     if (plan === null) return await next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no

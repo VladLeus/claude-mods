@@ -28,9 +28,6 @@ const PICK_OPEN: OpenQuestion = {
   takesNote: true,
 }
 
-/** The label of the option that offers a change, as register passes CHANGE_SOMETHING_LABEL (ASKED #24). */
-const CHANGE_LABEL = 'Change it'
-
 /** The open question's own context (D-203). */
 const CONTEXT: AskContext = {
   title: 'Roles',
@@ -52,7 +49,7 @@ describe('TUI_DEFAULT.dialogPlan (WD-S2, D-353)', () => {
   test('a call whose first question is not the open question, by its exact text, gets no plan (D-239)', () => {
     const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT }
     for (const raw of [null, [], [{ question: 3, options: [] }], [{ ...PICK_QUESTION, question: 'Pick one? ' }]]) {
-      expect(TUI_DEFAULT.dialogPlan(raw, open, null, null, CHANGE_LABEL)).toBe(null)
+      expect(TUI_DEFAULT.dialogPlan(raw, open, null, null)).toBe(null)
     }
   })
 })
@@ -77,7 +74,7 @@ describe('the TUI-default preview rows (WD-S3)', () => {
     for (const [count, shown] of cases) {
       const context = linesContext(count)
       const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped: false, takesNote: false }
-      const plan = TUI_DEFAULT.dialogPlan([PICK_QUESTION], open, null, null, 'Change it')
+      const plan = TUI_DEFAULT.dialogPlan([PICK_QUESTION], open, null, null)
       const [previews = []] = optionPreviews(plan?.questions ?? undefined)
       expect([count, previews[0]]).toEqual([count, previewMarkdown([{ ...context, lines: shown }])])
     }
@@ -90,7 +87,7 @@ describe('the TUI-default preview by wrapped rows (D-260)', () => {
     const lines = Array.from({ length: 15 }, (_, at) => String(at).padStart(2, '0').padEnd(100, 'x'))
     const context: AskContext = { title: 'Lines', lines, kind: 'skills', summary: '15 lines' }
     const open: OpenQuestion = { ...PICK_OPEN, context, acceptsTyped: false, takesNote: false }
-    const plan = TUI_DEFAULT.dialogPlan([PICK_QUESTION], open, null, 40, 'Change it')
+    const plan = TUI_DEFAULT.dialogPlan([PICK_QUESTION], open, null, 40)
     const [previews = []] = optionPreviews(plan?.questions ?? undefined)
     const shown = [...lines.slice(0, 6), '+9 more above']
     expect(previews[0]).toBe(previewMarkdown([{ ...context, lines: shown }], 40))

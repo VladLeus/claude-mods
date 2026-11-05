@@ -39,7 +39,7 @@ function pickWith(...labels: readonly string[]): CheckedQuestion {
 }
 
 describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
-  /** The label of the option that offers a change, as register passes CHANGE_SOMETHING_LABEL (ASKED #24). */
+  /** The label of an option that offers a change, as the Review's Change something… does (D-233). */
   const CHANGE_LABEL = 'Change it'
   /** The open question's own context (D-203). */
   const CONTEXT: AskContext = {
@@ -87,9 +87,9 @@ describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
         const rewrite = askRewrite(raw, context, acceptsTyped, acceptsTyped, 40, rows)
         const previewed = rewrite === null ? null : { questions: rewrite.questions, notes: rewrite.asked }
         const expected = { preview: previewed, none: null }[seat]
-        expect(surface.dialogPlan(raw, open, placement, 40, CHANGE_LABEL)).toEqual(expected)
+        expect(surface.dialogPlan(raw, open, placement, 40)).toEqual(expected)
         const other = [{ ...first, question: 'Another?' }]
-        expect(surface.dialogPlan(other, open, placement, 40, CHANGE_LABEL)).toBe(null)
+        expect(surface.dialogPlan(other, open, placement, 40)).toBe(null)
       }
     }
   })
@@ -97,7 +97,7 @@ describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
   test('a docked pane plans no dialog for a question that offers Change: no note is paired (RF-04, D-353)', () => {
     const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT, acceptsTyped: false, takesNote: true }
     for (const pane of [PANE_DESKTOP, PANE_FULLSCREEN]) {
-      expect(pane.dialogPlan([pickWith(CHANGE_LABEL)], open, 'dock', 40, CHANGE_LABEL)).toBe(null)
+      expect(pane.dialogPlan([pickWith(CHANGE_LABEL)], open, 'dock', 40)).toBe(null)
     }
   })
 
@@ -105,10 +105,10 @@ describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
     const open: OpenQuestion = { ...PICK_OPEN, context: null, acceptsTyped: false, takesNote: true }
     const noNote: OpenQuestion = { ...open, takesNote: false }
     for (const pane of [PANE_DESKTOP, PANE_FULLSCREEN]) {
-      expect(pane.dialogPlan([PICK_QUESTION], open, 'dock', 40, CHANGE_LABEL)).toBe(null)
-      expect(pane.dialogPlan([PICK_QUESTION], noNote, 'dock', 40, CHANGE_LABEL)).toBe(null)
+      expect(pane.dialogPlan([PICK_QUESTION], open, 'dock', 40)).toBe(null)
+      expect(pane.dialogPlan([PICK_QUESTION], noNote, 'dock', 40)).toBe(null)
     }
-    expect(NO_SURFACE.dialogPlan([PICK_QUESTION], open, 'dock', 40, CHANGE_LABEL)).toBe(null)
+    expect(NO_SURFACE.dialogPlan([PICK_QUESTION], open, 'dock', 40)).toBe(null)
   })
 
   test('every surface carries the options that end the open question into its notes (D-350)', () => {
@@ -129,9 +129,9 @@ describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
     }
     const unmarked: OpenQuestion = { ...PICK_OPEN, context: CONTEXT, acceptsTyped: false, takesNote: true }
     for (const [surface, placement, readsNotes] of seats) {
-      const plan = surface.dialogPlan([PICK_QUESTION], open, placement, 40, CHANGE_LABEL)
+      const plan = surface.dialogPlan([PICK_QUESTION], open, placement, 40)
       expect(plan?.notes.map(note => note.endingLabels) ?? null).toEqual(readsNotes ? [['B']] : null)
-      const plain = surface.dialogPlan([PICK_QUESTION], unmarked, placement, 40, CHANGE_LABEL)
+      const plain = surface.dialogPlan([PICK_QUESTION], unmarked, placement, 40)
       const marks = plain?.notes.map(note => Object.hasOwn(note, 'endingLabels')) ?? null
       expect(marks).toEqual(readsNotes ? [false] : null)
     }
@@ -140,7 +140,7 @@ describe('the dialog plan of the surface modules (WD-S2, D-353)', () => {
   test('a multi-select question is copied unchanged and has no note', () => {
     const open: OpenQuestion = { ...PICK_OPEN, context: CONTEXT }
     for (const pane of [PANE_DESKTOP, PANE_FULLSCREEN]) {
-      const plan = pane.dialogPlan([PICK_QUESTION, MULTI], open, 'inline', null, CHANGE_LABEL)
+      const plan = pane.dialogPlan([PICK_QUESTION, MULTI], open, 'inline', null)
       expect(plan?.questions?.[1]).toEqual(MULTI)
       expect(plan?.notes.map(note => note.question)).toEqual(['Pick one?'])
     }

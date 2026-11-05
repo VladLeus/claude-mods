@@ -33,7 +33,7 @@ export type PageView = {
  */
 export type SeatStrategy = {
   readonly previews: boolean
-  readonly plan: (raw: unknown, open: OpenQuestion, columns: number | null, changeLabel: string) => DialogPlan | null
+  readonly plan: (raw: unknown, open: OpenQuestion, columns: number | null) => DialogPlan | null
   readonly pageColumns: (preview: number | null, body: number | null) => number | null
 }
 
@@ -92,13 +92,7 @@ export type SurfaceModule = {
   /** The columns a page is drawn at, from the pane's seat, the preview's columns and the body's (D-292, U-15). */
   readonly pageColumns: (seat: PaneSeat, preview: number | null, body: number | null) => number | null
   /** The dialog of the open question's AskUserQuestion call, or null to pass it untouched (WD-S2, D-239). */
-  readonly dialogPlan: (
-    raw: unknown,
-    open: OpenQuestion,
-    seat: PaneSeat,
-    columns: number | null,
-    changeLabel: string,
-  ) => DialogPlan | null
+  readonly dialogPlan: (raw: unknown, open: OpenQuestion, seat: PaneSeat, columns: number | null) => DialogPlan | null
   /** What an init or regen run does on this surface as it starts (D-324). */
   readonly runStartEffects: () => readonly SurfaceEffect[]
   /** What a dialog of the open question does as it opens, given the context printed last (D-209, D-228, D-232). */

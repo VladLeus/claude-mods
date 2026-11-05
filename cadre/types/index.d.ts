@@ -509,14 +509,15 @@ export type AskSpec = {
   /** The question takes a typed answer, so the TUI default may offer "Describe your own" (D-234). */
   readonly acceptsTyped?: true
   /**
-   * A note typed in the dialog is the answer on every surface, a docked pane included (D-270, D-348), as it is on a
-   * question that takes a typed answer; on any other question a note is the answer only when it names one of the
-   * options.
+   * A note typed in the dialog is the answer where the dialog has a notes field: the TUI default and a pane seated
+   * inline (D-270, D-353; D-348 superseded), as it is on a question that takes a typed answer; on any other question a
+   * note is the answer only when it names one of the options.
    */
   readonly takesNote?: true
   /**
    * The labels of the options whose pick ends the question (the Launch folder's Cancel init, the Review's Confirm);
-   * such a pick stands over any note typed in the dialog on every surface, one naming another option included (D-350).
+   * such a pick stands over any note typed in the dialog where the dialog has a notes field: the TUI default and a pane
+   * seated inline (D-270, D-353; D-348 superseded), one naming another option included (D-350).
    */
   readonly endingLabels?: readonly string[]
   /**
@@ -635,7 +636,8 @@ declare module 'claude-code' {
 /**
  * The question cadre has open now, as register.tsx keeps it in the pane state (D-203, D-229, D-303): its text, its
  * header chip (null when it has none), its context (null when it has none), whether it takes a typed answer, and
- * whether a note typed in its dialog is its answer, on every surface, a docked pane included (D-270, D-348).
+ * whether a note typed in its dialog is its answer, where the dialog has a notes field: the TUI default and a pane
+ * seated inline (D-270, D-353; D-348 superseded).
  */
 export type OpenQuestion = {
   readonly question: string
@@ -643,8 +645,8 @@ export type OpenQuestion = {
   readonly context: AskContext | null
   readonly acceptsTyped: boolean
   /**
-   * A note typed in the dialog is the answer on every surface, a docked pane included: the spec takes a typed answer
-   * or a note (D-270, D-348).
+   * A note typed in the dialog is the answer where the dialog has a notes field: the TUI default and a pane seated
+   * inline (D-270, D-353; D-348 superseded); the spec takes a typed answer or a note.
    */
   readonly takesNote: boolean
   /** The spec's endingLabels, absent when it names none (D-350). */

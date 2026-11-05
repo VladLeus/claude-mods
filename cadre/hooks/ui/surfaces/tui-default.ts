@@ -44,13 +44,7 @@ function tuiPageColumns(_seat: PaneSeat, preview: number | null): number | null 
  * (previewedPlan, D3, D-203, D-228, D-234, A3, D-270, D-350): no pane opens here, so no seat and no change option
  * changes it.
  */
-function tuiDialogPlan(
-  raw: unknown,
-  open: OpenQuestion,
-  _seat: PaneSeat,
-  columns: number | null,
-  _changeLabel: string,
-): DialogPlan | null {
+function tuiDialogPlan(raw: unknown, open: OpenQuestion, _seat: PaneSeat, columns: number | null): DialogPlan | null {
   return previewedPlan(raw, open, columns, PREVIEW_LINE_ROWS)
 }
 

@@ -4,18 +4,17 @@
  * two differ goes into its own module, never here. It owns the behaviour-map rows the two panes have in common: the
  * pane opened as an init or regen run starts (row 2), the pane text a dialog asks (row 3), the pane scrolled back to
  * its start per question (row 4), the loader and its summary line (rows 6, 7), the previewed dialog of an inline seat
- * and the docked note pairing (rows 8, 9), the paged asks (row 10), the page columns by seat (row 12), the Review
- * pages under the frame's character cap (row 13), the folds (row 14) and the pane's list words (row 15). A seat
+ * and no dialog plan on a typed seat (rows 8, 9), the paged asks (row 10), the page columns by seat (row 12), the
+ * Review pages under the frame's character cap (row 13), the folds (row 14) and the pane's list words (row 15). A seat
  * changes a pane module's dialog, page columns and paging only through the module's own seat table (D-354).
  */
 import type { InitIo, OpenQuestion } from '../../../types'
-import { isObject } from '../../core/json'
 import { PANE_LIST_WORDS } from '../../locales/t'
 import { paneQuestionText } from '../ask'
 import { MAX_PANE_FRAME_CHARS, PANE_PAGE_ROWS } from '../pane'
 import { withPagedAsks } from '../paging'
-import { isOpenAsked, previewedPlan } from '../preview'
-import type { AskedQuestion, DialogPlan } from '../preview'
+import { previewedPlan } from '../preview'
+import type { DialogPlan } from '../preview'
 import type {
   PageView,
   PaneSeat,
@@ -40,35 +39,6 @@ const PANE_REVIEW_PAGING: ReviewPaging = Object.freeze({
 })
 
 /**
- * The dialog a docked pane, or one with no placement, gives the open question's call (ASKED #24, D-270, D-348,
- * D-350): null unless the call asks the open question (isOpenAsked, D-239). A pane that previews nothing passes the
- * dialog of an open question that offers an option labelled `changeLabel` (the Review's Change something…, D-233) or
- * that takes a note (`takesNote`: a typed answer, the Launch folder, D-348) through as asked (questions null), and its
- * one note pairs the open question with itself, with the call's labels, its takesNote and its endingLabels, so a note
- * typed in it becomes its answer; any other call gets null. Part 2 removes it (RF-04, D-353).
- */
-export function dockedNotePlan(raw: unknown, open: OpenQuestion, changeLabel: string): DialogPlan | null {
-  if (!isOpenAsked(raw, open)) return null
-  const first: unknown = Array.isArray(raw) ? raw[0] : undefined
-  const options: unknown = isObject(first) ? first.options : null
-  const isChange = (option: unknown): boolean => isObject(option) && option.label === changeLabel
-  const offersChange = Array.isArray(options) && options.some(isChange)
-  if (!offersChange && !open.takesNote) return null
-  const offered = Array.isArray(options) ? options.filter(isObject) : []
-  const labels = offered.flatMap(option => (typeof option.label === 'string' ? [option.label] : []))
-  const ending = open.endingLabels === undefined ? {} : { endingLabels: open.endingLabels }
-  const note: AskedQuestion = {
-    question: open.question,
-    asked: open.question,
-    labels,
-    takesNote: open.takesNote,
-    ...ending,
-  }
-
-  return { questions: null, notes: [note] }
-}
-
-/**
  * A seat where the dialog previews the open question's whole context (D-354): its plan is the previewed dialog with no
  * rows to fit (previewedPlan, D3, D-203), no question is paged there (N-02), and a page is drawn at the preview's
  * columns (D-292, U-15).
@@ -81,14 +51,15 @@ export const PREVIEWED_SEAT: SeatStrategy = Object.freeze({
 })
 
 /**
- * A seat where the dialog previews nothing and the person types under the dialog (D-354): its plan is the docked note
- * pairing (dockedNotePlan, D-348), a context over the frame cap is paged there (D-306), and a page is drawn at the
- * pane body's columns (D-292).
+ * A seat where the dialog previews nothing and the person types under the dialog (D-354): a docked or unplaced pane
+ * shows no preview and so no notes field; its typed input is the engine's free-typing row, whose text the dialog
+ * answers as given, so it plans no dialog (RF-04, probe 2026-11-05, D-353; supersedes D-348 and ASKED #24's docked
+ * pairing). A context over the frame cap is paged there (D-306), and a page is drawn at the pane body's columns
+ * (D-292).
  */
 export const TYPED_SEAT: SeatStrategy = Object.freeze({
   previews: false,
-  plan: (raw: unknown, open: OpenQuestion, _columns: number | null, changeLabel: string): DialogPlan | null =>
-    dockedNotePlan(raw, open, changeLabel),
+  plan: (): DialogPlan | null => null,
   pageColumns: (_preview: number | null, body: number | null): number | null => body,
 })
 
@@ -156,8 +127,8 @@ export function paneModule(id: SurfaceId, seats: SeatTable): SurfaceModule {
     reviewPaging: PANE_REVIEW_PAGING,
     pageColumns: (seat: PaneSeat, preview: number | null, body: number | null): number | null =>
       seatStrategy(seats, seat).pageColumns(preview, body),
-    dialogPlan: (raw: unknown, open: OpenQuestion, seat: PaneSeat, columns: number | null, changeLabel: string) =>
-      seatStrategy(seats, seat).plan(raw, open, columns, changeLabel),
+    dialogPlan: (raw: unknown, open: OpenQuestion, seat: PaneSeat, columns: number | null) =>
+      seatStrategy(seats, seat).plan(raw, open, columns),
     runStartEffects: paneRunStartEffects,
     dialogOpenEffects: paneDialogOpenEffects,
     progressEffects: paneProgressEffects,
