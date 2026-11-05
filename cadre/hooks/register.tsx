@@ -569,6 +569,8 @@ export const register: Register = on => {
       hasStatus: false,
       isLoading: false,
     }
+    // A slot with no value goes to the debug log of the session that ran the latest /cadre command (D-224, #19).
+    setMissingSlotSink(text => void $.ui.log(text, { to: 'debug' }))
     try {
       return await commandReply($, e.args, pane)
     } finally {
