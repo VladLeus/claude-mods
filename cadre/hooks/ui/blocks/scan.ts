@@ -118,11 +118,11 @@ function plainPart(line: string): SummaryPart {
  * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and the partial lines when the walk listed a deeper
  * folder only in part or stopped at its safety cap, D-137), then the user setup as names and counts only. Each setup
  * line gives its counts first and its name list last, and a list shows the names `words` allows, cleaned and capped:
- * every name on a pane surface, 12 and how many more on the TUI default (listWordsOf, D-256), so a long list never
- * pushes a count out of its line (B2). A CLAUDE.md file in the repo is named with the folder name of `root`
- * (screenPath, D-226). No setting value, file content or warning is part of it. Each line comes with its structured
- * row (D-313): the two headings as heading rows, the existing `.cadre/` and the plugins lines as field rows of their
- * template's label and value, every other line one plain row.
+ * every name on a pane surface, 12 and how many more on the TUI default (the run's surface module's listWords, D-256,
+ * D-353), so a long list never pushes a count out of its line (B2). A CLAUDE.md file in the repo is named with the
+ * folder name of `root` (screenPath, D-226). No setting value, file content or warning is part of it. Each line comes
+ * with its structured row (D-313): the two headings as heading rows, the existing `.cadre/` and the plugins lines as
+ * field rows of their template's label and value, every other line one plain row.
  */
 function scanSummaryParts(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): SummaryPart[] {
   const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none) })
