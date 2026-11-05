@@ -189,9 +189,17 @@ export function projectSettings(sources: readonly SettingsEntry[]): ProjectedSet
 }
 
 /**
+ * The plugin keys isPluginKey refuses that clean leaves unchanged; a key clean changes is named by its hidden-name
+ * warning alone, which says why it was ignored (D-349, supersedes the direction of D-337).
+ */
+function refusedPluginKeys(keys: readonly string[]): string[] {
+  return keys.filter(key => !isChangedByClean(key, MAX_KEY_CHARS) && !isPluginKey(key))
+}
+
+/**
  * One warning per settings key and enabledPlugins key that clean would change, as the Facts report them, then the
- * enabledPlugins keys isPluginKey refuses, which parseEnabledPlugins skipped, named and capped
- * (ignoredPluginKeyWarnings, D-267).
+ * enabledPlugins keys isPluginKey refuses that clean leaves unchanged (refusedPluginKeys), which parseEnabledPlugins
+ * skipped, named and capped (ignoredPluginKeyWarnings, D-267, D-349), so each refused key is named once.
  */
 export function settingsNameWarnings(sources: readonly SettingsEntry[]): string[] {
   const pluginKeys = sources.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins'))
@@ -199,7 +207,7 @@ export function settingsNameWarnings(sources: readonly SettingsEntry[]): string[
   return [
     ...hiddenNameWarnings(sources.flatMap(entry => keysOf(entry.value)), 'settingsKey', MAX_KEY_CHARS),
     ...hiddenNameWarnings(pluginKeys, 'enabledPluginsKey', MAX_KEY_CHARS),
-    ...ignoredPluginKeyWarnings(pluginKeys.filter(key => !isPluginKey(key))),
+    ...ignoredPluginKeyWarnings(refusedPluginKeys(pluginKeys)),
   ]
 }
 
@@ -221,8 +229,9 @@ export async function readSettings(io: InitIo, warnings: string[]): Promise<Sett
 /**
  * The keys of the plugins installed for the user or for this repo, from `installed_plugins.json` in the user folder.
  * The install paths, scopes and versions in the file are read only to decide that, and are not kept. A key clean would
- * change is named in a hidden-name warning, and a key isPluginKey refuses, which parseInstalledPlugins skipped, in an
- * ignored-key warning (ignoredPluginKeyWarnings, D-267); the file is only read, never rewritten.
+ * change is named in a hidden-name warning alone, and a key isPluginKey refuses that clean leaves unchanged
+ * (refusedPluginKeys), which parseInstalledPlugins skipped, in an ignored-key warning (ignoredPluginKeyWarnings, D-267,
+ * D-349), so each refused key is named once; the file is only read, never rewritten.
  */
 export async function installedPluginKeys(
   io: InitIo,
@@ -235,7 +244,7 @@ export async function installedPluginKeys(
   const keys = fieldKeysOf(value, 'plugins')
   warnings.push(
     ...hiddenNameWarnings(keys, 'installedPluginKey', MAX_KEY_CHARS),
-    ...ignoredPluginKeyWarnings(keys.filter(key => !isPluginKey(key))),
+    ...ignoredPluginKeyWarnings(refusedPluginKeys(keys)),
   )
 
   return parseInstalledPlugins(value, ctx.root, ctx.givenRoot).map(plugin => plugin.key)

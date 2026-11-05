@@ -112,7 +112,8 @@ export function hiddenNameWarnings(names: readonly string[], kind: HiddenNameKin
 /**
  * One warning per plugin key isPluginKey refused (D-267), naming the key as `shown` cleans and caps it, at most
  * MAX_HIDDEN_NAME_WARNINGS of them, then one warning that counts the rest, as hiddenNameWarnings does. A key given
- * twice, such as the same key in two settings files, counts once.
+ * twice, such as the same key in two settings files, counts once. Its callers pass only keys clean leaves unchanged,
+ * so a key is never named both here and in a hidden-name warning (D-349).
  */
 export function ignoredPluginKeyWarnings(keys: readonly string[]): string[] {
   const ignored = Array.from(new Set(keys))
