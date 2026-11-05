@@ -116,8 +116,11 @@ const LAUNCH_START_ACCEPTS = t('init.launch.launchStartAccepts', {
   words: orList(LAUNCH_STARTS.map(entry => entry.word)),
 })
 
-/** The dialog of the folder question: its two buttons, Type a folder and Cancel init, with the Launch dir chip. */
-const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir })
+/**
+ * The dialog of the folder question: its two buttons, Type a folder and Cancel init, with the Launch dir chip; a note
+ * typed in it is the folder (takesNote, D-270).
+ */
+const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir, takesNote: true })
 
 /**
  * The launcher start question as the stage asks it (A2, D-136): LAUNCH_START_QUESTION with the ids of `roles` on its

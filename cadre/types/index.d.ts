@@ -492,7 +492,8 @@ export type AskContext = {
 
 /**
  * One dialog question's options: 2 to 4 labels, an optional header chip (12 characters at most), multi-select; and,
- * kept out of the dialog, the question's own context and whether it takes a typed answer (D-203, D-229, D-234).
+ * kept out of the dialog, the question's own context, whether it takes a typed answer and whether a note typed in its
+ * dialog is its answer (D-203, D-229, D-234, D-270).
  */
 export type AskSpec = {
   readonly options: readonly string[]
@@ -502,6 +503,11 @@ export type AskSpec = {
   readonly context?: AskContext
   /** The question takes a typed answer, so the TUI default may offer "Describe your own" (D-234). */
   readonly acceptsTyped?: true
+  /**
+   * A note typed in the dialog is the answer (D-270), as it is on a question that takes a typed answer; on any other
+   * question a note is the answer only when it names one of the options.
+   */
+  readonly takesNote?: true
   /**
    * How the options of a paged question are spread over its pages on a pane surface (D-306, D-307, D-328, D-329):
    * `always` shows on every page, `dropped` on none, and every other option on the last page only. A question with
@@ -617,13 +623,16 @@ declare module 'claude-code' {
 
 /**
  * The question cadre has open now, as register.tsx keeps it in the pane state (D-203, D-229, D-303): its text, its
- * header chip (null when it has none), its context (null when it has none) and whether it takes a typed answer.
+ * header chip (null when it has none), its context (null when it has none), whether it takes a typed answer, and
+ * whether a note typed in its dialog is its answer (D-270).
  */
 export type OpenQuestion = {
   readonly question: string
   readonly header: string | null
   readonly context: AskContext | null
   readonly acceptsTyped: boolean
+  /** A note typed in the dialog is the answer: the spec takes a typed answer or a note (D-270). */
+  readonly takesNote: boolean
 }
 
 /**

@@ -7,6 +7,7 @@
  */
 import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
+import { labelled } from '../core/labelled'
 import { clean } from '../core/text'
 import { t } from '../locales/t'
 import { UNCUT, wrapLine } from './pane'
@@ -330,12 +331,16 @@ export function withDescribeOwn(question: CheckedQuestion, preview: string, acce
 }
 
 /**
- * One question askRewrite rewrote (A3): `question`, its text as the caller asked it, and `asked`, the text the dialog
- * shows, which the dialog's answers and annotations are keyed by.
+ * One question askRewrite rewrote, or the open question a docked pane pairs with itself (A3, D-270): `question`, its
+ * text as the caller asked it, `asked`, the text the dialog shows, which the dialog's answers and annotations are
+ * keyed by, `labels`, the labels of the options it was asked with, and `takesNote`, whether a note typed in its
+ * dialog is its answer (the open question's takesNote).
  */
 export type AskedQuestion = {
   readonly question: string
   readonly asked: string
+  readonly labels: readonly string[]
+  readonly takesNote: boolean
 }
 
 /** The rewrite of an AskUserQuestion call (A1, A2): the questions the dialog shows, and each question it rewrote. */
@@ -352,7 +357,8 @@ export type AskRewrite = {
  * D-203, D-231), whatever its header, and each such question then gets NOTE_WORDING for every OTHER_WORDING in its
  * text (R4) and, when the open question takes a typed answer (`acceptsTyped`, D-234), the hint line as its last line
  * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
- * that pairs its text as asked with the text the dialog shows (A3); a multi-select question is copied unchanged,
+ * that pairs its text as asked with the text the dialog shows (A3), with the labels of its options as asked and
+ * `takesNote`, whether a note typed in it is its answer (D-270); a multi-select question is copied unchanged,
  * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context fitted to
  * them at `columns` (fitPreview, D-228, D-260); with none it shows every line.
  */
@@ -360,6 +366,7 @@ export function askRewrite(
   questions: unknown,
   context: AskContext | null,
   acceptsTyped: boolean,
+  takesNote: boolean,
   columns: number | null = null,
   rows: number | null = null,
 ): AskRewrite | null {
@@ -373,9 +380,12 @@ export function askRewrite(
 
     return { question, shown }
   })
-  const asked = pairs.flatMap(({ question, shown }): AskedQuestion[] =>
-    shown === null ? [] : [{ question: question.question, asked: shown.question }],
-  )
+  const asked = pairs.flatMap(({ question, shown }): AskedQuestion[] => {
+    if (shown === null) return []
+    const labels = question.options.flatMap(option => (typeof option.label === 'string' ? [option.label] : []))
+
+    return [{ question: question.question, asked: shown.question, labels, takesNote }]
+  })
 
   return { questions: pairs.map(({ question, shown }) => shown ?? question), asked }
 }
@@ -401,8 +411,9 @@ export type DialogPlan = {
  * become the answer under the question's text as asked (A3). A question with no context (a hunk, the claude.json
  * consent) keeps its dialog as asked, Other row included: null. On a pane surface that previews nothing, the dialog of
  * the open question that offers an option labelled `changeLabel` (the review's Change something…, D-233) is passed
- * through as asked (questions null) and its one note pairs the open question with itself, so a note typed in it
- * becomes its answer (ASKED #24). Every other call gets null.
+ * through as asked (questions null) and its one note pairs the open question with itself, with the labels of the
+ * call's options and the open question's takesNote, so a note typed in it becomes its answer (ASKED #24, D-270).
+ * Every other call gets null.
  */
 export function dialogPlan(
   raw: unknown,
@@ -417,12 +428,15 @@ export function dialogPlan(
   if (asked !== open.question) return null
   const isPreviewed = surface === 'tui-default' || (surface === 'pane' && placement === 'inline')
   const rows = surface === 'tui-default' ? PREVIEW_LINE_ROWS : null
-  const rewrite = isPreviewed ? askRewrite(raw, open.context, open.acceptsTyped, columns, rows) : null
+  const rewrite = isPreviewed ? askRewrite(raw, open.context, open.acceptsTyped, open.takesNote, columns, rows) : null
   const options: unknown = isObject(first) ? first.options : null
   const isChange = (option: unknown): boolean => isObject(option) && option.label === changeLabel
   const offersChange = Array.isArray(options) && options.some(isChange)
   const isPaneNote = !isPreviewed && surface === 'pane' && offersChange
-  const notes = rewrite?.asked ?? (isPaneNote ? [{ question: open.question, asked: open.question }] : null)
+  const offered = Array.isArray(options) ? options.filter(isObject) : []
+  const labels = offered.flatMap(option => (typeof option.label === 'string' ? [option.label] : []))
+  const paneNote: AskedQuestion = { question: open.question, asked: open.question, labels, takesNote: open.takesNote }
+  const notes = rewrite?.asked ?? (isPaneNote ? [paneNote] : null)
   if (notes === null) return null
 
   return { questions: rewrite?.questions ?? null, notes }
@@ -446,11 +460,16 @@ function typedNotes(annotations: Record<string, unknown> | undefined, asked: str
 }
 
 /**
- * What one previewed question answers (A3): the typed notes when there are any, else '' for DESCRIBE_OWN_LABEL picked
- * with nothing typed, else the answer as chosen; undefined when there is neither an answer nor notes.
+ * What one previewed question answers (A3, D-270, edges #6, #14): typed notes that name one of its option labels,
+ * trimmed and in any case (labelled), give that label; other typed notes are the answer only on a question that takes
+ * a note (`entry.takesNote`), and are ignored on any other, so the chosen answer stands; else '' for
+ * DESCRIBE_OWN_LABEL picked with nothing typed, else the answer as chosen; undefined when there is neither an answer
+ * nor notes that count. A note never silently replaces the option chosen on a question that takes none.
  */
-function ownAnswer(notes: string, answer: string | undefined): string | undefined {
-  if (notes !== '') return notes
+function ownAnswer(notes: string, answer: string | undefined, entry: AskedQuestion): string | undefined {
+  const label = labelled(entry.labels.map(text => ({ label: text, value: text })), notes)
+  if (label !== null) return label
+  if (notes !== '' && entry.takesNote) return notes
   if (answer === DESCRIBE_OWN_LABEL) return ''
 
   return answer
@@ -459,8 +478,11 @@ function ownAnswer(notes: string, answer: string | undefined): string | undefine
 /**
  * The answers of an AskUserQuestion result after a dialog askRewrite rewrote (A3), or null to leave the result as it
  * is. $.ui.ask resolves to the answer under the question's text as asked and reads no notes, so for each question in
- * `asked` the notes typed in the dialog, trimmed and not empty, become its answer whatever was chosen; else
- * DESCRIBE_OWN_LABEL becomes '', which cadre's own parsers refuse and ask again; else the answer is kept. That answer
+ * `asked` (ownAnswer, D-270, edges #6, #14): notes typed in the dialog, trimmed and not empty, that name one of its
+ * option labels in any case answer that label; other notes become its answer only when it takes a note
+ * (`takesNote`: it takes a typed answer, or it is the Launch folder or the Review question) and are ignored on any
+ * other question, so the option chosen there stands; else DESCRIBE_OWN_LABEL becomes '', which cadre's own parsers
+ * refuse and ask again; else the answer is kept. That answer
  * is stored under the question's text as asked, and the key of the text the dialog showed is dropped, so $.ui.ask
  * resolves to it as it does to an answer typed under Other. Every other answer is kept as is. The result is untrusted:
  * null unless it is an object whose `answers` is an object of strings and whose `annotations` is absent or an object.
@@ -474,7 +496,7 @@ export function answersFromNotes(asked: readonly AskedQuestion[], result: unknow
   const out = new Map(Object.entries(answers))
   for (const entry of asked) {
     const answer = Object.hasOwn(answers, entry.asked) ? answers[entry.asked] : undefined
-    const value = ownAnswer(typedNotes(annotations, entry.asked), answer)
+    const value = ownAnswer(typedNotes(annotations, entry.asked), answer, entry)
     if (value === undefined) continue
     if (entry.asked !== entry.question) out.delete(entry.asked)
     out.set(entry.question, value)

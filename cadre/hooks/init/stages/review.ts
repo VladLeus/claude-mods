@@ -438,7 +438,8 @@ function reviewPlanOf(draft: Draft): {
  * to `rows` wrapped rows at `columns` (reviewPages, D-261): the review question with the context line of the plan just
  * shown, the page's options (pageChoices) with the Review chip, and the page as its own context, titled with its place
  * when there is more than one page (`Review (page i of n)`, DECIDED #22), its summary counting the files of the plan
- * and the roles; no typed answer is offered, since Change something… takes the item in a note (#164). A pane surface
+ * and the roles; no typed answer is offered, since Change something… takes the item in a note (#164, takesNote, D-270).
+ * A pane surface
  * asks REVIEW_QUESTION with that summary under it, and when there is more than one page the page's place, which the
  * Review chip does not carry, last (D-310). Its lists are capped by `words` (D-256). An answer pageChoice cannot read
  * is asked again on the same page with refusalLine on top, or CHANGE_REFUSAL after Change something….
@@ -470,6 +471,7 @@ function pagedAsk(
     spec: {
       options: labels,
       header: ASK_HEADERS.review,
+      takesNote: true,
       context: { ...context, pane: { asked: question, text } },
     },
     parse: answer => pageChoice(choices, answer),
