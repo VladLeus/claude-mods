@@ -410,10 +410,10 @@ export type DialogPlan = {
  * option or the hint line (A2), and its notes are the questions the rewrite paired, so notes typed in the dialog
  * become the answer under the question's text as asked (A3). A question with no context (a hunk, the claude.json
  * consent) keeps its dialog as asked, Other row included: null. On a pane surface that previews nothing, the dialog of
- * the open question that offers an option labelled `changeLabel` (the review's Change something…, D-233) is passed
- * through as asked (questions null) and its one note pairs the open question with itself, with the labels of the
- * call's options and the open question's takesNote, so a note typed in it becomes its answer (ASKED #24, D-270).
- * Every other call gets null.
+ * the open question that offers an option labelled `changeLabel` (the review's Change something…, D-233) or that
+ * takes a note (`takesNote`: a typed answer, the Launch folder, D-348) is passed through as asked (questions null),
+ * and its one note pairs the open question with itself, with the call's labels and its takesNote, so a note typed in
+ * it becomes its answer (ASKED #24, D-270, D-348). Every other call gets null.
  */
 export function dialogPlan(
   raw: unknown,
@@ -432,7 +432,7 @@ export function dialogPlan(
   const options: unknown = isObject(first) ? first.options : null
   const isChange = (option: unknown): boolean => isObject(option) && option.label === changeLabel
   const offersChange = Array.isArray(options) && options.some(isChange)
-  const isPaneNote = !isPreviewed && surface === 'pane' && offersChange
+  const isPaneNote = !isPreviewed && surface === 'pane' && (offersChange || open.takesNote)
   const offered = Array.isArray(options) ? options.filter(isObject) : []
   const labels = offered.flatMap(option => (typeof option.label === 'string' ? [option.label] : []))
   const paneNote: AskedQuestion = { question: open.question, asked: open.question, labels, takesNote: open.takesNote }

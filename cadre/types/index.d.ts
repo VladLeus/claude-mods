@@ -509,8 +509,9 @@ export type AskSpec = {
   /** The question takes a typed answer, so the TUI default may offer "Describe your own" (D-234). */
   readonly acceptsTyped?: true
   /**
-   * A note typed in the dialog is the answer (D-270), as it is on a question that takes a typed answer; on any other
-   * question a note is the answer only when it names one of the options.
+   * A note typed in the dialog is the answer on every surface, a docked pane included (D-270, D-348), as it is on a
+   * question that takes a typed answer; on any other question a note is the answer only when it names one of the
+   * options.
    */
   readonly takesNote?: true
   /**
@@ -629,14 +630,17 @@ declare module 'claude-code' {
 /**
  * The question cadre has open now, as register.tsx keeps it in the pane state (D-203, D-229, D-303): its text, its
  * header chip (null when it has none), its context (null when it has none), whether it takes a typed answer, and
- * whether a note typed in its dialog is its answer (D-270).
+ * whether a note typed in its dialog is its answer, on every surface, a docked pane included (D-270, D-348).
  */
 export type OpenQuestion = {
   readonly question: string
   readonly header: string | null
   readonly context: AskContext | null
   readonly acceptsTyped: boolean
-  /** A note typed in the dialog is the answer: the spec takes a typed answer or a note (D-270). */
+  /**
+   * A note typed in the dialog is the answer on every surface, a docked pane included: the spec takes a typed answer
+   * or a note (D-270, D-348).
+   */
   readonly takesNote: boolean
 }
 
