@@ -3,8 +3,11 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { AskContext, AskSpec, ContextRow, ContextSection, GitPolicy } from '../../types'
 import { CLAUDE_JSON_OPTIONS, CONSENT_DISMISSED_REASON } from '../init/stages/consent'
 import { FRAMEWORK_DISMISSED_REASON } from '../init/stages/frameworks'
+import { LAUNCH_START_OPTIONS } from '../init/stages/launch'
 import { GIT_POLICY_OPTIONS, GIT_POLICY_QUESTION, parseGitPolicy } from '../init/stages/policy'
-import { REVIEW_DISMISSED_REASON } from '../init/stages/review'
+import { REVIEW_DISMISSED_REASON, REVIEW_TYPE_HINT } from '../init/stages/review'
+import { t } from '../locales/t'
+import { ADJUST_WORDS } from '../roles/adjust'
 import { BIDI_OVERRIDE, memIo, memWorld } from '../testkit'
 import {
   ASK_HEADERS,
@@ -422,5 +425,17 @@ describe('foldedSpec with rows (D-302, D-313)', () => {
     ])
     const plain = foldedSpec(spec, [{ title: 'History', lines: ['a'] }])
     expect(plain.context?.rows?.[0]).toEqual({ title: 'History', rows: [{ role: 'plain', text: 'a', indent: 0 }] })
+  })
+})
+
+describe('the word lists orList is given (D-272, edge #27)', () => {
+  test("orList of no word is ''; each of its four callers' lists has a word, so no hint reads '(or type )'", () => {
+    expect(orList([])).toBe('')
+    // roles.ts: the Adjust change words.
+    expect(orList(Object.values(ADJUST_WORDS))).not.toBe('')
+    // launch.ts: one word per launcher start, read through its exported labels (LAUNCH_STARTS stays private).
+    expect(LAUNCH_START_OPTIONS.length).toBeGreaterThan(0)
+    // review.ts, twice: the typed item words, in the hint and, with the button words, in the change refusal.
+    expect(REVIEW_TYPE_HINT).not.toBe(t('init.review.reviewTypeHint', { words: '' }))
   })
 })
