@@ -511,6 +511,21 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
     ])
   })
 
+  test('a failed mirror whose record write failed too also names the missing record (D-272 #37)', async () => {
+    const world = await teamWorld()
+    const failed = rule(EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES), 1)
+    const runs = [GLOBAL_RULE, failed, ...NODE_MODULES_RULES, ...BASE_RULES]
+    const host = memHost(hostWorld({ runs, writeFails: [BARE_RECORD] }))
+    const run = memIo({ ...world, unknownPaths: [GLOBAL_EXCLUDES] }, {})
+    const reply = await runEpic(run.io, host.io, { key: 'PROJ-1', title: '', terminal: 'auto' })
+
+    expect(reply.split('\n')).toEqual([
+      ...epicExcludesFailedReply('PROJ-1').split('\n'),
+      `warning: ${globalExcludesWarning(GLOBAL_EXCLUDES)}`,
+      `warning: ${epicNoRecordWarning('PROJ-1')}`,
+    ])
+  })
+
   test('a reuse links only what is missing, and its excludes file and record keep what was recorded', async () => {
     const recorded = { ...RECORD, slug: 'proj-1-x', branch: 'epic/proj-1-x', links: ['node_modules'], copies: ['.env'] }
     const kept = await keptWorld(epicRecordText(recorded))
