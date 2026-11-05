@@ -652,6 +652,20 @@ describe('answersFromNotes (A3)', () => {
     expect(answersFromNotes([review], next)).toEqual({ 'Review?': 'roles' })
   })
 
+  test('a (notes only) answer never reaches the stage (RF-01)', () => {
+    const labels = ['Done adjusting', 'Show the roles']
+    const adjust = (takesNote: boolean): AskedQuestion => ({ question: 'Adjust?', asked: 'Adjust?', labels, takesNote })
+    // The dialog submitted from its notes field with no option chosen, `notes` typed there.
+    const notesOnly = (notes: string): Record<string, unknown> => ({
+      answers: { 'Adjust?': '(notes only)' },
+      annotations: { 'Adjust?': { notes } },
+    })
+    expect(answersFromNotes([adjust(false)], notesOnly('add devops'))).toEqual({ 'Adjust?': '' })
+    expect(answersFromNotes([adjust(true)], notesOnly('add devops'))).toEqual({ 'Adjust?': 'add devops' })
+    expect(answersFromNotes([adjust(false)], notesOnly('show the roles'))).toEqual({ 'Adjust?': 'Show the roles' })
+    expect(answersFromNotes([adjust(true)], notesOnly(''))).toEqual({ 'Adjust?': '' })
+  })
+
   test('a result whose shape does not validate gives null', () => {
     const bad: unknown[] = [
       'x',

@@ -158,7 +158,13 @@ describe('launchStartStep', () => {
       const run = driven(launchAt(), [answer])
       expect(run.state.draft.launchStart).toEqual(start)
       expect(run.asked).toEqual([LAUNCH_ASKED])
-      expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch', context: LAUNCH_CONTEXT })
+      expect(run.specs[0]).toEqual({
+        options: LAUNCH_START_OPTIONS,
+        header: 'Launch',
+        takesNote: true,
+        endingLabels: LAUNCH_START_OPTIONS,
+        context: LAUNCH_CONTEXT,
+      })
     }
   })
 
@@ -304,7 +310,13 @@ describe('the launch stage (D-230)', () => {
   const entered = launchStage.enter(stateAt('launch', { locations: DEFAULT_LOCATIONS, roles: LAUNCH_TEAM }))
 
   test('launchStage asks the launcher start question with the role ids; the open question is that ask', () => {
-    const spec = { options: LAUNCH_START_OPTIONS, header: 'Launch', context: LAUNCH_CONTEXT }
+    const spec = {
+      options: LAUNCH_START_OPTIONS,
+      header: 'Launch',
+      takesNote: true,
+      endingLabels: LAUNCH_START_OPTIONS,
+      context: LAUNCH_CONTEXT,
+    }
     const ask = { question: LAUNCH_ASKED, spec }
     expect(entered.effect).toEqual({ kind: 'ask', ...ask })
     expect(entered.openQuestion).toEqual(ask)

@@ -316,7 +316,9 @@ describe('the review stage (D-230)', () => {
     const summary = '3 launchers'
     const { rows } = launchContext(REVIEW_DRAFT.roles, PANE_LIST_WORDS)
     const context = { title: 'Launch', lines, kind: 'launch', summary, pane: paneOf(going, summary), rows }
-    expect(going.openQuestion?.spec).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch', context })
+    const ending = LAUNCH_START_OPTIONS
+    const spec = { options: LAUNCH_START_OPTIONS, header: 'Launch', takesNote: true, endingLabels: ending, context }
+    expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'The folder I run it from' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.launchStart).toEqual({ kind: 'here' })

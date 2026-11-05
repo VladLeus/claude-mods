@@ -3195,6 +3195,21 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     surfaces.push('desktop')
     expect([docked.length > 0, await pagedAsks()]).toEqual([true, []])
   })
+
+  test('on the TUI default an Adjust change typed as a note is read (RF-01, D-353)', async ($, on) => {
+    const log = newLog()
+    // The engine answers a dialog submitted from its notes field with no option chosen `(notes only)` (RF-01).
+    const answers = { ...INIT_ANSWERS, [ROLES_QUESTION]: 'Adjust them', 'Adjust the roles': '(notes only)' }
+    fakeHost(on, initWorld({ answers, notes: { 'Adjust the roles': 'add devops "Infrastructure setups"' } }), log)
+    await $.command.run(TUI_RUN)
+    const lines = log.paneStates.map(openOf).flatMap(open => {
+      const context = isObject(open) && isObject(open.context) ? open.context : {}
+
+      return Array.isArray(context.lines) ? context.lines.map(String) : []
+    })
+    const notesOnly = askHeads(log).some(ask => ask.includes('(notes only)'))
+    expect([notesOnly, lines.some(line => line.includes('devops'))]).toEqual([false, true])
+  })
 })
 
 describe('cadre regen with a faked host', () => {

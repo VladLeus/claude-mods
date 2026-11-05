@@ -133,7 +133,8 @@ describe('describeStep', () => {
     const summary = '5 roles: pm, tl, be, qa, security'
     const pane = { asked: DESCRIBE_ASKED, text: withContext(DESCRIBE_QUESTION, summary) }
     const context = { title: 'Roles', lines, kind: 'roles', summary, pane, rows }
-    expect(run.specs[1]).toEqual({ options: ['Use the template instead', 'Cancel init'], header: 'Describe', context })
+    const options = ['Use the template instead', 'Cancel init']
+    expect(run.specs[1]).toEqual({ options, header: 'Describe', takesNote: true, endingLabels: options, context })
   })
 
   test('the prompt is the propose system text and the description as a JSON string', async () => {
@@ -236,7 +237,9 @@ describe('adjustLoop', () => {
     const summary = '6 roles: pm, tl, be, fe, qa, security'
     const pane = { asked: ASKED, text: withContext(ADJUST_QUESTION, summary) }
     const context = { title: 'Roles', lines, kind: 'roles', summary, pane, rows }
-    expect(run.specs[1]).toEqual({ options: ['Done adjusting', 'Show the roles'], header: 'Adjust', context })
+    const options = ['Done adjusting', 'Show the roles']
+    const ending = ['Done adjusting']
+    expect(run.specs[1]).toEqual({ options, header: 'Adjust', takesNote: true, endingLabels: ending, context })
   })
 
   test('each Adjust question carries the roles as they are now, with the scan changes (D-236)', async () => {
