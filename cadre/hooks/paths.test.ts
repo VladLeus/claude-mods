@@ -6,6 +6,8 @@ import {
   claudeJsonPathOf,
   displayPath,
   handoffFolderOf,
+  INBOX_FILE,
+  INBOX_LOG_FILE,
   isFileInsideRoot,
   isSafeConfigDir,
   isSafeRelativePath,
@@ -17,7 +19,9 @@ import {
   projectFolderOf,
   relativeTo,
   resolvedPath,
+  RUNTIME_RENDERED,
   screenPath,
+  SESSION_FILE,
   trimSlash,
 } from './paths'
 import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry } from './testkit'
@@ -265,5 +269,14 @@ describe('launcherPath', () => {
 describe('handoffFolderOf', () => {
   test('handoffFolderOf is the repo-relative handoff folder of a role, with no trailing slash', () => {
     expect(handoffFolderOf('be')).toBe('thoughts/shared/handoffs/be')
+  })
+})
+
+describe('the runtime inbox files', () => {
+  test('the inbox log and the session record have one name each, and both are rendered beside the old inbox', () => {
+    const names = [INBOX_LOG_FILE, SESSION_FILE, INBOX_FILE]
+
+    expect([INBOX_LOG_FILE, SESSION_FILE]).toEqual(['inbox.jsonl', 'session.json'])
+    expect(names.filter(name => RUNTIME_RENDERED.includes(name))).toEqual(names)
   })
 })

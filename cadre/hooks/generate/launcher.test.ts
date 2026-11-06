@@ -156,11 +156,31 @@ const BE_FLAGS = [
   '--mcp-config "$root"/.cadre/be/.runtime/mcp.json',
 ].join(' ')
 
+/** The session variables every launcher unsets, so a role started from a Claude session gets its own. */
+const SCRUBBED: readonly string[] = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_CHILD_SESSION',
+]
+
 /**
- * The first words of every exec line: env sets the variable that makes the engine load the CLAUDE.md of each added
- * folder, for claude alone (D-140 q1-b).
+ * The first words of every exec line: env unsets the inherited session variables and sets the variable that makes the
+ * engine load the CLAUDE.md of each added folder, for claude alone.
  */
-const EXEC_PREFIX: readonly string[] = ['exec', 'env', 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1', 'claude']
+const EXEC_PREFIX: readonly string[] = [
+  'exec',
+  'env',
+  ...SCRUBBED.flatMap(name => ['-u', name]),
+  'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1',
+  'claude',
+]
+
+/** The exec line every launcher starts claude with, before its flags. */
+const EXEC_LINE =
+  'exec env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN ' +
+  '-u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude'
 
 /** The line that finds the repo from the launcher's own folder, so a run from another folder cannot misfire (A2). */
 const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
@@ -337,7 +357,9 @@ const BE_LAUNCHER = [
     `run /cadre start be' >&2; exit 1; }`,
   beProbeRun(''),
   ...VERDICT_LINES,
-  `exec env CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude ${BE_FLAGS} -- "$(cat "$kick")"`,
+  'exec env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN ' +
+    '-u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude ' +
+    `${BE_FLAGS} -- "$(cat "$kick")"`,
   '',
 ].join('\n')
 
@@ -621,9 +643,17 @@ describe('launcher', () => {
     for (const start of LAUNCH_STARTS) {
       const lines = launcherText(be, scopeOf(be, 'gsd', [be]), start).split('\n')
       const setting = lines.filter(line => line.includes('CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD'))
+      const words = execWords(lines.join('\n'))
 
       expect(setting).toEqual([lines.find(line => line.startsWith('exec ')) ?? 'no exec line'])
-      expect(execWords(lines.join('\n')).slice(0, 4)).toEqual(EXEC_PREFIX)
+      expect(words.slice(0, EXEC_PREFIX.length)).toEqual(EXEC_PREFIX)
+      expect(words.filter((_, index) => words[index - 1] === '-u')).toEqual(SCRUBBED)
+    }
+    for (const role of TEMPLATE_ROLES) {
+      const text = launcherText(role, scopeOf(role, 'gsd', TEMPLATE_ROLES), { kind: 'git-root' })
+
+      expect(text.split('\n').filter(line => line.startsWith(`${EXEC_LINE} `))).toHaveLength(1)
+      expect([text.includes('CLAUDE_CONFIG_DIR'), text.includes('ANTHROPIC_')]).toEqual([false, false])
     }
   })
 
