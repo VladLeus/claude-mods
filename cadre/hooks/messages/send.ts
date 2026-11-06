@@ -1,8 +1,13 @@
 /**
  * The inbox_send input check, a layer 7 module: the message kinds and states, the caps of an inbox line, and the
- * parse of the model's tool input into a message cadre can stamp.
+ * parse of the model's tool input into a message cadre can stamp. Only the keys it names are read, so a sender or any
+ * other key the model adds is never used.
  */
 import type { InboxState, MessageKind, RoleContext, TeamView } from '../../types'
+import { isObject } from '../core/json'
+import { reportText } from '../core/text'
+import { PROMPTS } from '../locales/prompts'
+import { fill } from '../locales/t'
 
 export const MESSAGE_KINDS: readonly MessageKind[] = Object.freeze([
   'ticket',
@@ -43,6 +48,21 @@ export type SendInput =
     }
   | { readonly kind: 'error'; readonly message: string }
 
-export function parseSendInput(_event: unknown, _ctx: RoleContext, _team: TeamView): SendInput {
-  return { kind: 'error', message: '' }
+function sendError(message: string): SendInput {
+  return { kind: 'error', message }
+}
+
+/** The inbox_send input as a message to stamp: a team role to send to, a known kind, a subject and a body. */
+export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView): SendInput {
+  const fields: Readonly<Record<string, unknown>> = isObject(event) ? event : {}
+  const { to, kind, subject, body, replyTo } = fields
+  if (typeof to !== 'string' || !team.ids.includes(to)) {
+    return sendError(fill(PROMPTS.inboxToNotTeam, { ids: reportText(team.ids.join(', ')) }))
+  }
+  const kindName = MESSAGE_KINDS.find(known => known === kind)
+  if (kindName === undefined) return sendError(fill(PROMPTS.inboxKindUnknown, { kinds: MESSAGE_KINDS.join(', ') }))
+  if (typeof subject !== 'string' || subject === '') return sendError(PROMPTS.inboxSubjectEmpty)
+  if (typeof body !== 'string' || body === '') return sendError(PROMPTS.inboxBodyEmpty)
+
+  return { kind: 'ok', to, kindName, subject, body, replyTo: typeof replyTo === 'string' ? replyTo : null }
 }
