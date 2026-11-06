@@ -6,7 +6,7 @@
  */
 import type { CompiledScope, RoleSpec } from '../../types'
 import { sortedUnique } from '../core/text'
-import { roleMemoryDir } from '../paths'
+import { ROLE_ENV, roleMemoryDir, ROOT_ENV } from '../paths'
 import { mcpToolName } from '../scope/card'
 import { isContextMonitorScript } from '../scope/lint'
 import { settingsDeny } from './deny'
@@ -40,18 +40,22 @@ function carriedStatusLine(role: RoleSpec, user: LaunchUser): unknown {
 }
 
 /**
- * The env of the role: the user's value for each env name the role carries, sorted by name. A name the user has no
- * value for is left out, and a name that is a property of every object (`constructor`) is never read as a value. Null
- * when nothing is left, so an empty env is not rendered.
+ * The user's value for each env name the role carries, sorted by name. A name the user has no value for is left out,
+ * and a name that is a property of every object (`constructor`) is never read as a value.
  */
-function carriedEnv(role: RoleSpec, user: LaunchUser): Record<string, string> | null {
+function carriedEnv(role: RoleSpec, user: LaunchUser): Record<string, string> {
   const entries: [string, string][] = []
   for (const name of sortedUnique(role.carry.env)) {
     const value = Object.hasOwn(user.env, name) ? user.env[name] : undefined
     if (typeof value === 'string') entries.push([name, value])
   }
 
-  return entries.length === 0 ? null : Object.fromEntries(entries)
+  return Object.fromEntries(entries)
+}
+
+/** The env of a role session: the carried env with cadre's role and root names laid over it, so cadre's names win. */
+function sessionEnv(role: RoleSpec, user: LaunchUser): Record<string, string> {
+  return { ...carriedEnv(role, user), [ROLE_ENV]: role.id, [ROOT_ENV]: user.root }
 }
 
 /** One carried hook command as the settings hold it; `timeout` only when the user set one. */
@@ -115,7 +119,7 @@ export function settingsFor(
     ['claudeMdExcludes', [...claudeMdExcludes]],
     ['deniedMcpServers', deniedServers(scope, deny)],
     ['enabledPlugins', { ...scope.settings.enabledPlugins }],
-    ...entryIf('env', carriedEnv(role, user)),
+    ['env', sessionEnv(role, user)],
     ...entryIf('hooks', carriedHooks(role, user)),
     ['permissions', { defaultMode: scope.settings.permissions.defaultMode, deny: [...deny] }],
     ['sandbox', { enabled: scope.settings.sandbox.enabled }],

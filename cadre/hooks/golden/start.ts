@@ -24,7 +24,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
     "writes": [
       {
         "path": "/repo/.cadre/be/.runtime/settings.json",
-        "sha256": "8b9afaf08c9c854fcc5368465a80b2e49dd5f7312019402fa6169723b4b781dd",
+        "sha256": "2a1f3508f89fbb4e5c14b0c243610949e6f340ce1a2e3622ed01d5599e8e1e4f",
         "isWritten": true
       },
       {
