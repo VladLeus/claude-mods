@@ -10,6 +10,9 @@ import type {
   OpenQuestion,
   PaneState,
   PortRead,
+  RoleContext,
+  SessionLink,
+  ToolOutcome,
 } from '../types'
 import { parseCommand } from './command/command'
 import { helpText } from './command/usage'
@@ -18,13 +21,19 @@ import { settledWithin } from './core/settle'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
+import { teamViewOf } from './epic/hierarchy'
 import { isRuntimeIdentityArgv } from './framework/gsd/identity'
 import { detectRefusal } from './guards/refusals'
 import { consentedGsdCheck, runInit } from './init/run'
 import type { InitOptions } from './init/run'
+import { PROMPTS } from './locales/prompts'
 import { setMissingSlotSink, t } from './locales/t'
+import { isRoleSession, publishSession, roleContextOf, runInboxSend } from './messages/flow'
+import { MESSAGE_KINDS } from './messages/send'
+import type { ROLE_ENV, ROOT_ENV } from './paths'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
+import { CADRE_TOOL_PREFIX, INBOX_READ_TOOL, INBOX_SEND_TOOL } from './roles/infra'
 import { collectFacts, collectGsdIdentity, locationsOf, rootUnknownFacts } from './scan/facts/collect'
 import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
@@ -81,6 +90,8 @@ let paneBodyRows: number | null = null
  * the open question (dialogPlan).
  */
 let runSurface: SurfaceModule = PANE_DESKTOP
+/** The role this session runs as: set at session start when the runtime env names a role of the repo, else null. */
+let role: RoleContext | null = null
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -586,6 +597,92 @@ async function closePane($: EngineInterface): Promise<void> {
   await update($, paneState, () => IDLE_PANE).catch(() => undefined)
 }
 
+/** What inbox_send takes from the model. */
+const INBOX_SEND_SCHEMA = {
+  type: 'object',
+  properties: {
+    to: { type: 'string' },
+    kind: { type: 'string', enum: [...MESSAGE_KINDS] },
+    subject: { type: 'string' },
+    body: { type: 'string' },
+    replyTo: { type: 'string' },
+  },
+  required: ['to', 'kind', 'subject', 'body'],
+}
+
+/** What inbox_read takes from the model. */
+const INBOX_READ_SCHEMA = { type: 'object', properties: { all: { type: 'boolean' } } }
+
+/** The port the inbox tools run through: an InitIo over a pane run that opens nothing, as the inbox flows never ask. */
+function toolIoOf($: EngineInterface): InitIo {
+  return initIoOf($, {
+    isOpened: false,
+    surface: runSurface,
+    hasPresentation: false,
+    printed: null,
+    hasStatus: false,
+    isLoading: false,
+  })
+}
+
+/** The live link of the inbox tools: a send by session id, true only when the host says it was delivered. */
+function sessionLinkOf($: EngineInterface): SessionLink {
+  return {
+    send: async (sessionId, text) => {
+      try {
+        const sent = await $.session.send({ to: { sessionId }, text })
+
+        return sent.isDelivered === true
+      } catch {
+        return false
+      }
+    },
+  }
+}
+
+/** A tool outcome as a tool.call hook answers it. */
+function toolReplyOf(outcome: ToolOutcome): { result: string } | { deny: string } {
+  return outcome.kind === 'result' ? { result: outcome.text } : { deny: outcome.text }
+}
+
+/**
+ * Registers the inbox tools when the context names a role of the repo, then publishes this session's id; a
+ * registration that throws leaves the session with no role.
+ */
+async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
+  const io = toolIoOf($)
+  if (!(await isRoleSession(io, ctx))) return
+  try {
+    await $.tool.register({
+      name: INBOX_SEND_TOOL,
+      description: PROMPTS.inboxSendDescription,
+      inputSchema: INBOX_SEND_SCHEMA,
+    })
+    await $.tool.register({
+      name: INBOX_READ_TOOL,
+      description: PROMPTS.inboxReadDescription,
+      inputSchema: INBOX_READ_SCHEMA,
+    })
+  } catch {
+    return
+  }
+  role = ctx
+  const sessionId = await io.sessionId()
+  if (sessionId !== null) await publishSession(io, hostIoOf($), ctx, sessionId)
+}
+
+/** inbox_send as the role this session runs as, over the team as it reads now. */
+async function inboxSendReply(
+  $: EngineInterface,
+  ctx: RoleContext,
+  e: unknown,
+): Promise<{ result: string } | { deny: string }> {
+  const io = toolIoOf($)
+  const team = await teamViewOf(io, ctx.root)
+
+  return toolReplyOf(await runInboxSend(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // A locale slot with no value renders as {name} and its line goes to the debug log (D-224).
@@ -598,8 +695,22 @@ export const register: Register = on => {
         'start <id> [--terminal[=terminal|iterm|tmux]] | status <id> | ' +
         'epic <KEY> [title] [--terminal[=terminal|iterm|tmux]] | epic done <KEY> [--force]',
     })
+    role = null
+    // The engine reads env names off the source, so each name is a literal.
+    const ctx = roleContextOf(
+      await $.env.get('CADRE_ROLE' satisfies typeof ROLE_ENV).catch(() => undefined),
+      await $.env.get('CADRE_ROOT' satisfies typeof ROOT_ENV).catch(() => undefined),
+    )
+    if (ctx !== null) await startRole($, ctx).catch(() => undefined)
 
     return next(e)
+  })
+
+  on('tool.call', { tool: `${CADRE_TOOL_PREFIX}${INBOX_SEND_TOOL}` }, async ($, e) => {
+    const ctx = role
+    if (ctx === null) return { deny: PROMPTS.inboxNoRole }
+
+    return inboxSendReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
   })
 
   // A run selects its surface module once, before it opens anything (surfaceModuleOf, D-208, D-353), and once it

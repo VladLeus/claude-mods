@@ -3962,11 +3962,21 @@ function registrations(log: HostLog): string[] {
   return log.ops.filter(op => op.includes('tool.register'))
 }
 
+/**
+ * Starts the test's session at /repo, so the plugin's session.start runs: the core below it registers the /cadre
+ * command and echoes the cwd.
+ */
+async function startSession($: Engine, on: HostOn): Promise<void> {
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+}
+
 describe('the inbox tools in a role session', () => {
   test('a session with no CADRE_ROLE registers no tool and writes nothing', async ($, on) => {
     const log = newLog()
     fakeHost(on, ambiguousWorld(), log)
-    await $.command.run({ command: 'cadre', args: '' })
+    await startSession($, on)
 
     expect(registrations(log)).toEqual([])
     expect(log.writes).toEqual([])
@@ -3975,7 +3985,7 @@ describe('the inbox tools in a role session', () => {
   test('a role session registers inbox_send and inbox_read and publishes its session id', async ($, on) => {
     const log = newLog()
     fakeHost(on, roleWorld(), log)
-    await $.command.run({ command: 'cadre', args: '' })
+    await startSession($, on)
 
     expect(registrations(log)).toEqual(['tool.register inbox_send', 'tool.register inbox_read'])
     expect(log.writes).toEqual(['/repo/.cadre/be/.runtime/session.json'])
@@ -3986,7 +3996,7 @@ describe('the inbox tools in a role session', () => {
     const world = roleWorld()
     const files = Object.fromEntries(Object.entries(world.files).filter(([path]) => path !== ROLE_BE_JSON))
     fakeHost(on, { ...world, files }, log)
-    await $.command.run({ command: 'cadre', args: '' })
+    await startSession($, on)
 
     expect(registrations(log)).toEqual([])
     expect(log.writes).toEqual([])
@@ -3996,6 +4006,7 @@ describe('the inbox tools in a role session', () => {
     const log = newLog()
     fakeHost(on, roleWorld(), log)
     const note = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
+    await startSession($, on)
     await $.tool.call(note).catch(() => null)
 
     expect(log.runs).toEqual([['/usr/bin/tee', '-a', `${ROLE_TL_RUNTIME}/inbox.jsonl`]])

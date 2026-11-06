@@ -116,6 +116,17 @@ export const PROMPTS = Object.freeze({
   inboxSubjectEmpty: 'subject is empty: give a short subject line.',
   inboxBodyEmpty: 'body is empty: write the message in body.',
   inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read.',
+  // The descriptions of the inbox tools (register.tsx), and the refusals of a call outside a role session or a call
+  // that failed.
+  inboxSendDescription:
+    `cadre: send a message to another role of your team. It is added to that role's inbox, stamped with your role ${
+    ''}and the time, and the role is woken to read it. to: the role id. kind: ticket, report, question, answer, ${
+    ''}epic-end or note. replyTo: the id of the entry you answer, if any.`,
+  inboxReadDescription:
+    `cadre: read your own inbox. Each entry shows its id, state, kind, sender and subject, then its body. all: true ${
+    ''}also lists the entries marked done or rejected.`,
+  inboxNoRole: 'The cadre inbox tools work only in a cadre role session.',
+  inboxFailed: 'The cadre inbox tool failed. Try again.',
 }) satisfies Record<string, string>
 
 /**
