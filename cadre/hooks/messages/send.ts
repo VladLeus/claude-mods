@@ -5,7 +5,7 @@
  */
 import type { InboxState, MessageKind, RoleContext, TeamView } from '../../types'
 import { isObject } from '../core/json'
-import { reportText } from '../core/text'
+import { clean, reportText } from '../core/text'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 
@@ -48,21 +48,48 @@ export type SendInput =
     }
   | { readonly kind: 'error'; readonly message: string }
 
+/** A line break as a model may send it: CR LF, CR or LF. */
+const LINE_BREAK = /\r\n|\r|\n/g
+
+/** What clean removes, less the line break and the tab a body keeps. */
+const BODY_DROPPED = /(?![\n\t])[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}]/gu
+
 function sendError(message: string): SendInput {
   return { kind: 'error', message }
 }
 
-/** The inbox_send input as a message to stamp: a team role to send to, a known kind, a subject and a body. */
+/** A subject on one line: line breaks become a space, invisible characters go, and it is cut to its cap. */
+function subjectText(raw: unknown): string {
+  return typeof raw === 'string' ? clean(raw.replace(LINE_BREAK, ' '), SUBJECT_MAX_CHARS).trim() : ''
+}
+
+/** A body with LF line breaks, its tabs kept and every other control or invisible character removed; never cut. */
+function bodyText(raw: unknown): string {
+  return typeof raw === 'string' ? raw.replace(/\r\n?/g, '\n').replace(BODY_DROPPED, '') : ''
+}
+
+/**
+ * The inbox_send input as a message to stamp, checked in the order to, kind, subject, body, replyTo. The subject is
+ * cut to its cap; a body over its cap is refused, never cut.
+ */
 export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView): SendInput {
   const fields: Readonly<Record<string, unknown>> = isObject(event) ? event : {}
-  const { to, kind, subject, body, replyTo } = fields
-  if (typeof to !== 'string' || !team.ids.includes(to)) {
-    return sendError(fill(PROMPTS.inboxToNotTeam, { ids: reportText(team.ids.join(', ')) }))
-  }
+  const { to, kind, replyTo } = fields
+  if (to === undefined) return sendError(PROMPTS.inboxToMissing)
+  if (typeof to !== 'string') return sendError(PROMPTS.inboxToNotText)
+  if (!team.ids.includes(to)) return sendError(fill(PROMPTS.inboxToNotTeam, { ids: reportText(team.ids.join(', ')) }))
+  if (to === ctx.id) return sendError(PROMPTS.inboxToSelf)
   const kindName = MESSAGE_KINDS.find(known => known === kind)
   if (kindName === undefined) return sendError(fill(PROMPTS.inboxKindUnknown, { kinds: MESSAGE_KINDS.join(', ') }))
-  if (typeof subject !== 'string' || subject === '') return sendError(PROMPTS.inboxSubjectEmpty)
-  if (typeof body !== 'string' || body === '') return sendError(PROMPTS.inboxBodyEmpty)
+  const subject = subjectText(fields.subject)
+  if (subject === '') return sendError(PROMPTS.inboxSubjectEmpty)
+  const body = bodyText(fields.body)
+  if (body.trim() === '') return sendError(PROMPTS.inboxBodyEmpty)
+  if (Array.from(body).length > BODY_MAX_CHARS) {
+    return sendError(fill(PROMPTS.inboxBodyTooLong, { max: BODY_MAX_CHARS }))
+  }
+  if (replyTo === undefined) return { kind: 'ok', to, kindName, subject, body, replyTo: null }
+  if (typeof replyTo !== 'string' || !ENTRY_ID_PATTERN.test(replyTo)) return sendError(PROMPTS.inboxReplyToBad)
 
-  return { kind: 'ok', to, kindName, subject, body, replyTo: typeof replyTo === 'string' ? replyTo : null }
+  return { kind: 'ok', to, kindName, subject, body, replyTo }
 }
