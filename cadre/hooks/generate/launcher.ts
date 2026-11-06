@@ -47,11 +47,23 @@ const PATH_FLAGS: readonly string[] = Object.freeze([
 const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
 
 /**
- * What the exec line runs claude through (D-140 q1-b): `env` with the variable that makes the engine load a CLAUDE.md
- * from each folder `--add-dir` adds, so the role's built CLAUDE.md and its private one load, set for claude alone and
- * not for the launcher's own commands or the probe run.
+ * The session variables a launcher started from inside a Claude session would pass on: unset, so the role session
+ * gets its own session id and messaging socket and other roles can reach it by that id.
  */
-const EXEC_CLAUDE = 'exec env CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude'
+const SCRUBBED_ENV: readonly string[] = Object.freeze([
+  'CLAUDECODE',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_CHILD_SESSION',
+])
+
+/**
+ * What the exec line runs claude through: `env` that unsets SCRUBBED_ENV and sets the variable that makes the engine
+ * load a CLAUDE.md from each folder `--add-dir` adds, so the role's built CLAUDE.md and its private one load, for
+ * claude alone and not for the launcher's own commands or the probe run.
+ */
+const EXEC_CLAUDE = `exec env -u ${SCRUBBED_ENV.join(' -u ')} CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude`
 
 /**
  * The flag words a launcher that starts in a sub-folder (here or dir) adds after the scope flags: the git root it

@@ -183,17 +183,17 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/bin/pm",
-        "sha256": "4bc150512031a5c42ce85f2483ceced3f8f34d37c034290ed95491c4bea08f97",
+        "sha256": "9fb677b0e2a5984f0efb4cbab6c500f39d83c6add898c2263c7e74ea49737a30",
         "isWritten": true
       },
       {
         "path": "/repo/.cadre/bin/security",
-        "sha256": "74d4ab2fac8219fee80db859adae163907c2413629326e3798d52c8eb0ba4cfd",
+        "sha256": "90af305a09c5c7c9ef29b5141950f95cdcf96e1359a0c8ad295bba6b7e0b7959",
         "isWritten": true
       },
       {
         "path": "/repo/.cadre/bin/tl",
-        "sha256": "edf1c6806771400b67844d452e471b86a13be4e2212564add76d7e06b148951a",
+        "sha256": "1ba839b14904a9df5a6476d993e08aea11985095474bf44c11f8a7214f7856fc",
         "isWritten": true
       },
       {
@@ -298,7 +298,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "71985359552eda4f6ed7f1c32720940c0cd163282dafbad8a75d58830d2a72db",
+        "sha256": "ad3bff39601b241ec2c5d54d35f34042d848dedc87b78be03d1b5e702f70f70d",
         "isWritten": true
       }
     ],
@@ -320,17 +320,17 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/pm\",",
-      "      \"sha256\": \"4bc150512031a5c42ce85f2483ceced3f8f34d37c034290ed95491c4bea08f97\"",
+      "      \"sha256\": \"9fb677b0e2a5984f0efb4cbab6c500f39d83c6add898c2263c7e74ea49737a30\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/security\",",
-      "      \"sha256\": \"74d4ab2fac8219fee80db859adae163907c2413629326e3798d52c8eb0ba4cfd\"",
+      "      \"sha256\": \"90af305a09c5c7c9ef29b5141950f95cdcf96e1359a0c8ad295bba6b7e0b7959\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/tl\",",
-      "      \"sha256\": \"edf1c6806771400b67844d452e471b86a13be4e2212564add76d7e06b148951a\"",
+      "      \"sha256\": \"1ba839b14904a9df5a6476d993e08aea11985095474bf44c11f8a7214f7856fc\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -644,17 +644,17 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/bin/pm",
-        "sha256": "4bc150512031a5c42ce85f2483ceced3f8f34d37c034290ed95491c4bea08f97",
+        "sha256": "9fb677b0e2a5984f0efb4cbab6c500f39d83c6add898c2263c7e74ea49737a30",
         "isWritten": true
       },
       {
         "path": "/repo/.cadre/bin/security",
-        "sha256": "74d4ab2fac8219fee80db859adae163907c2413629326e3798d52c8eb0ba4cfd",
+        "sha256": "90af305a09c5c7c9ef29b5141950f95cdcf96e1359a0c8ad295bba6b7e0b7959",
         "isWritten": true
       },
       {
         "path": "/repo/.cadre/bin/tl",
-        "sha256": "edf1c6806771400b67844d452e471b86a13be4e2212564add76d7e06b148951a",
+        "sha256": "1ba839b14904a9df5a6476d993e08aea11985095474bf44c11f8a7214f7856fc",
         "isWritten": true
       },
       {
@@ -759,7 +759,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "df5bf5960f43cc7d8dda9bf5630f62ef657417b2a0a549fb38ff16dbaa676c63",
+        "sha256": "f2a1ffe3147876067899361e3e0957ce9dcf3aad011b214fd2b1cd4ce2b69042",
         "isWritten": true
       }
     ],
@@ -782,17 +782,17 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/pm\",",
-      "      \"sha256\": \"4bc150512031a5c42ce85f2483ceced3f8f34d37c034290ed95491c4bea08f97\"",
+      "      \"sha256\": \"9fb677b0e2a5984f0efb4cbab6c500f39d83c6add898c2263c7e74ea49737a30\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/security\",",
-      "      \"sha256\": \"74d4ab2fac8219fee80db859adae163907c2413629326e3798d52c8eb0ba4cfd\"",
+      "      \"sha256\": \"90af305a09c5c7c9ef29b5141950f95cdcf96e1359a0c8ad295bba6b7e0b7959\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/tl\",",
-      "      \"sha256\": \"edf1c6806771400b67844d452e471b86a13be4e2212564add76d7e06b148951a\"",
+      "      \"sha256\": \"1ba839b14904a9df5a6476d993e08aea11985095474bf44c11f8a7214f7856fc\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
