@@ -6,6 +6,7 @@
 import type {
   HostIo,
   InboxEntry,
+  InboxMark,
   InitIo,
   PortStat,
   RoleContext,
@@ -31,7 +32,13 @@ import {
   sessionFilePath,
   sessionRecordText,
 } from './record'
-import { INBOX_APPEND_TIMEOUT_MS, INBOX_LINE_MAX_BYTES, INBOX_READ_MAX_BYTES, parseSendInput } from './send'
+import {
+  INBOX_APPEND_TIMEOUT_MS,
+  INBOX_LINE_MAX_BYTES,
+  INBOX_READ_MAX_BYTES,
+  parseMarkInput,
+  parseSendInput,
+} from './send'
 import { wakeText } from './wake'
 
 /** The most bytes of a session.json that are read. */
@@ -182,13 +189,40 @@ export async function runInboxRead(io: InitIo, ctx: RoleContext, event: unknown)
   return { kind: 'result', text: inboxReadText(foldInbox(events), input.all) }
 }
 
+/** inbox_mark: one mark stamped with the session's own role and the clock, appended to its own inbox only. */
 export async function runInboxMark(
-  _io: InitIo,
-  _host: HostIo,
+  io: InitIo,
+  host: HostIo,
   _link: SessionLink,
-  _ctx: RoleContext,
+  ctx: RoleContext,
   _team: TeamView | null,
-  _event: unknown,
+  event: unknown,
 ): Promise<ToolOutcome> {
-  return { kind: 'deny', text: '' }
+  const input = parseMarkInput(event)
+  if (input.kind === 'error') return deny(input.message)
+  const own = inboxLogPath(ctx.root, ctx.id)
+  const read = await io.read(own, INBOX_READ_MAX_BYTES)
+  if (read.state !== 'text' && read.state !== 'absent') return deny(fill(PROMPTS.inboxUnreadable, { id: ctx.id }))
+  const events = read.state === 'text' ? parseInbox(read.text) : []
+  if (!events.some(held => held.type === CONTRACTS.inboxEntryType && held.id === input.id && held.to === ctx.id)) {
+    return deny(PROMPTS.inboxMarkUnknownId)
+  }
+  const at = await io.now()
+  if (at === null) return deny(PROMPTS.inboxMarkFailed)
+  const { id, state, note, waitsFor } = input
+  const mark: InboxMark = {
+    v: 1,
+    type: CONTRACTS.inboxMarkType,
+    id,
+    at,
+    by: ctx.id,
+    state,
+    ...(note === null ? {} : { note }),
+    ...(waitsFor === null ? {} : { waitsFor }),
+  }
+  const refusal = await receiverRefusal(io, ctx.root, ctx.id)
+  if (refusal !== null) return deny(refusal)
+  if (!(await appendLine(host, own, recordLine(mark)))) return deny(PROMPTS.inboxMarkFailed)
+
+  return { kind: 'result', text: fill(PROMPTS.inboxMarked, { id, state }) }
 }

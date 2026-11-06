@@ -107,6 +107,38 @@ export type MarkInput =
     }
   | { readonly kind: 'error'; readonly message: string }
 
-export function parseMarkInput(_event: unknown): MarkInput {
-  return { kind: 'error', message: '' }
+/** The state a mark may set: any state but unread; null for anything else. */
+export function markStateOf(value: unknown): Exclude<InboxState, 'unread'> | null {
+  for (const state of INBOX_STATES) {
+    if (state !== 'unread' && state === value) return state
+  }
+
+  return null
+}
+
+function markError(message: string): MarkInput {
+  return { kind: 'error', message }
+}
+
+/**
+ * The inbox_mark input: an id, a state other than unread, a note on one line (required for blocked, rejected and
+ * done, refused over its cap) and, for awaiting, the id of the entry it waits for. Read takes neither.
+ */
+export function parseMarkInput(event: unknown): MarkInput {
+  const fields: Readonly<Record<string, unknown>> = isObject(event) ? event : {}
+  const { id, waitsFor } = fields
+  if (typeof id !== 'string') return markError(PROMPTS.inboxMarkUnknownId)
+  const state = markStateOf(fields.state)
+  const states = INBOX_STATES.filter(known => known !== 'unread').join(', ')
+  if (state === null) return markError(fill(PROMPTS.inboxMarkState, { states }))
+  if (state === 'read') return { kind: 'ok', id, state, note: null, waitsFor: null }
+  const note = typeof fields.note === 'string' ? clean(fields.note.replace(LINE_BREAK, ' '), Infinity).trim() : ''
+  if (Array.from(note).length > NOTE_MAX_CHARS) {
+    return markError(fill(PROMPTS.inboxMarkNoteTooLong, { max: NOTE_MAX_CHARS }))
+  }
+  if (state !== 'awaiting' && note === '') return markError(fill(PROMPTS.inboxMarkNoteNeeded, { state }))
+  if (state !== 'awaiting') return { kind: 'ok', id, state, note, waitsFor: null }
+  if (typeof waitsFor !== 'string' || !ENTRY_ID_PATTERN.test(waitsFor)) return markError(PROMPTS.inboxMarkWaitsFor)
+
+  return { kind: 'ok', id, state, note: note === '' ? null : note, waitsFor }
 }

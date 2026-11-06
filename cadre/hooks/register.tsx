@@ -28,12 +28,12 @@ import { consentedGsdCheck, runInit } from './init/run'
 import type { InitOptions } from './init/run'
 import { PROMPTS } from './locales/prompts'
 import { setMissingSlotSink, t } from './locales/t'
-import { isRoleSession, publishSession, roleContextOf, runInboxRead, runInboxSend } from './messages/flow'
-import { MESSAGE_KINDS } from './messages/send'
+import { isRoleSession, publishSession, roleContextOf, runInboxMark, runInboxRead, runInboxSend } from './messages/flow'
+import { INBOX_STATES, MESSAGE_KINDS } from './messages/send'
 import type { ROLE_ENV, ROOT_ENV } from './paths'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
-import { CADRE_TOOL_PREFIX, INBOX_READ_TOOL, INBOX_SEND_TOOL } from './roles/infra'
+import { CADRE_TOOL_PREFIX, INBOX_MARK_TOOL, INBOX_READ_TOOL, INBOX_SEND_TOOL } from './roles/infra'
 import { collectFacts, collectGsdIdentity, locationsOf, rootUnknownFacts } from './scan/facts/collect'
 import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
@@ -615,6 +615,18 @@ const INBOX_SEND_SCHEMA = {
 /** What inbox_read takes from the model. */
 const INBOX_READ_SCHEMA = { type: 'object', properties: { all: { type: 'boolean' } } }
 
+/** What inbox_mark takes from the model. */
+const INBOX_MARK_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    state: { type: 'string', enum: INBOX_STATES.filter(state => state !== 'unread') },
+    note: { type: 'string' },
+    waitsFor: { type: 'string' },
+  },
+  required: ['id', 'state'],
+}
+
 /** The port the inbox tools run through: an InitIo over a pane run that opens nothing, as the inbox flows never ask. */
 function toolIoOf($: EngineInterface): InitIo {
   return initIoOf($, {
@@ -675,6 +687,11 @@ async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
       description: PROMPTS.inboxReadDescription,
       inputSchema: INBOX_READ_SCHEMA,
     })
+    await $.tool.register({
+      name: INBOX_MARK_TOOL,
+      description: PROMPTS.inboxMarkDescription,
+      inputSchema: INBOX_MARK_SCHEMA,
+    })
   } catch {
     return
   }
@@ -688,6 +705,14 @@ async function inboxSendReply($: EngineInterface, ctx: RoleContext, e: unknown):
   const team = await teamViewOf(io, ctx.root)
 
   return toolReplyOf(await runInboxSend(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
+}
+
+/** inbox_mark as the role this session runs as, over the team as it reads now. */
+async function inboxMarkReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
+  const io = toolIoOf($)
+  const team = await teamViewOf(io, ctx.root)
+
+  return toolReplyOf(await runInboxMark(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
 }
 
 /** inbox_read of the role this session runs as. */
@@ -731,6 +756,13 @@ export const register: Register = on => {
     if (ctx === null) return { deny: PROMPTS.inboxNoRole }
 
     return inboxReadReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
+  })
+
+  on('tool.call', { tool: `${CADRE_TOOL_PREFIX}${INBOX_MARK_TOOL}` }, async ($, e) => {
+    const ctx = role
+    if (ctx === null) return { deny: PROMPTS.inboxNoRole }
+
+    return inboxMarkReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
   })
 
   // A role session publishes its session id again when it changed, so the roles that send to it can still wake it.

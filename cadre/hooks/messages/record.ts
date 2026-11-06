@@ -11,7 +11,7 @@ import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { INBOX_LOG_FILE, SESSION_FILE } from '../paths'
-import { ENTRY_ID_PATTERN, INBOX_STATES, MESSAGE_KINDS } from './send'
+import { ENTRY_ID_PATTERN, markStateOf, MESSAGE_KINDS } from './send'
 
 /** How many hex characters of the content's SHA-256 an entry id keeps. */
 const ENTRY_ID_HASH_CHARS = 8
@@ -90,14 +90,6 @@ function isRole(value: unknown): value is string {
   return typeof value === 'string' && isRoleId(value)
 }
 
-function markStateOf(value: unknown): Exclude<InboxState, 'unread'> | null {
-  for (const state of INBOX_STATES) {
-    if (state !== 'unread' && state === value) return state
-  }
-
-  return null
-}
-
 function entryOf(value: Readonly<Record<string, unknown>>): InboxEntry | null {
   const { id, at, from, to, kind, subject, body, replyTo } = value
   if (!isEntryId(id) || !isEpochMs(at) || !isRole(to)) return null
@@ -171,19 +163,47 @@ function isMark(event: InboxEvent): event is InboxMark {
   return event.type === CONTRACTS.inboxMarkType
 }
 
-/** Each entry in file order with what the last mark on it in file order says; unread when it has none. */
-export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
-  const marks = events.filter(isMark)
+/** The last mark on the entry by its receiver, the inbox's owner, and where it lies; null when it has none. */
+function lastOwnerMark(
+  events: readonly InboxEvent[],
+  entry: InboxEntry,
+): { readonly mark: InboxMark; readonly index: number } | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event === undefined || !isMark(event)) continue
+    if (event.id === entry.id && event.by === entry.to) return { mark: event, index }
+  }
 
+  return null
+}
+
+/** For an awaiting mark, the first later entry that replies to what it waits for; null otherwise. */
+function replyOf(
+  events: readonly InboxEvent[],
+  found: { readonly mark: InboxMark; readonly index: number },
+): string | null {
+  const { waitsFor, state } = found.mark
+  if (state !== 'awaiting' || waitsFor === undefined) return null
+  const reply = events.slice(found.index + 1).find(event => isEntry(event) && event.replyTo === waitsFor)
+
+  return reply === undefined ? null : reply.id
+}
+
+/**
+ * Each entry in file order with what the last mark on it by its owner, in file order, says (unread when it has none),
+ * and for an awaiting entry the reply that came after the mark.
+ */
+export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
   return events.filter(isEntry).map(entry => {
-    const mark = marks.findLast(candidate => candidate.id === entry.id)
+    const found = lastOwnerMark(events, entry)
+    const mark = found?.mark
 
     return {
       entry,
       state: mark?.state ?? 'unread',
       note: mark?.note ?? null,
       waitsFor: mark?.waitsFor ?? null,
-      reply: null,
+      reply: found === null ? null : replyOf(events, found),
       markedAt: mark?.at ?? null,
     }
   })
