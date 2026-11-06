@@ -63,6 +63,7 @@ import { lintRuntimeDenyPattern } from './launch/deny'
 import type { LaunchPlan } from './launch/plan'
 import { RUNTIME_SETTINGS_KEYS } from './launch/settings'
 import { DONE_MARKER_LINE } from './locales/contracts'
+import { ROLE_ENV, ROOT_ENV } from './paths'
 import { gitignoreLines } from './plan/gitignore'
 import { planWithManifest } from './plan/plan'
 import type { PlanInput } from './plan/plan'
@@ -1478,9 +1479,10 @@ export function hasDotDot(path: string): boolean {
 /**
  * Every problem one launch plan has, as messages (empty when none): a link outside `<root>/.cadre/<id>/.runtime/`, a
  * link with a `..` segment or a relative target, a link planned twice, a settings key outside RUNTIME_SETTINGS_KEYS, an
- * env name the role does not carry, a deny the runtime lint refuses, an exact deny that covers an own folder of the
- * role, a secret fixture anywhere in the plan, the context monitor hook (D-62), an infra violation in the template keys
- * of the runtime settings (D-77), and a warning (the user of the matrix has everything, so none is expected).
+ * env name the role does not carry other than cadre's own role and root names, a deny the runtime lint refuses, an
+ * exact deny that covers an own folder of the role, a secret fixture anywhere in the plan, the context monitor hook
+ * (D-62), an infra violation in the template keys of the runtime settings (D-77), and a warning (the user of the matrix
+ * has everything, so none is expected).
  */
 export function launchProblems(
   plan: LaunchPlan,
@@ -1505,7 +1507,9 @@ export function launchProblems(
     ...Object.keys(plan.settings)
       .filter(key => !RUNTIME_SETTINGS_KEYS.includes(key))
       .map(key => `settings key ${key} is not allowed`),
-    ...env.filter(name => !role.carry.env.includes(name)).map(name => `env ${name} is not carried by the role`),
+    ...env
+      .filter(name => !role.carry.env.includes(name) && name !== ROLE_ENV && name !== ROOT_ENV)
+      .map(name => `env ${name} is not carried by the role`),
     ...deny.flatMap(entry => {
       const message = lintRuntimeDenyPattern(entry)
 
