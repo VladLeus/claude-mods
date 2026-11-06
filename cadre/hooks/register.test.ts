@@ -3987,7 +3987,11 @@ describe('the inbox tools in a role session', () => {
     fakeHost(on, roleWorld(), log)
     await startSession($, on)
 
-    expect(registrations(log)).toEqual(['tool.register inbox_send', 'tool.register inbox_read'])
+    expect(registrations(log)).toEqual([
+      'tool.register inbox_send',
+      'tool.register inbox_read',
+      'tool.register inbox_mark',
+    ])
     expect(log.writes).toEqual(['/repo/.cadre/be/.runtime/session.json'])
   })
 

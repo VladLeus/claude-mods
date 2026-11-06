@@ -195,3 +195,23 @@ describe('parseReadInput', () => {
     expect(parseReadInput({ all: 'yes' })).toEqual({ kind: 'error', message: PROMPTS.inboxAllNotBoolean })
   })
 })
+
+describe('foldInbox owner marks and replies', () => {
+  test('a mark by a role that is not the receiver of the entry is ignored', () => {
+    expect(foldInbox([A, { ...mark(A.id, 3000, 'done', { note: 'merged' }), by: 'pm' }])).toEqual([unread(A)])
+  })
+
+  test('an awaiting mark links the first later entry that replies to what it waits for', () => {
+    const waitsFor = B.id
+    const reply: InboxEntry = { ...C, id: 'qa-4000-00ff00ff', at: 4000, replyTo: waitsFor }
+    const later: InboxEntry = { ...reply, id: 'qa-5000-00ff00ff', at: 5000 }
+    const events = [A, reply, mark(A.id, 3000, 'awaiting', { waitsFor }), { ...reply, id: 'qa-3500-00ff00ff' }, later]
+
+    expect(foldInbox(events).map(item => item.reply)).toEqual([
+      'qa-3500-00ff00ff',
+      null,
+      null,
+      null,
+    ])
+  })
+})

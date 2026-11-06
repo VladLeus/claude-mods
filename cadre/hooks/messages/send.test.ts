@@ -3,7 +3,14 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { RoleContext, TeamView } from '../../types'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { BODY_MAX_CHARS, MESSAGE_KINDS, parseSendInput, SUBJECT_MAX_CHARS } from './send'
+import {
+  BODY_MAX_CHARS,
+  MESSAGE_KINDS,
+  NOTE_MAX_CHARS,
+  parseMarkInput,
+  parseSendInput,
+  SUBJECT_MAX_CHARS,
+} from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
 const TEAM: TeamView = { ids: ['pm', 'tl', 'be'], parents: { pm: null, tl: 'pm', be: 'tl' } }
@@ -75,6 +82,48 @@ describe('parseSendInput', () => {
   test('a replyTo that is an entry id is kept', () => {
     expect(parseSendInput({ ...NOTE, replyTo: 'tl-1000-0123abcd' }, BE, TEAM)).toMatchObject({
       replyTo: 'tl-1000-0123abcd',
+    })
+  })
+})
+
+describe('parseMarkInput', () => {
+  const ID = 'be-1000-0123abcd'
+
+  test('each refusal names its field: state, note, waitsFor', () => {
+    const states = fill(PROMPTS.inboxMarkState, { states: 'read, awaiting, blocked, rejected, done' })
+    const longNote = 'x'.repeat(NOTE_MAX_CHARS + 1)
+    const cases: readonly (readonly [unknown, string])[] = [
+      [{ id: ID, state: 'unread' }, states],
+      [{ id: ID, state: 'ping' }, states],
+      [{ id: ID, state: 'done' }, fill(PROMPTS.inboxMarkNoteNeeded, { state: 'done' })],
+      [{ id: ID, state: 'rejected', note: '' }, fill(PROMPTS.inboxMarkNoteNeeded, { state: 'rejected' })],
+      [{ id: ID, state: 'blocked', note: '\u200B\n' }, fill(PROMPTS.inboxMarkNoteNeeded, { state: 'blocked' })],
+      [{ id: ID, state: 'done', note: longNote }, fill(PROMPTS.inboxMarkNoteTooLong, { max: NOTE_MAX_CHARS })],
+      [{ id: ID, state: 'awaiting' }, PROMPTS.inboxMarkWaitsFor],
+      [{ id: ID, state: 'awaiting', waitsFor: 'not-an-entry' }, PROMPTS.inboxMarkWaitsFor],
+    ]
+    const refusals = cases.map(([event]) => {
+      const input = parseMarkInput(event)
+
+      return input.kind === 'error' ? input.message : null
+    })
+
+    expect(refusals).toEqual(cases.map(([, message]) => message))
+  })
+
+  test('read takes no note; done keeps its note on one line; awaiting keeps its waitsFor; by is never read', () => {
+    expect(parseMarkInput({ id: ID, state: 'read', by: 'pm' })).toEqual({
+      kind: 'ok',
+      id: ID,
+      state: 'read',
+      note: null,
+      waitsFor: null,
+    })
+    expect(parseMarkInput({ id: ID, state: 'done', note: 'merged\nand shipped' })).toMatchObject({
+      note: 'merged and shipped',
+    })
+    expect(parseMarkInput({ id: ID, state: 'awaiting', waitsFor: 'pm-2000-89abcdef' })).toMatchObject({
+      waitsFor: 'pm-2000-89abcdef',
     })
   })
 })

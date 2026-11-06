@@ -181,3 +181,14 @@ export async function runInboxRead(io: InitIo, ctx: RoleContext, event: unknown)
 
   return { kind: 'result', text: inboxReadText(foldInbox(events), input.all) }
 }
+
+export async function runInboxMark(
+  _io: InitIo,
+  _host: HostIo,
+  _link: SessionLink,
+  _ctx: RoleContext,
+  _team: TeamView | null,
+  _event: unknown,
+): Promise<ToolOutcome> {
+  return { kind: 'deny', text: '' }
+}

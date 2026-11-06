@@ -146,6 +146,17 @@ export const PROMPTS = Object.freeze({
     '{count} entries marked done or rejected are not shown; call inbox_read with all: true to list them.',
   inboxAllNotBoolean: 'all must be true or false.',
   inboxUnreadable: 'Your inbox could not be read: .cadre/{id}/.runtime/inbox.jsonl is too large or not a file.',
+  // inbox_mark (messages/flow runInboxMark): its description, its result and its refusals.
+  inboxMarkDescription:
+    `cadre: mark an entry of your own inbox. state: read, awaiting (waitsFor: the id of the entry you wait for), ${
+    ''}blocked (note: what it waits on), rejected (note: the reason; it goes back up) or done (note: the outcome).`,
+  inboxMarked: 'Marked {id} {state}.',
+  inboxMarkUnknownId: 'id names no entry of your inbox: read it with inbox_read for the ids.',
+  inboxMarkState: 'state must be one of {states}.',
+  inboxMarkNoteNeeded: 'note is needed for {state}: say what it waits on, why it is rejected, or the outcome.',
+  inboxMarkNoteTooLong: 'note is over {max} characters: shorten it.',
+  inboxMarkWaitsFor: 'awaiting needs waitsFor: the id of the entry you wait for.',
+  inboxMarkFailed: 'Not marked: the mark could not be added to your inbox. Try again.',
 }) satisfies Record<string, string>
 
 /**

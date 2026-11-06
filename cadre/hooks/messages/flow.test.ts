@@ -5,7 +5,7 @@ import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { hostWorld, memHost, memIo, memWorld } from '../testkit'
 import type { HostRunRule, MemHost, MemWorld } from '../testkit'
-import { publishSession, roleContextOf, runInboxRead, runInboxSend } from './flow'
+import { publishSession, roleContextOf, runInboxMark, runInboxRead, runInboxSend } from './flow'
 import { parseInboxLine, recordLine, sessionRecordText } from './record'
 import { INBOX_LINE_MAX_BYTES } from './send'
 
@@ -239,5 +239,73 @@ describe('runInboxRead', () => {
     const io = memIo(memWorld({ unknownPaths: [BE_INBOX] }), {}).io
 
     expect(await runInboxRead(io, BE, {})).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxUnreadable, { id: 'be' }) })
+  })
+})
+
+describe('runInboxMark', () => {
+  const TL: RoleContext = { id: 'tl', root: '/repo' }
+  const fromBe: InboxEntry = {
+    v: 1,
+    type: 'entry',
+    id: 'be-1000-0123abcd',
+    at: 1000,
+    from: 'be',
+    to: 'tl',
+    kind: 'report',
+    subject: 'Done',
+    body: 'Merged',
+  }
+  const inbox = { [TL_INBOX]: recordLine(fromBe) }
+
+  /** runInboxMark as tl over tl's inbox holding the entry from be, with the clock at 2000. */
+  async function markAs(event: unknown): Promise<SendRun> {
+    const host = memHost(hostWorld({}))
+    const sends: Sent[] = []
+    const link: SessionLink = {
+      send: async (sessionId, text) => {
+        sends.push({ sessionId, text, runsBefore: host.calls.length })
+
+        return true
+      },
+    }
+    const world = memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [] }, files: inbox })
+    const outcome = await runInboxMark(memIo(world, {}).io, host.io, link, TL, TEAM, event)
+
+    return { outcome, host, sends }
+  }
+
+  test('tl marks the entry done: one mark stamped by tl appended to its own inbox, which then reads done', async () => {
+    const { outcome, host } = await markAs({ id: fromBe.id, state: 'done', note: 'merged', by: 'pm' })
+    const stdin = firstStdin(host)
+    const after = memIo(memWorld({ files: { [TL_INBOX]: `${recordLine(fromBe)}${stdin}` } }), {})
+
+    expect(host.calls.map(call => call.argv)).toEqual([TEE])
+    expect(parseInboxLine(stdin)).toEqual({
+      v: 1,
+      type: 'mark',
+      id: fromBe.id,
+      at: 2000,
+      by: 'tl',
+      state: 'done',
+      note: 'merged',
+    })
+    expect(outcome).toEqual({ kind: 'result', text: fill(PROMPTS.inboxMarked, { id: fromBe.id, state: 'done' }) })
+    expect((await runInboxRead(after.io, TL, { all: true })).text).toContain(`${fromBe.id} [done]`)
+  })
+
+  test('an unknown id, a bad state, a missing note or a missing waitsFor is refused with no run', async () => {
+    const events = [
+      { id: 'pm-1000-0123abcd', state: 'read' },
+      { id: fromBe.id, state: 'unread' },
+      { id: fromBe.id, state: 'ping' },
+      { id: fromBe.id, state: 'done' },
+      { id: fromBe.id, state: 'awaiting' },
+    ]
+    for (const event of events) {
+      const { outcome, host } = await markAs(event)
+
+      expect([outcome.kind, host.calls.length]).toEqual(['deny', 0])
+    }
+    expect((await markAs(events[0])).outcome).toEqual({ kind: 'deny', text: PROMPTS.inboxMarkUnknownId })
   })
 })

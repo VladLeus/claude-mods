@@ -33,6 +33,8 @@ export const INBOX_LINE_MAX_BYTES = 4000
 export const INBOX_READ_MAX_BYTES = 1024 * 1024
 export const INBOX_APPEND_TIMEOUT_MS = 10_000
 
+export const NOTE_MAX_CHARS = 300
+
 /** An inbox entry id: the sender, the time in epoch ms and the first 8 hex of the content's SHA-256. */
 export const ENTRY_ID_PATTERN = /^[a-z0-9-]{1,64}-\d{1,16}-[0-9a-f]{8}$/
 
@@ -92,4 +94,19 @@ export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView)
   if (typeof replyTo !== 'string' || !ENTRY_ID_PATTERN.test(replyTo)) return sendError(PROMPTS.inboxReplyToBad)
 
   return { kind: 'ok', to, kindName, subject, body, replyTo }
+}
+
+/** A mark the model asked for, checked, or why it is refused. */
+export type MarkInput =
+  | {
+      readonly kind: 'ok'
+      readonly id: string
+      readonly state: Exclude<InboxState, 'unread'>
+      readonly note: string | null
+      readonly waitsFor: string | null
+    }
+  | { readonly kind: 'error'; readonly message: string }
+
+export function parseMarkInput(_event: unknown): MarkInput {
+  return { kind: 'error', message: '' }
 }
