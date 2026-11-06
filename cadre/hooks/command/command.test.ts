@@ -1,0 +1,236 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import { parseCommand, takeSwitch, visibleText } from './command'
+import { helpText } from './usage'
+
+describe('parseCommand', () => {
+  test('empty input is the help text with no unknown input', () => {
+    expect(parseCommand('')).toEqual({ kind: 'help', unknown: null })
+  })
+
+  test('help in any case is the help text with no unknown input', () => {
+    expect(parseCommand('help')).toEqual({ kind: 'help', unknown: null })
+    expect(parseCommand('HELP')).toEqual({ kind: 'help', unknown: null })
+  })
+
+  test('detect alone is the detection without the adapter contract', () => {
+    expect(parseCommand('detect')).toEqual({ kind: 'detect', adapters: false })
+  })
+
+  test('--adapters after detect, in any case and spacing, adds the adapter contract', () => {
+    expect(parseCommand('  DETECT   --adapters ')).toEqual({ kind: 'detect', adapters: true })
+    expect(parseCommand('detect --adapters')).toEqual({ kind: 'detect', adapters: true })
+    expect(parseCommand('detect --ADAPTERS')).toEqual({ kind: 'detect', adapters: true })
+  })
+
+  test('detect followed by other words is unknown input', () => {
+    expect(parseCommand('detect foo')).toEqual({ kind: 'help', unknown: 'detect foo' })
+    expect(parseCommand('detect --adapters extra')).toEqual({ kind: 'help', unknown: 'detect --adapters extra' })
+  })
+
+  test('a repeated --adapters switch is still the detection with the adapter contract', () => {
+    expect(parseCommand('detect --adapters --adapters')).toEqual({ kind: 'detect', adapters: true })
+  })
+
+  test('init alone is the guided setup that writes', () => {
+    expect(parseCommand('init')).toEqual({ kind: 'init', dryRun: false })
+  })
+
+  test('--dry-run after init, in any case and spacing, is the dry run', () => {
+    expect(parseCommand('init --dry-run')).toEqual({ kind: 'init', dryRun: true })
+    expect(parseCommand('INIT --DRY-RUN')).toEqual({ kind: 'init', dryRun: true })
+    expect(parseCommand('  Init   --Dry-Run ')).toEqual({ kind: 'init', dryRun: true })
+  })
+
+  test('a repeated --dry-run switch is still the dry run', () => {
+    expect(parseCommand('init --dry-run --dry-run')).toEqual({ kind: 'init', dryRun: true })
+  })
+
+  test('init followed by other words or switches is unknown input', () => {
+    expect(parseCommand('init now')).toEqual({ kind: 'help', unknown: 'init now' })
+    expect(parseCommand('init --force')).toEqual({ kind: 'help', unknown: 'init --force' })
+    expect(parseCommand('init --dry-run extra')).toEqual({ kind: 'help', unknown: 'init --dry-run extra' })
+  })
+
+  test('a word that only starts with init is unknown input, not the guided setup', () => {
+    expect(parseCommand('initial')).toEqual({ kind: 'help', unknown: 'initial' })
+    expect(parseCommand('init-now')).toEqual({ kind: 'help', unknown: 'init-now' })
+  })
+
+  test('--dry-run alone, or on detect, is unknown input', () => {
+    expect(parseCommand('--dry-run')).toEqual({ kind: 'help', unknown: '--dry-run' })
+    expect(parseCommand('detect --dry-run')).toEqual({ kind: 'help', unknown: 'detect --dry-run' })
+    expect(parseCommand('init --adapters')).toEqual({ kind: 'help', unknown: 'init --adapters' })
+  })
+
+  test('regen with one role id is the regen of that role (D-68)', () => {
+    expect(parseCommand('regen be')).toEqual({ kind: 'regen', id: 'be', dryRun: false })
+    expect(parseCommand('regen a-1')).toEqual({ kind: 'regen', id: 'a-1', dryRun: false })
+  })
+
+  test('--dry-run with regen, in any case and on either side of the id, is the regen dry run', () => {
+    expect(parseCommand('regen be --dry-run')).toEqual({ kind: 'regen', id: 'be', dryRun: true })
+    expect(parseCommand('REGEN be --DRY-RUN')).toEqual({ kind: 'regen', id: 'be', dryRun: true })
+    expect(parseCommand('  Regen   --Dry-Run   be ')).toEqual({ kind: 'regen', id: 'be', dryRun: true })
+  })
+
+  test('regen without exactly one role id, or with an id that is not a slug, is unknown input (D-48)', () => {
+    const inputs = ['regen', 'regen Be', 'regen ../x', 'regen be x', 'regen --dry-run', 'regen be --force']
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    expect(parseCommand(`regen ${'a'.repeat(25)}`)).toEqual({ kind: 'help', unknown: `regen ${'a'.repeat(25)}` })
+  })
+
+  test('a word that only starts with regen is unknown input, not the regen', () => {
+    expect(parseCommand('regenerate be')).toEqual({ kind: 'help', unknown: 'regenerate be' })
+    expect(parseCommand('regen-be')).toEqual({ kind: 'help', unknown: 'regen-be' })
+  })
+
+  test('an unknown subcommand is echoed back as unknown input', () => {
+    expect(parseCommand('launch')).toEqual({ kind: 'help', unknown: 'launch' })
+  })
+
+  test('input of only invisible characters is the help text with no unknown input', () => {
+    expect(parseCommand('\u202E')).toEqual({ kind: 'help', unknown: null })
+    expect(parseCommand('\u200B')).toEqual({ kind: 'help', unknown: null })
+  })
+
+  test('a control character inside the input becomes a space', () => {
+    expect(parseCommand('foo\u0007bar')).toEqual({ kind: 'help', unknown: 'foo bar' })
+  })
+
+  test('bidi characters are stripped and the echo is capped at 40 code points', () => {
+    const command = parseCommand(`${'a'.repeat(30)}\u202E${'b'.repeat(29)}`)
+    expect(command).toEqual({ kind: 'help', unknown: `${'a'.repeat(30)}${'b'.repeat(9)}\u2026` })
+  })
+
+  test('the cap counts code points, not UTF-16 units', () => {
+    const command = parseCommand('😀'.repeat(50))
+    expect(command).toEqual({ kind: 'help', unknown: `${'😀'.repeat(39)}\u2026` })
+    const unknown = command.kind === 'help' ? (command.unknown ?? '') : ''
+    expect(Array.from(unknown).length).toBe(40)
+  })
+})
+
+describe('start grammar', () => {
+  test('start with one role id is the start of that role, with no terminal to open (LNCH-04)', () => {
+    expect(parseCommand('start be')).toEqual({ kind: 'start', id: 'be', terminal: 'none' })
+    expect(parseCommand('  START   a-1 ')).toEqual({ kind: 'start', id: 'a-1', terminal: 'none' })
+  })
+
+  test('a bare --terminal, on either side of the id, is auto (D-109)', () => {
+    expect(parseCommand('start be --terminal')).toEqual({ kind: 'start', id: 'be', terminal: 'auto' })
+    expect(parseCommand('start --terminal be')).toEqual({ kind: 'start', id: 'be', terminal: 'auto' })
+  })
+
+  test('--terminal= names terminal, iterm or tmux, in any letter case (D-109, D-126)', () => {
+    expect(parseCommand('start be --TERMINAL=iTerm')).toEqual({ kind: 'start', id: 'be', terminal: 'iterm' })
+    expect(parseCommand('start be --terminal=terminal')).toEqual({ kind: 'start', id: 'be', terminal: 'terminal' })
+    expect(parseCommand('start --terminal=TMUX be')).toEqual({ kind: 'start', id: 'be', terminal: 'tmux' })
+  })
+
+  test('any other value, an empty one, or the switch twice is invalid, and still the start (D-109)', () => {
+    const inputs = [
+      'start be --terminal=kitty',
+      'start be --terminal=',
+      'start be --terminal --terminal',
+      'start be --terminal=tmux --terminal=tmux',
+    ]
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'start', id: 'be', terminal: 'invalid' })
+  })
+
+  test('start without exactly one role id, or with an id that is not a slug, is help with the input echoed', () => {
+    const inputs = ['start', 'start Be', 'start ../x', 'start be x', 'start --terminal', 'start be --dry-run']
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    expect(parseCommand(`start ${'a'.repeat(25)}`)).toEqual({ kind: 'help', unknown: `start ${'a'.repeat(25)}` })
+  })
+
+  test('a switch or a word that only starts with --terminal or start is not one', () => {
+    expect(parseCommand('start be --terminals')).toEqual({ kind: 'help', unknown: 'start be --terminals' })
+    expect(parseCommand('starting be')).toEqual({ kind: 'help', unknown: 'starting be' })
+    expect(parseCommand('start-be')).toEqual({ kind: 'help', unknown: 'start-be' })
+    expect(parseCommand('startbe')).toEqual({ kind: 'help', unknown: 'startbe' })
+  })
+
+  test('the help without unknown input lists both start rows with what they do', () => {
+    const text = helpText(null)
+    expect(text).toContain('/cadre start <id>')
+    expect(text).toContain('/cadre start <id> --terminal')
+    expect(text).toContain("render a role's runtime files, then print and copy its launcher command")
+    expect(text).toContain('also open it in a new Terminal window, iTerm tab or tmux window (macOS)')
+  })
+})
+
+describe('status grammar', () => {
+  test('status with one role id is the status of that role, in any case of the word status (D-111)', () => {
+    expect(parseCommand('status be')).toEqual({ kind: 'status', id: 'be' })
+    expect(parseCommand('  STATUS   a-1 ')).toEqual({ kind: 'status', id: 'a-1' })
+  })
+
+  test('status without exactly one role id, or with an id that is not a slug, is help with the input echoed', () => {
+    const inputs = ['status', 'status Be', 'status be x', 'status ../x', 'status --terminal be', 'status be --dry-run']
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    expect(parseCommand(`status ${'a'.repeat(25)}`)).toEqual({ kind: 'help', unknown: `status ${'a'.repeat(25)}` })
+  })
+
+  test('a word that only starts with status is not the status', () => {
+    expect(parseCommand('statuses be')).toEqual({ kind: 'help', unknown: 'statuses be' })
+    expect(parseCommand('status-be')).toEqual({ kind: 'help', unknown: 'status-be' })
+    expect(parseCommand('statusbe')).toEqual({ kind: 'help', unknown: 'statusbe' })
+  })
+
+  test('the help without unknown input lists the status row with all five states (#63 A4)', () => {
+    const text = helpText(null)
+    expect(text).toContain('/cadre status <id>')
+    expect(text).toContain(
+      "show from disk whether a role's autopilot run is done, running, stopped, not started or unknown",
+    )
+  })
+})
+
+describe('epic grammar', () => {
+  test('epic takes its first word as the key, the rest as the title and --terminal as where roles open (D-145)', () => {
+    expect(parseCommand('epic PROJ-1 Add retry')).toEqual({
+      kind: 'epic',
+      key: 'PROJ-1',
+      title: 'Add retry',
+      terminal: 'auto',
+    })
+    expect(parseCommand('epic #123 --terminal=tmux')).toEqual({
+      kind: 'epic',
+      key: '#123',
+      title: '',
+      terminal: 'tmux',
+    })
+    expect(parseCommand('epic')).toEqual({ kind: 'help', unknown: 'epic' })
+  })
+
+  test('done as the first word after epic is the removal of that key, --force on either side (D-152)', () => {
+    expect(parseCommand('epic done PROJ-1')).toEqual({ kind: 'epic-done', key: 'PROJ-1', force: false })
+    expect(parseCommand('epic done PROJ-1 --force')).toEqual({ kind: 'epic-done', key: 'PROJ-1', force: true })
+    expect(parseCommand('EPIC Done --force PROJ-1')).toEqual({ kind: 'epic-done', key: 'PROJ-1', force: true })
+    for (const input of ['epic done', 'epic done A B']) {
+      expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    }
+    expect(parseCommand('epic PROJ-1 done')).toEqual({ kind: 'epic', key: 'PROJ-1', title: 'done', terminal: 'auto' })
+  })
+})
+
+describe('takeSwitch', () => {
+  test('a switch is taken out of the text and reported on, whatever the spacing around it', () => {
+    expect(takeSwitch(' a --dry-run', 'dry-run')).toEqual({ isOn: true, rest: 'a' })
+  })
+
+  test('text without the switch is returned trimmed and off', () => {
+    expect(takeSwitch('a', 'dry-run')).toEqual({ isOn: false, rest: 'a' })
+  })
+
+  test('a switch is a whole word, so a longer word that starts with it is left in the text', () => {
+    expect(takeSwitch('a --dry-runner', 'dry-run')).toEqual({ isOn: false, rest: 'a --dry-runner' })
+  })
+})
+
+describe('visibleText', () => {
+  test('invisible characters go, control characters become spaces and whitespace runs collapse to one space', () => {
+    expect(visibleText('a\u0007b  \u200Bc')).toBe('a b c')
+  })
+})

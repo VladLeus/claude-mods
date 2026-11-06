@@ -12,6 +12,10 @@ declare module 'claude-code/testing' {
     toBeNull(): void
     toBeUndefined(): void
     toHaveLength(length: number): void
+    toBeGreaterThan(bound: number | bigint): void
+    toBeGreaterThanOrEqual(bound: number | bigint): void
+    toBeLessThanOrEqual(bound: number | bigint): void
+    toMatchObject(expected: object): void
   }
 
   export function describe(name: string, body: () => void): void

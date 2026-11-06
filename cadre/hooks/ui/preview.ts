@@ -1,0 +1,509 @@
+/**
+ * The option preview, a layer 8 module: the open question's own context as the markdown preview of a dialog option on
+ * the terminal main screen (D3, D-203), its lines wrapped to the width of the preview box (D-231), the rewrite of an
+ * AskUserQuestion call with its previews and the Describe your own option (A1, A2, R3, R4), the previewed plan of the
+ * open question's call, which the surface modules pick (previewedPlan, WD-S2, D-353), and the answers typed as notes
+ * (A3). It imports core, the line wrap of ui/pane and the types, so the surface modules and register's
+ * AskUserQuestion hook read it here.
+ */
+import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
+import { isObject } from '../core/json'
+import { labelled } from '../core/labelled'
+import { clean } from '../core/text'
+import { NOTES_ONLY_ANSWER } from '../locales/contracts'
+import { t } from '../locales/t'
+import { UNCUT, wrapLine } from './pane'
+
+/**
+ * The most characters, by String length, the preview of a dialog option holds (D3): the engine replaces a preview
+ * over 2000 characters with a placeholder, and 1900 leaves room.
+ */
+export const MAX_PREVIEW_CHARS = 1900
+
+/** The last line of a preview that was cut (D3). */
+const CUT_LINE = '…'
+
+/** The characters a preview title escapes with a backslash, so the title draws as its own text (D3). */
+const TITLE_MARKUP = /[*_`[\]<>#\\~|]/g
+
+/** What a preview draws of one block or context (D3, D-203): its title and its lines. */
+type Previewed = Pick<ShownBlock, 'title' | 'lines'>
+
+/**
+ * The cells of the terminal's width the dialog's option column and the preview box's frame take (D-231), as the spike
+ * measured them on the main screen: the box's lines wrap at 122 cells at 160 columns and at 72 at 110.
+ */
+const PREVIEW_INSET = 38
+
+/**
+ * The columns a dialog option's preview has on the terminal main screen (D-231): the terminal's columns as the command
+ * runs (CommandPresentation) less PREVIEW_INSET; null when they are not a whole number or leave no column, as for a
+ * command run with no presentation.
+ */
+export function previewColumns(presentationColumns: unknown): number | null {
+  if (typeof presentationColumns !== 'number' || !Number.isInteger(presentationColumns)) return null
+  const columns = presentationColumns - PREVIEW_INSET
+  if (columns < 1) return null
+
+  return columns
+}
+
+/**
+ * The columns a dialog option's preview has at an ask (D-231, #163): from the newest width a terminal drawing reported
+ * since the command began (`viewportColumns`), else from the command's (`presentationColumns`), each less
+ * PREVIEW_INSET (previewColumns); null when neither leaves a column.
+ */
+export function latestColumns(viewportColumns: unknown, presentationColumns: unknown): number | null {
+  return previewColumns(viewportColumns) ?? previewColumns(presentationColumns)
+}
+
+/**
+ * The rows a dialog option's preview shows on the TUI default (D-228): the rows the spike measured on the terminal
+ * main screen at 48 rows (`rows - 26`). The engine hides a preview's rows past its box, and the terminal's rows are not
+ * known to cadre, so this is the one size every TUI-default preview is fitted to, and it stays fixed (D-263). They are
+ * drawn rows: a line the box wraps takes every row it wraps to (D-260).
+ */
+export const PREVIEW_ROWS = 22
+
+/**
+ * The rows a context fills in a TUI-default preview (D-228, D-260, WD-S3): PREVIEW_ROWS less one, counted as the box
+ * draws them, its title row and its `+N more above` marker row included and the fence rows left out; a line counts
+ * every row it wraps to at the preview's columns, each code point one column (edge #9, wide cells, stays deferred).
+ * The rows reviewPages pages the Review by too.
+ */
+export const PREVIEW_LINE_ROWS = PREVIEW_ROWS - 1
+
+/**
+ * What the TUI-default preview shows of a context (D-228): the lines it draws, and whether the context holds more lines
+ * than that, so register prints the whole context as transcript rows right above the dialog.
+ */
+export type FittedPreview = {
+  readonly lines: readonly string[]
+  readonly isOverflow: boolean
+}
+
+/**
+ * A context fitted to `rows` rows of a TUI-default preview drawn at `columns` (D-228, D-260): its title and each line
+ * count the rows they wrap to at `columns`, cleaned and wrapped as previewBlock draws them (wrapLine), one row each
+ * with no columns; the fence rows do not count, and each code point is one column (edge #9 stays deferred). Every line
+ * when the title and all the lines fit, and nothing overflows; else the longest run of whole lines from the first
+ * whose rows fit with the title rows and one marker row, then the marker, which counts the lines left out and which
+ * register prints above the dialog, and it overflows. The Review is kept whole and never overflows: it is paged
+ * instead (D-233). Rows under two leave no room for a line and the marker, so the context is kept whole.
+ */
+export function fitPreview(context: AskContext, rows: number, columns: number | null): FittedPreview {
+  const { lines } = context
+  if (context.kind === 'review' || rows < 2) return { lines, isOverflow: false }
+  const rowsOf = (text: string): number => (columns === null ? 1 : wrapLine(clean(text, UNCUT), columns).length)
+  const title = rowsOf(context.title)
+  const costs = lines.map(rowsOf)
+  if (costs.reduce((sum, cost) => sum + cost, title) <= rows) return { lines, isOverflow: false }
+  let room = rows - title - 1
+  let kept = 0
+  for (const cost of costs) {
+    if (cost > room) break
+    room -= cost
+    kept += 1
+  }
+  const marker = t('ui.preview.moreAbove', { value: lines.length - kept })
+
+  return { lines: [...lines.slice(0, kept), marker], isOverflow: true }
+}
+
+/**
+ * The transcript entries the TUI default prints right above a dialog (D-228, D-262, WD-S4): for a context too long for
+ * the preview drawn at `columns` (fitPreview at PREVIEW_LINE_ROWS, D-260), one entry per row, its title and then every
+ * line, each cleaned with no cap (T-02.1-79, T-02.2-09), so no value can add an entry or a title of its own and the
+ * full text above holds whole what the preview leaves out. Rows are never joined: the terminal stores a newline inside
+ * a `$.ui.log` text as U+FFFD and draws the rows run together (D-262 reload check, user 2026-11-04). None for a context
+ * that fits, for the Review (it is paged), for no context, and for a context with the same title and the same lines,
+ * in order, as `printed`, the one printed last, so a question asked again prints its context once.
+ */
+export function tuiTranscriptEntries(
+  context: AskContext | null,
+  printed: AskContext | null,
+  columns: number | null,
+): readonly string[] {
+  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS, columns).isOverflow) return []
+  const { title, lines } = context
+  const isPrinted =
+    printed !== null &&
+    printed.title === title &&
+    printed.lines.length === lines.length &&
+    printed.lines.every((line, at) => line === lines[at])
+  if (isPrinted) return []
+
+  return [title, ...lines].map(line => clean(line, UNCUT))
+}
+
+/** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */
+type PreviewBlock = {
+  readonly title: string
+  readonly fence: string
+  readonly lines: readonly string[]
+}
+
+/** The longest run of backticks in the lines; 0 when there is none. */
+function longestBacktickRun(lines: readonly string[]): number {
+  let longest = 0
+  for (const line of lines) {
+    for (const run of line.match(/`+/g) ?? []) longest = Math.max(longest, run.length)
+  }
+
+  return longest
+}
+
+/**
+ * One block as a preview draws it (D3): the title cleaned, with no cap, its markdown characters escaped and set in
+ * bold; each line cleaned, with no cap, then wrapped to `columns` (wrapLine, D-231), or kept whole with no columns; a
+ * fence one backtick longer than the longest run in the lines, and at least three.
+ */
+function previewBlock(block: Previewed, columns: number | null): PreviewBlock {
+  const lines = block.lines.flatMap(line => {
+    const cleaned = clean(line, UNCUT)
+
+    return columns === null ? [cleaned] : wrapLine(cleaned, columns)
+  })
+  const title = `**${clean(block.title, UNCUT).replace(TITLE_MARKUP, '\\$&')}**`
+
+  return { title, fence: '`'.repeat(Math.max(3, longestBacktickRun(lines) + 1)), lines }
+}
+
+/**
+ * The preview of blocks that do not fit whole (D3), kept up to MAX_PREVIEW_CHARS: a line goes in only while it, the
+ * closing fence of its block and a final `…` line still fit; a block's title and opening fence go in only with its
+ * first line, so no block is left with an opening fence and no line; on the cut the open fence is closed and a `…`
+ * line ends the preview.
+ */
+function cutPreview(parts: readonly PreviewBlock[]): string {
+  const out: string[] = []
+  let length = 0
+  const added = (lines: readonly string[]): number =>
+    lines.reduce((sum, line, at) => sum + (out.length === 0 && at === 0 ? 0 : 1) + line.length, 0)
+  const fits = (lines: readonly string[], fence: string): boolean =>
+    length + added(lines) + 1 + fence.length + 1 + CUT_LINE.length <= MAX_PREVIEW_CHARS
+  const push = (lines: readonly string[]): void => {
+    length += added(lines)
+    out.push(...lines)
+  }
+  for (const part of parts) {
+    const [first, ...rest] = part.lines
+    const head = [...(out.length === 0 ? [] : ['']), part.title, part.fence]
+    const opening = first === undefined ? head : [...head, first]
+    if (!fits(opening, part.fence)) break
+    push(opening)
+    for (const line of rest) {
+      if (!fits([line], part.fence)) {
+        push([part.fence, CUT_LINE])
+
+        return out.join('\n')
+      }
+      push([line])
+    }
+    push([part.fence])
+  }
+  push([CUT_LINE])
+
+  return out.join('\n')
+}
+
+/**
+ * Blocks, such as the open question's own context (D-203), as the markdown preview of a dialog option (D3), for the
+ * terminal main screen, where the engine hides the pane while a dialog is open. Per block, in the order given, its
+ * title in bold, cleaned with its markdown characters escaped, then its lines, each cleaned with its indent kept and
+ * wrapped to `columns` (previewBlock, D-231), in a fence one backtick longer than any backtick run in them and at least
+ * three: the fence keeps every scanned or typed value literal, so none can format the preview or end the fence. A
+ * blank line parts two blocks. Past MAX_PREVIEW_CHARS the preview is cut after a whole line, its open fence closed,
+ * and ends with a `…` line (cutPreview); lengths are String lengths, never fewer than the code points. No blocks give
+ * ''.
+ */
+export function previewMarkdown(blocks: readonly Previewed[], columns: number | null = null): string {
+  const parts = blocks.map(block => previewBlock(block, columns))
+  const whole = parts.flatMap((part, at) => [
+    ...(at === 0 ? [] : ['']),
+    part.title,
+    part.fence,
+    ...part.lines,
+    part.fence,
+  ])
+  const text = whole.join('\n')
+  if (text.length <= MAX_PREVIEW_CHARS) return text
+
+  return cutPreview(parts)
+}
+
+/**
+ * An AskUserQuestion question whose shape withPreviews checked (D3): an object with a string `question` and options it
+ * may rewrite.
+ */
+export type CheckedQuestion = Record<string, unknown> & {
+  readonly question: string
+  readonly options: readonly Record<string, unknown>[]
+}
+
+/** Whether a value is an AskUserQuestion option a preview may go on (D3): an object with a string `label`. */
+function isPreviewOption(value: unknown): value is Record<string, unknown> {
+  return isObject(value) && typeof value.label === 'string'
+}
+
+/**
+ * Whether a value is an AskUserQuestion question withPreviews may rewrite (D3): an object with a string `question`
+ * and one option or more, each one a preview may go on.
+ */
+function isPreviewQuestion(value: unknown): value is CheckedQuestion {
+  if (!isObject(value) || typeof value.question !== 'string') return false
+  const { options } = value
+
+  return Array.isArray(options) && options.length > 0 && options.every(isPreviewOption)
+}
+
+/**
+ * The questions of an AskUserQuestion call with `preview` on each option of each single-select question (D3, B1): the
+ * preview `previewOf` makes for that question's `header` value (undefined when it has none). A tool call's args are
+ * unknown to the plugin, so their shape is checked before any rewrite, and null means the call passes through
+ * unchanged: null for anything but a list of one question or more, each an object with a string `question` and one
+ * option or more, each an object with a string `label`, and null when every question is multi-select (`multiSelect`
+ * true). The list is new: each question and option is a copy made with a spread, a multi-select question is copied
+ * unchanged, and an option with a `preview` key of its own keeps it; the input is never changed.
+ */
+export function withPreviews(questions: unknown, previewOf: (header: unknown) => string): CheckedQuestion[] | null {
+  if (!Array.isArray(questions) || questions.length === 0 || !questions.every(isPreviewQuestion)) return null
+  if (questions.every(question => question.multiSelect === true)) return null
+
+  return questions.map(question => {
+    if (question.multiSelect === true) return { ...question }
+    const preview = previewOf(question.header)
+    const options = question.options.map(option =>
+      Object.hasOwn(option, 'preview') ? { ...option } : { ...option, preview },
+    )
+
+    return { ...question, options }
+  })
+}
+
+/**
+ * The label of the option a previewed question with room for one more option gets, so the person can give an answer
+ * of their own (A2, R3): beside a preview the engine draws no Other row, so the person picks it, or presses `n`, and
+ * types the answer in the dialog's notes.
+ */
+export const DESCRIBE_OWN_LABEL = t('ui.preview.describeOwnLabel')
+
+/** What the Describe your own option says under its label (A2): how to type an answer of one's own. */
+export const DESCRIBE_OWN_DESCRIPTION = t('ui.preview.describeOwnDescription')
+
+/**
+ * The last line of every previewed single-select question (R3), with or without room for the Describe your own
+ * option: how to type an answer of one's own.
+ */
+export const OWN_ANSWER_HINT = t('ui.preview.ownAnswerHint')
+
+/**
+ * The words a question uses for an answer typed in the engine's Other row (R4): beside a preview the engine draws no
+ * Other row, so a previewed question says NOTE_WORDING in their place.
+ */
+export const OTHER_WORDING = t('ui.preview.otherWording')
+
+/**
+ * What a previewed question says in place of OTHER_WORDING (R4): beside a preview the engine draws no Other row, and
+ * the notes field, opened with n, is where a typed answer goes.
+ */
+export const NOTE_WORDING = t('ui.preview.noteWording')
+
+/** The most options an AskUserQuestion question may have: the tool's schema allows 2 to 4 (A2). */
+export const MAX_DIALOG_OPTIONS = 4
+
+/**
+ * A previewed single-select question (A2, R3, R4, D-234), since the engine draws no Other row beside a preview: its
+ * text has every OTHER_WORDING replaced by NOTE_WORDING. Only a question whose spec takes a typed answer
+ * (`acceptsTyped`, D-234) also ends with the line OWN_ANSWER_HINT, added unless the replaced text already ends with
+ * it, and with fewer than MAX_DIALOG_OPTIONS options gets one last option, DESCRIBE_OWN_LABEL with
+ * DESCRIBE_OWN_DESCRIPTION and the given preview; a question that takes none, such as Roles with its own describe
+ * option or a yes/no consent, keeps its options and gets no hint. The result is a new object; the question it is
+ * given is never changed.
+ */
+export function withDescribeOwn(question: CheckedQuestion, preview: string, acceptsTyped: boolean): CheckedQuestion {
+  const replaced = question.question.replaceAll(OTHER_WORDING, NOTE_WORDING)
+  if (!acceptsTyped) return { ...question, question: replaced }
+  const text = replaced.endsWith(OWN_ANSWER_HINT) ? replaced : `${replaced}\n${OWN_ANSWER_HINT}`
+  if (question.options.length >= MAX_DIALOG_OPTIONS) return { ...question, question: text }
+  const own = { label: DESCRIBE_OWN_LABEL, description: DESCRIBE_OWN_DESCRIPTION, preview }
+
+  return { ...question, question: text, options: [...question.options, own] }
+}
+
+/**
+ * One question askRewrite rewrote (A3, D-270): `question`, its text as the caller asked it, `asked`, the text the
+ * dialog shows, which the dialog's answers and annotations are keyed by, `labels`, the labels of the options it was
+ * asked with, `takesNote`, whether a note typed in its dialog is its answer (the open question's takesNote), and
+ * `endingLabels`, the labels whose pick stands over any typed note (the open question's endingLabels, D-350).
+ */
+export type AskedQuestion = {
+  readonly question: string
+  readonly asked: string
+  readonly labels: readonly string[]
+  readonly takesNote: boolean
+  readonly endingLabels?: readonly string[]
+}
+
+/** The rewrite of an AskUserQuestion call (A1, A2): the questions the dialog shows, and each question it rewrote. */
+export type AskRewrite = {
+  readonly questions: Record<string, unknown>[]
+  readonly asked: readonly AskedQuestion[]
+}
+
+/**
+ * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
+ * D3, R3, R4); null, so the call passes through unchanged and the dialog keeps its Other row, when the open question
+ * has no context of its own (D-203) or withPreviews does not rewrite the questions. Each option of each single-select
+ * question gets the preview of the open question's own context, its lines wrapped to `columns` (previewMarkdown,
+ * D-203, D-231), whatever its header, and each such question then gets NOTE_WORDING for every OTHER_WORDING in its
+ * text (R4) and, when the open question takes a typed answer (`acceptsTyped`, D-234), the hint line as its last line
+ * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
+ * that pairs its text as asked with the text the dialog shows (A3), with the labels of its options as asked and
+ * `takesNote`, whether a note typed in it is its answer (D-270); a multi-select question is copied unchanged,
+ * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context fitted to
+ * them at `columns` (fitPreview, D-228, D-260); with none it shows every line.
+ */
+export function askRewrite(
+  questions: unknown,
+  context: AskContext | null,
+  acceptsTyped: boolean,
+  takesNote: boolean,
+  columns: number | null = null,
+  rows: number | null = null,
+): AskRewrite | null {
+  if (context === null) return null
+  const shown = rows === null ? context : { ...context, lines: fitPreview(context, rows, columns).lines }
+  const preview = previewMarkdown([shown], columns)
+  const previewed = withPreviews(questions, () => preview)
+  if (previewed === null) return null
+  const pairs = previewed.map(question => {
+    const shown = question.multiSelect === true ? null : withDescribeOwn(question, preview, acceptsTyped)
+
+    return { question, shown }
+  })
+  const asked = pairs.flatMap(({ question, shown }): AskedQuestion[] => {
+    if (shown === null) return []
+    const labels = question.options.flatMap(option => (typeof option.label === 'string' ? [option.label] : []))
+
+    return [{ question: question.question, asked: shown.question, labels, takesNote }]
+  })
+
+  return { questions: pairs.map(({ question, shown }) => shown ?? question), asked }
+}
+
+/**
+ * The dialog register's AskUserQuestion hook gives the open question (WD-S2): the questions it shows, null to pass
+ * them as asked, and the questions whose notes become the answer.
+ */
+export type DialogPlan = {
+  readonly questions: Record<string, unknown>[] | null
+  readonly notes: readonly AskedQuestion[]
+}
+
+/**
+ * Whether an AskUserQuestion call asks the question cadre has open (D-239): its first question, by its exact text, is
+ * the open question. Any other call, the model's own or another plugin's, during a run or after it, does not.
+ */
+export function isOpenAsked(raw: unknown, open: OpenQuestion): boolean {
+  const first: unknown = Array.isArray(raw) ? raw[0] : undefined
+  const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
+
+  return asked === open.question
+}
+
+/**
+ * The previewed dialog of the open question's call (WD-S2), which both the TUI default, where no pane opens (D-208),
+ * with `rows` PREVIEW_LINE_ROWS, and a pane seated inline, which the engine hides behind a dialog, with no `rows`, give
+ * it (D3, D-203, D-228, D-234, A3, D-270, D-350, D-353); null, so the call and its result pass through untouched,
+ * unless the call asks the open question (isOpenAsked, D-239) and the open question has a context of its own. Each
+ * single-select question gets that context as the preview of every option (D-203), wrapped to `columns` (D-231) and,
+ * given `rows`, fitted to them (D-228, WD-S3), and, when it takes a typed answer (D-234), a Describe your own option or
+ * the hint line (A2); its notes are the questions the rewrite paired, so notes typed in the dialog become the answer
+ * under the question's text as asked (A3), each carrying the open question's endingLabels (D-350). A question with no
+ * context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included: null.
+ */
+export function previewedPlan(
+  raw: unknown,
+  open: OpenQuestion,
+  columns: number | null,
+  rows: number | null,
+): DialogPlan | null {
+  if (!isOpenAsked(raw, open)) return null
+  const rewrite = askRewrite(raw, open.context, open.acceptsTyped, open.takesNote, columns, rows)
+  if (rewrite === null) return null
+  const ending = open.endingLabels === undefined ? {} : { endingLabels: open.endingLabels }
+
+  return { questions: rewrite.questions, notes: rewrite.asked.map(entry => ({ ...entry, ...ending })) }
+}
+
+/** Whether a value is the answers of an AskUserQuestion result (A3): an object, not an array, of strings only. */
+function isAnswers(value: unknown): value is Record<string, string> {
+  return isObject(value) && Object.values(value).every(answer => typeof answer === 'string')
+}
+
+/**
+ * The notes typed in a dialog for one question (A3), trimmed: the string `notes` of the annotation under the text the
+ * dialog showed, read as an own key only; '' when there is none.
+ */
+function typedNotes(annotations: Record<string, unknown> | undefined, asked: string): string {
+  if (annotations === undefined || !Object.hasOwn(annotations, asked)) return ''
+  const annotation = annotations[asked]
+  if (!isObject(annotation) || typeof annotation.notes !== 'string') return ''
+
+  return annotation.notes.trim()
+}
+
+/**
+ * What one previewed question answers (A3, D-270, edges #6, #14): a picked option that ends the question
+ * (`entry.endingLabels`, D-350) stands, whatever note was typed, one naming another option included; else typed notes
+ * that name one of its option labels, trimmed and in any case (labelled), give that label; other typed notes are the
+ * answer only on a question that takes a note (`entry.takesNote`), and are ignored on any other, so the chosen answer
+ * stands; else a `(notes only)` answer whose note is not taken gives '', which the stage refuses and asks again
+ * (NOTES_ONLY_ANSWER, RF-01, Q12); else '' for DESCRIBE_OWN_LABEL picked with nothing typed, else the answer as
+ * chosen; undefined when there is neither an answer nor notes that count. A note never silently replaces the option
+ * chosen on a question that takes none.
+ */
+function ownAnswer(notes: string, answer: string | undefined, entry: AskedQuestion): string | undefined {
+  const ending = entry.endingLabels ?? []
+  if (answer !== undefined && ending.includes(answer)) return answer
+  const label = labelled(entry.labels.map(text => ({ label: text, value: text })), notes)
+  if (label !== null) return label
+  if (notes !== '' && entry.takesNote) return notes
+  if (answer === NOTES_ONLY_ANSWER) return ''
+  if (answer === DESCRIBE_OWN_LABEL) return ''
+
+  return answer
+}
+
+/**
+ * The answers of an AskUserQuestion result after a dialog askRewrite rewrote (A3), or null to leave the result as it
+ * is. $.ui.ask resolves to the answer under the question's text as asked and reads no notes, so for each question in
+ * `asked` (ownAnswer, D-270, edges #6, #14): an option that ends the question picked (endingLabels: Cancel init,
+ * Confirm, D-350) stands whatever was typed; else notes typed in the dialog, trimmed and not empty, that name one of
+ * its option labels in any case answer that label; other notes become its answer only when it takes a note
+ * (`takesNote`: it takes a typed answer, or it is the Launch folder or the Review question) and are ignored on any
+ * other question, so the option chosen there stands; else a `(notes only)` answer whose note is not taken becomes ''
+ * (NOTES_ONLY_ANSWER, RF-01, Q12), and so does DESCRIBE_OWN_LABEL, which cadre's own parsers refuse and ask again;
+ * else the answer is kept. That answer
+ * is stored under the question's text as asked, and the key of the text the dialog showed is dropped, so $.ui.ask
+ * resolves to it as it does to an answer typed under Other. Every other answer is kept as is. The result is untrusted:
+ * null unless it is an object whose `answers` is an object of strings and whose `annotations` is absent or an object.
+ * Keys are read as own keys only, and the result is never changed.
+ */
+export function answersFromNotes(asked: readonly AskedQuestion[], result: unknown): Record<string, string> | null {
+  if (!isObject(result)) return null
+  const { answers, annotations } = result
+  if (!isAnswers(answers)) return null
+  if (annotations !== undefined && !isObject(annotations)) return null
+  const out = new Map(Object.entries(answers))
+  for (const entry of asked) {
+    const answer = Object.hasOwn(answers, entry.asked) ? answers[entry.asked] : undefined
+    const value = ownAnswer(typedNotes(annotations, entry.asked), answer, entry)
+    if (value === undefined) continue
+    if (entry.asked !== entry.question) out.delete(entry.asked)
+    out.set(entry.question, value)
+  }
+
+  return Object.fromEntries(out)
+}

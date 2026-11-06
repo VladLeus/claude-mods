@@ -12,7 +12,8 @@
     "noFallthroughCasesInSwitch": true,
     "types": []
   },
-  "include": ["hooks/*.ts", "types/*.d.ts"],
+  // tdd-evidence/register-typecheck.sh type-checks register.tsx on an engine stub: typecheck:cadre has no engine types.
+  "include": ["hooks/**/*.ts", "types/**/*.d.ts"],
   // register.test.ts drives register.tsx through the engine host API, so it only type-checks against the engine's
   // generated types. Its behaviour stays covered by `claude plugin test cadre`.
   "exclude": ["hooks/register.test.ts"]

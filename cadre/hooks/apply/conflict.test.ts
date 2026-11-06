@@ -1,0 +1,55 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import { lineDiff } from '../ui/diff'
+import { conflictContext } from './conflict'
+
+/** One untitled section holding each line as one plain row, as a conflict context's rows are (D-313). */
+function plainRows(lines: readonly string[]): unknown {
+  return [{ title: null, rows: lines.map(text => ({ role: 'plain', text, indent: 0 })) }]
+}
+
+describe('conflict question context (D-236)', () => {
+  test("a conflict question carries the diff of that file: Take new's line counts, then the changed lines", () => {
+    const lines = ['Take new: 2 lines added, 1 removed', '- edited by hand', '+ new text', '+ more']
+    expect(conflictContext('.cadre/be/ROLE.md', lineDiff('edited by hand\n', 'new text\nmore\n'))).toEqual({
+      title: 'Conflict: .cadre/be/ROLE.md',
+      lines,
+      kind: 'conflict-diff',
+      summary: 'Take new: 2 lines added, 1 removed',
+      rows: plainRows(lines),
+    })
+  })
+
+  test('a secret-like span of a changed line is hidden in the shown diff only; counts and diff stay (E1)', () => {
+    const mine = '{\n  "env": {\n    "API_KEY": "sk-FAKE-SECRET-0123456789"\n  }\n}\n'
+    const diff = lineDiff(mine, '{\n  "env": {}\n}\n')
+    expect(conflictContext('.cadre/be/.claude/settings.json', diff).lines).toEqual([
+      'Take new: 1 line added, 3 removed',
+      '-   "env": {',
+      '-     "API_KEY": [hidden]',
+      '-   }',
+      '+   "env": {}',
+    ])
+    expect(diff.rows.map(row => row.line)).toContain('    "API_KEY": "sk-FAKE-SECRET-0123456789"')
+  })
+
+  test('a secret-like span across the 240 cut of a changed line is hidden, not shown as a prefix (PR-S1)', () => {
+    const words = 'word '.repeat(46)
+    const line = `${words}${'a1b2c3d4e5'.repeat(4)}`
+    expect(conflictContext('.cadre/be/ROLE.md', lineDiff(`${line}\n`, '')).lines).toEqual([
+      'Take new: 0 lines added, 1 removed',
+      `- ${words}[hidden]`,
+    ])
+  })
+
+  test('a file cadre could not read says so; the path is cleaned (T-02.1-71)', () => {
+    const bidi = String.fromCodePoint(0x202e)
+    expect(conflictContext(`.cadre/be/RO${bidi}LE.md`, null)).toEqual({
+      title: 'Conflict: .cadre/be/ROLE.md',
+      lines: ['Your version could not be read, so no diff is shown.'],
+      kind: 'conflict-diff',
+      summary: 'Your version could not be read, so no diff is shown.',
+      rows: plainRows(['Your version could not be read, so no diff is shown.']),
+    })
+  })
+})

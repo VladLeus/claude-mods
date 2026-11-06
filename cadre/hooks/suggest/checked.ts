@@ -1,0 +1,102 @@
+/**
+ * The checked model call, a layer 7 module: one model call with its retries, and the reply-check helpers every
+ * suggest/ module shares (D-46, D-83; 02-GAPS-B2 S7). It imports core and the types, so init and the suggest/ modules
+ * call the model here.
+ */
+import type { InitIo, RoleSpec } from '../../types'
+import { cappedErrors } from '../core/reply'
+import { idLabel } from '../core/text'
+import { PROMPTS } from '../locales/prompts'
+import { fill } from '../locales/t'
+
+/** The most model calls one description gets: the first try and two retries with the exact errors (D-46, D-83). */
+export const MAX_PROPOSE_ATTEMPTS = 3
+
+/** The error the next prompt and the fallback line give when the model answered with no text. */
+const NO_TEXT_ERROR = PROMPTS.noTextError
+
+/**
+ * The loader of one long step (D-301): its label, the `init.status.*` text the status line and the pane show, and a
+ * one-line summary of what the step works on, null when it has none; the TUI default shows the label only.
+ */
+export type StepProgress = {
+  readonly label: string
+  readonly summary: string | null
+}
+
+/** A model reply as a reply check of checkedCompletion takes it: the value it gives, or every error found. */
+export type Checked<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | { readonly kind: 'invalid'; readonly errors: readonly string[] }
+
+/**
+ * One model call with its retries (D-83; 02-GAPS-B2 S7: one home for the four of init): each attempt first sets
+ * `step` as the loader, its label and its summary, the same on a retry (InitIo.progress, D-232, D-301), then each
+ * reply goes through `parse`, and a reply it cannot take, or no text at all (NO_TEXT_ERROR), is sent back through
+ * `prompt` with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all. Then it gives `fallback` of the last errors.
+ */
+export async function checkedCompletion<T>(
+  io: InitIo,
+  step: StepProgress,
+  system: string,
+  prompt: (errors: readonly string[]) => string,
+  parse: (reply: string) => Checked<T>,
+  fallback: (errors: readonly string[]) => T,
+): Promise<T> {
+  let errors: readonly string[] = []
+  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
+    await io.progress(step.label, step.summary ?? undefined)
+    const reply = await io.complete(prompt(errors), system)
+    const checked = reply === null ? null : parse(reply)
+    if (checked?.kind === 'ok') return checked.value
+    errors = checked === null ? [NO_TEXT_ERROR] : checked.errors
+  }
+
+  return fallback(errors)
+}
+
+/** The error every reply check gives a model reply that is not JSON. */
+export const NOT_JSON_ERROR = PROMPTS.notJsonError
+
+/** A failed reply check with its errors, capped as every reply check caps them (cappedErrors). */
+export function invalidReply(
+  errors: readonly string[],
+): { readonly kind: 'invalid'; readonly errors: readonly string[] } {
+  return { kind: 'invalid', errors: cappedErrors(errors, PROMPTS.moreErrors) }
+}
+
+/** The line that introduces the roles in the skills and the recommendation prompts. */
+export const ROLES_INTRO = PROMPTS.rolesIntro
+
+/** One role as every suggest/ prompt lists it: `<id> | <title> | <purpose>` (PROMPTS.roleRow). */
+export function roleRowText(role: Pick<RoleSpec, 'id' | 'title' | 'purpose'>): string {
+  return fill(PROMPTS.roleRow, { id: role.id, title: role.title, purpose: role.purpose })
+}
+
+/**
+ * One role map of a model reply, whose keys are `kind` ids (skill, topic or memory) and whose values list role ids:
+ * the errors of its entries (an unknown id, a value that is no list, an unknown role), and the roles it gives each
+ * id, once each and in role order; an id it leaves out gets none.
+ */
+export function roleMapOf(
+  kind: string,
+  named: Readonly<Record<string, unknown>>,
+  ids: readonly string[],
+  roleIds: readonly string[],
+): { readonly errors: readonly string[]; readonly roles: readonly [string, readonly string[]][] } {
+  const errors = Object.entries(named).flatMap(([key, value]) => {
+    if (!ids.includes(key)) return [fill(PROMPTS.unknownKind, { kind, id: idLabel(key) })]
+    if (!Array.isArray(value)) return [fill(PROMPTS.notRoleList, { kind, key })]
+    const unknown = value.filter((id: unknown) => typeof id !== 'string' || !roleIds.includes(id))
+
+    return unknown.map((id: unknown) => fill(PROMPTS.unknownRole, { kind, key, id: idLabel(id) }))
+  })
+  const roles = ids.map((id): [string, readonly string[]] => {
+    const value: unknown = Object.hasOwn(named, id) ? named[id] : []
+    const listed: readonly unknown[] = Array.isArray(value) ? value : []
+
+    return [id, roleIds.filter(role => listed.includes(role))]
+  })
+
+  return { errors, roles }
+}

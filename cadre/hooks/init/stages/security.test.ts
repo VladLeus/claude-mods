@@ -1,0 +1,205 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import { PLUGIN_RUN_TIMEOUT_MS } from '../../apply/run'
+import { recommend } from '../../roles/recommend'
+import { resolvedFramework } from '../../team'
+import {
+  BIDI_OVERRIDE,
+  driven,
+  emptySetupScan,
+  GUIDANCE_KEY,
+  SECURITY_KEY,
+  SECURITY_KEYS,
+  stateAt,
+  templateRole,
+  wholeDraft,
+} from '../../testkit'
+import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { securityContext } from '../../ui/blocks/context'
+import { recommendationLines } from '../../ui/blocks/recommendations'
+import type { Draft } from '../draft'
+import { cancelledReply } from '../replies'
+import type { InitState } from '../state'
+import {
+  INSTALL_OPTIONS,
+  SECURITY_INSTALL_CONTEXT,
+  SECURITY_INSTALL_DISMISSED_REASON,
+  SECURITY_INSTALL_PREFIX,
+  securityInstallQuestion,
+  securityStage,
+  withSecuritySkill,
+} from './security'
+
+/** PM, Team Lead and Security on the built-in default, with no security plugin installed. */
+const DRAFT = wholeDraft()
+
+/** The security stage entered with `draft`. */
+function securityAt(draft: Draft = DRAFT): InitState {
+  return securityStage.enter(stateAt('security', draft))
+}
+
+/**
+ * The recommendations of `draft`'s team, as the stage folds them first into the context of its question (ROLE-03,
+ * D-302).
+ */
+function recommendationsOf(draft: Draft): unknown {
+  const { roles, gathered } = draft
+  const frameworks = roles.map(role => resolvedFramework(role, draft.repoDefault))
+  const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
+
+  return { kind: 'fold', title: 'Recommendations', lines: recommendationLines(recommendations, roles) }
+}
+
+describe('security plugin installs (decision #39)', () => {
+  test('the question start, its two answers, its cancel reason and the install timeout are fixed', () => {
+    expect(SECURITY_INSTALL_PREFIX).toBe('Install from claude-plugins-official after you confirm the plan:')
+    expect(INSTALL_OPTIONS).toEqual(['Install', 'Not now'])
+    expect(Object.isFrozen(INSTALL_OPTIONS)).toBe(true)
+    expect(SECURITY_INSTALL_DISMISSED_REASON).toBe('The security plugins question was dismissed or not answered.')
+    expect(PLUGIN_RUN_TIMEOUT_MS).toBe(180_000)
+  })
+
+  test('the question names each missing plugin, then gives one note for each', () => {
+    const start = 'Install from claude-plugins-official after you confirm the plan:'
+    const securityNote =
+      'claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and ' +
+      'writes CLAUDE-SECURITY-<time>/ report folders into the repo.'
+    const guidanceNote = 'security-guidance adds hooks that warn about risky edits.'
+    expect(securityInstallQuestion(SECURITY_KEYS)).toBe(
+      `${start} claude-security and security-guidance? ${securityNote} ${guidanceNote}`,
+    )
+    expect(securityInstallQuestion([SECURITY_KEY])).toBe(`${start} claude-security? ${securityNote}`)
+    expect(securityInstallQuestion([GUIDANCE_KEY])).toBe(`${start} security-guidance? ${guidanceNote}`)
+  })
+
+  test('the step asks nothing with no plugin missing; Install gives the keys, Not now none, in any case', () => {
+    const setup = emptySetupScan({ installedPlugins: SECURITY_KEYS })
+    const quiet = driven(securityAt(wholeDraft({ gathered: { ...DRAFT.gathered, setup } })), [])
+    expect([quiet.asked, quiet.state.draft.pluginInstalls]).toEqual([[], []])
+    const cases: readonly (readonly [string, readonly string[]])[] = [
+      ['Install', SECURITY_KEYS],
+      [' install ', SECURITY_KEYS],
+      ['Not now', []],
+      ['NOT NOW', []],
+    ]
+    for (const [answer, value] of cases) {
+      const run = driven(securityAt(), [answer])
+      expect([answer, run.state.draft.pluginInstalls]).toEqual([answer, value])
+      expect(run.asked).toEqual([withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)])
+      expect(run.specs).toEqual([{ options: ['Install', 'Not now'], header: 'Security', context: PLUGINS_CONTEXT }])
+    }
+  })
+
+  test('a dismissal, or three answers that are neither, cancels the step with its reason (A1, D-45)', () => {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [[], 'The security plugins question was dismissed or not answered.'],
+      [['yes', 'later', 'Install them'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
+      const run = driven(securityAt(), answers)
+      expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
+      expect(run.asked).toHaveLength(answers.length === 0 ? 1 : MAX_ASKS)
+      expect(run.outputs).toEqual([recommendationsOf(DRAFT)])
+    }
+    const refused = driven(securityAt(), ['yes', 'Install'])
+    const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
+    expect(refused.asked).toEqual([question, `'yes' isn't one of: "Install", "Not now".\n${question}`])
+  })
+
+  test('withSecuritySkill gives the skill once to each role standing for Security, or takes it away', () => {
+    const skill = 'claude-security:claude-security'
+    const appsec = templateRole('qa', { id: 'appsec', basedOn: 'security', skills: ['codex:rescue'] })
+    const roles = [templateRole('pm', { skills: [skill] }), templateRole('security'), appsec]
+    const before = JSON.stringify(roles)
+    const given = withSecuritySkill(roles, true)
+    expect(given.map(role => [role.id, role.skills])).toEqual([
+      ['pm', [skill]],
+      ['security', [skill]],
+      ['appsec', ['codex:rescue', skill]],
+    ])
+    expect(withSecuritySkill(given, true)).toEqual(given)
+    expect(withSecuritySkill(given, false).map(role => [role.id, role.skills])).toEqual([
+      ['pm', [skill]],
+      ['security', []],
+      ['appsec', ['codex:rescue']],
+    ])
+    expect(given[0]).toEqual(roles[0])
+    expect(JSON.stringify(roles)).toBe(before)
+  })
+})
+
+/** The lines of the security plugins question's own context when both plugins are missing (D-236). */
+const PLUGINS_LINES = [
+  `${SECURITY_KEY}: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 ` +
+    'or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
+  `${GUIDANCE_KEY}: security-guidance adds hooks that warn about risky edits.`,
+]
+
+/** The security plugins question as a pane surface asks it: no plugin name or note, the pane lists them (D-283). */
+const PANE_QUESTION = 'Install from claude-plugins-official after you confirm the plan: the missing security plugins?'
+
+/**
+ * The security plugins question's own context for the missing `keys`, their `lines` and its `summary` (D-236, D-310):
+ * a pane surface asks PANE_QUESTION with that summary in place of SECURITY_INSTALL_CONTEXT (D-283, D-310).
+ */
+function pluginsContext(keys: readonly string[], lines: readonly string[], summary: string): unknown {
+  const question = securityInstallQuestion(keys)
+  const asked = withContext(question, SECURITY_INSTALL_CONTEXT)
+  const pane = { asked, text: withContext(PANE_QUESTION, summary) }
+
+  return { title: 'Security plugins', lines, kind: 'security', summary, pane, rows: securityContext(keys).rows }
+}
+
+/** The security plugins question's own context when both plugins are missing (D-236, D-310). */
+const PLUGINS_CONTEXT = pluginsContext(
+  SECURITY_KEYS,
+  PLUGINS_LINES,
+  '2 plugins to install: claude-security, security-guidance',
+)
+
+describe('security plugin review fixes (#69)', () => {
+  test('the question shows each plugin name cleaned, as every printed key is (B7)', () => {
+    expect(securityInstallQuestion([`x${BIDI_OVERRIDE}\ny@m`])).toBe(`${SECURITY_INSTALL_PREFIX} xy? `)
+  })
+})
+
+describe('the security stage (D-230)', () => {
+  test('securityStage folds the recommendations into the plugins question; the open question is that ask', () => {
+    const state = securityAt()
+    const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
+    const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Security', context: PLUGINS_CONTEXT } }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+    expect(state.outputs).toEqual([recommendationsOf(DRAFT)])
+  })
+
+  test('the plugins question carries only the missing plugins with what each does (D-236)', () => {
+    const setup = emptySetupScan({ installedPlugins: [SECURITY_KEY] })
+    const state = securityAt(wholeDraft({ ...DRAFT, gathered: { ...DRAFT.gathered, setup } }))
+    const summary = '1 plugin to install: security-guidance'
+    expect(state.openQuestion?.spec.context).toEqual(pluginsContext([GUIDANCE_KEY], PLUGINS_LINES.slice(1), summary))
+  })
+
+  test('with no plugin missing it asks nothing, installs nothing and folds nothing: the Review lists them', () => {
+    const setup = emptySetupScan({ installedPlugins: SECURITY_KEYS })
+    const installed = wholeDraft({ gathered: { ...DRAFT.gathered, setup }, pluginInstalls: [GUIDANCE_KEY] })
+    const state = securityAt(installed)
+    expect([state.sub, state.openQuestion, state.draft.pluginInstalls]).toEqual([{ kind: 'done' }, null, []])
+    expect(state.draft.roles).toEqual(installed.roles)
+    expect(state.outputs).toEqual([])
+  })
+
+  test('Install gives the keys and the Security role its review skill; Not now none, and takes the skill away', () => {
+    const skill = 'claude-security:claude-security'
+    const cases: readonly (readonly [string, readonly string[], readonly string[]])[] = [
+      ['Install', SECURITY_KEYS, [skill]],
+      ['Not now', [], []],
+    ]
+    for (const [answer, installs, skills] of cases) {
+      const run = driven(securityAt(), [answer])
+      expect([answer, run.state.draft.pluginInstalls]).toEqual([answer, installs])
+      const security = run.state.draft.roles?.find(role => role.id === 'security')
+      expect([answer, security?.skills.filter(name => name === skill)]).toEqual([answer, skills])
+    }
+  })
+})

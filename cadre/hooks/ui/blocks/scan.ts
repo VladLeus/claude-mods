@@ -1,0 +1,194 @@
+/**
+ * The scan summary block, a layer 8 module: the side-pane lines of the repo scan and the user setup, with the partial
+ * lines of a walk that listed a folder only in part or stopped at its safety cap (SCAN-01, SCAN-02, D-133, D-137), and
+ * the structured rows the pane draws for them (D-313), the context line of the history question (G-02-1) and the scan
+ * warning lines. It imports scan, core and the types, so init reads it here.
+ */
+import type { ContextRow, RepoScan, ScanKind, SetupScan } from '../../../types'
+import { cardList, idsOrNone, shown } from '../../core/text'
+import type { ListWords } from '../../core/text'
+import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
+import { screenPath } from '../../paths'
+import { undecidedFacts } from '../../scan/repo'
+import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from '../../scan/walk'
+
+/** How a partial line names a walk that stopped at its overall safety cap (D-137). */
+const SAFETY_CAP_TEXT = t('ui.scan.safetyCap', { toLocaleString: MAX_SCAN_ENTRIES.toLocaleString('en-US') })
+
+/**
+ * How a partial line ends when the safety cap stopped the walk and no fact is missing: the walk did not reach
+ * everything, so nothing is called all found (D-137, batch-1 review N7).
+ */
+const STOPPED_EARLY_TEXT = t('ui.scan.stoppedEarly')
+
+/**
+ * What a partial line says the scan found (D-137): the facts that may be incomplete; with none, STOPPED_EARLY_TEXT
+ * when the safety cap stopped the walk (batch-1 review N7), else that all were found.
+ */
+function partialFactsText(repo: RepoScan): string {
+  const facts = undecidedFacts(repo)
+  if (facts.length > 0) return t('ui.scan.mayBeIncomplete', { facts: facts.join(', ') })
+  if (repo.isOverallCapped) return STOPPED_EARLY_TEXT
+
+  return t('ui.scan.allFound')
+}
+
+/** The partial line for the deeper folders listed only in part (D-137); null when no folder was capped. */
+function folderCapLine(repo: RepoScan): string | null {
+  const count = repo.cappedFolders.length
+  if (count === 0) return null
+  const listed = tn('ui.scan.folderCap', count, { count, max: MAX_FOLDER_ENTRIES })
+
+  return t('ui.scan.partialFolders', { listed, partialFacts: partialFactsText(repo) })
+}
+
+/**
+ * The summary line of a scan that did not list everything (G-02-1e, D-137). A walk that stopped at the safety cap is
+ * named first, in place of the folder wording: `  partial: the scan stopped at the 20,000-entry safety cap; ...`.
+ * Else, with deeper folders listed only in part: `  partial: <n> deeper folder(s) listed only in part (the first 200
+ * entries each); ...`. Either way the line ends with the facts that may be incomplete (undecidedFacts); with none, a
+ * walk the safety cap stopped ends with STOPPED_EARLY_TEXT and any other with `stack, tests and E2E were all found`
+ * (batch-1 review N7). Null when nothing was capped.
+ */
+export function truncatedLine(repo: RepoScan): string | null {
+  if (repo.isOverallCapped) return t('ui.scan.partialCap', {
+    safetyCapText: SAFETY_CAP_TEXT,
+    partialFacts: partialFactsText(repo),
+  })
+
+  return folderCapLine(repo)
+}
+
+/**
+ * The partial lines of the scan summary (D-137): truncatedLine, then, when the safety cap stopped a walk that had also
+ * listed deeper folders only in part, the folder line after it.
+ */
+function partialLines(repo: RepoScan): string[] {
+  const first = truncatedLine(repo)
+  if (first === null) return []
+  const folders = repo.isOverallCapped ? folderCapLine(repo) : null
+
+  return folders === null ? [first] : [first, folders]
+}
+
+/** The labels of the repo findings of one kind, in scan order, or `none`. */
+function findingLabels(repo: RepoScan, kind: ScanKind): string {
+  const labels = repo.findings.filter(finding => finding.kind === kind).map(finding => finding.label)
+
+  return idsOrNone(labels, SCREEN_LIST_WORDS.none)
+}
+
+/** What an earlier run left in `.cadre/`: `none`, or the folder's state with the state of its manifest. */
+function cadreSummary(cadre: RepoScan['cadre']): string {
+  if (cadre.dir === 'absent') return t('ui.scan.none')
+
+  return t('ui.scan.cadreSummary', { dir: cadre.dir, manifestState: cadre.manifestState })
+}
+
+/** The plugin count, with their names listed as `words` lists names when there are any (D-256). */
+function pluginSummary(plugins: readonly string[], words: ListWords): string {
+  if (plugins.length === 0) return '0'
+
+  const map = cardList(plugins.map(plugin => shown(plugin)), words)
+
+  return t('ui.scan.pluginSummary', { count: plugins.length, map })
+}
+
+/** One line of the scan summary and the structured row the pane draws for it (D-313, D-323), from the same values. */
+type SummaryPart = {
+  readonly line: string
+  readonly row: ContextRow
+}
+
+/** A heading line of the scan summary: drawn as a heading row (D-313). */
+function headingPart(line: string): SummaryPart {
+  return { line, row: { role: 'heading', text: line, indent: 0 } }
+}
+
+/**
+ * A line of the scan summary that holds more than one field, or text around its fields: one plain row holding the
+ * whole line, its indent kept in its text (D-313).
+ */
+function plainPart(line: string): SummaryPart {
+  return { line, row: { role: 'plain', text: line, indent: 0 } }
+}
+
+/**
+ * The scans as init shows them in the side pane before any role question (SCAN-01, SCAN-02, D-133): the repo part
+ * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and the partial lines when the walk listed a deeper
+ * folder only in part or stopped at its safety cap, D-137), then the user setup as names and counts only. Each setup
+ * line gives its counts first and its name list last, and a list shows the names `words` allows, cleaned and capped:
+ * every name on a pane surface, 12 and how many more on the TUI default (the run's surface module's listWords, D-256,
+ * D-353), so a long list never pushes a count out of its line (B2). A CLAUDE.md file in the repo is named with the
+ * folder name of `root` (screenPath, D-226). No setting value, file content or warning is part of it. Each line comes
+ * with its structured row (D-313): the two headings as heading rows, the existing `.cadre/` and the plugins lines as
+ * field rows of their template's label and value, every other line one plain row.
+ */
+function scanSummaryParts(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): SummaryPart[] {
+  const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none) })
+  const sides = t('ui.scan.sides', {
+    findingLabels: findingLabels(repo, 'fe'),
+    findingLabelsB: findingLabels(repo, 'be'),
+  })
+  const mcp = cardList(setup.mcp.map(server => shown(server.name)), words)
+  const globalMd = setup.hasGlobalClaudeMd ? t('ui.scan.yes') : t('ui.scan.no')
+  const cadre = cadreSummary(repo.cadre)
+  const plugins = pluginSummary(setup.plugins, words)
+
+  return [
+    headingPart(t('ui.scan.repoHeading')),
+    plainPart(t('ui.scan.stackSides', { stack, sides })),
+    plainPart(t('ui.scan.tests', {
+      findingLabels: findingLabels(repo, 'test'),
+      findingLabelsB: findingLabels(repo, 'e2e'),
+    })),
+    {
+      line: t('ui.scan.existingCadre', { cadreSummary: cadre }),
+      row: { role: 'field', label: keyLabel('ui.scan.existingCadre'), text: cadre, indent: 2 },
+    },
+    ...partialLines(repo).map(plainPart),
+    headingPart(t('ui.scan.setupHeading')),
+    {
+      line: t('ui.scan.plugins', { pluginSummary: plugins }),
+      row: { role: 'field', label: keyLabel('ui.scan.plugins'), text: plugins, indent: 2 },
+    },
+    plainPart(t('ui.scan.setupCounts', { count: setup.skills.length, countB: setup.agents.length, mcp })),
+    plainPart(t('ui.scan.setupFiles', {
+      globalMd,
+      count: setup.memoryFiles.length,
+      map: cardList(setup.claudeMd.map(file => shown(screenPath(file, root))), words),
+    })),
+  ]
+}
+
+/** The scan summary's lines as the TUI default and a fold show them (scanSummaryParts, SCAN-01, SCAN-02, D-133). */
+export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): string[] {
+  return scanSummaryParts(repo, setup, root, words).map(part => part.line)
+}
+
+/** The scan summary's structured rows the pane draws (scanSummaryParts, D-313, D-323), one per line. */
+export function scanSummaryRows(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): ContextRow[] {
+  return scanSummaryParts(repo, setup, root, words).map(part => part.row)
+}
+
+/**
+ * The context line of the history question (G-02-1, D-136): what the repo scan found, so the question reads on its
+ * own: the stack, then the labels of the frontend, backend, test and E2E findings, each `none` when there is none.
+ */
+export function scanContextLine(repo: RepoScan): string {
+  const sides = t('ui.scan.contextSides', {
+    findingLabels: findingLabels(repo, 'fe'),
+    findingLabelsB: findingLabels(repo, 'be'),
+  })
+  const checks = t('ui.scan.contextChecks', {
+    findingLabels: findingLabels(repo, 'test'),
+    findingLabelsB: findingLabels(repo, 'e2e'),
+  })
+
+  return t('ui.scan.context', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none), sides, checks })
+}
+
+/** The scan warnings as init shows them, one `warning: <text>` line each; nothing when there are none. */
+export function scanWarningLines(warnings: readonly string[]): string[] {
+  return warnings.map(warning => t('ui.scan.warning', { warning }))
+}

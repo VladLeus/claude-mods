@@ -1,0 +1,312 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import type { McpRef, SetupScan } from '../../../types'
+import { disabledMcpWorld } from '../../golden/worlds'
+import { t } from '../../locales/t'
+import { BIDI_OVERRIDE, CTX, memWorld, runOf } from '../../testkit'
+import type { MemWorld } from '../../testkit'
+import {
+  CLAUDE_JSON_MAX_BYTES,
+  connectorServerNames,
+  disabledProjectServers,
+  isDesktopConnectorName,
+  isOfferedServer,
+  projectClaudeJson,
+  projectToolServers,
+} from './mcp'
+import type { SetupContext } from './read'
+
+/** A scan of `world` as the person at `ctx` gets it. */
+async function scanOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupContext = CTX): Promise<SetupScan> {
+  return (await runOf(world, isClaudeJsonAllowed, ctx)).scan
+}
+
+/** A .mcp.json whose server entries hold a token and an authorization header. */
+const MCP_JSON = JSON.stringify({
+  mcpServers: {
+    github: { command: 'npx', env: { GITHUB_TOKEN: 'ghp_FAKEFAKEFAKEFAKEFAKE' } },
+    jira: { url: 'https://jira.example', headers: { Authorization: 'Bearer FAKE-TOKEN-0123' } },
+  },
+})
+
+const MCP_JSON_PATH = '/repo/.mcp.json'
+
+/** The tool entries of a session that has the jira and slack servers and the built-in Read tool. */
+const SESSION_TOOLS: readonly unknown[] = [
+  { name: 'mcp__jira__search', description: 'sk-FAKE-SECRET-0123456789', mcp: true },
+  { name: 'mcp__slack__post', description: 'x', mcp: true },
+  { name: 'Read', description: 'x', mcp: false },
+]
+
+const CLAUDE_JSON_PATH = '/home/u/.claude.json'
+
+/** A ~/.claude.json whose entries hold secrets and an account block, with servers for this repo and for another one. */
+const CLAUDE_JSON = JSON.stringify({
+  mcpServers: {
+    jira: { type: 'stdio', command: 'x', args: [], env: { JIRA_TOKEN: 'sk-FAKE-SECRET-0123456789' } },
+  },
+  oauthAccount: { emailAddress: 'someone@example.com', accountUuid: 'SENTINEL_SECRET_VALUE' },
+  projects: {
+    '/repo': {
+      mcpServers: { linear: { env: { T: 'Bearer FAKE-TOKEN-0123' } } },
+      history: [{ display: 'ghp_FAKEFAKEFAKEFAKEFAKE' }],
+    },
+    '/other': { mcpServers: { secret: {} } },
+  },
+})
+
+/** A ~/.claude.json text of exactly `bytes` ASCII bytes that names the server `jira`. */
+function claudeJsonOfSize(bytes: number): string {
+  const base = JSON.stringify({ mcpServers: { jira: {} }, pad: '' })
+
+  return JSON.stringify({ mcpServers: { jira: {} }, pad: 'x'.repeat(bytes - base.length) })
+}
+
+describe('setup MCP completeness', () => {
+  test('isMcpPartial is false when ~/.claude.json was read or is not there and no MCP name was dropped', async () => {
+    const world = memWorld({
+      files: { [MCP_JSON_PATH]: MCP_JSON, [CLAUDE_JSON_PATH]: CLAUDE_JSON },
+      tools: SESSION_TOOLS,
+    })
+    expect((await scanOf(world, true)).isMcpPartial).toBe(false)
+    expect((await scanOf(memWorld({}), true)).isMcpPartial).toBe(false)
+  })
+
+  test('isMcpPartial is true when ~/.claude.json is not read: no consent or folder, unreadable or broken', async () => {
+    const noFolder: SetupContext = { root: '/repo', givenRoot: '/repo', home: null, configDir: null }
+    const tooLarge = claudeJsonOfSize(CLAUDE_JSON_MAX_BYTES + 1)
+    const partial = [
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), false),
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), true, noFolder),
+      await scanOf(memWorld({ unknownPaths: [CLAUDE_JSON_PATH] }), true),
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: '{ not json' } }), true),
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: tooLarge } }), true),
+    ]
+    expect(partial.map(scan => scan.isMcpPartial)).toEqual([true, true, true, true, true])
+  })
+
+  test('isMcpPartial is true when the scan drops an MCP server name from any source', async () => {
+    const long = 'x'.repeat(101)
+    const worlds = [
+      memWorld({ files: { [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { ok: {}, 'has space': {} } }) } }),
+      memWorld({ files: { [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { [`bad${BIDI_OVERRIDE}name`]: {} } }) } }),
+      memWorld({ tools: [{ name: 'mcp__jira__x' }, { name: 'mcp__bad server__x' }] }),
+      memWorld({ tools: [{ name: `mcp__${long}__x` }] }),
+      memWorld({ files: { [CLAUDE_JSON_PATH]: JSON.stringify({ mcpServers: { jira: {}, 'x y': {} } }) } }),
+    ]
+    const found: boolean[] = []
+    for (const world of worlds) found.push((await scanOf(world, true)).isMcpPartial)
+    expect(found).toEqual([true, true, true, true, true])
+  })
+})
+
+/** A claude.ai connector as a desktop-app session names its SDK MCP server: by a UUID (R2). */
+const CONNECTOR_UUID = 'bffcbad4-dacc-4759-8f45-f8c9abe5e705'
+
+/** Another desktop app connector's UUID (R2). */
+const OTHER_CONNECTOR_UUID = '0f3c2a91-7d4e-4b6a-9c1d-2e5f8a7b6c3d'
+
+describe('desktop app connectors (R2)', () => {
+  test('isDesktopConnectorName is true for a UUID in either case, and false for any other name', () => {
+    expect(isDesktopConnectorName(CONNECTOR_UUID)).toBe(true)
+    expect(isDesktopConnectorName(CONNECTOR_UUID.toUpperCase())).toBe(true)
+    const others = [
+      'jira',
+      'claude_ai_Gmail',
+      `x${CONNECTOR_UUID}`,
+      `${CONNECTOR_UUID}x`,
+      'bffcbad4-dacc-4759-8f45-f8c9abe5e70',
+      'bffcbad4dacc47598f45f8c9abe5e705',
+    ]
+    for (const name of others) expect(isDesktopConnectorName(name)).toBe(false)
+  })
+
+  test('projectToolServers leaves out every server named by a UUID', () => {
+    const tools = [
+      { name: `mcp__${CONNECTOR_UUID}__append_values` },
+      { name: `mcp__${OTHER_CONNECTOR_UUID}__x` },
+      { name: 'mcp__jira__search' },
+    ]
+    expect(projectToolServers(tools)).toEqual([{ name: 'jira', source: 'session' }])
+  })
+
+  test('a scan leaves the connectors out with one line that counts each server once, and stays complete', async () => {
+    const tools = [
+      { name: `mcp__${CONNECTOR_UUID}__append_values` },
+      { name: `mcp__${CONNECTOR_UUID}__read_values` },
+      { name: `mcp__${OTHER_CONNECTOR_UUID}__x` },
+      { name: 'mcp__jira__search' },
+    ]
+    const scan = await scanOf(memWorld({ tools, files: { [CLAUDE_JSON_PATH]: '{}' } }), true)
+    expect(scan.mcp).toEqual([{ name: 'jira', source: 'session' }])
+    expect(scan.warnings).toEqual([
+      'left out 2 desktop app connectors (role sessions run in the terminal, where connectors are claude_ai_* servers)',
+    ])
+    expect(scan.isMcpPartial).toBe(false)
+  })
+
+  test('a connector stays left out, never joined to a claude.ai connector of ~/.claude.json (D-331)', async () => {
+    const claudeJson = JSON.stringify({ claudeAiMcpEverConnected: ['claude.ai Gmail'] })
+    const tools = [{ name: `mcp__${CONNECTOR_UUID}__x` }]
+    const world = memWorld({ tools, files: { [CLAUDE_JSON_PATH]: claudeJson } })
+    const scan = await scanOf(world, true)
+    expect(scan.mcp).toEqual([{ name: 'claude_ai_Gmail', source: 'user-config' }])
+    expect(scan.warnings).toEqual([
+      'left out 1 desktop app connector (role sessions run in the terminal, where connectors are claude_ai_* servers)',
+    ])
+  })
+
+  test('one connector is counted in the singular, and a session with none gets no such line', async () => {
+    const one = await scanOf(memWorld({ tools: [{ name: `mcp__${CONNECTOR_UUID}__x` }] }), true)
+    expect(one.warnings).toEqual([
+      'left out 1 desktop app connector (role sessions run in the terminal, where connectors are claude_ai_* servers)',
+    ])
+    expect(one.mcp).toEqual([])
+    const none = await scanOf(memWorld({ tools: [{ name: 'mcp__jira__x' }] }), true)
+    expect(none.warnings).toEqual([])
+  })
+})
+
+describe('claude.ai connectors in ~/.claude.json (R2)', () => {
+  /** The four connectors of the fixture account, as `claudeAiMcpEverConnected` names them. */
+  const EVER_CONNECTED = [
+    'claude.ai Gmail',
+    'claude.ai Google Calendar',
+    'claude.ai Atlassian Rovo',
+    'claude.ai Notion',
+  ]
+
+  test('projectClaudeJson names each connector as the terminal names its server, sorted, as user-config', () => {
+    expect(projectClaudeJson({ claudeAiMcpEverConnected: EVER_CONNECTED }, ['/repo'])).toEqual([
+      { name: 'claude_ai_Atlassian_Rovo', source: 'user-config' },
+      { name: 'claude_ai_Gmail', source: 'user-config' },
+      { name: 'claude_ai_Google_Calendar', source: 'user-config' },
+      { name: 'claude_ai_Notion', source: 'user-config' },
+    ])
+    const both = { claudeAiMcpEverConnected: EVER_CONNECTED, mcpServers: { jira: {} } }
+    expect(projectClaudeJson(both, ['/repo']).map(server => server.name)).toEqual([
+      'claude_ai_Atlassian_Rovo',
+      'claude_ai_Gmail',
+      'claude_ai_Google_Calendar',
+      'claude_ai_Notion',
+      'jira',
+    ])
+  })
+
+  test('connectorServerNames skips every entry but a claude.ai name, and a list it cannot read', () => {
+    const ever = [3, null, {}, 'Gmail', 'claude.aiX', 'claude.ai ', 'claude.ai A.b/c']
+    expect(connectorServerNames({ claudeAiMcpEverConnected: ever })).toEqual(['claude_ai_A_b_c'])
+    const unread: readonly unknown[] = [
+      { claudeAiMcpEverConnected: 'x' },
+      { claudeAiMcpEverConnected: {} },
+      Object.create({ claudeAiMcpEverConnected: ['claude.ai Gmail'] }),
+      ['claude.ai Gmail'],
+      'x',
+      null,
+    ]
+    expect(unread.flatMap(value => connectorServerNames(value))).toEqual([])
+  })
+
+  test('only the first 100 entries of the list are read', () => {
+    const ever = Array.from({ length: 101 }, (_, at) => `claude.ai C${at}`)
+    const names = connectorServerNames({ claudeAiMcpEverConnected: ever })
+    expect(names).toHaveLength(100)
+    expect([names[0], names.at(-1)]).toEqual(['claude_ai_C0', 'claude_ai_C99'])
+  })
+
+  test('with consent the connectors join the scan once by name, a session server keeping its source', async () => {
+    const claudeJson = JSON.stringify({ claudeAiMcpEverConnected: ['claude.ai Gmail', 'claude.ai Notion'] })
+    const world = memWorld({ tools: [{ name: 'mcp__claude_ai_Gmail__x' }], files: { [CLAUDE_JSON_PATH]: claudeJson } })
+    const consented = await scanOf(world, true)
+    expect(consented.mcp).toEqual([
+      { name: 'claude_ai_Gmail', source: 'session' },
+      { name: 'claude_ai_Notion', source: 'user-config' },
+    ])
+    expect(consented.isMcpPartial).toBe(false)
+    const refused = await runOf(world, false)
+    expect(refused.reads).not.toContain(CLAUDE_JSON_PATH)
+    expect(refused.scan.mcp).toEqual([{ name: 'claude_ai_Gmail', source: 'session' }])
+  })
+})
+
+describe('~/.claude.json under an unsafe CLAUDE_CONFIG_DIR (D-238, SR-1)', () => {
+  test('a relative, dotted or inside-repo value reads the home file; the warning shows once', async () => {
+    const hosted = JSON.stringify({ mcpServers: { hosted: { command: 'x' } } })
+    const world = memWorld({ files: { '/repo/.claude-alt/.claude.json': hosted, [CLAUDE_JSON_PATH]: CLAUDE_JSON } })
+    const values = ['.claude-alt', '/cfg/../repo/.claude-alt', '/repo/./.claude-alt', '/repo//.claude-alt',
+      '/repo/.claude-alt']
+    for (const configDir of values) {
+      const { scan, reads } = await runOf(world, true, { ...CTX, configDir })
+      const warned = scan.warnings.filter(warning => warning === t('paths.configDirWarning')).length
+      expect([configDir, reads.filter(path => path.endsWith('.claude.json')), scan.mcp.map(ref => ref.name), warned])
+        .toEqual([configDir, [CLAUDE_JSON_PATH], ['jira', 'linear'], 1])
+    }
+  })
+})
+
+/** The line a scan without the consent gives when it scanned a server (D-332). */
+const DISABLED_UNCHECKED = 'MCP servers disabled for this project could not be checked (~/.claude.json was not read).'
+
+describe('MCP servers disabled for the project (D-332)', () => {
+  test('with consent the scan offers no server the repo project disabled, a connector by its shown name', async () => {
+    const scan = await scanOf(disabledMcpWorld(), true)
+    expect(scan.mcp).toEqual([
+      { name: 'claude_ai_Gmail', source: 'session' },
+      { name: 'jira', source: 'session' },
+    ])
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('a disabledMcpServers that is not a list, or holds no string, disables nothing', async () => {
+    const offered: string[][] = []
+    for (const listed of ['github', { github: true }, [42, null, {}]]) {
+      const claudeJson = JSON.stringify({ projects: { '/repo': { disabledMcpServers: listed } } })
+      const scan = await scanOf(disabledMcpWorld({ files: { [CLAUDE_JSON_PATH]: claudeJson } }), true)
+      offered.push(scan.mcp.map(ref => ref.name))
+    }
+    const all = ['claude_ai_Gmail', 'claude_ai_Slack', 'github', 'jira']
+    expect(offered).toEqual([all, all, all])
+  })
+
+  test('without consent every scanned server is offered, with one line that says none was checked', async () => {
+    const scan = await scanOf(disabledMcpWorld(), false)
+    expect(scan.mcp.map(ref => ref.name)).toEqual(['claude_ai_Gmail', 'claude_ai_Slack', 'github', 'jira'])
+    expect(scan.warnings).toEqual([DISABLED_UNCHECKED])
+    expect((await scanOf(memWorld({}), false)).warnings).toEqual([])
+  })
+
+  test('disabledProjectServers reads the repo project list, a connector as the terminal names its server', () => {
+    const value = {
+      projects: {
+        '/repo/': { disabledMcpServers: ['github', 'claude.ai Slack', 'claude.ai A.b/c', 'claude.ai ', 'github'] },
+        '/other': { disabledMcpServers: ['jira'] },
+      },
+    }
+    expect(disabledProjectServers(value, ['/repo'])).toEqual(['github', 'claude_ai_Slack', 'claude_ai_A_b_c'])
+    expect(disabledProjectServers(value, [''])).toEqual([])
+  })
+
+  test('disabledProjectServers skips a list that is not an array, an entry not a string and a bad value', () => {
+    const projectWith = (listed: unknown): unknown => ({ projects: { '/repo': { disabledMcpServers: listed } } })
+    const none: readonly unknown[] = [projectWith('github'), projectWith({ github: true }), projectWith(null), null, []]
+    expect(none.flatMap(value => disabledProjectServers(value, ['/repo']))).toEqual([])
+    expect(disabledProjectServers(projectWith([42, null, {}, 'jira']), ['/repo'])).toEqual(['jira'])
+  })
+
+  test('isOfferedServer drops a disabled name; a .mcp.json server needs the session or an approval (OC-05-A)', () => {
+    const none = { mcpDisabled: [], mcpEnabled: [], isAllProjectMcpEnabled: false }
+    const project: McpRef = { name: 'db', source: 'project' }
+    const session: McpRef = { name: 'db', source: 'session' }
+    const connector: McpRef = { name: 'claude_ai_Gmail', source: 'user-config' }
+    expect([
+      isOfferedServer(session, ['db'], none, ['db']),
+      isOfferedServer(connector, [], none, []),
+      isOfferedServer(project, [], none, ['db']),
+      isOfferedServer(project, [], none, []),
+      isOfferedServer(project, [], { ...none, isAllProjectMcpEnabled: true }, []),
+      isOfferedServer(project, [], { ...none, mcpEnabled: ['db'] }, []),
+      isOfferedServer(project, [], { ...none, mcpDisabled: ['db'], isAllProjectMcpEnabled: true }, ['db']),
+      isOfferedServer(session, [], { ...none, mcpDisabled: ['db'] }, ['db']),
+    ]).toEqual([false, true, true, false, true, true, false, true])
+  })
+})
