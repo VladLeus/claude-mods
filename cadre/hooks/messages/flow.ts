@@ -166,3 +166,7 @@ export async function runInboxSend(
 
   return deliver(io, host, link, ctx.root, entry)
 }
+
+export async function runInboxRead(_io: InitIo, _ctx: RoleContext, _event: unknown): Promise<ToolOutcome> {
+  return { kind: 'deny', text: '' }
+}

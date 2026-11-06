@@ -2,7 +2,7 @@
  * The inbox record, a layer 7 module: where a role's inbox.jsonl and session.json lie, the one-line JSON of an entry
  * or a mark, its fail-closed parse, and the session record a role publishes so other roles can wake it.
  */
-import type { InboxEntry, InboxEvent, InboxMark, InboxState } from '../../types'
+import type { InboxEntry, InboxEvent, InboxItem, InboxMark, InboxState } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue } from '../core/json'
 import { isRoleId } from '../core/role-id'
@@ -136,4 +136,25 @@ export function parseInboxLine(text: string): InboxEvent | null {
   if (value.type === CONTRACTS.inboxMarkType) return markOf(value)
 
   return null
+}
+
+/** The inbox_read input, or why it is refused. */
+export type ReadInput =
+  | { readonly kind: 'ok'; readonly all: boolean }
+  | { readonly kind: 'error'; readonly message: string }
+
+export function parseReadInput(_event: unknown): ReadInput {
+  return { kind: 'error', message: '' }
+}
+
+export function parseInbox(_text: string): InboxEvent[] {
+  return []
+}
+
+export function foldInbox(_events: readonly InboxEvent[]): InboxItem[] {
+  return []
+}
+
+export function inboxReadText(_items: readonly InboxItem[], _all: boolean): string {
+  return ''
 }

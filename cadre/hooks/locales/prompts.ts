@@ -135,6 +135,17 @@ export const PROMPTS = Object.freeze({
     ''}also lists the entries marked done or rejected.`,
   inboxNoRole: 'The cadre inbox tools work only in a cadre role session.',
   inboxFailed: 'The cadre inbox tool failed. Try again.',
+  // The inbox_read view (messages/record inboxReadText): an entry's head, note and reply lines, the empty inbox, the
+  // last line that counts the entries left out, and the refusals of inbox_read.
+  inboxItemHead: '{id} [{state}] {kind} from {from}: {subject}',
+  inboxItemNote: 'note: {note}',
+  inboxItemReply: 'reply: {reply}',
+  inboxEmpty: 'Your inbox is empty.',
+  'inboxHidden.one': '{count} entry marked done or rejected is not shown; call inbox_read with all: true to list it.',
+  'inboxHidden.other':
+    '{count} entries marked done or rejected are not shown; call inbox_read with all: true to list them.',
+  inboxAllNotBoolean: 'all must be true or false.',
+  inboxUnreadable: 'Your inbox could not be read: .cadre/{id}/.runtime/inbox.jsonl is too large or not a file.',
 }) satisfies Record<string, string>
 
 /**
@@ -153,6 +164,13 @@ export function groupSkillRowOf(
   count: number,
 ): (typeof PROMPTS)['groupSkillRow.one'] | (typeof PROMPTS)['groupSkillRow.other'] {
   return count === 1 ? PROMPTS['groupSkillRow.one'] : PROMPTS['groupSkillRow.other']
+}
+
+/** The last line of an inbox_read view that counts the entries left out: `.one` for exactly 1. */
+export function inboxHiddenOf(
+  count: number,
+): (typeof PROMPTS)['inboxHidden.one'] | (typeof PROMPTS)['inboxHidden.other'] {
+  return count === 1 ? PROMPTS['inboxHidden.one'] : PROMPTS['inboxHidden.other']
 }
 
 /** The system prompt of the roles proposal (suggest/propose PROPOSE_SYSTEM), at most `maxRoles` roles. */

@@ -4002,6 +4002,28 @@ describe('the inbox tools in a role session', () => {
     expect(log.writes).toEqual([])
   })
 
+  test('a turn start publishes the session id again only when it changed', async ($, on) => {
+    const log = newLog()
+    let sessionId = 's1'
+    const world: World = {
+      ...roleWorld(),
+      get sessionId() {
+        return sessionId
+      },
+    }
+    fakeHost(on, world, log)
+    on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+    await startSession($, on)
+    await $.turn.start({ text: '', turnId: 't1' })
+    await $.turn.start({ text: '', turnId: 't2' })
+    const sameId = [...log.writes]
+    sessionId = 's2'
+    await $.turn.start({ text: '', turnId: 't3' })
+
+    expect(sameId).toEqual(['/repo/.cadre/be/.runtime/session.json'])
+    expect(log.writes).toEqual(['/repo/.cadre/be/.runtime/session.json', '/repo/.cadre/be/.runtime/session.json'])
+  })
+
   test('inbox_send in a role session appends to the inbox of the receiver, then sends one live wake', async ($, on) => {
     const log = newLog()
     fakeHost(on, roleWorld(), log)

@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleContext, SessionLink, TeamView, ToolOutcome } from '../../types'
+import type { InboxEntry, RoleContext, SessionLink, TeamView, ToolOutcome } from '../../types'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { hostWorld, memHost, memIo, memWorld } from '../testkit'
 import type { HostRunRule, MemHost, MemWorld } from '../testkit'
-import { publishSession, roleContextOf, runInboxSend } from './flow'
-import { parseInboxLine, sessionRecordText } from './record'
+import { publishSession, roleContextOf, runInboxRead, runInboxSend } from './flow'
+import { parseInboxLine, recordLine, sessionRecordText } from './record'
 import { INBOX_LINE_MAX_BYTES } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
@@ -17,6 +17,7 @@ const TL_SESSION = `${TL_RUNTIME}/session.json`
 const TL_FILES: Readonly<Record<string, string>> = { [TL_SESSION]: sessionRecordText('s-tl') }
 const BE_RUNTIME = '/repo/.cadre/be/.runtime'
 const BE_SESSION = `${BE_RUNTIME}/session.json`
+const BE_INBOX = `${BE_RUNTIME}/inbox.jsonl`
 const NOTE = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
 const TEE = ['/usr/bin/tee', '-a', TL_INBOX]
 
@@ -203,5 +204,40 @@ describe('publishSession', () => {
       expect(await publishSession(memIo(world, {}).io, host.io, BE, 's-be')).toBe('refused')
       expect(host.writes).toEqual([])
     }
+  })
+})
+
+describe('runInboxRead', () => {
+  const ticket: InboxEntry = {
+    v: 1,
+    type: 'entry',
+    id: 'tl-1000-0123abcd',
+    at: 1000,
+    from: 'tl',
+    to: 'be',
+    kind: 'ticket',
+    subject: 'Do it',
+    body: 'Now',
+  }
+
+  test('it reads only the inbox of its own role and shows it folded', async () => {
+    const run = memIo(memWorld({ files: { [BE_INBOX]: recordLine(ticket), [TL_INBOX]: recordLine(ticket) } }), {})
+    const outcome = await runInboxRead(run.io, BE, {})
+
+    expect(run.reads).toEqual([BE_INBOX])
+    expect(outcome).toEqual({ kind: 'result', text: 'tl-1000-0123abcd [unread] ticket from tl: Do it\n  Now' })
+  })
+
+  test('an absent inbox reads as empty; an all that is not true or false is refused', async () => {
+    const io = memIo(memWorld({}), {}).io
+
+    expect(await runInboxRead(io, BE, {})).toEqual({ kind: 'result', text: PROMPTS.inboxEmpty })
+    expect(await runInboxRead(io, BE, { all: 'yes' })).toEqual({ kind: 'deny', text: PROMPTS.inboxAllNotBoolean })
+  })
+
+  test('an inbox that cannot be read as text is refused', async () => {
+    const io = memIo(memWorld({ unknownPaths: [BE_INBOX] }), {}).io
+
+    expect(await runInboxRead(io, BE, {})).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxUnreadable, { id: 'be' }) })
   })
 })
