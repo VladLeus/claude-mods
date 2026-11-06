@@ -291,6 +291,18 @@ export const RUNTIME_STAMP_FILE = 'stamp'
 /** The inbox of a role in `.cadre/<id>/.runtime/`, where other roles append their notes for it (D-114). */
 export const INBOX_FILE = 'inbox.md'
 
+/** A role's inbox in `.cadre/<id>/.runtime/`: one JSON line per entry or mark, only ever appended by cadre's tools. */
+export const INBOX_LOG_FILE = 'inbox.jsonl'
+
+/** The file in `.cadre/<id>/.runtime/` where a role session publishes its session id, so other roles can wake it. */
+export const SESSION_FILE = 'session.json'
+
+/** The runtime env name that holds the role a session runs as. */
+export const ROLE_ENV = 'CADRE_ROLE'
+
+/** The runtime env name that holds the root a role session runs in. */
+export const ROOT_ENV = 'CADRE_ROOT'
+
 /**
  * An epic's kickoff of a role in `.cadre/<id>/.runtime/` (D-158): /cadre epic writes it for each role it renders into
  * the epic worktree, and the launcher starts with it in place of the role's own `.cadre/<id>/kickoff.txt`.

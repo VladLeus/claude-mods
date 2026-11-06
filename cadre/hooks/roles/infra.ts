@@ -37,6 +37,19 @@ export const INFRA_TOOLS: readonly string[] = Object.freeze([
   'PushNotification',
 ])
 
+/** The start of the full name of every tool cadre registers: the model calls `mcp__cadre__<name>`. */
+export const CADRE_TOOL_PREFIX = 'mcp__cadre__'
+
+/** The short names of cadre's inbox tools, as cadre registers them in a role session. */
+export const INBOX_SEND_TOOL = 'inbox_send'
+export const INBOX_READ_TOOL = 'inbox_read'
+export const INBOX_MARK_TOOL = 'inbox_mark'
+
+/** The full names of cadre's inbox tools. */
+export const CADRE_TOOLS: readonly string[] = Object.freeze(
+  [INBOX_SEND_TOOL, INBOX_READ_TOOL, INBOX_MARK_TOOL].map(name => `${CADRE_TOOL_PREFIX}${name}`),
+)
+
 /**
  * The MCP servers that are infrastructure: every role always has them, so they are never asked about, never assigned
  * and never denied (ISO-04, D-77). Scope compile imports this list instead of naming the server a second time.

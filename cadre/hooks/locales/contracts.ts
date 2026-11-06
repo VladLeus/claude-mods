@@ -42,6 +42,11 @@ export const CONTRACTS = Object.freeze({
   // excludes file, and the line that hides each role's own `.runtime/` there (AUTO-PICK #25, RESEARCH Pitfall 5).
   excludesHeading: '# cadre links (cadre epic)',
   runtimeExcludeLine: '/.cadre/*/.runtime/',
+  // The record words of an inbox.jsonl line (messages/record): the type of an entry and of a mark, and the sender
+  // of an entry cadre writes itself.
+  inboxEntryType: 'entry',
+  inboxMarkType: 'mark',
+  cadreSender: 'cadre',
 }) satisfies Record<string, string>
 
 /**

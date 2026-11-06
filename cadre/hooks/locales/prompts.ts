@@ -104,6 +104,18 @@ export const PROMPTS = Object.freeze({
   probe: 'Reply with OK.',
   // The prompt of one claude-md-improver run on a built role file (apply/improver improverArgv, D-141).
   improverPrompt: 'Use the claude-md-management:claude-md-improver skill to improve the file {path} only.',
+  // The inbox tools of a role session (messages/): the send results, the refusals and the live wake line.
+  inboxSent: 'Sent {id} to {to}; the live message was delivered.',
+  inboxSentUndelivered:
+    'Sent {id} to {to}. The live message was not delivered; the entry waits in .cadre/{to}/.runtime/inbox.jsonl.',
+  inboxNoTeam: 'Not sent: .cadre/cadre.json or a role.json of the team cannot be read.',
+  inboxNoClock: 'Not sent: the clock could not be read. Try again.',
+  inboxAppendFailed: 'Not sent: the entry could not be added to the inbox of {to}. Try again.',
+  inboxToNotTeam: 'to must name a role of the team: {ids}.',
+  inboxKindUnknown: 'kind must be one of {kinds}.',
+  inboxSubjectEmpty: 'subject is empty: give a short subject line.',
+  inboxBodyEmpty: 'body is empty: write the message in body.',
+  inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read.',
 }) satisfies Record<string, string>
 
 /**

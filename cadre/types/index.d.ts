@@ -756,6 +756,73 @@ export type HostIo = {
   readonly env: (name: HostEnvName) => Promise<string | null>
 }
 
+/** What an inbox entry is: the kinds a role may send. */
+export type MessageKind = 'ticket' | 'report' | 'question' | 'answer' | 'epic-end' | 'note'
+
+/** The state of an inbox entry: unread until its owner marks it. */
+export type InboxState = 'unread' | 'read' | 'awaiting' | 'blocked' | 'rejected' | 'done'
+
+/** One message in a role's inbox.jsonl, stamped by cadre with its id, time and sender. */
+export type InboxEntry = {
+  readonly v: 1
+  readonly type: 'entry'
+  readonly id: string
+  readonly at: number
+  readonly from: string
+  readonly to: string
+  readonly kind: MessageKind
+  readonly subject: string
+  readonly body: string
+  readonly replyTo?: string
+}
+
+/** A state change of an entry, appended to the inbox that holds the entry. */
+export type InboxMark = {
+  readonly v: 1
+  readonly type: 'mark'
+  readonly id: string
+  readonly at: number
+  readonly by: string
+  readonly state: Exclude<InboxState, 'unread'>
+  readonly note?: string
+  readonly waitsFor?: string
+}
+
+/** One line of an inbox.jsonl. */
+export type InboxEvent = InboxEntry | InboxMark
+
+/** An entry with the state its marks give it, as inbox_read shows it. */
+export type InboxItem = {
+  readonly entry: InboxEntry
+  readonly state: InboxState
+  readonly note: string | null
+  readonly waitsFor: string | null
+  readonly reply: string | null
+  readonly markedAt: number | null
+}
+
+/** The role a session runs as and the root it runs in, read from its runtime env. */
+export type RoleContext = {
+  readonly id: string
+  readonly root: string
+}
+
+/** The roles of the team and each role's parent, null for the top of the hierarchy. */
+export type TeamView = {
+  readonly ids: readonly string[]
+  readonly parents: Readonly<Record<string, string | null>>
+}
+
+/** Sends a live message to a session by its id; true when the host delivered it. */
+export type SessionLink = {
+  readonly send: (sessionId: string, text: string) => Promise<boolean>
+}
+
+/** What a cadre tool answers the model: its result, or a refusal. */
+export type ToolOutcome =
+  | { readonly kind: 'result'; readonly text: string }
+  | { readonly kind: 'deny'; readonly text: string }
+
 /**
  * What the one runtime identity call gave (D-28, WR-01): its stdout when it exited 0, else null, and `could-not-run`
  * when the call threw, which covers node missing from PATH and a timeout alike; the error itself is never read (IN-05).
