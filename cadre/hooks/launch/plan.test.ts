@@ -196,7 +196,7 @@ describe('launch render', () => {
       claudeMdExcludes: [],
       deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
-      env: { JIRA_URL: 'https://j' },
+      env: { JIRA_URL: 'https://j', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' },
       hooks: {
         PreToolUse: [
           { hooks: [{ type: 'command', command: 'node /home/u/.claude/hooks/gsd-secret-read-guard.js' }] },
@@ -266,7 +266,7 @@ describe('launch render', () => {
     const plan = launchPlan(role, scope, carrier())
     const text = JSON.stringify(plan)
 
-    expect(plan.settings.env).toEqual({ JIRA_URL: 'https://j' })
+    expect(plan.settings.env).toEqual({ JIRA_URL: 'https://j', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
     expect(text).not.toContain('API_KEY')
     expect(text).not.toContain('"k"')
   })
@@ -277,7 +277,7 @@ describe('launch render', () => {
     const env = { ZED: 'z', JIRA_URL: 'https://j', ALPHA: 'a' }
     const plan = launchPlan(role, scope, carrier({ env }))
 
-    expect(Object.keys(plan.settings.env ?? {})).toEqual(['ALPHA', 'JIRA_URL', 'ZED'])
+    expect(Object.keys(plan.settings.env ?? {})).toEqual(['ALPHA', 'JIRA_URL', 'ZED', 'CADRE_ROLE', 'CADRE_ROOT'])
   })
 
   test('a carried env name the user has no value for is left out, and so is an empty env', () => {
@@ -286,8 +286,8 @@ describe('launch render', () => {
     const some = launchPlan(role, scope, carrier({ env: { JIRA_URL: 'https://j' } }))
     const none = launchPlan(role, scope, carrier({ env: { OTHER: 'x' } }))
 
-    expect(some.settings.env).toEqual({ JIRA_URL: 'https://j' })
-    expect(Object.keys(none.settings)).not.toContain('env')
+    expect(some.settings.env).toEqual({ JIRA_URL: 'https://j', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
+    expect(none.settings.env).toEqual({ CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
   })
 
   test('an env name that is a property of every object is never read as a value', () => {
@@ -295,7 +295,7 @@ describe('launch render', () => {
     const scope = compileScope(role, context())
     const plan = launchPlan(role, scope, carrier({ env: {} }))
 
-    expect(Object.keys(plan.settings)).not.toContain('env')
+    expect(plan.settings.env).toEqual({ CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
   })
 
   test('an env value the user object only inherits is not the value of the user settings and is not rendered', () => {
@@ -304,7 +304,7 @@ describe('launch render', () => {
     const inherited = Object.create({ JIRA_URL: 'SENTINEL_SECRET_VALUE' })
     const plan = launchPlan(role, scope, carrier({ env: inherited }))
 
-    expect(Object.keys(plan.settings)).not.toContain('env')
+    expect(plan.settings.env).toEqual({ CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
     expect(JSON.stringify(plan)).not.toContain('SENTINEL_SECRET_VALUE')
   })
 
@@ -317,6 +317,7 @@ describe('launch render', () => {
       'claudeMdExcludes',
       'deniedMcpServers',
       'enabledPlugins',
+      'env',
       'permissions',
       'sandbox',
     ]
@@ -335,6 +336,7 @@ describe('launch render', () => {
       claudeMdExcludes: [],
       deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
+      env: { CADRE_ROLE: 'be', CADRE_ROOT: '/repo' },
       permissions: {
         defaultMode: 'auto',
         deny: [
