@@ -1,7 +1,7 @@
 /**
  * The inbox flows of a role session, a layer 7 module: the role context read from the runtime env, the session id a
- * role publishes, and inbox_send, all through the InitIo and HostIo ports. An inbox is only ever appended, and the
- * durable entry is always written before the live wake.
+ * role publishes, inbox_send and inbox_read, all through the InitIo and HostIo ports. An inbox is only ever appended,
+ * and the durable entry is always written before the live wake.
  */
 import type {
   HostIo,
@@ -21,13 +21,17 @@ import { fill } from '../locales/t'
 import { isDirInsideRoot, isFileInsideRoot, parentOf, resolveSegments, roleJsonPath } from '../paths'
 import {
   entryIdOf,
+  foldInbox,
   inboxLogPath,
+  inboxReadText,
+  parseInbox,
+  parseReadInput,
   parseSessionRecord,
   recordLine,
   sessionFilePath,
   sessionRecordText,
 } from './record'
-import { INBOX_APPEND_TIMEOUT_MS, INBOX_LINE_MAX_BYTES, parseSendInput } from './send'
+import { INBOX_APPEND_TIMEOUT_MS, INBOX_LINE_MAX_BYTES, INBOX_READ_MAX_BYTES, parseSendInput } from './send'
 import { wakeText } from './wake'
 
 /** The most bytes of a session.json that are read. */
@@ -167,6 +171,13 @@ export async function runInboxSend(
   return deliver(io, host, link, ctx.root, entry)
 }
 
-export async function runInboxRead(_io: InitIo, _ctx: RoleContext, _event: unknown): Promise<ToolOutcome> {
-  return { kind: 'deny', text: '' }
+/** inbox_read: the session's own inbox, folded; an absent inbox reads as empty. */
+export async function runInboxRead(io: InitIo, ctx: RoleContext, event: unknown): Promise<ToolOutcome> {
+  const input = parseReadInput(event)
+  if (input.kind === 'error') return deny(input.message)
+  const read = await io.read(inboxLogPath(ctx.root, ctx.id), INBOX_READ_MAX_BYTES)
+  if (read.state !== 'text' && read.state !== 'absent') return deny(fill(PROMPTS.inboxUnreadable, { id: ctx.id }))
+  const events = read.state === 'text' ? parseInbox(read.text) : []
+
+  return { kind: 'result', text: inboxReadText(foldInbox(events), input.all) }
 }

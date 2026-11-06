@@ -6,8 +6,10 @@ import type { InboxEntry, InboxEvent, InboxItem, InboxMark, InboxState } from '.
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue } from '../core/json'
 import { isRoleId } from '../core/role-id'
-import { isChangedByClean } from '../core/text'
+import { isChangedByClean, reportText } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
+import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
+import { fill } from '../locales/t'
 import { INBOX_LOG_FILE, SESSION_FILE } from '../paths'
 import { ENTRY_ID_PATTERN, INBOX_STATES, MESSAGE_KINDS } from './send'
 
@@ -143,18 +145,72 @@ export type ReadInput =
   | { readonly kind: 'ok'; readonly all: boolean }
   | { readonly kind: 'error'; readonly message: string }
 
-export function parseReadInput(_event: unknown): ReadInput {
-  return { kind: 'error', message: '' }
+/** The inbox_read input: `all` also lists the items marked done or rejected; false when absent. */
+export function parseReadInput(event: unknown): ReadInput {
+  const all = isObject(event) ? event.all : undefined
+  if (all === undefined) return { kind: 'ok', all: false }
+  if (typeof all !== 'boolean') return { kind: 'error', message: PROMPTS.inboxAllNotBoolean }
+
+  return { kind: 'ok', all }
 }
 
-export function parseInbox(_text: string): InboxEvent[] {
-  return []
+/** Every inbox.jsonl line that parses, in file order; any other line is skipped on its own. */
+export function parseInbox(text: string): InboxEvent[] {
+  return text.split('\n').flatMap(line => {
+    const event = line.trim() === '' ? null : parseInboxLine(line)
+
+    return event === null ? [] : [event]
+  })
 }
 
-export function foldInbox(_events: readonly InboxEvent[]): InboxItem[] {
-  return []
+function isEntry(event: InboxEvent): event is InboxEntry {
+  return event.type === CONTRACTS.inboxEntryType
 }
 
-export function inboxReadText(_items: readonly InboxItem[], _all: boolean): string {
-  return ''
+function isMark(event: InboxEvent): event is InboxMark {
+  return event.type === CONTRACTS.inboxMarkType
+}
+
+/** Each entry in file order with what the last mark on it in file order says; unread when it has none. */
+export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
+  const marks = events.filter(isMark)
+
+  return events.filter(isEntry).map(entry => {
+    const mark = marks.findLast(candidate => candidate.id === entry.id)
+
+    return {
+      entry,
+      state: mark?.state ?? 'unread',
+      note: mark?.note ?? null,
+      waitsFor: mark?.waitsFor ?? null,
+      reply: null,
+      markedAt: mark?.at ?? null,
+    }
+  })
+}
+
+/** The states inbox_read leaves out unless it is asked for all items. */
+const CLOSED_STATES: readonly InboxState[] = Object.freeze(['done', 'rejected'])
+
+/** One item as inbox_read shows it: its head, its body lines indented two spaces, then its note and reply. */
+function itemLines(item: InboxItem): string[] {
+  const { id, kind, from, subject, body } = item.entry
+  const head = fill(PROMPTS.inboxItemHead, { id, state: item.state, kind, from, subject: reportText(subject) })
+  const note = item.note === null ? [] : [fill(PROMPTS.inboxItemNote, { note: reportText(item.note) })]
+  const reply = item.reply === null ? [] : [fill(PROMPTS.inboxItemReply, { reply: item.reply })]
+
+  return [head, ...body.split('\n').map(line => `  ${reportText(line)}`), ...note, ...reply]
+}
+
+/**
+ * The inbox_read view: one block per item, blocks apart by a blank line. Unless `all`, the items marked done or
+ * rejected are left out and a last line counts them.
+ */
+export function inboxReadText(items: readonly InboxItem[], all: boolean): string {
+  if (items.length === 0) return PROMPTS.inboxEmpty
+  const shown = all ? items : items.filter(item => !CLOSED_STATES.includes(item.state))
+  const hidden = items.length - shown.length
+  const last = hidden === 0 ? [] : [fill(inboxHiddenOf(hidden), { count: hidden })]
+
+  return [...shown.map(item => itemLines(item).join('\n')), ...last].join('\n\n')
 }

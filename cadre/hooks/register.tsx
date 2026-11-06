@@ -28,7 +28,7 @@ import { consentedGsdCheck, runInit } from './init/run'
 import type { InitOptions } from './init/run'
 import { PROMPTS } from './locales/prompts'
 import { setMissingSlotSink, t } from './locales/t'
-import { isRoleSession, publishSession, roleContextOf, runInboxSend } from './messages/flow'
+import { isRoleSession, publishSession, roleContextOf, runInboxRead, runInboxSend } from './messages/flow'
 import { MESSAGE_KINDS } from './messages/send'
 import type { ROLE_ENV, ROOT_ENV } from './paths'
 import { runRegen } from './regen/run'
@@ -92,6 +92,8 @@ let paneBodyRows: number | null = null
 let runSurface: SurfaceModule = PANE_DESKTOP
 /** The role this session runs as: set at session start when the runtime env names a role of the repo, else null. */
 let role: RoleContext | null = null
+/** The session id this role session last published in its session.json; null before it published one. */
+let publishedId: string | null = null
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -640,9 +642,19 @@ function sessionLinkOf($: EngineInterface): SessionLink {
   }
 }
 
-/** A tool outcome as a tool.call hook answers it. */
-function toolReplyOf(outcome: ToolOutcome): { result: string } | { deny: string } {
+/** What a tool.call hook of an inbox tool answers. */
+type ToolReply = { result: string } | { deny: string }
+
+function toolReplyOf(outcome: ToolOutcome): ToolReply {
   return outcome.kind === 'result' ? { result: outcome.text } : { deny: outcome.text }
+}
+
+/** Publishes this session's id when it differs from the one the session published last. */
+async function republish($: EngineInterface, ctx: RoleContext): Promise<void> {
+  const io = toolIoOf($)
+  const sessionId = await io.sessionId()
+  if (sessionId === null || sessionId === publishedId) return
+  if ((await publishSession(io, hostIoOf($), ctx, sessionId)) !== 'refused') publishedId = sessionId
 }
 
 /**
@@ -667,20 +679,20 @@ async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
     return
   }
   role = ctx
-  const sessionId = await io.sessionId()
-  if (sessionId !== null) await publishSession(io, hostIoOf($), ctx, sessionId)
+  await republish($, ctx)
 }
 
 /** inbox_send as the role this session runs as, over the team as it reads now. */
-async function inboxSendReply(
-  $: EngineInterface,
-  ctx: RoleContext,
-  e: unknown,
-): Promise<{ result: string } | { deny: string }> {
+async function inboxSendReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
   const io = toolIoOf($)
   const team = await teamViewOf(io, ctx.root)
 
   return toolReplyOf(await runInboxSend(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
+}
+
+/** inbox_read of the role this session runs as. */
+async function inboxReadReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
+  return toolReplyOf(await runInboxRead(toolIoOf($), ctx, e))
 }
 
 export const register: Register = on => {
@@ -696,6 +708,7 @@ export const register: Register = on => {
         'epic <KEY> [title] [--terminal[=terminal|iterm|tmux]] | epic done <KEY> [--force]',
     })
     role = null
+    publishedId = null
     // The engine reads env names off the source, so each name is a literal.
     const ctx = roleContextOf(
       await $.env.get('CADRE_ROLE' satisfies typeof ROLE_ENV).catch(() => undefined),
@@ -711,6 +724,21 @@ export const register: Register = on => {
     if (ctx === null) return { deny: PROMPTS.inboxNoRole }
 
     return inboxSendReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
+  })
+
+  on('tool.call', { tool: `${CADRE_TOOL_PREFIX}${INBOX_READ_TOOL}` }, async ($, e) => {
+    const ctx = role
+    if (ctx === null) return { deny: PROMPTS.inboxNoRole }
+
+    return inboxReadReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
+  })
+
+  // A role session publishes its session id again when it changed, so the roles that send to it can still wake it.
+  on('turn.start', async ($, e, next) => {
+    const ctx = role
+    if (ctx !== null) await republish($, ctx).catch(() => undefined)
+
+    return next(e)
   })
 
   // A run selects its surface module once, before it opens anything (surfaceModuleOf, D-208, D-353), and once it
