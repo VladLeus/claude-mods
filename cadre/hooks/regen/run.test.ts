@@ -338,7 +338,7 @@ describe('runRegen', () => {
   test('a regen sets the scan loader before its full scan, with the summary init shows (D-285, S-02)', async () => {
     const run = memIo(await regenWorld(), {})
     await runRegen(run.io, { id: 'be', dryRun: true })
-    expect(run.progress[0]).toBe('cadre: scanning the repo…')
+    expect(run.progress[0]).toBe('Scanning the repo…')
     expect(run.progressSummaries[0]).toBe('the repo, your settings, plugins, skills and MCP servers')
   })
 
@@ -990,7 +990,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     }
     const run = memIo({ ...world, files }, { [REGEN_PART_PREFIX]: 'Yes', [IMPROVER_PREFIX]: 'Accept' })
     await runRegen(run.io, { id: 'be', dryRun: false, host: io })
-    const label = 'cadre: running the improver…'
+    const label = 'Running the improver…'
     expect(improverCalls(host)).toHaveLength(1)
     expect(run.progress).toContain(label)
     expect(run.progressSummaries[run.progress.indexOf(label)]).toBe('1 file')

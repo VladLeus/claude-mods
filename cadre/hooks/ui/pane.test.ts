@@ -349,7 +349,7 @@ function stateOf(open: OpenQuestion | null, loader: PaneState['loader'] = null):
 describe('paneBlockOf (D-299, D-301, D-303)', () => {
   const lines = ['Source: session', 'Tools: none listed']
   const context: AskContext = { title: 'MCP: sentry', lines, kind: 'mcp-server', summary: 'Recommended: none' }
-  const loader = { label: 'cadre: scanning the repo…', summary: null }
+  const loader = { label: 'Scanning the repo…', summary: null }
 
   test('the idle state, no question open and no step running, draws nothing: the empty frame', () => {
     expect(paneBlockOf(stateOf(null))).toBe(null)
@@ -389,7 +389,7 @@ describe('paneBlockOf (D-299, D-301, D-303)', () => {
   })
 
   test('with no question open a running step draws its loader alone: its label as the title (D-301)', () => {
-    const block = { title: 'cadre: scanning the repo…', summary: null, rows: null, lines: [] }
+    const block = { title: 'Scanning the repo…', summary: null, rows: null, lines: [] }
     expect(paneBlockOf(stateOf(null, loader))).toEqual(block)
   })
 

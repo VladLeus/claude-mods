@@ -365,7 +365,7 @@ describe('rolesFromProposal', () => {
 describe('proposeFromText progress (D-232)', () => {
   test('the status line it is given shows while the model reads the described structure', async () => {
     const run = memIo(memWorld({ replies: [reply(entry({ id: 'be', title: 'Backend' }))] }), {})
-    const proposed = await proposeFromText(run.io, 'one backend role', 'cadre: reading your structure…')
-    expect([proposed.kind, run.progress]).toEqual(['roles', ['cadre: reading your structure…']])
+    const proposed = await proposeFromText(run.io, 'one backend role', 'Reading your structure…')
+    expect([proposed.kind, run.progress]).toEqual(['roles', ['Reading your structure…']])
   })
 })

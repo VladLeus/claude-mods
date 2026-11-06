@@ -1059,18 +1059,18 @@ describe('progress lines (D-232)', () => {
   })
 
   test('the status texts name what init waits for, one per model call (D-232, DECIDED #22)', () => {
-    expect([SCAN_PROGRESS, HISTORY_PROGRESS]).toEqual(['cadre: scanning the repo…', 'cadre: reading session history…'])
+    expect([SCAN_PROGRESS, HISTORY_PROGRESS]).toEqual(['Scanning the repo…', 'Reading session history…'])
     expect([APPLY_HUNKS_PROGRESS, INSTALL_PROGRESS, IMPROVER_PROGRESS]).toEqual([
-      'cadre: running the accepted changes…',
-      'cadre: installing plugins…',
-      'cadre: running the improver…',
+      'Running the accepted changes…',
+      'Installing plugins…',
+      'Running the improver…',
     ])
     expect(MODEL_PROGRESS).toEqual({
-      'describe-roles': 'cadre: reading your structure…',
-      mcp: 'cadre: recommending MCP servers…',
-      skills: 'cadre: recommending skills…',
-      topics: 'cadre: grouping instructions…',
-      parts: 'cadre: recommending instruction parts…',
+      'describe-roles': 'Reading your structure…',
+      mcp: 'Recommending MCP servers…',
+      skills: 'Recommending skills…',
+      topics: 'Grouping instructions…',
+      parts: 'Recommending instruction parts…',
     })
   })
 })
@@ -5407,9 +5407,9 @@ describe('install checks (decision #39)', () => {
 describe('apply step labels (D-284, edge #13)', () => {
   /** The one label of each apply step kind, as the status line or the pane's loader shows it (D-284). */
   const LABELS = {
-    hunks: 'cadre: running the accepted changes…',
-    installs: 'cadre: installing plugins…',
-    improver: 'cadre: running the improver…',
+    hunks: 'Running the accepted changes…',
+    installs: 'Installing plugins…',
+    improver: 'Running the improver…',
   }
 
   /**
