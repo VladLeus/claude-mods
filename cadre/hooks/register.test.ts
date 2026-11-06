@@ -24,6 +24,8 @@ import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
 import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
 import { t } from './locales/t'
+import { sessionRecordText } from './messages/record'
+import { ROLE_ENV, ROOT_ENV } from './paths'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
@@ -134,6 +136,13 @@ type World = {
   readonly tools: unknown
   /** The model's replies in order; once they run out, `model.complete` answers that the model gave no text. */
   readonly replies: readonly string[]
+  /**
+   * The runtime env of a role session: what `env.get` answers for CADRE_ROLE and CADRE_ROOT. Only such a world answers
+   * `tool.register` and `session.send`.
+   */
+  readonly roleEnv?: { readonly role: string; readonly root: string }
+  /** What a live send answers in a role world; delivered when absent. */
+  readonly sendResult?: { readonly isDelivered: boolean }
 }
 
 /**
@@ -160,6 +169,8 @@ type HostLog = {
   /** Each status line the plugin set, null for a clear (D-232). */
   readonly statuses: (string | null)[]
   readonly writes: string[]
+  /** Each live send of a role world, as `<to> <text>`. */
+  readonly sends: string[]
 }
 
 /**
@@ -204,6 +215,7 @@ function newLog(): HostLog {
     paneStates: [],
     statuses: [],
     writes: [],
+    sends: [],
   }
 }
 
@@ -544,6 +556,15 @@ async function statusHostWorld(over: Partial<World> = {}): Promise<World> {
   }
 }
 
+/** What `env.get` answers: the role env of a role world for CADRE_ROLE and CADRE_ROOT, else the world's env. */
+function envValueOf(world: World, name: string): string | undefined {
+  const { roleEnv } = world
+  if (roleEnv !== undefined && name === ROLE_ENV) return roleEnv.role
+  if (roleEnv !== undefined && name === ROOT_ENV) return roleEnv.root
+
+  return world.env[name]
+}
+
 /** Whether the fake host has the path: a listed folder, a bare folder, or a file. */
 function hasPath(world: World, path: string): boolean {
   return Object.hasOwn(world.listings, path) || world.dirs.includes(path) || Object.hasOwn(world.files, path)
@@ -638,7 +659,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: world.ancestors }
   })
-  on('env.get', async (_$, e) => ({ value: world.env[e.name] }))
+  on('env.get', async (_$, e) => ({ value: envValueOf(world, e.name) }))
   on('fs.exists', async (_$, e) => {
     log.ops.push(`fs.exists ${e.path}`)
     if (world.denyExists.includes(e.path)) return { deny: 'exists refused' }
@@ -709,8 +730,22 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
       return { value: undefined }
     })
   }
+  if (world.roleEnv !== undefined) {
+    on('tool.register', async (_$, e) => {
+      log.ops.push(`tool.register ${e.name}`)
+
+      return { value: { tool: `mcp__cadre__${e.name}` } }
+    })
+    on('session.send', async (_$, e) => {
+      log.sends.push(`${e.to} ${e.text}`)
+      if (world.sendResult?.isDelivered === false) return { isDelivered: false, reason: 'not delivered in this world' }
+
+      return { isDelivered: true }
+    })
+  }
   for (const op of FORBIDDEN_OPS) {
     if (op === 'fs.write' && world.isWriteAllowed) continue
+    if (op === 'tool.register' && world.roleEnv !== undefined) continue
     on(op, async () => {
       log.ops.push(`forbidden ${op}`)
 
@@ -3886,5 +3921,85 @@ describe('Phase 2 faked-host matrix', () => {
     const dialogs = JSON.stringify(log.askQuestions)
     const shown = [out.text, ...log.logs, pane, asked, dialogs, ...log.asks, ...log.askOptions.flat()].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+  })
+})
+
+/** BE's role.json in roleWorld. */
+const ROLE_BE_JSON = '/repo/.cadre/be/role.json'
+
+/** TL's runtime folder in roleWorld, where its inbox and the session id it published lie. */
+const ROLE_TL_RUNTIME = '/repo/.cadre/tl/.runtime'
+
+/**
+ * A role session of BE: the runtime env names BE and /repo, cadre.json lists pm, tl and be with their role.json files,
+ * TL's runtime folder holds the session id it published, an append to TL's inbox exits 0 and writes are allowed. Pass
+ * `over` to change one part of it.
+ */
+function roleWorld(over: Partial<World> = {}): World {
+  const base = ambiguousWorld()
+
+  return {
+    ...base,
+    roleEnv: { role: 'be', root: '/repo' },
+    dirs: [...base.dirs, '/repo/.cadre', ROLE_TL_RUNTIME],
+    files: {
+      ...base.files,
+      '/repo/.cadre/cadre.json': startStateText(['pm', 'tl', 'be']),
+      '/repo/.cadre/pm/role.json': roleJsonText(templateRole('pm')),
+      '/repo/.cadre/tl/role.json': roleJsonText(templateRole('tl')),
+      [ROLE_BE_JSON]: roleJsonText(templateRole('be')),
+      [`${ROLE_TL_RUNTIME}/session.json`]: sessionRecordText('s-tl'),
+    },
+    realPaths: { ...base.realPaths, [ROLE_TL_RUNTIME]: ROLE_TL_RUNTIME },
+    runResults: { [`/usr/bin/tee -a ${ROLE_TL_RUNTIME}/inbox.jsonl`]: { exitCode: 0, stdout: '' } },
+    isWriteAllowed: true,
+    ...over,
+  }
+}
+
+/** The ops of a log that name a tool registration, a refused one included. */
+function registrations(log: HostLog): string[] {
+  return log.ops.filter(op => op.includes('tool.register'))
+}
+
+describe('the inbox tools in a role session', () => {
+  test('a session with no CADRE_ROLE registers no tool and writes nothing', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld(), log)
+    await $.command.run({ command: 'cadre', args: '' })
+
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
+  })
+
+  test('a role session registers inbox_send and inbox_read and publishes its session id', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld(), log)
+    await $.command.run({ command: 'cadre', args: '' })
+
+    expect(registrations(log)).toEqual(['tool.register inbox_send', 'tool.register inbox_read'])
+    expect(log.writes).toEqual(['/repo/.cadre/be/.runtime/session.json'])
+  })
+
+  test('a role session whose role.json is absent registers nothing and writes nothing', async ($, on) => {
+    const log = newLog()
+    const world = roleWorld()
+    const files = Object.fromEntries(Object.entries(world.files).filter(([path]) => path !== ROLE_BE_JSON))
+    fakeHost(on, { ...world, files }, log)
+    await $.command.run({ command: 'cadre', args: '' })
+
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
+  })
+
+  test('inbox_send in a role session appends to the inbox of the receiver, then sends one live wake', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld(), log)
+    const note = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
+    await $.tool.call(note).catch(() => null)
+
+    expect(log.runs).toEqual([['/usr/bin/tee', '-a', `${ROLE_TL_RUNTIME}/inbox.jsonl`]])
+    expect(log.sends).toHaveLength(1)
+    expect(log.sends[0] ?? '').toContain('s-tl')
   })
 })

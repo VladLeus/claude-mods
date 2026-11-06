@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { SECURITY_KEYS } from '../testkit'
 import {
+  CADRE_TOOLS,
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
   CLAUDE_SECURITY_SKILL,
@@ -23,5 +24,12 @@ describe('security plugin installs (decision #39)', () => {
     expect(SECURITY_PLUGINS).toEqual(SECURITY_KEYS)
     expect(Object.isFrozen(SECURITY_PLUGINS)).toBe(true)
     expect(CLAUDE_SECURITY_SKILL).toBe('claude-security:claude-security')
+  })
+})
+
+describe('the cadre inbox tools', () => {
+  test('CADRE_TOOLS holds the full names of the three inbox tools and is frozen', () => {
+    expect(CADRE_TOOLS).toEqual(['mcp__cadre__inbox_send', 'mcp__cadre__inbox_read', 'mcp__cadre__inbox_mark'])
+    expect(Object.isFrozen(CADRE_TOOLS)).toBe(true)
   })
 })
