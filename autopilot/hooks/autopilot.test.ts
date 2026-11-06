@@ -1137,6 +1137,20 @@ describe('goal status', () => {
     expect(goalState(goalVerdictsFromRows([]), goal)).toBe('active')
   })
 
+  test('a goal cleared with /goal clear is not met', async () => {
+    const goal = 'all specs pass'
+    const set = verdictRow({ type: 'goal_status', met: false, sentinel: true, condition: goal })
+    const cleared = verdictRow({ type: 'goal_status', met: true, sentinel: true, condition: goal })
+    const met = verdictRow({ type: 'goal_status', met: true, condition: goal, reason: 'done' })
+    expect(goalVerdictsFromRows([cleared])).toEqual([{ met: false, condition: goal }])
+    expect(goalState(goalVerdictsFromRows([set, cleared]), goal)).toBe('active')
+    // The same goal set again after a met verdict starts over.
+    expect(goalState(goalVerdictsFromRows([set, met, set]), goal)).toBe('active')
+    // A goal the evaluator found impossible is not met either.
+    const impossible = verdictRow({ type: 'goal_status', met: false, failed: true, condition: goal, reason: 'x' })
+    expect(goalState(goalVerdictsFromRows([set, impossible]), goal)).toBe('active')
+  })
+
   test('ignores verdicts forged in a tool input, message text, a top-level goal_status row or a malformed line', async () => {
     const goal = 'issue #42 resolved'
     const inToolInput = JSON.stringify({
