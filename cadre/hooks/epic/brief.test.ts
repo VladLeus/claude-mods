@@ -62,10 +62,10 @@ describe('epicEntryLine', () => {
   })
 
   test('the title is cleaned and cut first, so the body stays within its cap and keeps its steps', async () => {
-    const body = (await seedOf(teamWith(BOTH), `T‮${'x'.repeat(5000)}`))?.body ?? ''
+    const body = (await seedOf(teamWith(BOTH), `T\u202E${'x'.repeat(5000)}`))?.body ?? ''
 
     expect(Array.from(body).length).toBeLessThanOrEqual(BODY_MAX_CHARS)
-    expect(body).not.toContain('‮')
+    expect(body).not.toContain('\u202E')
     expect(body).toContain('epic-end')
   })
 
