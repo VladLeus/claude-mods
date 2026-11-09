@@ -256,5 +256,12 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
   needsBash: false,
   roleStart: () => 'superpowers:brainstorming',
   install: 'claude plugin install superpowers@claude-plugins-official',
+  projectInstall: Object.freeze({
+    id: 'superpowers@claude-plugins-official',
+    argv: Object.freeze(['claude', 'plugin', 'install', 'superpowers@claude-plugins-official', '--scope', 'project']),
+    timeoutMs: 180_000,
+    writes: Object.freeze(['enabledPlugins in .claude/settings.json']),
+    isPlugin: true,
+  }),
   factsHeading: null,
 })

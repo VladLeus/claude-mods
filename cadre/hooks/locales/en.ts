@@ -336,6 +336,7 @@ export const EN = Object.freeze({
   'init.status.regen': 'Checking changed parts…',
   'init.status.applyHunks': 'Running the accepted changes…',
   'init.status.installPlugins': 'Installing plugins…',
+  'init.status.installFrameworks': 'Installing frameworks…',
   'init.status.improver': 'Running the improver…',
   'init.status.summary.scan': 'the repo, your settings, plugins, skills and MCP servers',
   'init.status.summary.describe': 'the roles you described',
@@ -359,6 +360,8 @@ export const EN = Object.freeze({
   'init.status.count.hunks.other': '{count} hunks',
   'init.status.count.plugins.one': '{count} plugin',
   'init.status.count.plugins.other': '{count} plugins',
+  'init.status.count.frameworks.one': '{count} framework',
+  'init.status.count.frameworks.other': '{count} frameworks',
   'init.status.count.files.one': '{count} file',
   'init.status.count.files.other': '{count} files',
   'init.status.count.items.one': '{count} item',
@@ -647,6 +650,8 @@ export const EN = Object.freeze({
   'apply.installs.pythonProblem4': 'python3 --version says {line}',
   'apply.installs.noHomeInstallText':
     'could not install {shown}: no home folder is known to run it from: run it yourself: {command}',
+  'apply.installs.projectInstallFailureText':
+    'could not install {shown}: run it yourself from the repo root: {command}',
 
   'apply.hunks.hunkFailureLine': 'the {file} change {key}',
   'apply.hunks.hunkFailureLine2': '{change} failed: run it yourself: {display}',

@@ -133,5 +133,6 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   /** The role's plan file, which the built-in kickoff asks the role to write first. */
   roleStart: (roleId: string) => fill(PROMPTS.builtinRoleStart, { roleId }),
   install: null,
+  projectInstall: null,
   factsHeading: null,
 })

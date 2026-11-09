@@ -76,6 +76,10 @@ export type Draft = {
    * an Adjust that names gsd still asks the check (D-295, edge #35).
    */
   readonly gsdCheck?: 'declined' | 'run' | 'skipped'
+  /** The frameworks the person chose for this team; absent when no choice was asked. */
+  readonly frameworkSet?: readonly FrameworkId[]
+  /** The frameworks the person answered Install for; installed at project scope only after Confirm. */
+  readonly frameworkInstalls?: readonly FrameworkId[]
 }
 
 /** What the person confirmed in the review (D-43, D-105): the draft the plan was built from, and that plan. */

@@ -32,9 +32,9 @@ import type { ConflictChoice } from '../apply/conflict'
 import { hunkRuns, hunksAfterRuns } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
-import { noHomeInstallText, setupAfterInstalls } from '../apply/installs'
+import { noHomeInstallText, projectInstallOf, setupAfterInstalls } from '../apply/installs'
 import type { ApplyInput } from '../apply/private'
-import { installPlugins, NOTHING_APPLIED, privatePlanOf, writeWithImprover } from '../apply/run'
+import { installPlugins, installProject, NOTHING_APPLIED, privatePlanOf, writeWithImprover } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
 import { applySteps, planMismatchProblem } from '../apply/steps'
 import { sha256Hex } from '../core/hash'
@@ -126,6 +126,9 @@ export const APPLY_HUNKS_PROGRESS = t('init.status.applyHunks')
 /** The status line or pane loader while apply installs the plugins answered Install, once for all (D-284). */
 export const INSTALL_PROGRESS = t('init.status.installPlugins')
 
+/** The status line or pane loader while apply installs the frameworks consented to, once for all of them. */
+export const FRAMEWORK_INSTALL_PROGRESS = t('init.status.installFrameworks')
+
 /** The status line the TUI default shows while each model call of init runs, by its ModelCall id (D-232). */
 export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.freeze({
   'describe-roles': t('init.status.describeRoles'),
@@ -153,6 +156,7 @@ type CountWord =
   | 'sessions'
   | 'hunks'
   | 'plugins'
+  | 'frameworks'
   | 'files'
 
 /** A step summary of counts (D-301): each `<count> <word>`, in its one or other form (tn), joined with ', '. */
@@ -294,6 +298,9 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  *    new adds and removes, a pane surface asks in place of the context line (D-255); an answer that is neither is
  *    asked again with why on top (D-136). A dismissal cancels with CONFLICT_DISMISSED_REASON and MAX_ASKS answers that
  *    are neither with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
+ * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
+ *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again. A
+ *    plugin among them that installed joins the setup as step 4's plugins do, and each failure is an install problem.
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -369,6 +376,15 @@ async function applyConfirmed(
     if (choice.kind === 'cancelled') return choice
     choices.set(path, choice.value)
   }
+  const projectInstalls = (draft.frameworkInstalls ?? []).flatMap(id => projectInstallOf(id) ?? [])
+  if (projectInstalls.length > 0) {
+    await io.progress(FRAMEWORK_INSTALL_PROGRESS, countsText([['frameworks', projectInstalls.length]]))
+  }
+  const project = await installProject(host, locations.root, locations.home, projectInstalls)
+  const scanned = projectInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
+  const projectPlugins = projectInstalls.flatMap(install =>
+    install.isPlugin && project.installed.includes(install.id) ? [install.id] : [],
+  )
   const gsd = {
     userDir: provenUserDir(gathered.facts),
     home: locations.home,
@@ -389,10 +405,10 @@ async function applyConfirmed(
     locations.home === null
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
       : await installPlugins(host, locations.home, draft.pluginInstalls)
-  const setup = setupAfterInstalls(gathered.setup, installs.installed)
+  const setup = setupAfterInstalls(gathered.setup, [...installs.installed, ...projectPlugins])
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const attended = await attendedByConfig(io, locations.root, frameworks, setup)
-  const scopes = compileAll(roles, repoDefault, { ...gathered, setup }, attended, launchStart)
+  const scopes = compileAll(roles, repoDefault, { ...scanned, setup }, attended, launchStart)
   const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
   const owed = privatesOf(draft.instructions, roles)
   const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })
@@ -430,7 +446,7 @@ async function applyConfirmed(
     hunkFailures: failures,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: installs.installed,
-    installProblems: installs.installProblems,
+    installProblems: [...project.installProblems, ...installs.installProblems],
     untrackedParts: tracked.warnings,
     privateProblems: [...privatePlan.problems, ...written.privateProblems],
   }

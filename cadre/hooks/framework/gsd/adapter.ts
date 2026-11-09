@@ -336,6 +336,19 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   needsBash: true,
   roleStart: () => '/gsd-autonomous',
   install: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
+  projectInstall: Object.freeze({
+    id: '@opengsd/gsd-core',
+    argv: Object.freeze(['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']),
+    timeoutMs: 600_000,
+    writes: Object.freeze([
+      '.claude/gsd-core',
+      '.claude/commands',
+      '.claude/agents',
+      '.claude/hooks',
+      '.claude/settings.local.json',
+    ]),
+    isPlugin: false,
+  }),
   factsHeading: t('framework.gsd.adapter.gsdAdapterFactsHeading'),
 })
 

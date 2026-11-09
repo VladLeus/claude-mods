@@ -308,6 +308,18 @@ export type KickoffContext = {
 }
 
 /**
+ * A framework's install at project scope, run from the repo root once the person consented and confirmed. `writes`
+ * names what the installer writes, for the review.
+ */
+export type ProjectInstall = {
+  readonly id: string
+  readonly argv: readonly string[]
+  readonly timeoutMs: number
+  readonly writes: readonly string[]
+  readonly isPlugin: boolean
+}
+
+/**
  * The contract every framework adapter implements. `detectRule` is shown by `--adapters`.
  * Every field is required except `roleFacts`. `autonomyNote` is null unless `autonomy` is empty, and then it
  * states why the framework needs no autonomy settings.
@@ -353,6 +365,8 @@ export type FrameworkAdapter = {
   readonly roleStart: (roleId: string) => string
   /** The command a person runs to install the framework; null when there is nothing to install. */
   readonly install: string | null
+  /** The install cadre runs at project scope on consent; null when there is nothing to install. */
+  readonly projectInstall: ProjectInstall | null
   /** The heading of the detect report line that lists the adapter's roleFacts; null when no line is shown. */
   readonly factsHeading: string | null
 }

@@ -5,7 +5,7 @@
  * imports apply, core, the GSD hunks, git, host, paths, roles/infra, scan/facts/normalize and the types, so init and
  * regen run their writes here.
  */
-import type { HostIo, InitIo, InitLocations, PortEntry, RoleSpec, WriteStat } from '../../types'
+import type { HostIo, InitIo, InitLocations, PortEntry, ProjectInstall, RoleSpec, WriteStat } from '../../types'
 import { reportText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
 import { gitCommonDirOf } from '../git/common-dir'
@@ -23,6 +23,7 @@ import {
   installFailureText,
   MARKETPLACE_ADD_ARGV,
   pluginInstallArgv,
+  projectInstallFailureText,
   PYTHON_VERSION_ARGV,
   pythonProblem,
 } from './installs'
@@ -504,6 +505,43 @@ export async function installPlugins(
       continue
     }
     installProblems.push(installFailureText(key, marketplace === 'failed'))
+  }
+
+  return { installed, installProblems }
+}
+
+/**
+ * Runs the project installs the person consented to, after Confirm: one at a time from the repo root, each awaited
+ * before the next and with its own timeout. The first plugin install that fails runs MARKETPLACE_ADD_ARGV once for the
+ * whole call from the home folder, never the repo, and not at all without one; when the add exits 0, that install and
+ * each later plugin install that fails is tried once more. An install that still failed is a problem with the command
+ * to run by hand from the repo root.
+ */
+export async function installProject(
+  host: HostIo,
+  root: string,
+  home: string | null,
+  installs: readonly ProjectInstall[],
+): Promise<{ installed: string[]; installProblems: string[] }> {
+  const installed: string[] = []
+  const installProblems: string[] = []
+  const isDone = async (install: ProjectInstall): Promise<boolean> =>
+    !hasRunFailed(await host.run(install.argv, { cwd: root, timeoutMs: install.timeoutMs }))
+  let marketplace: 'untried' | 'added' | 'failed' = 'untried'
+  for (const install of installs) {
+    if (await isDone(install)) {
+      installed.push(install.id)
+      continue
+    }
+    if (install.isPlugin && home !== null && marketplace === 'untried') {
+      const add = await host.run(MARKETPLACE_ADD_ARGV, { cwd: home, timeoutMs: PLUGIN_RUN_TIMEOUT_MS })
+      marketplace = hasRunFailed(add) ? 'failed' : 'added'
+    }
+    if (install.isPlugin && marketplace === 'added' && (await isDone(install))) {
+      installed.push(install.id)
+      continue
+    }
+    installProblems.push(projectInstallFailureText(install))
   }
 
   return { installed, installProblems }
