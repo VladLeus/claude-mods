@@ -279,6 +279,12 @@ describe('runtime render (D-102)', () => {
     ])
     expect(renderArgv({ kind: 'write', path: `${RUNTIME}/mcp.json`, text: MCP_TEXT })).toBeNull()
     expect(renderArgv(INBOX_CREATE)).toEqual(['/usr/bin/tee', '-a', INBOX_CREATE.path])
+    expect(renderArgv({ kind: 'move', path: INBOX_CREATE.path, target: `${RUNTIME}/inbox-1000.jsonl` })).toEqual([
+      '/bin/mv',
+      '--',
+      INBOX_CREATE.path,
+      `${RUNTIME}/inbox-1000.jsonl`,
+    ])
   })
 
   test('an append step runs tee -a with its text as stdin, writes nothing, and fails on a non-zero exit', async () => {
@@ -347,6 +353,36 @@ function linked(over: Partial<RenderInput> = {}): RenderInput {
 function listed(folders: Readonly<Record<string, readonly PortEntry[]>>): ReadonlyMap<string, readonly PortEntry[]> {
   return new Map(Object.entries(folders))
 }
+
+describe('the rotation of a large inbox', () => {
+  const inbox = `${RUNTIME}/inbox.jsonl`
+  const rotation = { archive: `${RUNTIME}/inbox-1000.jsonl`, text: '{"v":1}\n' }
+  const stats = disk({ [RUNTIME]: folder(RUNTIME), [inbox]: regular(inbox) })
+
+  test('a rotation moves the inbox to its archive, then appends the fresh entry in its place', () => {
+    expect(renderSteps(input({ stats, rotation })).steps).toEqual([
+      { kind: 'mkdir', path: RUNTIME },
+      { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      ...fileWritesOf(BE_PLAN),
+      { kind: 'move', path: inbox, target: rotation.archive },
+      { kind: 'append', path: inbox, text: `\n${rotation.text}` },
+      STAMP_WRITE,
+    ])
+  })
+
+  test('the fresh entry is appended, never written, so an entry another role added after the move is kept', () => {
+    const atInbox = renderSteps(input({ stats, rotation })).steps.filter(step => step.path === inbox)
+
+    expect(atInbox.map(step => step.kind)).toEqual(['move', 'append'])
+  })
+
+  test('without a rotation a real inbox gets no step and a missing one is created', () => {
+    const real = renderSteps(input({ stats })).steps.filter(step => step.path === inbox)
+    const missing = renderSteps(input()).steps.filter(step => step.path === inbox)
+
+    expect([real, missing]).toEqual([[], [INBOX_CREATE]])
+  })
+})
 
 describe('runtime render links', () => {
   test('a planned link: .runtime, its overlay and the link folder are made, then the link, files and stamp', () => {

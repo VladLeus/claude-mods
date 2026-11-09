@@ -4,6 +4,8 @@ import type {
   GsdFact,
   HostIo,
   HostRun,
+  InboxEntry,
+  InboxMark,
   InitFacts,
   InitIo,
   InitLocations,
@@ -30,6 +32,7 @@ import { repoGuard } from '../guards/repo'
 import { unsafeMemoryNameWarning } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
 import { t } from '../locales/t'
+import { parseInbox, recordLine } from '../messages/record'
 import { compileTeam, readTeam } from '../team'
 import {
   BIDI_OVERRIDE,
@@ -1401,5 +1404,39 @@ describe('the hand-out record at start (02-GAPS-B3 S6, N2, N8)', () => {
 
     expect(names.filter(name => !lines.includes(`warning: ${unsafeMemoryNameWarning(name)}`))).toEqual([])
     expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`])
+  })
+})
+
+describe('the rotation of a large inbox at /cadre start', () => {
+  test('an inbox over 768 KiB moves to inbox-<at>.jsonl and a fresh entry from cadre lists its open ids', async () => {
+    const inbox = `${RUNTIME}/inbox.jsonl`
+    const open: InboxEntry = {
+      v: 1,
+      type: 'entry',
+      id: 'tl-1000-0000000a',
+      at: 1000,
+      from: 'tl',
+      to: 'be',
+      kind: 'note',
+      subject: 'Open',
+      body: 'Still open',
+    }
+    const closed: InboxEntry = { ...open, id: 'tl-1000-0000000b', subject: 'Closed' }
+    const done: InboxMark = { v: 1, type: 'mark', id: closed.id, at: 2000, by: 'be', state: 'done', note: 'merged' }
+    const filler = `${'x'.repeat(1023)}\n`.repeat(800)
+    const text = `${[open, closed, done].map(recordLine).join('')}${filler}`
+    const start = await startBe(withFile(await appliedWorld(), inbox, text))
+    const moves = start.calls.filter(call => call.argv[0] === '/bin/mv' || call.argv[0] === '/usr/bin/tee')
+    const fresh = parseInbox(moves[1]?.options.stdin ?? '')
+    const body = fresh[0]?.type === 'entry' ? fresh[0].body : ''
+
+    expect(moves.map(call => call.argv)).toEqual([
+      ['/bin/mv', '--', inbox, `${RUNTIME}/inbox-1000000.jsonl`],
+      ['/usr/bin/tee', '-a', inbox],
+    ])
+    expect(fresh).toHaveLength(1)
+    expect(fresh[0]).toMatchObject({ type: 'entry', from: 'cadre', to: 'be', kind: 'note', at: 1_000_000 })
+    expect([body.includes(open.id), body.includes(closed.id)]).toEqual([true, false])
+    expect(writtenPaths(start)).not.toContain(inbox)
   })
 })

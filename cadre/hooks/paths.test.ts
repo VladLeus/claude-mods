@@ -7,6 +7,8 @@ import {
   claudeJsonPathOf,
   displayPath,
   handoffFolderOf,
+  INBOX_ARCHIVE_GLOB,
+  inboxArchiveFile,
   INBOX_FILE,
   INBOX_LOG_FILE,
   isFileInsideRoot,
@@ -281,6 +283,12 @@ describe('the runtime inbox files', () => {
 
     expect([INBOX_LOG_FILE, SESSION_FILE]).toEqual(['inbox.jsonl', 'session.json'])
     expect(names.filter(name => RUNTIME_RENDERED.includes(name))).toEqual(names)
+  })
+
+  test('an inbox archive is named by its time, and the archive glob that matches it is rendered too', () => {
+    expect(inboxArchiveFile(1000)).toBe('inbox-1000.jsonl')
+    expect(INBOX_ARCHIVE_GLOB).toBe('inbox-*.jsonl')
+    expect(RUNTIME_RENDERED).toContain(INBOX_ARCHIVE_GLOB)
   })
 })
 

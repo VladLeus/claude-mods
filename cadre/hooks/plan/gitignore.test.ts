@@ -90,7 +90,7 @@ describe('ignore block', () => {
       expect(IGNORE_END).toBe('# <<< cadre')
     })
 
-    test('the per-user files /cadre start renders into .runtime are the ten named, in a frozen list', () => {
+    test('the per-user files /cadre start renders into .runtime are the eleven named, in a frozen list', () => {
       expect(RUNTIME_RENDERED).toEqual([
         'settings.json',
         'mcp.json',
@@ -99,6 +99,7 @@ describe('ignore block', () => {
         'private-instructions',
         'inbox.jsonl',
         'session.json',
+        'inbox-*.jsonl',
         'probe-expectations.json',
         'inbox.md',
         'stamp',
@@ -245,7 +246,7 @@ describe('ignore block', () => {
       expect(text).toBe(
         '# >>> cadre\nthoughts/\n.cadre/*/.runtime/settings.json\n.cadre/*/.runtime/mcp.json\n' +
           '.cadre/*/.runtime/overlay/\n.cadre/*/.runtime/instructions/\n.cadre/*/.runtime/private-instructions\n' +
-          '.cadre/*/.runtime/inbox.jsonl\n.cadre/*/.runtime/session.json\n' +
+          '.cadre/*/.runtime/inbox.jsonl\n.cadre/*/.runtime/session.json\n.cadre/*/.runtime/inbox-*.jsonl\n' +
           '.cadre/*/.runtime/probe-expectations.json\n.cadre/*/.runtime/inbox.md\n.cadre/*/.runtime/stamp\n' +
           '.cadre/**/*.cadre-new\n# <<< cadre\n',
       )
@@ -262,6 +263,10 @@ describe('ignore block', () => {
       const wanted = ['.cadre/*/.runtime/inbox.jsonl', '.cadre/*/.runtime/session.json', '.cadre/*/.runtime/inbox.md']
 
       expect(wanted.filter(line => lines.includes(line))).toEqual(wanted)
+    })
+
+    test('all ignores the inbox archives /cadre start moves aside, of every role', () => {
+      expect(ignoreLines('all')).toContain('.cadre/*/.runtime/inbox-*.jsonl')
     })
 
     test('thoughts/ is left out when a thoughts line is already outside the block, in every policy', () => {
