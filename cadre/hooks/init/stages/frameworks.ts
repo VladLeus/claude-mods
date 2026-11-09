@@ -366,9 +366,7 @@ function afterSetInstall(state: InitState, sub: SetInstall, answer: string | nul
   if (next.kind === 'again') return setInstallAsked(state, sub.pending, sub.framework, next.sub.tries, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return setInstallNext(state, set, rest)
-  const { installed = [], frameworkInstalls = [] } = state.draft
-  const added: FrameworkId[] = [...installed.filter(id => id !== 'none'), sub.framework, 'none']
-  const draft = { ...state.draft, installed: added, frameworkInstalls: [...frameworkInstalls, sub.framework] }
+  const draft = withConsentedInstall(state.draft, sub.framework)
 
   return setInstallNext({ ...state, draft }, [...set, sub.framework], rest)
 }
@@ -440,6 +438,21 @@ export function installedFrameworks(detections: readonly Detection[]): Framework
     detections.some(found => found.id === id && (found.status === 'in-use' || found.status === 'installed'))
 
   return [...SUPPORTED_IDS.filter(isThere), 'none']
+}
+
+/** The installed frameworks with `fw` among them once: as they are when they hold it, else with it just before none. */
+function withInstalled(installed: readonly FrameworkId[], fw: FrameworkId): FrameworkId[] {
+  if (installed.includes(fw)) return [...installed]
+
+  return [...installed.filter(id => id !== 'none'), fw, 'none']
+}
+
+/** A framework the person consented to install, kept once in the installed ones and once in the installs. */
+export function withConsentedInstall(draft: InitState['draft'], fw: FrameworkId): InitState['draft'] {
+  const { installed = [], frameworkInstalls = [] } = draft
+  const installs = frameworkInstalls.includes(fw) ? frameworkInstalls : [...frameworkInstalls, fw]
+
+  return { ...draft, installed: withInstalled(installed, fw), frameworkInstalls: installs }
 }
 
 /** Each answer to a framework install question with whether it installs, the declining one first. */
@@ -610,9 +623,9 @@ function gsdCheckAnswer(state: InitState, answer: Answer): InitState {
 
 /**
  * The state with GSD's own check merged into the facts (withGsdIdentity) and `installed` and `choice` read again from
- * the merged facts (D-243, D-269, edge #30), so a GSD install the check proved counts for the framework question and
- * for a later Adjust; null when the result is not a gsd-identity result or the draft has no gathered facts or
- * locations.
+ * the merged facts, so a GSD install the check proved counts for the framework question and for a later Adjust; the
+ * frameworks consented to install stay installed. Null when the result is not a gsd-identity result or the draft has
+ * no gathered facts or locations.
  */
 export function withGsdIdentityChecked(state: InitState, result: IoResult): InitState | null {
   const { gathered, locations } = state.draft
@@ -622,7 +635,7 @@ export function withGsdIdentityChecked(state: InitState, result: IoResult): Init
   const draft = {
     ...state.draft,
     gathered: { ...gathered, facts },
-    installed: installedFrameworks(detections),
+    installed: (state.draft.frameworkInstalls ?? []).reduce(withInstalled, installedFrameworks(detections)),
     choice: chooseFramework(detections, null),
   }
 

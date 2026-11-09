@@ -41,6 +41,7 @@ import {
   frameworkInstallAsk,
   GSD_CHECK_DISMISSED_REASON,
   gsdCheckAsk,
+  withConsentedInstall,
   withGsdCheck,
   withGsdIdentityChecked,
 } from './frameworks'
@@ -475,7 +476,7 @@ function rolesInstallAsked(
  * the role keeps its framework. An answer that is neither is asked again with why on top.
  */
 function afterRolesInstall(state: InitState, sub: RolesInstall, answer: string | null): InitState {
-  const { installed, frameworkInstalls = [] } = state.draft
+  const { installed } = state.draft
   const { answer: typed, ...cursor } = sub.pending
   const op = parseAdjust(typed)
   if (installed === undefined || op === null || op.kind !== 'framework') return stageFailed(state)
@@ -487,10 +488,10 @@ function afterRolesInstall(state: InitState, sub: RolesInstall, answer: string |
   if (next.kind === 'again') return rolesInstallAsked(state, sub.pending, sub.framework, next.sub.tries, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return adjustAgain(state, cursor, cursor.roles, refusal)
-  const added: FrameworkId[] = [...installed.filter(id => id !== 'none'), sub.framework, 'none']
-  const draft = { ...state.draft, installed: added, frameworkInstalls: [...frameworkInstalls, sub.framework] }
+  const draft = withConsentedInstall(state.draft, sub.framework)
+  if (draft.installed === undefined) return stageFailed(state)
 
-  return afterAdjust({ ...state, draft }, cursor, added, typed)
+  return afterAdjust({ ...state, draft }, cursor, draft.installed, typed)
 }
 
 /** Where the describe question is: the proposal it came after, with its roles and their scan changes, and its tries. */
