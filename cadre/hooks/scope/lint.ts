@@ -12,7 +12,7 @@ import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { t } from '../locales/t'
 import { handoffFolderOf } from '../paths'
-import { INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from '../roles/infra'
+import { CADRE_TOOLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from '../roles/infra'
 
 /**
  * The reads every role is denied, best effort (ROLE-05, D-97c): the repo's .env files and the user's ssh and aws
@@ -62,11 +62,12 @@ const ABSOLUTE_MESSAGE = ARTIFACT.lintAbsolute
 const INFRA_MESSAGE = ARTIFACT.lintInfra
 
 /**
- * What no deny pattern may cover (ISO-04, D-77): the infra tools, the infra MCP servers by name, and the handoff
+ * What no deny pattern may cover: the infra tools, cadre's own tools, the infra MCP servers by name, and the handoff
  * skills as the `Skill(<name>)` rules that would block them.
  */
 const INFRA_DENY_TARGETS: readonly string[] = Object.freeze([
   ...INFRA_TOOLS,
+  ...CADRE_TOOLS,
   ...INFRA_MCP_SERVERS.map(server => `mcp__${server}`),
   ...INFRA_SKILLS.map(name => `Skill(${name})`),
 ])

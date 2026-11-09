@@ -8,6 +8,7 @@ import type {
   InboxEntry,
   InboxMark,
   InitIo,
+  MessageKind,
   PortStat,
   RoleContext,
   SessionLink,
@@ -15,7 +16,7 @@ import type {
   ToolOutcome,
 } from '../../types'
 import { isRoleId } from '../core/role-id'
-import { utf8Bytes } from '../core/text'
+import { clean, utf8Bytes } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
@@ -38,6 +39,7 @@ import {
   INBOX_READ_MAX_BYTES,
   parseMarkInput,
   parseSendInput,
+  SUBJECT_MAX_CHARS,
 } from './send'
 import { wakeText } from './wake'
 
@@ -121,26 +123,49 @@ async function appendLine(host: HostIo, path: string, line: string): Promise<boo
   return run !== null && run.exitCode === 0
 }
 
+/** What a role sends: the receiver, the kind, the subject and body, and the entry it replies to. */
+type Message = {
+  readonly to: string
+  readonly kindName: MessageKind
+  readonly subject: string
+  readonly body: string
+  readonly replyTo: string | null
+}
+
 /**
- * Appends the entry to its receiver's inbox, then wakes the receiver by the session id it published. A line over its
- * cap or an inbox out of place is refused before anything runs.
+ * Stamps the message as an entry from the session's role, appends it to its receiver's inbox, then wakes the receiver
+ * by the session id it published. A line over its cap or an inbox out of place is refused before anything runs.
  */
 async function deliver(
   io: InitIo,
   host: HostIo,
   link: SessionLink,
-  root: string,
-  entry: InboxEntry,
+  ctx: RoleContext,
+  at: number,
+  message: Message,
 ): Promise<ToolOutcome> {
-  const { id, to } = entry
+  const { to, kindName, subject, body, replyTo } = message
+  const id = await entryIdOf(ctx.id, at, [to, kindName, subject, body].join('\n'))
+  const entry: InboxEntry = {
+    v: 1,
+    type: CONTRACTS.inboxEntryType,
+    id,
+    at,
+    from: ctx.id,
+    to,
+    kind: kindName,
+    subject,
+    body,
+    ...(replyTo === null ? {} : { replyTo }),
+  }
   const line = recordLine(entry)
   if (utf8Bytes(line) > INBOX_LINE_MAX_BYTES) {
     return deny(fill(PROMPTS.inboxLineTooLarge, { max: INBOX_LINE_MAX_BYTES }))
   }
-  const refusal = await receiverRefusal(io, root, to)
+  const refusal = await receiverRefusal(io, ctx.root, to)
   if (refusal !== null) return deny(refusal)
-  if (!(await appendLine(host, inboxLogPath(root, to), line))) return deny(fill(PROMPTS.inboxAppendFailed, { to }))
-  const sessionId = await publishedId(io, sessionFilePath(root, to))
+  if (!(await appendLine(host, inboxLogPath(ctx.root, to), line))) return deny(fill(PROMPTS.inboxAppendFailed, { to }))
+  const sessionId = await publishedId(io, sessionFilePath(ctx.root, to))
   const isDelivered = sessionId !== null && (await link.send(sessionId, wakeText(entry)))
 
   return { kind: 'result', text: fill(isDelivered ? PROMPTS.inboxSent : PROMPTS.inboxSentUndelivered, { id, to }) }
@@ -160,22 +185,8 @@ export async function runInboxSend(
   if (input.kind === 'error') return deny(input.message)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
-  const { to, kindName, subject, body, replyTo } = input
-  const id = await entryIdOf(ctx.id, at, [to, kindName, subject, body].join('\n'))
-  const entry: InboxEntry = {
-    v: 1,
-    type: CONTRACTS.inboxEntryType,
-    id,
-    at,
-    from: ctx.id,
-    to,
-    kind: kindName,
-    subject,
-    body,
-    ...(replyTo === null ? {} : { replyTo }),
-  }
 
-  return deliver(io, host, link, ctx.root, entry)
+  return deliver(io, host, link, ctx, at, input)
 }
 
 /** inbox_read: the session's own inbox, folded; an absent inbox reads as empty. */
@@ -189,13 +200,23 @@ export async function runInboxRead(io: InitIo, ctx: RoleContext, event: unknown)
   return { kind: 'result', text: inboxReadText(foldInbox(events), input.all) }
 }
 
-/** inbox_mark: one mark stamped with the session's own role and the clock, appended to its own inbox only. */
+/** Where a rejection goes: the sender's parent, or the sender itself when it has none or the parent is the marker. */
+function rejectionTarget(team: TeamView, from: string, marker: string): string {
+  const parent = Object.hasOwn(team.parents, from) ? team.parents[from] : null
+
+  return parent === undefined || parent === null || parent === marker ? from : parent
+}
+
+/**
+ * inbox_mark: one mark stamped with the session's own role and the clock, appended to its own inbox only. A rejection
+ * of a role's entry then goes up as a note that replies to it; the mark stands whatever becomes of the note.
+ */
 export async function runInboxMark(
   io: InitIo,
   host: HostIo,
-  _link: SessionLink,
+  link: SessionLink,
   ctx: RoleContext,
-  _team: TeamView | null,
+  team: TeamView | null,
   event: unknown,
 ): Promise<ToolOutcome> {
   const input = parseMarkInput(event)
@@ -204,12 +225,15 @@ export async function runInboxMark(
   const read = await io.read(own, INBOX_READ_MAX_BYTES)
   if (read.state !== 'text' && read.state !== 'absent') return deny(fill(PROMPTS.inboxUnreadable, { id: ctx.id }))
   const events = read.state === 'text' ? parseInbox(read.text) : []
-  if (!events.some(held => held.type === CONTRACTS.inboxEntryType && held.id === input.id && held.to === ctx.id)) {
-    return deny(PROMPTS.inboxMarkUnknownId)
-  }
+  const entry = events.find(
+    (held): held is InboxEntry => held.type === CONTRACTS.inboxEntryType && held.id === input.id && held.to === ctx.id,
+  )
+  if (entry === undefined) return deny(PROMPTS.inboxMarkUnknownId)
+  const { id, state, note, waitsFor } = input
+  const reason = state === 'rejected' && entry.from !== CONTRACTS.cadreSender ? note : null
+  if (reason !== null && team === null) return deny(PROMPTS.inboxMarkNoTeam)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxMarkFailed)
-  const { id, state, note, waitsFor } = input
   const mark: InboxMark = {
     v: 1,
     type: CONTRACTS.inboxMarkType,
@@ -223,6 +247,10 @@ export async function runInboxMark(
   const refusal = await receiverRefusal(io, ctx.root, ctx.id)
   if (refusal !== null) return deny(refusal)
   if (!(await appendLine(host, own, recordLine(mark)))) return deny(PROMPTS.inboxMarkFailed)
+  if (reason === null || team === null) return { kind: 'result', text: fill(PROMPTS.inboxMarked, { id, state }) }
+  const to = rejectionTarget(team, entry.from, ctx.id)
+  const subject = clean(fill(PROMPTS.inboxRejectSubject, { subject: entry.subject }), SUBJECT_MAX_CHARS)
+  const forward = await deliver(io, host, link, ctx, at, { to, kindName: 'note', subject, body: reason, replyTo: id })
 
-  return { kind: 'result', text: fill(PROMPTS.inboxMarked, { id, state }) }
+  return { kind: 'result', text: fill(PROMPTS.inboxMarkedRejected, { id, forward: forward.text }) }
 }
