@@ -36,7 +36,14 @@ import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { unreadableWarning } from '../scan/instructions/memories'
 import { overSizeWarning, partsOfText } from '../scan/instructions/read'
 import { REGEN_RECOMMEND_SYSTEM } from '../suggest/regen'
-import { REGEN_BAD_STATE, REGEN_NO_STATE, regenBadRole, regenNeedsFramework, regenNoRole } from '../team'
+import {
+  REGEN_BAD_STATE,
+  REGEN_CADRE_ROLE,
+  REGEN_NO_STATE,
+  regenBadRole,
+  regenNeedsFramework,
+  regenNoRole,
+} from '../team'
 import {
   ABSOLUTE_PATH_MARKERS,
   BUILT_RULE,
@@ -371,6 +378,20 @@ describe('runRegen', () => {
       expect([index, await runRegen(run.io, { id: 'be', dryRun: true })]).toEqual([index, REGEN_BAD_STATE])
       expect(run.asked).toEqual([])
     }
+  })
+
+  test('a cadre.json that lists the reserved role id cadre gets its own refusal, naming the rename', async () => {
+    const world = await regenWorld()
+    const state = stateOf(team)
+    const run = memIo(withFiles(world, { [STATE]: stableJson({ ...state, roles: ['pm', 'cadre'] }) }), {})
+
+    expect(REGEN_CADRE_ROLE).toBe(
+      '.cadre/cadre.json lists the role id "cadre", which is reserved: cadre signs its own inbox entries with it. ' +
+        'Run /cadre init again and give that role another id.',
+    )
+    expect(await runRegen(run.io, { id: 'be', dryRun: true })).toBe(REGEN_CADRE_ROLE)
+    expect(run.asked).toEqual([])
+    expect(await regenBe(withFiles(world, { [STATE]: stableJson({ ...state, schema: 2 }) }))).toBe(REGEN_BAD_STATE)
   })
 
   test('a stored launcher folder that is not a folder inside the repo makes cadre.json not valid (A2)', async () => {

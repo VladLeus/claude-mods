@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { BACKSLASH, BE_FILE, manifestText, SHA_A, stateText } from '../testkit'
-import { parseCadreState, parseManifest } from './cadre-files'
+import { listsCadreRole, parseCadreState, parseManifest } from './cadre-files'
 
 const SHA_B = '0123456789abcdef'.repeat(4)
 const BE_LAUNCHER = { path: '.cadre/bin/be', sha256: SHA_B, mode: 'exec' }
@@ -180,6 +180,10 @@ describe('parseCadreState', () => {
     }
   })
 
+  test('a state that lists the reserved role id cadre is null', () => {
+    expect(parseCadreState(stateText({ roles: ['pm', 'cadre'] }))).toBeNull()
+  })
+
   test('a reserved role id (bin, all, none) makes the state null, as a role can never take one', () => {
     for (const reserved of ['bin', 'all', 'none']) {
       expect(parseCadreState(stateText({ roles: ['be', reserved] }))).toBeNull()
@@ -223,5 +227,14 @@ describe('parseCadreState', () => {
 
   test('a role id listed twice is null', () => {
     expect(parseCadreState(stateText({ roles: ['be', 'fe', 'be'] }))).toBeNull()
+  })
+})
+
+describe('listsCadreRole', () => {
+  test('it is true only for a cadre.json text whose roles list holds the role id cadre', () => {
+    expect(listsCadreRole(stateText({ roles: ['pm', 'cadre'] }))).toBe(true)
+    expect(listsCadreRole(stateText({ roles: ['pm', 'be'] }))).toBe(false)
+    expect(listsCadreRole('not json')).toBe(false)
+    expect(listsCadreRole(stateText({ roles: 'cadre' }))).toBe(false)
   })
 })

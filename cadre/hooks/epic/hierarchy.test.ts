@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { gitWorld, memIo, onDisk, plannedFiles, templateRole } from '../testkit'
+import { gitWorld, memIo, onDisk, plannedFiles, stateText, templateRole } from '../testkit'
 import { teamViewOf } from './hierarchy'
 
 describe('teamViewOf', () => {
@@ -24,6 +24,14 @@ describe('teamViewOf', () => {
       parents: { tl: null, be: null },
       pm: null,
     })
+  })
+
+  test('a team whose cadre.json lists the reserved role id cadre gives null', async () => {
+    const files = await plannedFiles(gitWorld(), [templateRole('pm'), templateRole('be')])
+    const listed = { ...onDisk(files), '/repo/.cadre/cadre.json': stateText({ roles: ['pm', 'cadre'] }) }
+    const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: listed })
+
+    expect(await teamViewOf(memIo(world, {}).io, '/repo')).toBeNull()
   })
 
   test('a team that cannot be read gives null', async () => {
