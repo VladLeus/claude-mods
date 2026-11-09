@@ -35,7 +35,7 @@ import { UNCUT, wrapLine } from '../../ui/pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
 import type { Draft, PlanResult, Reviewed } from '../draft'
 import { initReplyText } from '../initapply'
-import { initFrameworks, privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
+import { consentedPluginKeys, initFrameworks, privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
 import type { PlanStepInput } from '../initplan'
 import { IGNORE_ALL_NOTE } from '../replies'
 import { fullDraft, stageBack, stageCancelled, stageEnded, stageFailed, withEffect } from '../state'
@@ -402,16 +402,16 @@ function reviewLines(
 }
 
 /**
- * What the review plans a draft with (decision #69 A4, G-02-1f): the scopes compiled with the plugins answered Install
- * counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every install
- * works, and planStep's input, with each role's repo parts (repoPartsOf) recorded in each parts-flow role's role.json
- * (withRepoRecords, G-02-1f Regen).
+ * What the review plans a draft with: the scopes compiled with the plugins answered Install and the plugin installs of
+ * the consented frameworks counted as installed (setupAfterInstalls, consentedPluginKeys), so the cards and the plan
+ * show what Confirm writes when every install works, and planStep's input, with each role's repo parts (repoPartsOf)
+ * recorded in each parts-flow role's role.json (withRepoRecords).
  */
 function reviewPlanOf(draft: Draft): {
   readonly scopes: ReadonlyMap<string, CompiledScope>
   readonly input: PlanStepInput
 } {
-  const setup = setupAfterInstalls(draft.gathered.setup, draft.pluginInstalls)
+  const setup = setupAfterInstalls(draft.gathered.setup, [...draft.pluginInstalls, ...consentedPluginKeys(draft, [])])
   const gathered = { ...draft.gathered, setup }
   const scopes = scopesFor(draft.roles, draft.repoDefault, gathered, draft.hunks, draft.launchStart)
   const repoParts = repoPartsOf(draft.instructions)

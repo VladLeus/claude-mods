@@ -3,8 +3,8 @@
  * parts each role was given (repoPartsOf), the role.json records regen compares against (withRepoRecords), what each
  * role is owed outside the repo (privatesOf), and PlanStepInput, what the plan of a draft is made from; init/run makes
  * the plan itself (planStep), which reads the disk, and the frameworks and sizing block both the review and the apply
- * plan with (initFrameworks, initSizing). Pure: it imports apply, core, launch, messages/sizing, records, the draft
- * type and the types, and never imports init/machine or init/run.
+ * plan with (initFrameworks, initSizing). Pure: it imports apply/installs, the apply/run types, core, launch,
+ * messages/sizing, records, the draft type and the types, and never imports init/machine or init/run.
  */
 import type {
   CompiledScope,
@@ -19,6 +19,7 @@ import type {
   RoleSpec,
   Sizing,
 } from '../../types'
+import { projectInstallOf } from '../apply/installs'
 import type { OwedPrivate } from '../apply/run'
 import { compareText } from '../core/text'
 import { isPartsFlowRole } from '../launch/links'
@@ -147,4 +148,17 @@ export function initFrameworks(
   const sizing = initSizing(draft.gathered.repo.cadre.state?.sizing, frameworks)
 
   return draft.frameworkSet === undefined ? { sizing } : { frameworks, sizing }
+}
+
+/** The plugin keys the consented framework installs add, so the review and the apply compile the same scopes. */
+export function consentedPluginKeys(
+  draft: Pick<Draft, 'frameworkInstalls'>,
+  failed: readonly FrameworkId[],
+): string[] {
+  return (draft.frameworkInstalls ?? []).flatMap(id => {
+    const install = projectInstallOf(id)
+    if (failed.includes(id) || install === null || !install.isPlugin) return []
+
+    return [install.id]
+  })
 }

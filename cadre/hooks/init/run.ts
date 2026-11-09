@@ -84,7 +84,7 @@ import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import type { Draft, PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
-import { initFrameworks, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
+import { consentedPluginKeys, initFrameworks, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
@@ -319,9 +319,10 @@ function withoutFailedInstalls(draft: Draft, failed: readonly FrameworkId[]): Pi
  *    are neither with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
  * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
  *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again. A
- *    plugin among them that installed joins the setup as step 4's plugins do, and each failure is an install problem.
- *    An install whose framework the facts do not show failed: a role or repo default on it falls back
- *    (withoutFailedInstalls), and cadre.json records the frameworks and sizing without it (initFrameworks).
+ *    consented plugin install that the facts show joins the setup as step 4's plugins do (consentedPluginKeys), and
+ *    each failure is an install problem. An install whose framework the facts do not show failed: a role or repo
+ *    default on it falls back (withoutFailedInstalls), and cadre.json records the frameworks and sizing without it
+ *    (initFrameworks).
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -406,9 +407,6 @@ async function applyConfirmed(
   const found = installedFrameworks(detectAll(scanned.facts.facts))
   const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
   const { roles, repoDefault } = withoutFailedInstalls(draft, failed)
-  const projectPlugins = projectInstalls.flatMap(install =>
-    install.isPlugin && project.installed.includes(install.id) ? [install.id] : [],
-  )
   const gsd = {
     userDir: provenUserDir(gathered.facts),
     home: locations.home,
@@ -429,7 +427,7 @@ async function applyConfirmed(
     locations.home === null
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
       : await installPlugins(host, locations.home, draft.pluginInstalls)
-  const setup = setupAfterInstalls(gathered.setup, [...installs.installed, ...projectPlugins])
+  const setup = setupAfterInstalls(gathered.setup, [...installs.installed, ...consentedPluginKeys(draft, failed)])
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const attended = await attendedByConfig(io, locations.root, frameworks, setup)
   const scopes = compileAll(roles, repoDefault, { ...scanned, setup }, attended, launchStart)
