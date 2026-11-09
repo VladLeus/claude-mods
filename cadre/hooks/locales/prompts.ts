@@ -90,7 +90,7 @@ export const PROMPTS = Object.freeze({
   itemNotBoolean: 'item {key} is not true or false',
   // The kickoff sentences of a role (generate/kickoff) and of an epic role (epic/kickoff).
   kickoffIntro: 'You are the {title} role of this repo (cadre role {id}).',
-  kickoffNext: 'Read .cadre/{id}/ROLE.md, check your inbox, then start with {start}.',
+  kickoffNext: 'Read .cadre/{id}/ROLE.md, read your inbox with inbox_read, then start with {start}.',
   // The built-in framework's start (framework/none roleStart): the {start} of kickoffNext.
   builtinRoleStart: 'the plan in .cadre/{roleId}/.runtime/plan.md',
   epicFeedRoles: 'your roles',

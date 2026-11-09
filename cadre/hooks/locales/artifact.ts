@@ -23,11 +23,12 @@ export const ARTIFACT = Object.freeze({
   roleMdHandoffs: '## Handoffs',
   roleMdHandoffLine: "Write every handoff under thoughts/shared/handoffs/{id}/ (autopilot's handoff path).",
   roleMdInbox: '## Inbox',
-  roleMdInboxLine: `Your inbox is .cadre/{id}/.runtime/inbox.md, a path from the git root. ${
-    ''}Read it when you start and after every restart.`,
-  roleMdNoteLine:
-    `To leave a note for another role, append one dated line to .cadre/<role id>/.runtime/inbox.md of that role ${
-    ''}(the role ids are in .cadre/INDEX.md); never edit or delete a line that is there.`,
+  roleMdInboxLine: `Your inbox is .cadre/{id}/.runtime/inbox.jsonl, a path from the git root. Read it with inbox_read ${
+    ''}when you start, after every restart and when a wait ends.`,
+  roleMdNoteLine: 'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).',
+  roleMdInboxStates: `Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the ${
+    ''}entry you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done ${
+    ''}(a one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.`,
   roleMdScope: '## Scope',
   // The marker above a part in a built role file (generate/docs partMarker), and the first line of the built and of
   // the private role CLAUDE.md (generate/docs roleClaudeMdText, apply/private privateClaudeMdText).
@@ -70,6 +71,8 @@ export const ARTIFACT = Object.freeze({
   cardLoads: `Loads .cadre/{id}/CLAUDE.md and its private instructions ${
     ''}(<config dir>/cadre/<repo>-<hash8>/{id}/instructions/)`,
   cardInfra: 'Autopilot, agent-fleet and the handoff skills are always available',
+  cardInbox: 'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them',
+  cardHeldMessages: 'Live messages may be held in this permission mode; the inbox is the record',
   cardPermissionMode: 'Permission mode: {mode}',
   cardAttendedSteps: 'Attended: this role needs a person for framework steps that cannot run unattended',
   cardAttendedGsd: 'Attended: GSD workflows need Bash; this role runs them through a person',

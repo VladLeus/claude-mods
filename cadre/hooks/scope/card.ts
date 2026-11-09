@@ -117,6 +117,16 @@ function bypassRules(role: RoleSpec): ScopeRule[] {
 }
 
 /**
+ * The inbox rule of every card, hard for a role without Bash and best effort for one with Bash, which can still write
+ * the files; for a bypass role the note that live messages may be held follows it.
+ */
+function inboxRules(role: RoleSpec): ScopeRule[] {
+  const inbox = rule(ARTIFACT.cardInbox, role.hasBash ? 'best-effort' : 'hard')
+
+  return isBypass(role) ? [inbox, rule(ARTIFACT.cardHeldMessages, 'none')] : [inbox]
+}
+
+/**
  * The Bash rule: no Bash tool (hard), which the probe checks as the Bash tool absent from the startup inventory, or the
  * sandbox (hard on macOS, best effort on Linux) for a role with Bash, which the inventory cannot show.
  */
@@ -284,11 +294,11 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
 
 /**
  * The rules of the card in their fixed order. The label of each rule is fixed here: a rule an engine setting enforces
- * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none (ROLE-06). The rules the
- * startup inventory can prove carry their probe checks (D-112): the Bash rule, the MCP deny list, the infra rule and
- * the permission mode, which the init event reports for manual as default (RESEARCH 1.1). Right after the Skills rule
- * a none rule names what the role loads as its instructions: its built `.cadre/<id>/CLAUDE.md` and its private
- * instructions folder in the config folder (02-GAPS-B2 N9).
+ * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none. The rules the startup
+ * inventory can prove carry their probe checks: the Bash rule, the MCP deny list, the infra rule and the permission
+ * mode, which the init event reports for manual as default. Right after the Skills rule a none rule names what the
+ * role loads as its instructions: its built `.cadre/<id>/CLAUDE.md` and its private instructions folder in the config
+ * folder. Right after the infra rule come the inbox rules.
  */
 function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeRule[] {
   const mode = role.permissionMode === 'manual' ? 'default' : role.permissionMode
@@ -308,6 +318,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     rule(ARTIFACT.cardSkills, 'best-effort'),
     rule(fill(ARTIFACT.cardLoads, { id: role.id }), 'none'),
     checkedRule(ARTIFACT.cardInfra, 'hard', INFRA_CHECKS),
+    ...inboxRules(role),
     checkedRule(fill(ARTIFACT.cardPermissionMode, { mode: role.permissionMode }), 'hard', [
       { kind: 'permission-mode', token: mode },
     ]),
