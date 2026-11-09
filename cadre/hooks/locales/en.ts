@@ -132,6 +132,7 @@ export const EN = Object.freeze({
   'init.roles.unreadChange': 'Could not read that change: {trim}. Use {verbs}.',
   'init.roles.notInstalledMessage':
     'Cannot set {id} to {framework}: it is not installed for this repo (installed: {names}). {id} keeps its framework.',
+  'init.roles.notInstalledCommand': '{message} To install it, run from the repo root: {command}',
   'init.roles.proposedRole': '{title} ({id})',
   'init.roles.proposed': 'Proposed: {roles}.',
   'init.roles.proposedChanges.one': 'Proposed: {roles}; {count} change from the scan.',
@@ -154,6 +155,12 @@ export const EN = Object.freeze({
   'init.frameworks.gsdCheckTitle': 'GSD install',
   'init.frameworks.gsdCheckLine': '{dir}: found, not proven',
   'init.frameworks.gsdCheckDismissedReason': 'The GSD check question was dismissed or not answered.',
+  'init.frameworks.installQuestion': 'Install {name} for this repo?',
+  'init.frameworks.installCommand': 'cadre runs {command} from the repo root after Confirm.',
+  'init.frameworks.installWrites': 'It writes {writes}.',
+  'init.frameworks.installTitle': 'Install {name}',
+  'init.frameworks.installNo': 'No',
+  'init.frameworks.installYes': 'Yes, install it',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',
   'init.frameworks.frameworkAskAccepts': '{map} - a role runs one framework',
 

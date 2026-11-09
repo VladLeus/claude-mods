@@ -4,11 +4,14 @@
  * frameworks installed for the repo, the Describe question whose text the model turns into roles
  * (a describe-roles model effect), and rolesStage, the pure stage whose cursor is the proposal, Adjust or Describe
  * until the person answers Use these roles. An Adjust that sets a role to gsd while GSD is found but not proven asks
- * GSD's own check first and takes the change once the check answered (D-269, edge #35). Pure: it gives states and
- * never performs an effect, imports core, framework, roles, suggest types, ui/ask, init/state and the duration and
- * frameworks stages, and never imports init/machine or init/run.
+ * GSD's own check first and takes the change once the check answered (D-269, edge #35). An Adjust to a framework the
+ * repo does not have asks its install question: Yes records the install for after Confirm, No or a dismissal refuses
+ * the change with the command. Pure: it gives states and never performs an effect, imports apply/installs, core,
+ * framework, roles, suggest types, ui/ask, init/state and the duration and frameworks stages, and never imports
+ * init/machine or init/run.
  */
 import type { FrameworkId, RoleChange, RoleSpec } from '../../../types'
+import { projectInstallOf } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
@@ -17,7 +20,17 @@ import { needsGsdCheck } from '../../framework/gsd/identity'
 import { t, tn } from '../../locales/t'
 import { ADJUST_WORDS, applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
-import { ASK_HEADERS, askedText, choiceAnswer, orList, paneQuestionOf, quotedLabels, withContext } from '../../ui/ask'
+import {
+  ASK_HEADERS,
+  askedText,
+  choiceAnswer,
+  contextText,
+  NO_USABLE_ANSWER_REASON,
+  orList,
+  paneQuestionOf,
+  quotedLabels,
+  withContext,
+} from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { rolesContext } from '../../ui/blocks/context'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
@@ -25,6 +38,7 @@ import type { Answer, InitState, IoResult, StageDef } from '../state'
 import { idsOf } from './duration'
 import {
   FRAMEWORK_LABELS,
+  frameworkInstallAsk,
   GSD_CHECK_DISMISSED_REASON,
   gsdCheckAsk,
   withGsdCheck,
@@ -161,17 +175,33 @@ function unreadChange(answer: string): string {
   return t('init.roles.unreadChange', { trim: answer.trim(), verbs: orList(Object.values(ADJUST_WORDS)) })
 }
 
-/** The message for an Adjust line that sets a role to a framework this repo does not have installed (A5). */
+/**
+ * The message for an Adjust line that sets a role to a framework this repo does not have installed (A5), ending with
+ * the command that installs it when the framework has one.
+ */
 function notInstalledMessage(id: string, framework: FrameworkId, installed: readonly FrameworkId[]): string {
   const names = installed.map(item => FRAMEWORK_LABELS[item]).join(', ')
+  const message = t('init.roles.notInstalledMessage', { id, framework, names })
+  const install = projectInstallOf(framework)
+  if (install === null) return message
 
-  return (
-    t('init.roles.notInstalledMessage', {
-      id,
-      framework,
-      names,
-    })
-  )
+  return t('init.roles.notInstalledCommand', { message, command: install.argv.join(' ') })
+}
+
+/**
+ * The framework an Adjust line sets a role of the team to when the repo does not have it installed but cadre can
+ * install it; null for any other line.
+ */
+function missingFramework(
+  roles: readonly RoleSpec[],
+  installed: readonly FrameworkId[],
+  answer: string,
+): FrameworkId | null {
+  const op = parseAdjust(answer)
+  if (op === null || op.kind !== 'framework' || installed.includes(op.framework)) return null
+  if (!roles.some(role => role.id === op.id) || projectInstallOf(op.framework) === null) return null
+
+  return op.framework
 }
 
 /**
@@ -311,8 +341,8 @@ function adjustAgain(
  * The answer to the Adjust question (D-47): `Done adjusting` proposes the roles as adjusted, with the same scan
  * changes; `Show the roles` asks again, the roles as they are now in its own context (no block of its own, D-302); a
  * typed change, add, drop, rename or framework, is applied, or its exact message, cleaned as a report cell, goes on top
- * of the next ask (D-136). A framework outside the ones installed for the repo is refused (A5). A dismissal cancels
- * with ADJUST_DISMISSED_REASON.
+ * of the next ask (D-136). A framework outside the ones installed for the repo asks its install question first, and
+ * is refused once that is declined (A5). A dismissal cancels with ADJUST_DISMISSED_REASON.
  */
 function afterAdjust(
   state: InitState,
@@ -328,6 +358,12 @@ function afterAdjust(
     const { rounds, round, roles, changes } = cursor
 
     return rolesGsdCheckAsked(state, { answer, rounds, round, roles, changes }, 1, null)
+  }
+  const missing = missingFramework(cursor.roles, installed, answer)
+  if (missing !== null) {
+    const { rounds, round, roles, changes } = cursor
+
+    return rolesInstallAsked(state, { answer, rounds, round, roles, changes }, missing, 1, null)
   }
   const result = adjusted(cursor.roles, answer, installed)
   if (result.kind === 'error') return adjustAgain(state, cursor, cursor.roles, reportText(result.message))
@@ -411,6 +447,50 @@ function afterRolesGsdChecked(state: InitState, pending: PendingAdjust, result: 
   const { answer, ...cursor } = pending
 
   return afterAdjust(withGsdCheck(checked, 'run'), cursor, installed, answer)
+}
+
+/** Where the install question an Adjust asked is: the question out, with its framework and the Adjust it waits on. */
+type RolesInstall = Extract<InitState['sub'], { readonly kind: 'install' }>
+
+/**
+ * The install question of `framework` asked for the pending Adjust (frameworkInstallAsk), asked `tries` times so far;
+ * `question` is its text after a refusal.
+ */
+function rolesInstallAsked(
+  state: InitState,
+  pending: PendingAdjust,
+  framework: FrameworkId,
+  tries: number,
+  question: string | null,
+): InitState {
+  const ask = frameworkInstallAsk(framework)
+  const sub: InitState['sub'] = { kind: 'install', tries, framework, pending }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/**
+ * The answer to the install question an Adjust asked: Yes adds the framework to the frameworks to install and, before
+ * none, to the installed ones, then takes the pending Adjust; No or a dismissal refuses it with the command to run, so
+ * the role keeps its framework. An answer that is neither is asked again with why on top.
+ */
+function afterRolesInstall(state: InitState, sub: RolesInstall, answer: string | null): InitState {
+  const { installed, frameworkInstalls = [] } = state.draft
+  const { answer: typed, ...cursor } = sub.pending
+  const op = parseAdjust(typed)
+  if (installed === undefined || op === null || op.kind !== 'framework') return stageFailed(state)
+  const refusal = contextText(notInstalledMessage(op.id, sub.framework, installed))
+  if (answer === null) return adjustAgain(state, cursor, cursor.roles, refusal)
+  // A dismissal declined above, so choiceAnswer cancels only after MAX_ASKS answers it cannot read.
+  const ask = { ...frameworkInstallAsk(sub.framework), dismissedReason: NO_USABLE_ANSWER_REASON }
+  const next = choiceAnswer(ask, sub, answer)
+  if (next.kind === 'again') return rolesInstallAsked(state, sub.pending, sub.framework, next.sub.tries, next.question)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (!next.value) return adjustAgain(state, cursor, cursor.roles, refusal)
+  const added: FrameworkId[] = [...installed.filter(id => id !== 'none'), sub.framework, 'none']
+  const draft = { ...state.draft, installed: added, frameworkInstalls: [...frameworkInstalls, sub.framework] }
+
+  return afterAdjust({ ...state, draft }, cursor, added, typed)
 }
 
 /** Where the describe question is: the proposal it came after, with its roles and their scan changes, and its tries. */
@@ -530,6 +610,8 @@ function rolesAnswer(state: InitState, answer: Answer): InitState {
       return afterDescribe(state, sub, answer.text)
     case 'roles-gsd-check':
       return afterRolesGsdCheck(state, sub, answer.text)
+    case 'install':
+      return afterRolesInstall(state, sub, answer.text)
     default:
       return stageFailed(state)
   }

@@ -5,11 +5,13 @@
  * question's second line, and gives each role the framework it picked (withFramework). Before that it asks the GSD
  * check when a user-level GSD is found but not proven (D-243, ASKED #20), only when the check can run and its answer
  * can change something (isGsdCheckUseful, D-269); its result reads again the choice and the frameworks installed for
- * the repo (installedFrameworks), which the roles stage's Adjust loop offers (withGsdIdentityChecked, edge #30). Pure:
- * it gives states and never performs an effect, imports core, detect, framework, ui/ask, init/state and
- * init/stages/model (the answer modes and teamContextLine), and never imports init/machine or init/run.
+ * the repo (installedFrameworks), which the roles stage's Adjust loop offers (withGsdIdentityChecked, edge #30). The
+ * install question offers a framework the repo does not have (frameworkInstallAsk). Pure: it gives states and never
+ * performs an effect, imports apply/installs, core, detect, framework, ui/ask, init/state and init/stages/model (the
+ * answer modes and teamContextLine), and never imports init/machine or init/run.
  */
 import type { AskContext, Choice, ContextRow, Detection, Facts, FrameworkId, GsdFact, RoleSpec } from '../../../types'
+import { projectInstallOf } from '../../apply/installs'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -227,6 +229,41 @@ export function installedFrameworks(detections: readonly Detection[]): Framework
     detections.some(found => found.id === id && (found.status === 'in-use' || found.status === 'installed'))
 
   return [...SUPPORTED_IDS.filter(isThere), 'none']
+}
+
+/** Each answer to a framework install question with whether it installs, the declining one first. */
+const FRAMEWORK_INSTALL_ANSWERS: readonly Labelled<boolean>[] = Object.freeze([
+  { label: t('init.frameworks.installNo'), value: false },
+  { label: t('init.frameworks.installYes'), value: true },
+])
+
+/** Whether an answer to a framework install question installs; null when it names neither answer. */
+export function parseFrameworkInstall(answer: string): boolean | null {
+  return labelled(FRAMEWORK_INSTALL_ANSWERS, answer)
+}
+
+/**
+ * The question that offers to install a framework the repo does not have, No first: its context line names the exact
+ * command and that it runs from the repo root after Confirm, and its context also lists what the installer writes.
+ */
+export function frameworkInstallAsk(fw: FrameworkId): ChoiceAsk<boolean> {
+  const install = projectInstallOf(fw)
+  const name = FRAMEWORK_LABELS[fw]
+  const sentence = t('init.frameworks.installQuestion', { name })
+  const command = t('init.frameworks.installCommand', { command: (install?.argv ?? []).join(' ') })
+  const lines = [command, t('init.frameworks.installWrites', { writes: (install?.writes ?? []).join(', ') })]
+  const pane = paneQuestionOf(sentence, command, command)
+  const rows = lines.map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 }))
+  const title = t('init.frameworks.installTitle', { name })
+  const context: AskContext = { title, lines, kind: 'consent', summary: command, pane, rows: [{ title: null, rows }] }
+  const options = FRAMEWORK_INSTALL_ANSWERS.map(answer => answer.label)
+
+  return {
+    question: pane.asked,
+    spec: { options, header: ASK_HEADERS.framework, context },
+    parse: parseFrameworkInstall,
+    accepts: quotedLabels(options),
+  }
 }
 
 /** The GSD check question (D-243): it names the command it runs, before anything runs. */

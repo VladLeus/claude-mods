@@ -12,6 +12,7 @@ import type {
   AskContext,
   AskSpec,
   ContextRow,
+  FrameworkId,
   HunkOp,
   InitLocations,
   InstructionGroup,
@@ -296,6 +297,8 @@ export type EachCursor = {
  * - `roles-gsd-check`: GSD's own check question, or the check itself after a Yes, is out for an Adjust answer that
  *   sets a role to gsd (D-269, edge #35), asked `tries` times so far; `pending` keeps that answer and the Adjust cursor
  *   it was typed at, so the Adjust is taken again once the check answered.
+ * - `install`: the install question of `framework` is out for an Adjust answer that sets a role to it while the repo
+ *   does not have it installed, asked `tries` times so far; `pending` keeps that answer and its Adjust cursor.
  * - `mcp-model`: the model call that recommends roles for every MCP server is out, before the server questions, with
  *   the names given before it (`done`, D-248).
  * - `mcp-handout`, `mcp-whole`: the MCP servers' hand-out at `cursor` (D-250), or the question for all the servers at
@@ -359,6 +362,18 @@ export type StageSub =
   | {
       readonly kind: 'roles-gsd-check'
       readonly tries: number
+      readonly pending: {
+        readonly answer: string
+        readonly rounds: number
+        readonly round: number
+        readonly roles: readonly RoleSpec[]
+        readonly changes: readonly RoleChange[]
+      }
+    }
+  | {
+      readonly kind: 'install'
+      readonly tries: number
+      readonly framework: FrameworkId
       readonly pending: {
         readonly answer: string
         readonly rounds: number
@@ -553,6 +568,13 @@ export function fullDraft(draft: Partial<Draft>): Draft | null {
   if (base === null || duration === undefined || roles === undefined || changes === undefined) return null
   if (repoDefault === undefined || hunks === undefined || pluginInstalls === undefined) return null
   if (instructions === undefined || policy === undefined || launchStart === undefined) return null
+  const { frameworkSet, frameworkInstalls } = draft
+  const fields = { duration, roles, changes, repoDefault, hunks, pluginInstalls, instructions, policy, launchStart }
 
-  return { ...base, duration, roles, changes, repoDefault, hunks, pluginInstalls, instructions, policy, launchStart }
+  return {
+    ...base,
+    ...fields,
+    ...(frameworkSet === undefined ? {} : { frameworkSet }),
+    ...(frameworkInstalls === undefined ? {} : { frameworkInstalls }),
+  }
 }
