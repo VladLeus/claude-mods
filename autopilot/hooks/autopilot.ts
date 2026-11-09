@@ -758,37 +758,45 @@ function hasText(value: unknown): boolean {
 }
 
 /**
- * Whether a drained question's dialog was answered, so the question leaves the queue: only while draining, on a result
- * with no deny, no error and no AFK timeout that holds a non-empty answer or a free-text response. Anything else keeps
- * the question queued.
+ * Whether a drained question's dialog answered it, so the question leaves the queue: only while draining, on a result
+ * with no deny, no error and no AFK timeout that holds a non-empty answer under a question naming it, or a free-text
+ * response to a dialog of that one question. Anything else keeps the question queued.
  */
-export function removesDrainedQuestion(mode: Mode, ran: unknown): boolean {
+export function removesDrainedQuestion(mode: Mode, ran: unknown, call: unknown, q: Question): boolean {
   if (mode !== 'draining' || typeof ran !== 'object' || ran === null) return false
   if ('deny' in ran && ran.deny !== undefined) return false
   if ('isError' in ran && ran.isError === true) return false
   if (!('result' in ran) || typeof ran.result !== 'object' || ran.result === null) return false
   const result = ran.result
   if ('afkTimeoutMs' in result && result.afkTimeoutMs !== undefined) return false
-  if ('response' in result && hasText(result.response)) return true
+  const texts = queuedQuestionTexts(call, q)
+  if (texts.length === 0) return false
+  if ('response' in result && hasText(result.response) && callQuestions(call).length === 1) return true
   if (!('answers' in result) || typeof result.answers !== 'object' || result.answers === null) return false
 
-  return Object.values(result.answers).some(hasText)
+  return Object.entries(result.answers).some(([text, answer]) => texts.includes(text) && hasText(answer))
+}
+
+/** The questions of an AskUserQuestion call; [] for a malformed call. */
+function callQuestions(call: unknown): unknown[] {
+  if (typeof call !== 'object' || call === null || !('questions' in call)) return []
+
+  return Array.isArray(call.questions) ? call.questions : []
 }
 
 /**
- * Whether an AskUserQuestion call asks the queued question `q`: one of its questions holds the queued text or the tag
- * `#k`, not as the start of a longer number.
+ * The questions of an AskUserQuestion call that ask the queued question `q`, in call order: those holding its text or
+ * the tag `#k`, not as the start of a longer number.
  */
-export function asksQueuedQuestion(call: unknown, q: Question): boolean {
-  if (typeof call !== 'object' || call === null || !('questions' in call)) return false
-  if (!Array.isArray(call.questions)) return false
+export function queuedQuestionTexts(call: unknown, q: Question): string[] {
   const tag = new RegExp(`#${q.id}(?!\\d)`)
 
-  return call.questions.some((item: unknown) => {
-    if (typeof item !== 'object' || item === null || !('question' in item)) return false
+  return callQuestions(call).flatMap(item => {
+    if (typeof item !== 'object' || item === null || !('question' in item)) return []
     const text = item.question
+    if (typeof text !== 'string') return []
 
-    return typeof text === 'string' && (text.includes(q.text) || tag.test(text))
+    return text.includes(q.text) || tag.test(text) ? [text] : []
   })
 }
 
@@ -903,12 +911,10 @@ export function questionIdFromNote(note: string | null, questions: readonly Ques
 }
 
 /**
- * The run after the person answered during a drain: the wait's tagged
- * question goes, else the one the drain asked. No id, nothing removed. A
- * drain prompt still pending goes too: it names a question now answered.
+ * The run after the person answered question `id` during a drain, by default the wait's tagged question, else the one
+ * the drain asked; a drain prompt still pending goes too. No id, or one no longer queued, changes nothing.
  */
-export function answeredQuestion(run: Run): Run {
-  const id = run.awaiting?.questionId ?? run.askingId
+export function answeredQuestion(run: Run, id = run.awaiting?.questionId ?? run.askingId): Run {
   const questions = run.questions ?? []
   const left = questions.filter(question => question.id !== id)
   if (left.length === questions.length) return run

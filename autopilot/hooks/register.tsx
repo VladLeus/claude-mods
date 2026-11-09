@@ -21,7 +21,6 @@ import {
   applyAvail,
   applyMode,
   askAnswer,
-  asksQueuedQuestion,
   autoAnswersQuestions,
   availMode,
   availStatusLines,
@@ -960,17 +959,17 @@ function queueRefusal(mode: Mode | null): string | null {
 }
 
 /**
- * The person answered during a drain: their question leaves the queue (the
- * tagged wait's, else the one the role section named). Runs before endWait,
- * which drops the wait and its tag. Nothing removed (no id, or the id is no
- * longer queued): nothing saved, nothing logged.
+ * The person answered during a drain: question `askedId` leaves the queue, by
+ * default the tagged wait's, else the one the role section named. Runs before
+ * endWait, which drops the wait and its tag. Nothing removed (no id, or the id
+ * is no longer queued): nothing saved, nothing logged.
  */
-async function removeAnswered($: EngineInterface): Promise<void> {
+async function removeAnswered($: EngineInterface, askedId?: number): Promise<void> {
   if (!run) return
-  const id = run.awaiting?.questionId ?? run.askingId ?? null
+  const id = askedId ?? run.awaiting?.questionId ?? run.askingId ?? null
   if (id === null) return
   const before = run.questions?.length ?? 0
-  run = answeredQuestion(run)
+  run = answeredQuestion(run, id)
   if ((run.questions?.length ?? 0) === before) return
   await save($)
   await log($, `the person answered #${id}: ${run?.questions?.length ?? 0} questions left`)
@@ -1608,7 +1607,8 @@ export const register: Register = on => {
         await log($, `question passed to the person (${mode})`)
         const asked = run?.questions?.find(question => question.id === run?.askingId) ?? null
         const ran = await next(e)
-        if (removesDrainedQuestion(mode, ran) && asked !== null && asksQueuedQuestion(e, asked)) await removeAnswered($)
+        if (asked === null || !removesDrainedQuestion(mode, ran, e, asked)) return ran
+        await removeAnswered($, asked.id)
 
         return ran
       }
