@@ -302,11 +302,18 @@ describe('role documents', () => {
     ])
   })
 
-  test('ROLE.md has the sections How you work, Decisions, Handoffs, Inbox and Scope, in that order', () => {
+  test('ROLE.md has How you work, Planning docs, Decisions, Handoffs, Inbox and Scope, in that order', () => {
     const be = templateRole('be')
     const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
 
-    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Inbox', '## Scope'])
+    expect(headings(text)).toEqual([
+      '## How you work',
+      '## Planning docs',
+      '## Decisions',
+      '## Handoffs',
+      '## Inbox',
+      '## Scope',
+    ])
     expect(text.endsWith('\n')).toBe(true)
     expect(text.endsWith('\n\n')).toBe(false)
   })
@@ -548,6 +555,62 @@ describe('role documents', () => {
       for (const launchStart of starts) {
         const text = cadreJsonText({ ...state, launchStart, readUserMcp })
         expect(parseCadreState(text)).toEqual({ ...state, launchStart, readUserMcp })
+      }
+    }
+  })
+})
+
+describe('the Planning docs section of ROLE.md', () => {
+  /** The lines of a ROLE.md from its Planning docs heading up to the next heading; [] when it has none. */
+  function planningDocs(text: string): string[] {
+    const lines = text.split('\n')
+    const at = lines.indexOf('## Planning docs')
+    if (at < 0) return []
+    const end = lines.findIndex((line, index) => index > at && line.startsWith('## '))
+
+    return lines.slice(at, end)
+  }
+
+  test('TL on gsd that may run superpowers lists the GSD lead steps, then the superpowers lead steps', () => {
+    const tl = templateRole('tl')
+    const scope = scopeOf(tl, 'gsd', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] })
+    const section = planningDocs(roleMdText(tl, scope))
+    const steps = [
+      ...GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }),
+      ...SUPERPOWERS_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }),
+    ]
+
+    expect(section[0]).toBe('## Planning docs')
+    expect(section.filter(line => line.startsWith('- '))).toEqual(steps.map(step => `- ${step}`))
+  })
+
+  test('BE on gsd has the worker steps with the no-TL step; BE on superpowers its plan file and the method', () => {
+    const be = templateRole('be')
+    const gsd = planningDocs(roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES)))
+    const superpowers = planningDocs(roleMdText(be, scopeOf(be, 'superpowers', TEMPLATE_ROLES))).join('\n')
+    const worker = GSD_ADAPTER.roleWork.startSteps({ roleId: 'be', isLead: false })
+
+    expect(gsd.filter(line => line.startsWith('- '))).toEqual(worker.map(step => `- ${step}`))
+    expect(gsd.join('\n')).toContain('no TL')
+    expect(superpowers).toContain('docs/superpowers/plans/be-<ticket>.md')
+    expect(superpowers).toContain('superpowers:subagent-driven-development')
+  })
+
+  test('PM on none has no Planning docs section, whatever the repo records', () => {
+    const pm = templateRole('pm')
+    const text = roleMdText(pm, scopeOf(pm, 'none', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] }))
+
+    expect(headings(text)).not.toContain('## Planning docs')
+  })
+
+  test('every section line is printable ASCII, and none tells the role to write under .planning/ itself', () => {
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const scope = scopeOf(role, framework, TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] })
+        const section = planningDocs(roleMdText(role, scope))
+
+        expect(section.filter(line => !/^[\x20-\x7e]*$/.test(line))).toEqual([])
+        expect(section.filter(line => /\b(write|edit)\b[^.]*\.planning\//i.test(line))).toEqual([])
       }
     }
   })
