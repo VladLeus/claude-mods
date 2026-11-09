@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { t } from './locales/t'
+import { inboxLogPath, sessionFilePath } from './messages/record'
 import {
   cadreStatePath,
   claudeJsonPathOf,
@@ -20,6 +21,8 @@ import {
   relativeTo,
   resolvedPath,
   RUNTIME_RENDERED,
+  runtimeDirOf,
+  runtimeFileOf,
   screenPath,
   SESSION_FILE,
   trimSlash,
@@ -278,5 +281,17 @@ describe('the runtime inbox files', () => {
 
     expect([INBOX_LOG_FILE, SESSION_FILE]).toEqual(['inbox.jsonl', 'session.json'])
     expect(names.filter(name => RUNTIME_RENDERED.includes(name))).toEqual(names)
+  })
+})
+
+describe('the runtime path builder', () => {
+  test('runtimeDirOf is the runtime folder of a role and runtimeFileOf a file in it', () => {
+    expect(runtimeDirOf('/repo', 'be')).toBe('/repo/.cadre/be/.runtime')
+    expect(runtimeFileOf('/repo', 'be', 'inbox.jsonl')).toBe('/repo/.cadre/be/.runtime/inbox.jsonl')
+  })
+
+  test('the inbox tools build the inbox log and the session record with it', () => {
+    expect(inboxLogPath('/repo', 'be')).toBe(runtimeFileOf('/repo', 'be', INBOX_LOG_FILE))
+    expect(sessionFilePath('/repo', 'be')).toBe(runtimeFileOf('/repo', 'be', SESSION_FILE))
   })
 })

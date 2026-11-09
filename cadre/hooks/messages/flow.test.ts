@@ -427,4 +427,26 @@ describe('runInboxMark', () => {
     expect(outcome).toEqual({ kind: 'deny', text: PROMPTS.inboxMarkNoTeam })
     expect(host.calls).toEqual([])
   })
+
+  test('a mark whose own runtime folder or own inbox is a link is refused as unsafe, with no run', async () => {
+    const started = { now: 2000, dirs: { [TL_RUNTIME]: [] }, files: inbox }
+    const worlds = [
+      memWorld({ ...started, realPaths: { [TL_RUNTIME]: '/elsewhere/.runtime' } }),
+      memWorld({ ...started, realPaths: { [TL_INBOX]: '/elsewhere/inbox.jsonl' } }),
+    ]
+    for (const world of worlds) {
+      const { outcome, host } = await markAs({ id: fromBe.id, state: 'read' }, { world })
+
+      expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxUnsafe, { to: 'tl' }) })
+      expect(host.calls).toEqual([])
+    }
+  })
+
+  test('a mark whose own runtime folder is not there is refused as not started, with no run', async () => {
+    const world = memWorld({ now: 2000, files: inbox })
+    const { outcome, host } = await markAs({ id: fromBe.id, state: 'read' }, { world })
+
+    expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxNotStarted, { to: 'tl' }) })
+    expect(host.calls).toEqual([])
+  })
 })
