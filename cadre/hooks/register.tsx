@@ -18,6 +18,7 @@ import { parseCommand } from './command/command'
 import { helpText } from './command/usage'
 import { isObject } from './core/json'
 import { settledWithin } from './core/settle'
+import { FRAMEWORK_IDS } from './core/framework-id'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
@@ -29,7 +30,8 @@ import type { InitOptions } from './init/run'
 import { PROMPTS } from './locales/prompts'
 import { setMissingSlotSink, t } from './locales/t'
 import { isRoleSession, publishSession, roleContextOf, runInboxMark, runInboxRead, runInboxSend } from './messages/flow'
-import { INBOX_STATES, MESSAGE_KINDS } from './messages/send'
+import { INBOX_STATES, MESSAGE_KINDS, REPORT_OUTCOMES, SIZE_PINS } from './messages/send'
+import { GSD_PATHS, PLANNING_MODES } from './messages/sizing'
 import type { ROLE_ENV, ROOT_ENV } from './paths'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
@@ -597,7 +599,10 @@ async function closePane($: EngineInterface): Promise<void> {
   await update($, paneState, () => IDLE_PANE).catch(() => undefined)
 }
 
-/** What inbox_send takes from the model. */
+const SCORE_SCHEMA = { type: 'number' }
+const TEXT_LIST_SCHEMA = { type: 'array', items: { type: 'string' } }
+
+/** What inbox_send takes from the model; parseSendInput checks which fields each kind takes. */
 const INBOX_SEND_SCHEMA = {
   type: 'object',
   properties: {
@@ -606,6 +611,31 @@ const INBOX_SEND_SCHEMA = {
     subject: { type: 'string' },
     body: { type: 'string' },
     replyTo: { type: 'string' },
+    ticketKey: { type: 'string' },
+    scores: { type: 'object', properties: { scope: SCORE_SCHEMA, risk: SCORE_SCHEMA } },
+    pin: { type: 'string', enum: [...SIZE_PINS] },
+    reportForm: { type: 'string' },
+    vector: {
+      type: 'object',
+      properties: { scope: SCORE_SCHEMA, complexity: SCORE_SCHEMA, risk: SCORE_SCHEMA, effort: SCORE_SCHEMA },
+    },
+    use: {
+      type: 'object',
+      properties: {
+        framework: { type: 'string', enum: [...FRAMEWORK_IDS] },
+        gsdPath: { type: 'string', enum: [...GSD_PATHS] },
+      },
+    },
+    specPath: { type: 'string' },
+    outcome: { type: 'string', enum: [...REPORT_OUTCOMES] },
+    changes: { type: 'string' },
+    verification: { type: 'string' },
+    reason: { type: 'string' },
+    frameworkUsed: { type: 'string', enum: [...FRAMEWORK_IDS] },
+    docPaths: TEXT_LIST_SCHEMA,
+    openQuestions: TEXT_LIST_SCHEMA,
+    mode: { type: 'string', enum: [...PLANNING_MODES] },
+    tickets: TEXT_LIST_SCHEMA,
   },
   required: ['to', 'kind', 'subject', 'body'],
 }

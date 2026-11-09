@@ -15,6 +15,10 @@ export const SP_PLAN_DIR = 'docs/superpowers/plans'
 /** The one way a superpowers worker executes its plan. */
 export const SP_METHOD = 'superpowers:subagent-driven-development'
 
+export const PLANNING_MODES: readonly PlanningMode[] = Object.freeze(['gsd-epic', 'ticket'])
+
+export const GSD_PATHS: readonly GsdPath[] = Object.freeze(['quick', 'phase'])
+
 const SCORE_MIN = 0.1
 const SCORE_MAX = 1
 
@@ -68,7 +72,7 @@ export function isLarge(vector: SizeVector, threshold: number): boolean {
 
 /** GSD epic and ticket by ticket with both GSD and superpowers; ticket by ticket with one of them; else no mode. */
 export function modesOffered(frameworks: readonly FrameworkId[]): readonly PlanningMode[] {
-  if (frameworks.includes('gsd') && frameworks.includes('superpowers')) return ['gsd-epic', 'ticket']
+  if (frameworks.includes('gsd') && frameworks.includes('superpowers')) return PLANNING_MODES
 
   return SUPPORTED_IDS.some(id => frameworks.includes(id)) ? ['ticket'] : []
 }

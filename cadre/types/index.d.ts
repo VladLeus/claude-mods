@@ -779,6 +779,12 @@ export type PlanningMode = 'gsd-epic' | 'ticket'
 /** How a ticket runs on GSD: /gsd-quick when small, a phase when large. */
 export type GsdPath = 'quick' | 'phase'
 
+/** The class of a ticket's size against the repo threshold, and the class a user pin may set. */
+export type SizeClass = 'small' | 'large'
+
+/** How a worker's report says its task ended. */
+export type ReportOutcome = 'done' | 'blocked' | 'partial'
+
 /** The `sizing` block of `.cadre/cadre.json`: the threshold of a large ticket, the framework per size, the rubric. */
 export type Sizing = {
   readonly threshold: number
@@ -802,12 +808,12 @@ export type TaskUse = {
 export type InboxEntryFields = {
   readonly ticketKey?: string
   readonly scores?: ProductScores
-  readonly pin?: 'small' | 'large'
+  readonly pin?: SizeClass
   readonly reportForm?: string
   readonly vector?: SizeVector
   readonly use?: TaskUse
   readonly specPath?: string
-  readonly outcome?: 'done' | 'blocked' | 'partial'
+  readonly outcome?: ReportOutcome
   readonly changes?: string
   readonly verification?: string
   readonly reason?: string

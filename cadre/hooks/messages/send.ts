@@ -8,7 +8,9 @@ import type {
   InboxEntryFields,
   InboxState,
   MessageKind,
+  ReportOutcome,
   RoleContext,
+  SizeClass,
   TaskUse,
   TeamView,
 } from '../../types'
@@ -18,7 +20,7 @@ import { clean, reportText } from '../core/text'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { isSafeRelativePath } from '../paths'
-import { parseVector } from './sizing'
+import { GSD_PATHS, parseVector } from './sizing'
 
 export const MESSAGE_KINDS: readonly MessageKind[] = Object.freeze([
   'ticket',
@@ -58,6 +60,11 @@ const PM_KINDS: readonly MessageKind[] = Object.freeze(['ticket', 'epic-end'])
 
 /** An inbox entry id: the sender, the time in epoch ms and the first 8 hex of the content's SHA-256. */
 export const ENTRY_ID_PATTERN = /^[a-z0-9-]{1,64}-\d{1,16}-[0-9a-f]{8}$/
+
+export const REPORT_OUTCOMES: readonly ReportOutcome[] = Object.freeze(['done', 'blocked', 'partial'])
+
+/** The size classes a PM's pin on a ticket may name. */
+export const SIZE_PINS: readonly SizeClass[] = Object.freeze(['small', 'large'])
 
 export const TICKET_KEY_MAX_CHARS = 64
 
@@ -120,7 +127,7 @@ function isTicketKey(value: unknown): value is string {
 }
 
 function isGsdPath(value: unknown): value is GsdPath {
-  return value === 'quick' || value === 'phase'
+  return GSD_PATHS.some(path => path === value)
 }
 
 /** The framework of a task and, only on gsd, its GSD path; null for anything else. */

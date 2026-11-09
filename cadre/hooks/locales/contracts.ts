@@ -50,6 +50,32 @@ export const CONTRACTS = Object.freeze({
 }) satisfies Record<string, string>
 
 /**
+ * The kind fields an inbox entry may carry beside its subject and body, by their record names in the record's key
+ * order. They are never renamed, or a stored line would lose them.
+ */
+export const INBOX_ENTRY_FIELDS: readonly string[] = Object.freeze([
+  'ticketKey',
+  'scores',
+  'pin',
+  'reportForm',
+  'vector',
+  'use',
+  'specPath',
+  'outcome',
+  'changes',
+  'verification',
+  'reason',
+  'frameworkUsed',
+  'docPaths',
+  'openQuestions',
+  'mode',
+  'tickets',
+])
+
+/** The fields cadre stamps on an entry itself, after the kind fields, and never reads from a model's input. */
+export const INBOX_ENTRY_STAMPS: readonly string[] = Object.freeze(['size', 'large', 'planPath', 'method'])
+
+/**
  * The answer the engine gives a dialog submitted from its notes field with no option chosen (seen on 2.1.318, RF-01):
  * an engine protocol token, never translated (D-221).
  */
