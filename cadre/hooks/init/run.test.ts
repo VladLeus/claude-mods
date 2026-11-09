@@ -5199,6 +5199,63 @@ describe('a consented framework install after Confirm', () => {
     expect(lines(none.host)).toEqual(['Framework: built-in.', 'Framework: built-in.'])
   })
 
+  /**
+   * A draft of be on the repo default gsd with GSD and superpowers installed, this set chosen, these installs consented
+   * and, when given, this sizing block stored in the cadre.json the scan read.
+   */
+  function setDraft(set: readonly FrameworkId[], installs: readonly FrameworkId[], sizing?: Sizing): Draft {
+    const roles = [templateRole('be')]
+    const draft = wholeDraft({ roles, installed: ['gsd', 'superpowers', 'none'], repoDefault: 'gsd' })
+    const chosen = { ...draft, frameworkSet: set, frameworkInstalls: installs }
+    if (sizing === undefined) return chosen
+    const state: CadreState = {
+      schema: 1,
+      cadreVersion: '0.4.11',
+      framework: 'gsd',
+      gitPolicy: 'definitions',
+      roles: ['be'],
+      launchStart: { kind: 'git-root' },
+      readUserMcp: false,
+      sizing,
+    }
+    const repo = { ...draft.gathered.repo, cadre: { ...draft.gathered.repo.cadre, state } }
+
+    return { ...chosen, gathered: { ...draft.gathered, repo } }
+  }
+
+  /** The text of the cadre.json the apply wrote, parsed; null when it wrote none. */
+  function cadreJsonOf(host: MemHost): unknown {
+    const text = host.writes.find(write => write.path === '/repo/.cadre/cadre.json')?.text
+
+    return text === undefined ? null : JSON.parse(text)
+  }
+
+  test('cadre.json stores the set without a framework whose install failed, with the sizing of that set', async () => {
+    const draft = setDraft(['gsd', 'superpowers'], ['superpowers'])
+    const failed = await applied(draft, [{ argv: SUPERPOWERS_PROJECT_INSTALL, result: FAILED_INSTALL }])
+    const installed = await applied(draft, [], ['superpowers'])
+    const gsdOnly = { threshold: 0.5, mapping: { small: 'gsd', large: 'gsd' }, rubric: '.cadre/sizing.md' }
+
+    expect(cadreJsonOf(failed.host)).toMatchObject({ frameworks: ['gsd'], sizing: gsdOnly })
+    expect(cadreJsonOf(installed.host)).toMatchObject({
+      frameworks: ['gsd', 'superpowers'],
+      sizing: { ...gsdOnly, mapping: { small: 'superpowers', large: 'gsd' } },
+    })
+  })
+
+  test('a re-init keeps a stored threshold 0.7, and its mapping while both of its frameworks stay', async () => {
+    const mapping: Sizing['mapping'] = { small: 'superpowers', large: 'gsd' }
+    const stored: Sizing = { threshold: 0.7, mapping, rubric: '.cadre/sizing.md' }
+    const both = await applied(setDraft(['gsd', 'superpowers'], [], stored))
+    const gsd = await applied(setDraft(['gsd'], [], stored))
+    const fresh = await applied(setDraft(['gsd'], []))
+    const gsdMapping = { small: 'gsd', large: 'gsd' }
+
+    expect(cadreJsonOf(both.host)).toMatchObject({ sizing: stored })
+    expect(cadreJsonOf(gsd.host)).toMatchObject({ sizing: { ...stored, mapping: gsdMapping } })
+    expect(cadreJsonOf(fresh.host)).toMatchObject({ sizing: { ...stored, threshold: 0.5, mapping: gsdMapping } })
+  })
+
   test('a --dry-run review names the install, and its Confirm runs nothing and reads the facts no more', async () => {
     const run = queuedIo(fullWorld(), ADJUST_SUPERPOWERS_YES)
     const paged = pagedIo(run)
