@@ -143,8 +143,8 @@ function fileWritesOf(plan: LaunchPlan): RenderStep[] {
   ]
 }
 
-/** The write of an empty inbox (D-114). */
-const INBOX_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/inbox.md`, text: '' }
+/** The write of an empty inbox. */
+const INBOX_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/inbox.jsonl`, text: '' }
 
 /** The write of the stamp, the last step of every render (LNCH-03). */
 const STAMP_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/stamp`, text: STAMP_TEXT }
@@ -175,7 +175,7 @@ describe('runtime render (D-102)', () => {
           ROLE_DIR,
           RUNTIME,
           `${RUNTIME}/DONE.md`,
-          `${RUNTIME}/inbox.md`,
+          `${RUNTIME}/inbox.jsonl`,
           `${RUNTIME}/instructions`,
           `${RUNTIME}/instructions/global`,
           `${RUNTIME}/instructions/memory`,
@@ -206,7 +206,7 @@ describe('runtime render (D-102)', () => {
       ROLE_DIR,
       RUNTIME,
       `${RUNTIME}/DONE.md`,
-      `${RUNTIME}/inbox.md`,
+      `${RUNTIME}/inbox.jsonl`,
       `${RUNTIME}/instructions`,
       `${RUNTIME}/instructions/global`,
       `${RUNTIME}/instructions/memory`,
@@ -244,7 +244,7 @@ describe('runtime render (D-102)', () => {
   })
 
   test('an inbox that is already there is never written again, so a note in it is not lost (D-114, Pitfall 3)', () => {
-    const inbox = `${RUNTIME}/inbox.md`
+    const inbox = `${RUNTIME}/inbox.jsonl`
     const stats = disk({ [RUNTIME]: folder(RUNTIME), [inbox]: regular(inbox) })
 
     expect(renderSteps(input({ stats })).steps).toEqual([
@@ -253,6 +253,16 @@ describe('runtime render (D-102)', () => {
       ...fileWritesOf(BE_PLAN),
       STAMP_WRITE,
     ])
+  })
+
+  test('an inbox.md of an older setup is left alone, file or link, and the empty inbox.jsonl is written', () => {
+    const old = `${RUNTIME}/inbox.md`
+    for (const stat of [regular(old), DANGLING]) {
+      const steps = renderSteps(input({ stats: rendered({ [old]: stat }) })).steps
+
+      expect(steps.filter(step => step.path === old)).toEqual([])
+      expect(steps.filter(step => step.path === INBOX_WRITE.path)).toEqual([INBOX_WRITE])
+    }
   })
 
   test('renderArgv gives absolute argv and no shell; a write has none, since the host writes it', () => {
@@ -423,7 +433,7 @@ describe('runtime render links', () => {
 
   test('a file the render writes that is a link is removed first; an inbox link becomes an empty inbox', () => {
     const settings = `${RUNTIME}/settings.json`
-    const inbox = `${RUNTIME}/inbox.md`
+    const inbox = `${RUNTIME}/inbox.jsonl`
     const steps = renderSteps(input({ stats: rendered({ [settings]: LINK_OUT, [inbox]: DANGLING }) })).steps
 
     expect(steps.slice(0, 2)).toEqual([
@@ -435,7 +445,7 @@ describe('runtime render links', () => {
   })
 
   test('a file the render writes that is a folder, or any kind but a file or a link, refuses with no step', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
     const results = names.flatMap(name => {
       const path = `${RUNTIME}/${name}`
       const other: PortStat = { kind: 'other', size: 0, isLink: false, realPath: path }
@@ -521,7 +531,7 @@ describe('runtime render links', () => {
   })
 
   test('a file a render writes that .runtime lists as a link, with no link in its stat, refuses (#72 A2)', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
     const results = names.map(name =>
       renderSteps(input({ stats: rendered(), listings: listed({ [RUNTIME]: [entry('notes'), link(name)] }) })),
     )
@@ -554,7 +564,7 @@ describe('runtime render links', () => {
   })
 
   test('no step removes a real file or folder but the old stamp, and nothing is removed with -r (T-03-20)', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
     const files = Object.fromEntries(
       names.map((name): [string, PortStat] => [`${RUNTIME}/${name}`, regular(`${RUNTIME}/${name}`)]),
     )

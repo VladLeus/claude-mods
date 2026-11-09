@@ -671,7 +671,7 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
 
   test('every check passed: claude --version runs first, the stamp is written last, the command follows', async () => {
     const start = await startBe(await appliedWorld())
-    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
     const lines = start.reply.split('\n')
     const runAt = lines.indexOf('Run this in a terminal to start role be:')
 

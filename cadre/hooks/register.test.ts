@@ -3354,7 +3354,7 @@ describe('cadre start with a faked host', () => {
     const log = newLog()
     fakeHost(on, await startHostWorld(), log)
     const lines = (await $.command.run({ command: 'cadre', args: 'start be' })).text.split('\n')
-    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
     expect(log.writes).toEqual(written.map(name => `${START_RUNTIME}/${name}`))
     expect(log.ops.filter(op => op.startsWith('fs.write ')).at(-1)).toBe(`fs.write ${START_RUNTIME}/stamp`)
     // The n-th process.run op is the n-th run, so the mkdir of .runtime is found among the ops by its run index.
