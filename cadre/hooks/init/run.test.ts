@@ -245,6 +245,7 @@ import {
 import { MEMORY_DISMISSED_REASON } from './stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStage } from './stages/model'
 import { ASSIGNMENT_DISMISSED_REASON } from './stages/own-skills'
+import { PM_PLUGIN_QUESTION } from './stages/pm-plugin'
 import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine, policyStage } from './stages/policy'
 import {
   cardLines,
@@ -2913,17 +2914,18 @@ describe('carryStep', () => {
     await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const modelAt = asked.indexOf('Model and effort for all roles?')
-    expect(asked.slice(modelAt + 1, modelAt + 9)).toEqual([
+    expect(asked.slice(modelAt + 1, modelAt + 10)).toEqual([
       'Which roles get the MCP servers (1)? Pick how to hand them out.',
       'Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      PM_PLUGIN_QUESTION,
       CONTENT_QUESTION,
       'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)',
       'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)',
       'Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)',
       ENV_QUESTION,
     ])
-    expect(asked[modelAt + 9]).toBe(GIT_POLICY_QUESTION)
+    expect(asked[modelAt + 10]).toBe(GIT_POLICY_QUESTION)
   })
 
   test('the instruction consent context names the repo by its folder name, not <repo> (D-226)', async () => {
@@ -6018,7 +6020,7 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     const declined = improvingHost(declinedFiles, INSTALLS_OK)
     const run = memIo(builtWorld({ files: declinedFiles }), improverOffer('Not now'))
     await runInit(run.io, { dryRun: false, host: declined.io })
-    expect(firstLines(run.asked).filter(question => question.startsWith('Install'))).toHaveLength(2)
+    expect(firstLines(run.asked).filter(question => question.startsWith('Install'))).toHaveLength(3)
     expect(installRuns(declined.host)).toEqual([])
   })
 

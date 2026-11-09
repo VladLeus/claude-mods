@@ -89,6 +89,18 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         },
         {
           "question": [
+            "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+            "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+          ],
+          "header": "Skills",
+          "options": [
+            "No",
+            "Yes, install it"
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": [
             "Git policy for .cadre/?",
             "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
           ],
@@ -129,7 +141,8 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         }
       ],
       "logged": [
-        "No session history for this repo."
+        "No session history for this repo.",
+        "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
       ],
       "shown": [],
       "promptHashes": [],
@@ -537,6 +550,18 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         },
         {
           "question": [
+            "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+            "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+          ],
+          "header": "Skills",
+          "options": [
+            "No",
+            "Yes, install it"
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": [
             ".planning/config.json: mode"
           ],
           "header": "Hunk 1 of 1",
@@ -588,7 +613,8 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         }
       ],
       "logged": [
-        "No session history for this repo."
+        "No session history for this repo.",
+        "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
       ],
       "shown": [],
       "promptHashes": [],

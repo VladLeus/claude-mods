@@ -27,6 +27,7 @@ import { improverInstallStage } from './stages/improver-install'
 import { instructionsStage } from './stages/instructions'
 import { launchStage } from './stages/launch'
 import { modelStage } from './stages/model'
+import { pmPluginStage } from './stages/pm-plugin'
 import { policyStage } from './stages/policy'
 import { reviewStage } from './stages/review'
 import { rolesStage } from './stages/roles'
@@ -105,6 +106,7 @@ export const STAGES: Readonly<Record<InitStage, StageDef>> = Object.freeze({
   duration: durationStage,
   model: modelStage,
   assign: assignStage,
+  'pm-plugin': pmPluginStage,
   instructions: instructionsStage,
   carry: carryStage,
   hunks: hunksStage,

@@ -537,7 +537,7 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
   })
 
   test('a team with nothing to recommend shows the one line the security stage shows for none', async () => {
-    const draft = draftWith([withFramework(templateRole('pm'), 'superpowers')])
+    const draft = draftWith([withFramework(templateRole('tl'), 'superpowers')])
     const { lines } = await reviewed(draft, PANE_DESKTOP)
     expect(recommendedLines(draft)).toEqual(['Recommendations: none'])
     const at = lines.indexOf('Recommendations: none')

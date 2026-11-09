@@ -80,6 +80,8 @@ export type Draft = {
   readonly frameworkSet?: readonly FrameworkId[]
   /** The frameworks the person answered Install for; installed at project scope only after Confirm. */
   readonly frameworkInstalls?: readonly FrameworkId[]
+  /** The plugin keys the person consented to install at project scope; installed after Confirm, never in --dry-run. */
+  readonly projectPluginInstalls?: readonly string[]
 }
 
 /** What the person confirmed in the review (D-43, D-105): the draft the plan was built from, and that plan. */

@@ -189,6 +189,15 @@ export const EN = Object.freeze({
   'init.improverInstall.improverInstallDismissedReason':
     'The claude-md-management question was dismissed or not answered.',
 
+  'init.pmPlugin.question':
+    'Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM {skills}.',
+  'init.pmPlugin.context': 'It runs from the repo root at project scope, never in a --dry-run: {command}',
+  'init.pmPlugin.no': 'No',
+  'init.pmPlugin.yes': 'Yes, install it',
+  'init.pmPlugin.skillsJoin': ' and ',
+  'init.pmPlugin.declined':
+    'PM runs without its grill skills: to add them, run {command} from the repo root, then /cadre init again.',
+
   'init.duration.durationQuestion': 'Autopilot duration for roles?',
   'init.duration.durationContextLine': 'Applies to every role: {ids}.',
   'init.duration.durationDismissedReason': 'The autopilot duration question was dismissed or not answered.',
@@ -1231,6 +1240,7 @@ export const EN = Object.freeze({
   'roles.recommend.recommendWhy3':
     "claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
   'roles.recommend.recommendWhy4': 'no hooks warn the Security role about risky edits',
+  'roles.recommend.pmGrillWhy': 'PM has no grill skill to sharpen each ticket with you before it goes to TL',
 
   'roles.template.noFrontendReason': 'no frontend framework found (react, vue, next, svelte, angular)',
   'roles.template.noTestsReason': 'no tests or E2E setup found',

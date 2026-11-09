@@ -46,9 +46,9 @@ import type { PlanStepInput } from './initplan'
 /**
  * The stages of an init run in today's order (D-43, D-230, A1): the guard, the ~/.claude.json consent, the scans, the
  * history question, the role steps (the roles, their frameworks, the security plugins, the duration, each role's model
- * and effort, the MCP and skill assignments, the instructions and memories, the carried settings, the hunks and the
- * improver install), the git policy, the launcher start, and the review with Confirm's apply; then `done`, a run that
- * ended with its reply, or `cancelled`, a run that ended with nothing written.
+ * and effort, the MCP and skill assignments, PM's grill plugin, the instructions and memories, the carried settings,
+ * the hunks and the improver install), the git policy, the launcher start, and the review with Confirm's apply; then
+ * `done`, a run that ended with its reply, or `cancelled`, a run that ended with nothing written.
  */
 export type InitStage =
   | 'guard'
@@ -61,6 +61,7 @@ export type InitStage =
   | 'duration'
   | 'model'
   | 'assign'
+  | 'pm-plugin'
   | 'instructions'
   | 'carry'
   | 'hunks'
@@ -83,6 +84,7 @@ export const STAGE_ORDER: readonly InitStage[] = Object.freeze([
   'duration',
   'model',
   'assign',
+  'pm-plugin',
   'instructions',
   'carry',
   'hunks',
@@ -578,7 +580,7 @@ export function fullDraft(draft: Partial<Draft>): Draft | null {
   if (base === null || duration === undefined || roles === undefined || changes === undefined) return null
   if (repoDefault === undefined || hunks === undefined || pluginInstalls === undefined) return null
   if (instructions === undefined || policy === undefined || launchStart === undefined) return null
-  const { frameworkSet, frameworkInstalls } = draft
+  const { frameworkSet, frameworkInstalls, projectPluginInstalls } = draft
   const fields = { duration, roles, changes, repoDefault, hunks, pluginInstalls, instructions, policy, launchStart }
 
   return {
@@ -586,5 +588,6 @@ export function fullDraft(draft: Partial<Draft>): Draft | null {
     ...fields,
     ...(frameworkSet === undefined ? {} : { frameworkSet }),
     ...(frameworkInstalls === undefined ? {} : { frameworkInstalls }),
+    ...(projectPluginInstalls === undefined ? {} : { projectPluginInstalls }),
   }
 }

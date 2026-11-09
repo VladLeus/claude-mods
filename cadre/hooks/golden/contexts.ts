@@ -188,6 +188,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
           "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
           "    run: claude plugin install superpowers@claude-plugins-official",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
           "    run: claude plugin install claude-security@claude-plugins-official",
           "- security-guidance for Security: no hooks warn the Security role about risky edits",
@@ -225,6 +227,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "    run: claude plugin install superpowers@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -483,6 +495,76 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  dropped be: no source code found",
+          "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+          "  dropped qa: no tests or E2E setup found"
+        ],
+        "kind": "roles",
+        "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n3 roles: pm, tl, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Git policy",
@@ -803,6 +885,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "title": "Security plugins",
         "lines": [
           "Recommendations (print-only; init asks before it installs any):",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
           "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
           "- DevTools MCP for FE: the FE role cannot inspect the running page",
@@ -824,6 +908,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -1122,6 +1216,82 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "acceptsTyped": true
     },
     {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  BE (be)                 Implements the backend and core code.",
+          "  FE (fe)                 Implements the frontend.",
+          "  QA (qa)                 Owns tests and end-to-end checks.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  kept be: source code found (TypeScript), no backend framework (package.json)"
+        ],
+        "kind": "roles",
+        "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n6 roles: pm, tl, be, fe, qa, security"
+        }
+      },
+      "acceptsTyped": false
+    },
+    {
       "header": "Hunk 1 of 2",
       "context": {
         "title": ".planning/config.json: mode",
@@ -1299,7 +1469,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 13)",
+        "title": "Review (page 1 of 14)",
         "lines": [
           "Roles:",
           "  PM (pm)",
@@ -1325,7 +1495,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "summary": "47 files, 6 roles",
         "pane": {
           "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 47 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 13)"
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 14)"
         }
       },
       "acceptsTyped": false
@@ -1534,6 +1704,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "title": "Security plugins",
         "lines": [
           "Recommendations (print-only; init asks before it installs any):",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
           "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
           "- DevTools MCP for FE: the FE role cannot inspect the running page",
@@ -1555,6 +1727,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -1851,6 +2033,82 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  BE (be)                 Implements the backend and core code.",
+          "  FE (fe)                 Implements the frontend.",
+          "  QA (qa)                 Owns tests and end-to-end checks.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  kept be: source code found (TypeScript), no backend framework (package.json)"
+        ],
+        "kind": "roles",
+        "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n6 roles: pm, tl, be, fe, qa, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Git policy",
@@ -2251,6 +2509,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "title": "Security plugins",
         "lines": [
           "Recommendations (print-only; init asks before it installs any):",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
           "    run: claude plugin install claude-security@claude-plugins-official",
           "- security-guidance for Security: no hooks warn the Security role about risky edits",
@@ -2268,6 +2528,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -2625,6 +2895,76 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  dropped be: no source code found",
+          "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+          "  dropped qa: no tests or E2E setup found"
+        ],
+        "kind": "roles",
+        "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n3 roles: pm, tl, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Instructions",
@@ -3231,6 +3571,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
           "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
           "    run: claude plugin install superpowers@claude-plugins-official",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
           "    run: claude plugin install claude-security@claude-plugins-official",
           "- security-guidance for Security: no hooks warn the Security role about risky edits",
@@ -3268,6 +3610,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "    run: claude plugin install superpowers@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -3526,6 +3878,76 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  dropped be: no source code found",
+          "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+          "  dropped qa: no tests or E2E setup found"
+        ],
+        "kind": "roles",
+        "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n3 roles: pm, tl, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Instructions",

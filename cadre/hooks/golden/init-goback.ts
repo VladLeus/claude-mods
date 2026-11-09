@@ -88,6 +88,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -178,6 +190,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
           "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
@@ -192,7 +216,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -320,6 +346,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -387,7 +425,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -515,6 +554,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -582,7 +633,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -710,6 +762,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -777,7 +841,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -905,6 +970,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -984,7 +1061,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -1112,6 +1190,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -1166,7 +1256,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -1294,6 +1385,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -1348,7 +1451,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -1476,6 +1580,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -1530,7 +1646,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -1658,6 +1775,18 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -1712,7 +1841,8 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],

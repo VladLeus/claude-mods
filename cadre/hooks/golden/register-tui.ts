@@ -44,10 +44,12 @@ export const GOLDEN_TUI: {
     null,
     null,
     null,
+    null,
     null
   ],
   "logs": [
-    "No session history for this repo."
+    "No session history for this repo.",
+    "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
   ],
   "asks": [
     {
@@ -187,6 +189,17 @@ export const GOLDEN_TUI: {
         "**Skills: your own**\n```\ndeploy-notes: Write the release notes for a deploy. Recommended: none.\n```",
         "**Skills: your own**\n```\ndeploy-notes: Write the release notes for a deploy. Recommended: none.\n```",
         "**Skills: your own**\n```\ndeploy-notes: Write the release notes for a deploy. Recommended: none.\n```"
+      ]
+    },
+    {
+      "header": "Skills",
+      "options": [
+        "No",
+        "Yes, install it"
+      ],
+      "previews": [
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
       ]
     },
     {

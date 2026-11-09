@@ -86,6 +86,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -126,7 +138,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -267,6 +280,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           ".planning/config.json: mode"
         ],
         "header": "Hunk 1 of 2",
@@ -329,7 +354,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -498,6 +524,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -538,7 +576,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -764,6 +803,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.",
           "Found: global CLAUDE.md yes, 1 CLAUDE.md file in the repo chain, 0 rule files, AGENTS.md no, 1 memory. No keeps the whole-file questions."
         ],
@@ -898,6 +949,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
     ],
     "logged": [
       "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again.",
       "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
     ],
     "shown": [],
@@ -1039,6 +1091,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.",
           "Found: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 2 memories. No keeps the whole-file questions."
         ],
@@ -1116,7 +1180,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [

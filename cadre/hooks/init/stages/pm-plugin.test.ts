@@ -4,7 +4,8 @@ import type { RoleSpec } from '../../../types'
 import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../../roles/infra'
 import { INSTALL_COMMANDS } from '../../roles/recommend'
 import { driven, emptySetupScan, stateAt, templateRole, wholeDraft } from '../../testkit'
-import { withContext } from '../../ui/ask'
+import { paneQuestionOf, withContext } from '../../ui/ask'
+import { rolesContext } from '../../ui/blocks/context'
 import type { InitState } from '../state'
 import { PM_PLUGIN_CONTEXT, PM_PLUGIN_DECLINED, PM_PLUGIN_QUESTION, pmPluginStage } from './pm-plugin'
 
@@ -50,7 +51,9 @@ describe('the PM grill plugin stage', () => {
   test('with the plugin missing it asks one question, the declining answer first, with the Skills chip', () => {
     const state = pmPluginAt(TEAM)
     const question = withContext(PM_PLUGIN_QUESTION, PM_PLUGIN_CONTEXT)
-    const spec = { options: ['No', 'Yes, install it'], header: 'Skills' }
+    const context = rolesContext(TEAM, [])
+    const pane = paneQuestionOf(PM_PLUGIN_QUESTION, PM_PLUGIN_CONTEXT, context.summary)
+    const spec = { options: ['No', 'Yes, install it'], header: 'Skills', context: { ...context, pane } }
 
     expect(state.effect).toEqual({ kind: 'ask', question, spec })
   })
@@ -58,7 +61,7 @@ describe('the PM grill plugin stage', () => {
   test('Yes records the project install in the draft and gives PM the grill skills', () => {
     const run = driven(pmPluginAt(TEAM), ['Yes, install it'])
 
-    expect([run.asked.length, run.outputs, run.state.sub]).toEqual([1, [], { kind: 'done' }])
+    expect([run.asked.length, run.outputs, run.state.stage]).toEqual([1, [], 'instructions'])
     expect(run.state.draft.projectPluginInstalls).toEqual([MATTPOCOCK_PLUGIN])
     expect(skillsOf(run.state, 'pm')).toEqual(['mattpocock-skills:tdd', ...GRILL_SKILLS])
   })
@@ -67,7 +70,7 @@ describe('the PM grill plugin stage', () => {
     for (const answers of [['No'], [null], []]) {
       const run = driven(pmPluginAt(TEAM), answers)
 
-      expect([run.state.sub, run.state.draft.roles]).toEqual([{ kind: 'done' }, TEAM])
+      expect([run.state.stage, run.state.draft.roles]).toEqual(['instructions', TEAM])
       expect(run.state.draft.projectPluginInstalls ?? []).toEqual([])
       expect(run.outputs).toEqual([{ kind: 'note', line: PM_PLUGIN_DECLINED }])
     }

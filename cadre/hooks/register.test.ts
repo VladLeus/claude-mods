@@ -2673,7 +2673,10 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, DOCK_PANE, open, SECURITY_INSTALL_PREFIX) }), log)
     await $.command.run(DRY_RUN)
-    expect(open.map(entry => [entry.drawn.first, entry.header])).toEqual([['Security plugins', 'Security']])
+    expect(open.map(entry => [entry.drawn.first, entry.header])).toEqual([
+      ['Security plugins', 'Security'],
+      ['Security plugins', 'Security'],
+    ])
   })
 
   test('a dismissed dialog still writes the idle state, so the pane draws the empty frame (D-304)', async ($, on) => {
@@ -2856,6 +2859,9 @@ const TUI_ASKS_AT_BASE: readonly string[] = [
   'ask Which roles get your own skills (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role ' +
     'given these skills can run them in its session; a role not given them cannot.\nOr press n, type ' +
     'your own answer, then Enter.',
+  'ask Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM ' +
+    'mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, ' +
+    'never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project',
   'ask .planning/config.json: mode',
   'ask .planning/config.json: workflow.text_mode',
   'ask Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. ' +
