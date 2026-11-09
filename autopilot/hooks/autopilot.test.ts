@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Avail, AvailCommand, Awaiting, BadgeAvail, Effective, LockOwner, Pending, Question, QueueInput, Run, WaitReason } from '../types'
 import {
+  ASKING_QUEUE_REFUSAL,
   ASK_ANSWER,
   CONTINUE_PROMPT,
   FULL_QUEUE_TOOL,
@@ -13,6 +14,7 @@ import {
   RELEASE_PROMPT,
   RELEASE_UNQUEUED_PROMPT,
   WAIT_REASONS,
+  WAIT_TOOL,
   addQuestion,
   afterTurn,
   answeredQuestion,
@@ -949,6 +951,14 @@ describe('AskUserQuestion while asking is on', () => {
     expect(queuedQuestionTexts(call(3), queued)).toEqual([])
     expect(queuedQuestionTexts({ questions: 'Which DB?' }, queued)).toEqual([])
     expect(queuedQuestionTexts(null, queued)).toEqual([])
+  })
+
+  test('the asking refusal of queue_question names AskUserQuestion before the notification fallback', async () => {
+    const text = ASKING_QUEUE_REFUSAL
+    const parts = ['AskUserQuestion', 'PushNotification', `${WAIT_TOOL} with reason user-answer`, 'end your turn']
+    expect(text.startsWith('The person can be asked right now: do not queue.')).toBe(true)
+    expect(parts.filter(part => !text.includes(part))).toEqual([])
+    expect(text.indexOf('AskUserQuestion')).toBeLessThan(text.indexOf('PushNotification'))
   })
 })
 
