@@ -126,14 +126,34 @@ export const PROMPTS = Object.freeze({
   inboxNotStarted: 'Not sent: {to} has no inbox yet. Run /cadre start {to} first.',
   inboxUnsafe: 'Not sent: the inbox of {to} is a link or not a regular file, so cadre does not write to it.',
   inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read.',
-  // The kind fields of inbox_send (messages/send): the refusal of a missing or a bad field; then the size line a send
-  // result ends with, and the pick it names per planning mode (messages/sizing sizeText).
+  // The wake of a task that names its method. Then the kind fields of inbox_send (messages/send): the refusal of a
+  // missing, a foreign or a bad field, and of a brief's mode and tickets; then the size line a send result ends with,
+  // and the pick it names per planning mode (messages/sizing sizeText).
+  inboxWakeMethod:
+    'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read and execute it with {method}.',
   inboxFieldMissing: 'A {kind} needs {field}.',
   inboxTicketKeyBad:
     'ticketKey must be a ticket key of at most {max} characters: a letter or digit, then letters, digits, . - or _.',
   inboxVectorBad: 'vector must hold scope, complexity, risk and effort, each a number from 0.1 to 1.0.',
   inboxUseBad: 'use must hold a framework (gsd, superpowers or none) and, only with gsd, a gsdPath of quick or phase.',
   inboxSpecPathBad: 'specPath must be a path from the git root, with no .. and no spaces.',
+  inboxFieldNotForKind: '{field} is not a field of a {kind}: leave it out.',
+  inboxFieldEmpty: '{field} is empty or not text.',
+  inboxFieldTooLong: '{field} is over {max} characters: shorten it.',
+  inboxScoresBad:
+    'scores must hold scope and risk, each a number from 0.1 to 1.0; the role that plans the ticket adds the rest.',
+  inboxPinBad: 'pin must be one of {pins}.',
+  inboxOutcomeBad: 'outcome must be one of {outcomes}.',
+  inboxFrameworkUsedBad: 'frameworkUsed must be one of {frameworks}.',
+  inboxDocPathsBad:
+    'docPaths must list at most {max} paths from the git root or cadre- workstream names, of {chars} characters each.',
+  inboxOpenQuestionsBad:
+    'openQuestions must list at most {max} questions of one line and {chars} characters each; [] when none is open.',
+  inboxModeBad: 'mode must be one of {modes}.',
+  inboxModeNotOffered: 'mode {mode} is not offered: the frameworks of this repo offer {modes}.',
+  inboxTicketsBad: 'tickets must list at most {max} ticket keys.',
+  inboxTicketsNotEpic: 'tickets go only in a gsd-epic brief: set mode gsd-epic or leave tickets out.',
+  inboxEpicNeedsTickets: 'A gsd-epic brief needs tickets: the key of every ticket of the epic.',
   inboxSize: 'Size {size}, so {sizeClass} (the threshold is {threshold}).',
   inboxSizePick: 'In {mode} mode: {framework}.',
   inboxSizePickGsd: 'In {mode} mode: gsd, GSD path {gsdPath}.',
@@ -148,11 +168,18 @@ export const PROMPTS = Object.freeze({
     ''}also lists the entries marked done or rejected.`,
   inboxNoRole: 'The cadre inbox tools work only in a cadre role session.',
   inboxFailed: 'The cadre inbox tool failed. Try again.',
-  // The inbox_read view (messages/record inboxReadText): an entry's head, note and reply lines, the empty inbox, the
-  // last line that counts the entries left out, and the refusals of inbox_read.
+  // The inbox_read view (messages/record inboxReadText): an entry's head, note and reply lines, a line per kind field
+  // and its value forms, the empty inbox, the last line that counts the entries left out, and the inbox_read refusals.
   inboxItemHead: '{id} [{state}] {kind} from {from}: {subject}',
   inboxItemNote: 'note: {note}',
   inboxItemReply: 'reply: {reply}',
+  inboxItemField: '{field}: {value}',
+  inboxItemNone: 'none',
+  inboxItemScores: 'scope {scope}, risk {risk}',
+  inboxItemVector: 'scope {scope}, complexity {complexity}, risk {risk}, effort {effort}',
+  inboxItemSized: '{vector}; size {size}, {sizeClass}',
+  inboxItemUseGsd: 'gsd, GSD path {gsdPath}',
+  inboxItemMethod: '{method}. Execute your plan with it; never ask which method to use.',
   inboxEmpty: 'Your inbox is empty.',
   'inboxHidden.one': '{count} entry marked done or rejected is not shown; call inbox_read with all: true to list it.',
   'inboxHidden.other':

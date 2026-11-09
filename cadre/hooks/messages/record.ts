@@ -19,9 +19,19 @@ import { clean, isChangedByClean, reportText } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { INBOX_LOG_FILE, runtimeFileOf, SESSION_FILE } from '../paths'
-import { bodyShown, ENTRY_ID_PATTERN, markStateOf, MESSAGE_KINDS, NOTE_MAX_CHARS, parseKindFields } from './send'
-import { parseScore } from './sizing'
+import { INBOX_LOG_FILE, isSafeRelativePath, runtimeFileOf, SESSION_FILE } from '../paths'
+import {
+  bodyShown,
+  CHANGES_MAX_CHARS,
+  ENTRY_ID_PATTERN,
+  kindFieldsOf,
+  markStateOf,
+  MESSAGE_KINDS,
+  NOTE_MAX_CHARS,
+  REPORT_FORM_MAX_CHARS,
+  VERIFICATION_MAX_CHARS,
+} from './send'
+import { parseScore, SP_METHOD, SP_PLAN_DIR } from './sizing'
 
 /** How many hex characters of the content's SHA-256 an entry id keeps. */
 const ENTRY_ID_HASH_CHARS = 8
@@ -72,15 +82,30 @@ function orderedUse(use: TaskUse): TaskUse {
 
 /** The kind fields and stamps of an entry in the record's fixed order, each nested object in its own fixed order. */
 function orderedFields(entry: InboxEntry): InboxEntryFields {
-  const { ticketKey, vector, use, specPath, size, large } = entry
+  const { ticketKey, scores, pin, reportForm, vector, use, specPath, outcome, changes, verification } = entry
+  const { reason, frameworkUsed, docPaths, openQuestions, mode, tickets, size, large, planPath, method } = entry
 
   return {
     ...(ticketKey === undefined ? {} : { ticketKey }),
+    ...(scores === undefined ? {} : { scores: { scope: scores.scope, risk: scores.risk } }),
+    ...(pin === undefined ? {} : { pin }),
+    ...(reportForm === undefined ? {} : { reportForm }),
     ...(vector === undefined ? {} : { vector: orderedVector(vector) }),
     ...(use === undefined ? {} : { use: orderedUse(use) }),
     ...(specPath === undefined ? {} : { specPath }),
+    ...(outcome === undefined ? {} : { outcome }),
+    ...(changes === undefined ? {} : { changes }),
+    ...(verification === undefined ? {} : { verification }),
+    ...(reason === undefined ? {} : { reason }),
+    ...(frameworkUsed === undefined ? {} : { frameworkUsed }),
+    ...(docPaths === undefined ? {} : { docPaths }),
+    ...(openQuestions === undefined ? {} : { openQuestions }),
+    ...(mode === undefined ? {} : { mode }),
+    ...(tickets === undefined ? {} : { tickets }),
     ...(size === undefined ? {} : { size }),
     ...(large === undefined ? {} : { large }),
+    ...(planPath === undefined ? {} : { planPath }),
+    ...(method === undefined ? {} : { method }),
   }
 }
 
@@ -144,6 +169,20 @@ function sizeStampsOf(value: Readonly<Record<string, unknown>>): InboxEntryField
   return { size: score, large }
 }
 
+/** The plan stamps of a stored entry: both absent, or a plan file under the superpowers plan folder and the method. */
+function planStampsOf(value: Readonly<Record<string, unknown>>): InboxEntryFields | null {
+  const { planPath, method } = value
+  if (planPath === undefined && method === undefined) return {}
+  if (typeof planPath !== 'string' || !planPath.startsWith(`${SP_PLAN_DIR}/`)) return null
+  if (!isSafeRelativePath(planPath) || method !== SP_METHOD) return null
+
+  return { planPath, method }
+}
+
+/**
+ * An entry as stored: every kind field it holds valid for its kind (an entry from before a field existed lacks it),
+ * and its stamps valid; null for anything else.
+ */
 function entryOf(value: Readonly<Record<string, unknown>>): InboxEntry | null {
   const { id, at, from, to, kind, subject, body, replyTo } = value
   if (!isEntryId(id) || !isEpochMs(at) || !isRole(to)) return null
@@ -151,12 +190,13 @@ function entryOf(value: Readonly<Record<string, unknown>>): InboxEntry | null {
   const kindName = MESSAGE_KINDS.find(known => known === kind)
   if (kindName === undefined || typeof subject !== 'string' || typeof body !== 'string') return null
   if (replyTo !== undefined && !isEntryId(replyTo)) return null
-  const fields = parseKindFields(kindName, value)
-  const stamps = sizeStampsOf(value)
-  if (fields.kind === 'error' || stamps === null) return null
+  const fields = kindFieldsOf(kindName, value)
+  const sized = sizeStampsOf(value)
+  const planned = planStampsOf(value)
+  if (fields.kind === 'error' || sized === null || planned === null) return null
   const entry: InboxEntry = { v: 1, type: CONTRACTS.inboxEntryType, id, at, from, to, kind: kindName, subject, body }
 
-  return { ...entry, ...(replyTo === undefined ? {} : { replyTo }), ...fields.fields, ...stamps }
+  return { ...entry, ...(replyTo === undefined ? {} : { replyTo }), ...fields.fields, ...sized, ...planned }
 }
 
 function markOf(value: Readonly<Record<string, unknown>>): InboxMark | null {
@@ -269,17 +309,74 @@ export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
 /** The states inbox_read leaves out unless it is asked for all items. */
 export const CLOSED_STATES: readonly InboxState[] = Object.freeze(['done', 'rejected'])
 
+/** A field's value as the view shows it; undefined when the entry does not hold the field. */
+function shownOf<T>(value: T | undefined, show: (held: T) => string): string | undefined {
+  return value === undefined ? undefined : show(value)
+}
+
+/** A list's items cleaned and joined, or the none word for an empty list. */
+function listShown(items: readonly string[], separator: string): string {
+  return items.length === 0 ? PROMPTS.inboxItemNone : items.map(item => reportText(item)).join(separator)
+}
+
+/** The four scores, with the size and its class when the entry holds the size stamps. */
+function vectorShown(entry: InboxEntry, vector: SizeVector): string {
+  const shown = fill(PROMPTS.inboxItemVector, vector)
+  const { size, large } = entry
+  if (size === undefined || large === undefined) return shown
+
+  return fill(PROMPTS.inboxItemSized, { vector: shown, size, sizeClass: large ? 'large' : 'small' })
+}
+
+function useShown(use: TaskUse): string {
+  return use.gsdPath === undefined ? reportText(use.framework) : fill(PROMPTS.inboxItemUseGsd, { gsdPath: use.gsdPath })
+}
+
 /**
- * One item as inbox_read shows it: its head, its body lines whole and indented two spaces, then its note and reply.
- * The body is cleaned as the send keeps it, and the note is cut only over the mark's cap.
+ * One line per kind field and stamp the entry holds, in the record's order, each value cleaned. A text whose cap is
+ * over the report cap is shown whole up to its own cap, as the send kept it.
+ */
+function fieldLines(entry: InboxEntry): string[] {
+  const shown: readonly (readonly [string, string | undefined])[] = [
+    ['ticketKey', shownOf(entry.ticketKey, reportText)],
+    ['scores', shownOf(entry.scores, scores => fill(PROMPTS.inboxItemScores, scores))],
+    ['pin', shownOf(entry.pin, reportText)],
+    ['reportForm', shownOf(entry.reportForm, text => clean(text, REPORT_FORM_MAX_CHARS))],
+    ['vector', shownOf(entry.vector, vector => vectorShown(entry, vector))],
+    ['use', shownOf(entry.use, useShown)],
+    ['specPath', shownOf(entry.specPath, reportText)],
+    ['planPath', shownOf(entry.planPath, reportText)],
+    ['method', shownOf(entry.method, method => fill(PROMPTS.inboxItemMethod, { method: reportText(method) }))],
+    ['outcome', shownOf(entry.outcome, reportText)],
+    ['changes', shownOf(entry.changes, text => clean(text, CHANGES_MAX_CHARS))],
+    ['verification', shownOf(entry.verification, text => clean(text, VERIFICATION_MAX_CHARS))],
+    ['reason', shownOf(entry.reason, reportText)],
+    ['frameworkUsed', shownOf(entry.frameworkUsed, reportText)],
+    ['docPaths', shownOf(entry.docPaths, paths => listShown(paths, ', '))],
+    ['openQuestions', shownOf(entry.openQuestions, questions => listShown(questions, '; '))],
+    ['mode', shownOf(entry.mode, reportText)],
+    ['tickets', shownOf(entry.tickets, keys => listShown(keys, ', '))],
+  ]
+
+  return shown.flatMap(([field, value]) =>
+    value === undefined ? [] : [fill(PROMPTS.inboxItemField, { field, value })],
+  )
+}
+
+/**
+ * One item as inbox_read shows it: its head, its body lines whole and indented two spaces, a line per kind field, then
+ * its note and reply. The body is cleaned as the send keeps it, and the note is cut only over the mark's cap.
  */
 function itemLines(item: InboxItem): string[] {
   const { id, kind, from, subject, body } = item.entry
   const head = fill(PROMPTS.inboxItemHead, { id, state: item.state, kind, from, subject: reportText(subject) })
   const note = item.note === null ? [] : [fill(PROMPTS.inboxItemNote, { note: clean(item.note, NOTE_MAX_CHARS) })]
   const reply = item.reply === null ? [] : [fill(PROMPTS.inboxItemReply, { reply: item.reply })]
+  const bodyLines = bodyShown(body)
+    .split('\n')
+    .map(line => `  ${line}`)
 
-  return [head, ...bodyShown(body).split('\n').map(line => `  ${line}`), ...note, ...reply]
+  return [head, ...bodyLines, ...fieldLines(item.entry), ...note, ...reply]
 }
 
 /**

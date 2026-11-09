@@ -43,7 +43,7 @@ import {
   parseSendInput,
   SUBJECT_MAX_CHARS,
 } from './send'
-import { isLarge, modesOffered, sizeOf, sizeText } from './sizing'
+import { isLarge, modesOffered, sizeOf, sizeText, SP_METHOD, SP_PLAN_DIR } from './sizing'
 import { wakeText } from './wake'
 
 /** The most bytes of a session.json that are read. */
@@ -185,17 +185,36 @@ async function deliver(
   return { kind: 'result', text: fill(isDelivered ? PROMPTS.inboxSent : PROMPTS.inboxSentUndelivered, { id, to }) }
 }
 
-/** The kind fields with cadre's stamps: an entry with a vector gets its size and class at the team's threshold. */
-function stampedFields(fields: InboxEntryFields, team: TeamView): InboxEntryFields {
-  const { vector } = fields
-  if (vector === undefined) return fields
+/**
+ * The kind fields with cadre's stamps: an entry with a vector gets its size and class at the team's threshold, and a
+ * superpowers task the plan file of its receiver and ticket and the one method a worker executes it with.
+ */
+function stampedFields(fields: InboxEntryFields, to: string, team: TeamView): InboxEntryFields {
+  const { vector, use, ticketKey } = fields
+  const sized =
+    vector === undefined ? fields : { ...fields, size: sizeOf(vector), large: isLarge(vector, team.sizing.threshold) }
+  if (use?.framework !== 'superpowers' || ticketKey === undefined) return sized
 
-  return { ...fields, size: sizeOf(vector), large: isLarge(vector, team.sizing.threshold) }
+  return { ...sized, planPath: `${SP_PLAN_DIR}/${to}-${ticketKey}.md`, method: SP_METHOD }
+}
+
+/** Why a brief's mode is refused: the repo's frameworks do not offer it; null with no mode or an offered one. */
+function modeRefusal(fields: InboxEntryFields, team: TeamView): string | null {
+  const { mode } = fields
+  if (mode === undefined) return null
+  const offered = modesOffered(team.frameworks)
+  if (offered.includes(mode)) return null
+
+  return fill(PROMPTS.inboxModeNotOffered, {
+    mode,
+    modes: offered.length === 0 ? PROMPTS.inboxItemNone : offered.join(', '),
+  })
 }
 
 /**
- * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A sent
- * vector's result ends with its size and the pick in each mode the repo offers.
+ * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A mode
+ * the repo's frameworks do not offer is refused before anything runs; a sent vector's result ends with its size and
+ * the pick in each mode the repo offers.
  */
 export async function runInboxSend(
   io: InitIo,
@@ -208,9 +227,11 @@ export async function runInboxSend(
   if (team === null) return deny(PROMPTS.inboxNoTeam)
   const input = parseSendInput(event, ctx, team)
   if (input.kind === 'error') return deny(input.message)
+  const refusal = modeRefusal(input.fields, team)
+  if (refusal !== null) return deny(refusal)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
-  const fields = stampedFields(input.fields, team)
+  const fields = stampedFields(input.fields, input.to, team)
   const outcome = await deliver(io, host, link, ctx, at, { ...input, fields })
   const { vector } = fields
   if (outcome.kind === 'deny' || vector === undefined) return outcome
