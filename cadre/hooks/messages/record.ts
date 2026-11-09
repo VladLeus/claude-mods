@@ -6,12 +6,12 @@ import type { InboxEntry, InboxEvent, InboxItem, InboxMark, InboxState } from '.
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue } from '../core/json'
 import { isRoleId } from '../core/role-id'
-import { isChangedByClean, reportText } from '../core/text'
+import { clean, isChangedByClean, reportText } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { INBOX_LOG_FILE, runtimeFileOf, SESSION_FILE } from '../paths'
-import { ENTRY_ID_PATTERN, markStateOf, MESSAGE_KINDS } from './send'
+import { bodyShown, ENTRY_ID_PATTERN, markStateOf, MESSAGE_KINDS, NOTE_MAX_CHARS } from './send'
 
 /** How many hex characters of the content's SHA-256 an entry id keeps. */
 const ENTRY_ID_HASH_CHARS = 8
@@ -208,14 +208,17 @@ export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
 /** The states inbox_read leaves out unless it is asked for all items. */
 const CLOSED_STATES: readonly InboxState[] = Object.freeze(['done', 'rejected'])
 
-/** One item as inbox_read shows it: its head, its body lines indented two spaces, then its note and reply. */
+/**
+ * One item as inbox_read shows it: its head, its body lines whole and indented two spaces, then its note and reply.
+ * The body is cleaned as the send keeps it, and the note is cut only over the mark's cap.
+ */
 function itemLines(item: InboxItem): string[] {
   const { id, kind, from, subject, body } = item.entry
   const head = fill(PROMPTS.inboxItemHead, { id, state: item.state, kind, from, subject: reportText(subject) })
-  const note = item.note === null ? [] : [fill(PROMPTS.inboxItemNote, { note: reportText(item.note) })]
+  const note = item.note === null ? [] : [fill(PROMPTS.inboxItemNote, { note: clean(item.note, NOTE_MAX_CHARS) })]
   const reply = item.reply === null ? [] : [fill(PROMPTS.inboxItemReply, { reply: item.reply })]
 
-  return [head, ...body.split('\n').map(line => `  ${reportText(line)}`), ...note, ...reply]
+  return [head, ...bodyShown(body).split('\n').map(line => `  ${line}`), ...note, ...reply]
 }
 
 /**

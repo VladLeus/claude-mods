@@ -126,8 +126,9 @@ async function readOwnInbox(io: InitIo, ctx: RoleContext): Promise<InboxEvent[] 
   return read.state === 'text' ? parseInbox(read.text) : null
 }
 
+/** Appends a record line after a newline, so a torn last line in the file never runs into the next record. */
 async function appendLine(host: HostIo, path: string, line: string): Promise<boolean> {
-  const run = await host.run(['/usr/bin/tee', '-a', path], { stdin: line, timeoutMs: INBOX_APPEND_TIMEOUT_MS })
+  const run = await host.run(['/usr/bin/tee', '-a', path], { stdin: `\n${line}`, timeoutMs: INBOX_APPEND_TIMEOUT_MS })
 
   return run !== null && run.exitCode === 0
 }

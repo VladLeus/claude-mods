@@ -65,9 +65,14 @@ function subjectText(raw: unknown): string {
   return typeof raw === 'string' ? clean(raw.replace(LINE_BREAK, ' '), SUBJECT_MAX_CHARS).trim() : ''
 }
 
-/** A body with LF line breaks, its tabs kept and every other control or invisible character removed; never cut. */
+/** The body as the send keeps it: LF line breaks, tabs kept, every other control or invisible character removed. */
+export function bodyShown(raw: string): string {
+  return raw.replace(/\r\n?/g, '\n').replace(BODY_DROPPED, '')
+}
+
+/** The body of the input, never cut; '' when it is not text. */
 function bodyText(raw: unknown): string {
-  return typeof raw === 'string' ? raw.replace(/\r\n?/g, '\n').replace(BODY_DROPPED, '') : ''
+  return typeof raw === 'string' ? bodyShown(raw) : ''
 }
 
 /**
