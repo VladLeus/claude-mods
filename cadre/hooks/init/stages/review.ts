@@ -10,7 +10,7 @@
  * init/machine or init/run.
  */
 import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
-import { projectInstallOf, setupAfterInstalls } from '../../apply/installs'
+import { projectInstallOf, projectPluginInstall, setupAfterInstalls } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
@@ -353,8 +353,9 @@ function handoutLines(draft: Draft, words: ListWords): string[] {
  * warnings of the run, kept for this review, then the recommendations for the team as the security stage shows them
  * (recommend over the roles, their resolved frameworks and the scans before any install; recommendationLines,
  * ROLE-03), so every surface shows them, paged, before Confirm (WD-M2), then each framework Confirm installs at
- * project scope with its command and what its installer writes, then the plugins Confirm installs when the
- * person answered Install for any (the security plugins, decision #39, and claude-md-management, D-141), each key
+ * project scope with its command and what its installer writes, then each plugin it installs at project scope the
+ * same way, then the plugins Confirm installs when the person answered Install for any (the security plugins,
+ * decision #39, and claude-md-management, D-141), each key
  * cleaned and capped as a report cell is (decision #69 B7), and last, when claude-md-management is installed or
  * answered Install and the improver has a built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4).
  * Every line has its secret-like spans hidden (redactedText, E1, #163), so the review block and each page of its
@@ -373,6 +374,11 @@ function reviewLines(
     if (install === null) return []
 
     return [t('init.review.frameworkInstall', { command: install.argv.join(' '), writes: install.writes.join(', ') })]
+  })
+  const pluginLines = (draft.projectPluginInstalls ?? []).map(key => {
+    const install = projectPluginInstall(key)
+
+    return t('init.review.pluginInstall', { command: install.argv.join(' '), writes: install.writes.join(', ') })
   })
   const rows = draft.roles.map(role => privateFilesRow(role.id))
   const privateRows = draft.instructions.kind === 'parts' ? [] : [PRIVATE_FILES_HEADING, ...rows]
@@ -396,22 +402,27 @@ function reviewLines(
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
     ...recommendationLines(recommendations, draft.roles),
     ...frameworkLines,
+    ...pluginLines,
     ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
     ...improver,
   ].map(line => redactedText(line))
 }
 
 /**
- * What the review plans a draft with: the scopes compiled with the plugins answered Install and the plugin installs of
- * the consented frameworks counted as installed (setupAfterInstalls, consentedPluginKeys), so the cards and the plan
- * show what Confirm writes when every install works, and planStep's input, with each role's repo parts (repoPartsOf)
- * recorded in each parts-flow role's role.json (withRepoRecords).
+ * What the review plans a draft with: the scopes compiled with the plugins answered Install, the plugin installs of
+ * the consented frameworks and the consented project plugins counted as installed (setupAfterInstalls,
+ * consentedPluginKeys), so the cards and the plan show what Confirm writes when every install works, and planStep's
+ * input, with each role's repo parts (repoPartsOf) recorded in each parts-flow role's role.json (withRepoRecords).
  */
 function reviewPlanOf(draft: Draft): {
   readonly scopes: ReadonlyMap<string, CompiledScope>
   readonly input: PlanStepInput
 } {
-  const setup = setupAfterInstalls(draft.gathered.setup, [...draft.pluginInstalls, ...consentedPluginKeys(draft, [])])
+  const setup = setupAfterInstalls(draft.gathered.setup, [
+    ...draft.pluginInstalls,
+    ...consentedPluginKeys(draft, []),
+    ...(draft.projectPluginInstalls ?? []),
+  ])
   const gathered = { ...draft.gathered, setup }
   const scopes = scopesFor(draft.roles, draft.repoDefault, gathered, draft.hunks, draft.launchStart)
   const repoParts = repoPartsOf(draft.instructions)

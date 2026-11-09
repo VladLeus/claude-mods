@@ -20,6 +20,7 @@ import type {
   Manifest,
   ManifestEntry,
   PortRead,
+  ProjectInstall,
   RoleSpec,
 } from '../../types'
 import {
@@ -33,7 +34,14 @@ import type { ConflictChoice } from '../apply/conflict'
 import { hunkRuns, hunksAfterRuns } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
-import { frameworkFallbackText, noHomeInstallText, projectInstallOf, setupAfterInstalls } from '../apply/installs'
+import {
+  frameworkFallbackText,
+  noHomeInstallText,
+  projectInstallFailureText,
+  projectInstallOf,
+  projectPluginInstall,
+  setupAfterInstalls,
+} from '../apply/installs'
 import type { ApplyInput } from '../apply/private'
 import { installPlugins, installProject, NOTHING_APPLIED, privatePlanOf, writeWithImprover } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
@@ -50,7 +58,7 @@ import { t, tn } from '../locales/t'
 import { GITIGNORE_FILE, isRepoFolder, roleJsonPath, SIZING_RUBRIC_PATH } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths, planWithManifest, recordedCadreVersion } from '../plan/plan'
-import { CLAUDE_MD_PLUGIN } from '../roles/infra'
+import { CLAUDE_MD_PLUGIN, GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { parseRoleJson } from '../roles/rolejson'
 import { standsFor } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
@@ -312,6 +320,15 @@ function withoutFailedInstalls(draft: Draft, failed: readonly FrameworkId[]): Pi
   return { roles, repoDefault: draft.repoDefault === null ? null : kept(draft.repoDefault) }
 }
 
+/** The roles with the grill skills taken from every role standing for PM when mattpocock-skills did not install. */
+function withoutFailedGrill(roles: readonly RoleSpec[], failed: readonly ProjectInstall[]): readonly RoleSpec[] {
+  if (!failed.some(install => install.id === MATTPOCOCK_PLUGIN)) return roles
+
+  return roles.map(role =>
+    standsFor(role, 'pm') ? { ...role, skills: role.skills.filter(skill => !GRILL_SKILLS.includes(skill)) } : role,
+  )
+}
+
 /**
  * One problem line per consented framework install that detection does not show, in `failed` order: the roles and
  * the repo default on it, what they fell back to (fallbackOf), and the command to run before init runs again.
@@ -349,7 +366,10 @@ function fallbackProblems(draft: Draft, failed: readonly FrameworkId[]): string[
  *    joins the setup as step 4's plugins do (consentedPluginKeys). An install whose framework the facts do not show
  *    failed: a role or repo default on it falls back (withoutFailedInstalls), cadre.json records the frameworks and
  *    sizing without it (initFrameworks), and the reply names who fell back to what and the command to run
- *    (fallbackProblems).
+ *    (fallbackProblems). The plugins the person consented to install at project scope (draft.projectPluginInstalls)
+ *    run in the same call, after the frameworks; one that installProject does not report installed prints its
+ *    command (projectInstallFailureText), and when it is mattpocock-skills every PM loses the grill skills
+ *    (withoutFailedGrill); the ones installed join the setup.
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -425,15 +445,24 @@ async function applyConfirmed(
     if (choice.kind === 'cancelled') return choice
     choices.set(path, choice.value)
   }
-  const projectInstalls = (draft.frameworkInstalls ?? []).flatMap(id => projectInstallOf(id) ?? [])
-  if (projectInstalls.length > 0) {
-    await io.progress(FRAMEWORK_INSTALL_PROGRESS, countsText([['frameworks', projectInstalls.length]]))
+  const frameworkInstalls = (draft.frameworkInstalls ?? []).flatMap(id => projectInstallOf(id) ?? [])
+  const pluginInstalls = (draft.projectPluginInstalls ?? []).map(projectPluginInstall)
+  if (frameworkInstalls.length > 0) {
+    await io.progress(FRAMEWORK_INSTALL_PROGRESS, countsText([['frameworks', frameworkInstalls.length]]))
   }
-  await installProject(host, locations.root, locations.home, projectInstalls)
-  const scanned = projectInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
+  if (frameworkInstalls.length === 0 && pluginInstalls.length > 0) {
+    await io.progress(INSTALL_PROGRESS, countsText([['plugins', pluginInstalls.length]]))
+  }
+  const projectInstalls = [...frameworkInstalls, ...pluginInstalls]
+  const projected = await installProject(host, locations.root, locations.home, projectInstalls)
+  const scanned = frameworkInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
   const found = installedFrameworks(detectAll(scanned.facts.facts))
   const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
-  const { roles, repoDefault } = withoutFailedInstalls(draft, failed)
+  const landedPlugins = pluginInstalls.filter(install => projected.installed.includes(install.id))
+  const failedPlugins = pluginInstalls.filter(install => !projected.installed.includes(install.id))
+  const fallen = withoutFailedInstalls(draft, failed)
+  const roles = withoutFailedGrill(fallen.roles, failedPlugins)
+  const { repoDefault } = fallen
   const gsd = {
     userDir: provenUserDir(gathered.facts),
     home: locations.home,
@@ -454,7 +483,12 @@ async function applyConfirmed(
     locations.home === null
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
       : await installPlugins(host, locations.home, draft.pluginInstalls)
-  const setup = setupAfterInstalls(gathered.setup, [...installs.installed, ...consentedPluginKeys(draft, failed)])
+  const landedKeys = landedPlugins.map(install => install.id)
+  const setup = setupAfterInstalls(gathered.setup, [
+    ...installs.installed,
+    ...consentedPluginKeys(draft, failed),
+    ...landedKeys,
+  ])
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const attended = await attendedByConfig(io, locations.root, frameworks, setup)
   const scopes = compileAll(roles, repoDefault, { ...scanned, setup }, attended, launchStart)
@@ -495,8 +529,12 @@ async function applyConfirmed(
     ...written,
     hunkFailures: failures,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
-    installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...installs.installed],
-    installProblems: [...fallbackProblems(draft, failed), ...installs.installProblems],
+    installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...landedKeys, ...installs.installed],
+    installProblems: [
+      ...fallbackProblems(draft, failed),
+      ...failedPlugins.map(projectInstallFailureText),
+      ...installs.installProblems,
+    ],
     untrackedParts: tracked.warnings,
     privateProblems: [...privatePlan.problems, ...written.privateProblems],
   }
