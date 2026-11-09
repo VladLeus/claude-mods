@@ -146,7 +146,8 @@ export const PROMPTS = Object.freeze({
     '{count} entries marked done or rejected are not shown; call inbox_read with all: true to list them.',
   inboxAllNotBoolean: 'all must be true or false.',
   inboxUnreadable: 'Your inbox could not be read: .cadre/{id}/.runtime/inbox.jsonl is too large or not a file.',
-  // inbox_mark (messages/flow runInboxMark): its description, its result and its refusals.
+  // inbox_mark (messages/flow runInboxMark): its description, its results, its refusals and the subject of the note a
+  // rejection sends up.
   inboxMarkDescription:
     `cadre: mark an entry of your own inbox. state: read, awaiting (waitsFor: the id of the entry you wait for), ${
     ''}blocked (note: what it waits on), rejected (note: the reason; it goes back up) or done (note: the outcome).`,
@@ -157,6 +158,10 @@ export const PROMPTS = Object.freeze({
   inboxMarkNoteTooLong: 'note is over {max} characters: shorten it.',
   inboxMarkWaitsFor: 'awaiting needs waitsFor: the id of the entry you wait for.',
   inboxMarkFailed: 'Not marked: the mark could not be added to your inbox. Try again.',
+  inboxMarkedRejected: 'Marked {id} rejected. {forward}',
+  inboxMarkNoTeam:
+    'Not marked: .cadre/cadre.json or a role.json of the team cannot be read, so the rejection cannot be sent up.',
+  inboxRejectSubject: 'rejected: {subject}',
 }) satisfies Record<string, string>
 
 /**

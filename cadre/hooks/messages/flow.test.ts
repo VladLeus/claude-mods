@@ -18,8 +18,12 @@ const TL_FILES: Readonly<Record<string, string>> = { [TL_SESSION]: sessionRecord
 const BE_RUNTIME = '/repo/.cadre/be/.runtime'
 const BE_SESSION = `${BE_RUNTIME}/session.json`
 const BE_INBOX = `${BE_RUNTIME}/inbox.jsonl`
+const PM_RUNTIME = '/repo/.cadre/pm/.runtime'
+const PM_INBOX = `${PM_RUNTIME}/inbox.jsonl`
 const NOTE = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
 const TEE = ['/usr/bin/tee', '-a', TL_INBOX]
+const BE_TEE = ['/usr/bin/tee', '-a', BE_INBOX]
+const PM_TEE = ['/usr/bin/tee', '-a', PM_INBOX]
 
 /** A character of four UTF-8 bytes. */
 const WIDE = '\u{1F600}'
@@ -42,6 +46,14 @@ type SendRun = {
 type SendOver = {
   readonly team?: TeamView | null
   readonly isDelivered?: boolean
+  readonly runs?: readonly HostRunRule[]
+}
+
+/** What a mark runs with besides its event: the marking role, its world, the team view and the host's runs. */
+type MarkOver = {
+  readonly ctx?: RoleContext
+  readonly world?: MemWorld
+  readonly team?: TeamView | null
   readonly runs?: readonly HostRunRule[]
 }
 
@@ -70,6 +82,11 @@ async function sendFrom(world: MemWorld, event: unknown, over: SendOver = {}): P
 /** The stdin of the first host run, '' when there was none. */
 function firstStdin(host: MemHost): string {
   return host.calls[0]?.options.stdin ?? ''
+}
+
+/** The stdin of the second host run, '' when there was none. */
+function secondStdin(host: MemHost): string {
+  return host.calls[1]?.options.stdin ?? ''
 }
 
 /** The argv of every append a host ran with tee. */
@@ -256,10 +273,23 @@ describe('runInboxMark', () => {
     body: 'Merged',
   }
   const inbox = { [TL_INBOX]: recordLine(fromBe) }
+  const REJECT = { id: fromBe.id, state: 'rejected', note: 'Not ours' }
 
-  /** runInboxMark as tl over tl's inbox holding the entry from be, with the clock at 2000. */
-  async function markAs(event: unknown): Promise<SendRun> {
-    const host = memHost(hostWorld({}))
+  /** tl's inbox holding the entry from be, with be started and its session id published, the clock at 2000. */
+  const beStarted = memWorld({
+    now: 2000,
+    dirs: { [TL_RUNTIME]: [], [BE_RUNTIME]: [] },
+    files: { ...inbox, [BE_SESSION]: sessionRecordText('s-be') },
+  })
+
+  /**
+   * runInboxMark with a link that records each send. Unless `over` says else, as tl over tl's inbox holding the entry
+   * from be, with the clock at 2000.
+   */
+  async function markAs(event: unknown, over: MarkOver = {}): Promise<SendRun> {
+    const { ctx = TL, team = TEAM, runs = [] } = over
+    const world = over.world ?? memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [] }, files: inbox })
+    const host = memHost(hostWorld({ runs }))
     const sends: Sent[] = []
     const link: SessionLink = {
       send: async (sessionId, text) => {
@@ -268,8 +298,7 @@ describe('runInboxMark', () => {
         return true
       },
     }
-    const world = memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [] }, files: inbox })
-    const outcome = await runInboxMark(memIo(world, {}).io, host.io, link, TL, TEAM, event)
+    const outcome = await runInboxMark(memIo(world, {}).io, host.io, link, ctx, team, event)
 
     return { outcome, host, sends }
   }
@@ -307,5 +336,95 @@ describe('runInboxMark', () => {
       expect([outcome.kind, host.calls.length]).toEqual(['deny', 0])
     }
     expect((await markAs(events[0])).outcome).toEqual({ kind: 'deny', text: PROMPTS.inboxMarkUnknownId })
+  })
+
+  test('tl rejects the entry of its child be: the mark, then a note to be replying to it, then the wake', async () => {
+    const { outcome, host, sends } = await markAs(REJECT, { world: beStarted })
+    const forward = parseInboxLine(secondStdin(host))
+    const forwardId = forward?.id ?? ''
+
+    expect(host.calls.map(call => call.argv)).toEqual([TEE, BE_TEE])
+    expect(parseInboxLine(firstStdin(host))).toMatchObject({ by: 'tl', state: 'rejected', note: 'Not ours' })
+    expect(forward).toEqual({
+      v: 1,
+      type: 'entry',
+      id: forwardId,
+      at: 2000,
+      from: 'tl',
+      to: 'be',
+      kind: 'note',
+      subject: 'rejected: Done',
+      body: 'Not ours',
+      replyTo: fromBe.id,
+    })
+    expect(forwardId).toMatch(/^tl-2000-[0-9a-f]{8}$/)
+    expect(sends.map(send => [send.sessionId, send.runsBefore])).toEqual([['s-be', 2]])
+    expect(sends[0]?.text ?? '').toContain(forwardId)
+    const forwarded = fill(PROMPTS.inboxSent, { id: forwardId, to: 'be' })
+    expect(outcome).toEqual({
+      kind: 'result',
+      text: fill(PROMPTS.inboxMarkedRejected, { id: fromBe.id, forward: forwarded }),
+    })
+  })
+
+  test("pm rejects an entry from be: the note goes to be's parent tl", async () => {
+    const PM: RoleContext = { id: 'pm', root: '/repo' }
+    const toPm: InboxEntry = { ...fromBe, to: 'pm' }
+    const world = memWorld({
+      now: 2000,
+      dirs: { [PM_RUNTIME]: [], [TL_RUNTIME]: [] },
+      files: { [PM_INBOX]: recordLine(toPm), ...TL_FILES },
+    })
+    const { host, sends } = await markAs({ ...REJECT, id: toPm.id }, { ctx: PM, world })
+
+    expect(teeRuns(host)).toEqual([PM_TEE, TEE])
+    expect(parseInboxLine(secondStdin(host))).toMatchObject({ from: 'pm', to: 'tl', kind: 'note', replyTo: toPm.id })
+    expect(sends.map(send => send.sessionId)).toEqual(['s-tl'])
+  })
+
+  test('a sender with no parent, or one the team does not know, gets the note itself', async () => {
+    for (const from of ['pm', 'constructor']) {
+      const runtime = `/repo/.cadre/${from}/.runtime`
+      const entry: InboxEntry = { ...fromBe, id: `${from}-1000-0123abcd`, from }
+      const files = { [TL_INBOX]: recordLine(entry) }
+      const world = memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [], [runtime]: [] }, files })
+      const { host } = await markAs({ ...REJECT, id: entry.id }, { world })
+
+      expect(teeRuns(host)).toEqual([TEE, ['/usr/bin/tee', '-a', `${runtime}/inbox.jsonl`]])
+    }
+  })
+
+  test('a rejected entry from cadre is only marked: one append, no note and no wake', async () => {
+    const fromCadre: InboxEntry = { ...fromBe, id: 'cadre-1000-0123abcd', from: 'cadre' }
+    const world = memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [] }, files: { [TL_INBOX]: recordLine(fromCadre) } })
+    const { outcome, host, sends } = await markAs({ ...REJECT, id: fromCadre.id }, { world })
+
+    expect(teeRuns(host)).toEqual([TEE])
+    expect(sends).toEqual([])
+    expect(outcome).toEqual({
+      kind: 'result',
+      text: fill(PROMPTS.inboxMarked, { id: fromCadre.id, state: 'rejected' }),
+    })
+  })
+
+  test('a note whose append fails leaves the mark standing, and the result says the note was not added', async () => {
+    const runs = [{ argv: BE_TEE, result: { exitCode: 1, stdout: '', stderr: '' } }]
+    const { outcome, host, sends } = await markAs(REJECT, { world: beStarted, runs })
+    const notAdded = fill(PROMPTS.inboxAppendFailed, { to: 'be' })
+
+    expect(teeRuns(host)).toEqual([TEE, BE_TEE])
+    expect(parseInboxLine(firstStdin(host))).toMatchObject({ type: 'mark', state: 'rejected' })
+    expect(sends).toEqual([])
+    expect(outcome).toEqual({
+      kind: 'result',
+      text: fill(PROMPTS.inboxMarkedRejected, { id: fromBe.id, forward: notAdded }),
+    })
+  })
+
+  test("with no team view a rejection of a role's entry is refused before anything runs", async () => {
+    const { outcome, host } = await markAs(REJECT, { world: beStarted, team: null })
+
+    expect(outcome).toEqual({ kind: 'deny', text: PROMPTS.inboxMarkNoTeam })
+    expect(host.calls).toEqual([])
   })
 })
