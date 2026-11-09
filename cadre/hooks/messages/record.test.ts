@@ -371,6 +371,26 @@ describe('inboxReadText of the kind fields', () => {
     expect(linesOf(brief).slice(2)).toEqual([field('mode', 'gsd-epic'), field('tickets', 'PROJ-2, PROJ-3')])
   })
 
+  test('a specPath longer than a report cell is shown whole, as the send keeps it', () => {
+    const specPath = `docs/${'a'.repeat(290)}.md`
+    const task: InboxEntry = {
+      ...A,
+      kind: 'task',
+      ticketKey: 'PROJ-2',
+      vector: VECTOR,
+      use: { framework: 'gsd', gsdPath: 'quick' },
+      specPath,
+    }
+    const field = (name: string, value: string): string => fill(PROMPTS.inboxItemField, { field: name, value })
+
+    expect(inboxReadText([unread(task)], true).split('\n').slice(2)).toEqual([
+      field('ticketKey', 'PROJ-2'),
+      field('vector', fill(PROMPTS.inboxItemVector, VECTOR)),
+      field('use', fill(PROMPTS.inboxItemUseGsd, { gsdPath: 'quick' })),
+      field('specPath', specPath),
+    ])
+  })
+
   test('changes are shown whole up to their cap, and every value is cleaned', () => {
     const changes = 'c'.repeat(CHANGES_MAX_CHARS)
     const report: InboxEntry = { ...C, changes, reason: 'R\u202Eeason', openQuestions: ['Why\u200B?', 'How?'] }
