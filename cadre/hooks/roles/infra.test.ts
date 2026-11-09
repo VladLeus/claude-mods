@@ -6,7 +6,9 @@ import {
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
   CLAUDE_SECURITY_SKILL,
+  GRILL_SKILLS,
   INFRA_PLUGINS,
+  MATTPOCOCK_PLUGIN,
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
 } from './infra'
@@ -31,5 +33,14 @@ describe('the cadre inbox tools', () => {
   test('CADRE_TOOLS holds the full names of the three inbox tools and is frozen', () => {
     expect(CADRE_TOOLS).toEqual(['mcp__cadre__inbox_send', 'mcp__cadre__inbox_read', 'mcp__cadre__inbox_mark'])
     expect(Object.isFrozen(CADRE_TOOLS)).toBe(true)
+  })
+})
+
+describe('the grill plugin of PM', () => {
+  test('MATTPOCOCK_PLUGIN is the exact key and GRILL_SKILLS its two grill skills, frozen', () => {
+    expect(MATTPOCOCK_PLUGIN).toBe('mattpocock-skills@claude-plugins-official')
+    expect(GRILL_SKILLS).toEqual(['mattpocock-skills:grilling', 'mattpocock-skills:grill-me'])
+    expect(Object.isFrozen(GRILL_SKILLS)).toBe(true)
+    expect([...SECURITY_PLUGINS, ...INFRA_PLUGINS]).not.toContain(MATTPOCOCK_PLUGIN)
   })
 })

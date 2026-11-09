@@ -89,7 +89,22 @@ describe('ROLE_TEMPLATE', () => {
       skills: [],
       instructions: [],
       carry: { autoCompactWindow: false, statusLine: false, env: [], hooks: [] },
+      framework: 'none',
     })
+  })
+
+  test('only the PM row runs on a framework of its own, none; every other row takes the repo default', () => {
+    const frameworks = ROLE_TEMPLATE.map(roleFromTemplate).map(role => [role.id, role.framework ?? 'absent'])
+
+    expect(frameworks).toEqual([
+      ['pm', 'none'],
+      ['tl', 'absent'],
+      ['be', 'absent'],
+      ['fe', 'absent'],
+      ['qa', 'absent'],
+      ['security', 'absent'],
+    ])
+    expect(ROLE_TEMPLATE.filter(template => 'framework' in template).map(template => template.id)).toEqual(['pm'])
   })
 
   test('roleFromTemplate gives be, fe and qa Bash and no --ask-user, and tl and security both', () => {
@@ -115,7 +130,7 @@ describe('ROLE_TEMPLATE', () => {
     expect(roles.every(role => role.model === 'opus' && role.effort === 'medium')).toBe(true)
     expect(roles.every(role => role.permissionMode === 'auto')).toBe(true)
     expect(roles.every(role => role.autopilot.duration === '4h' && role.autopilot.threshold === 65)).toBe(true)
-    expect(roles.every(role => role.framework === undefined)).toBe(true)
+    expect(roles.filter(role => role.id !== 'pm').every(role => !('framework' in role))).toBe(true)
   })
 
   test('roleFromTemplate gives a new role each call', () => {

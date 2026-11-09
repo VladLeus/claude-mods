@@ -16,6 +16,7 @@ import type {
 import { REDACTED } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { detectAll } from '../../framework/registry'
+import { applyAdjust, parseAdjust } from '../../roles/adjust'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
 import {
@@ -138,9 +139,11 @@ describe('frameworkStep', () => {
     }
   })
 
-  test('ambiguous: Same for all roles asks once more and gives every role that framework, no default', () => {
+  test('ambiguous: Same for all roles asks once more and gives every role but PM that framework, no default', () => {
     const run = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Same for all roles', 'superpowers'])
-    expect(run.state.draft.roles).toEqual(roles.map(role => withFramework(role, 'superpowers')))
+    expect(run.state.draft.roles).toEqual(
+      roles.map(role => (role.id === 'pm' ? withFramework(role, 'none') : withFramework(role, 'superpowers'))),
+    )
     expect(run.state.draft.repoDefault).toBeNull()
     expect(firstLines(run.asked)).toEqual([BOTH_SET_QUESTION, AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs.slice(1)).toEqual([
@@ -149,15 +152,14 @@ describe('frameworkStep', () => {
     ])
   })
 
-  test('ambiguous: Per role asks each role by title and id, in role order, with both frameworks and none', () => {
-    const answers = [KEEP_BOTH, 'Per role', 'GSD', 'none (built-in)', 'superpowers']
+  test('ambiguous: Per role asks each role but PM by title and id, in role order, with the frameworks and none', () => {
+    const answers = [KEEP_BOTH, 'Per role', 'none (built-in)', 'superpowers']
     const run = driven(frameworksAt(ambiguous, roles), answers)
-    expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', 'none', 'superpowers'])
+    expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'none', 'superpowers'])
     expect(run.state.draft.repoDefault).toBeNull()
     expect(firstLines(run.asked)).toEqual([
       BOTH_SET_QUESTION,
       AMBIGUOUS_QUESTION,
-      'Framework for PM (pm)?',
       'Framework for Team Lead (tl)?',
       'Framework for Security (security)?',
     ])
@@ -271,6 +273,57 @@ describe('frameworkStep', () => {
     expect(resolvedFramework(withFramework(role, 'superpowers'), 'gsd')).toBe('superpowers')
     expect(resolvedFramework(role, 'gsd')).toBe('gsd')
     expect(resolvedFramework(role, null)).toBe('none')
+  })
+})
+
+describe('PM on its own framework none', () => {
+  /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
+  const roles = proposeRoles(repoScan()).roles
+  const chosen: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
+  const ambiguous: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
+
+  /** The roles after the Adjust line `framework pm gsd`. */
+  function adjustedToGsd(): readonly RoleSpec[] {
+    const op = parseAdjust('framework pm gsd')
+    const adjusted = op === null ? null : applyAdjust(roles, op)
+    if (adjusted?.kind !== 'ok') throw new Error('the Adjust line was refused')
+
+    return adjusted.roles
+  }
+
+  test('with GSD in use and the set kept, PM stays on none and the other roles take the repo default gsd', () => {
+    const run = driven(frameworksAt(chosen, roles), [KEEP_GSD])
+    const { roles: framed = [], repoDefault = null } = run.state.draft
+
+    expect(framed.map(role => [role.id, resolvedFramework(role, repoDefault)])).toEqual([
+      ['pm', 'none'],
+      ['tl', 'gsd'],
+      ['security', 'gsd'],
+    ])
+  })
+
+  test('the same-for-all answer superpowers leaves PM on none; the per-role question asks every role but PM', () => {
+    const all = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Same for all roles', 'superpowers'])
+    const each = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Per role', 'GSD', 'GSD'])
+
+    expect(all.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'superpowers', 'superpowers'])
+    expect(each.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'gsd', 'gsd'])
+    expect(firstLines(each.asked).slice(2)).toEqual([
+      'Framework for Team Lead (tl)?',
+      'Framework for Security (security)?',
+    ])
+  })
+
+  test('an Adjust line moving PM off none is kept with one framework, and a later answer for all roles wins', () => {
+    const adjusted = adjustedToGsd()
+    const kept = driven(frameworksAt(chosen, adjusted), [KEEP_GSD])
+    const all = driven(frameworksAt(ambiguous, adjusted), [KEEP_BOTH, 'Same for all roles', 'superpowers'])
+    const each = driven(frameworksAt(ambiguous, adjusted), [KEEP_BOTH, 'Per role', 'superpowers', 'GSD', 'GSD'])
+
+    expect(kept.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', undefined, undefined])
+    expect(all.state.draft.roles?.map(role => role.framework)).toEqual(['superpowers', 'superpowers', 'superpowers'])
+    expect(firstLines(each.asked)[2]).toBe('Framework for PM (pm)?')
+    expect(each.state.draft.roles?.map(role => role.framework)).toEqual(['superpowers', 'gsd', 'gsd'])
   })
 })
 

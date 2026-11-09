@@ -324,6 +324,21 @@ describe('rolesFromProposal', () => {
     expect(roles.map(role => role.autopilot.askUser)).toEqual([true, false])
   })
 
+  test('a role based on pm runs on framework none; one based on another row or on nothing has no framework', () => {
+    const roles = rolesFromProposal([
+      { id: 'product', title: 'Product', purpose: 'p', basedOn: 'pm' },
+      { id: 'api', title: 'API', purpose: 'p', basedOn: 'be' },
+      { id: 'ops', title: 'Ops', purpose: 'p', basedOn: null },
+    ])
+
+    expect(roles.map(role => [role.id, role.framework ?? 'absent'])).toEqual([
+      ['product', 'none'],
+      ['api', 'absent'],
+      ['ops', 'absent'],
+    ])
+    expect(roles.filter(role => 'framework' in role).map(role => role.id)).toEqual(['product'])
+  })
+
   test('a role takes the Bash and --ask-user traits of the template role it is based on', () => {
     const traits = TEMPLATE_ORDER.map(basedOn => {
       const [role] = rolesFromProposal([{ id: `x-${basedOn}`, title: 'X', purpose: 'p', basedOn }])
