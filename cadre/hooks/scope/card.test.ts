@@ -608,4 +608,16 @@ describe('every framework a role may run on the card', () => {
     expect(union.card.notGiven.skills).toEqual(['mine'])
     expect(alone.card.notGiven.skills).toEqual(['gsd-execute-phase', 'gsd-plan-phase', 'mine'])
   })
+
+  test('a role without Bash that may also run gsd carries the GSD Bash rule and is attended', () => {
+    const alsoRuns: FrameworkId[] = ['gsd', 'superpowers']
+    const noBash = templateRole('tl', { hasBash: false })
+    const union = compileScope(noBash, context({ framework: 'superpowers', alsoRuns }))
+    const alone = compileScope(noBash, context({ framework: 'superpowers' }))
+    const withBash = compileScope(templateRole('tl'), context({ framework: 'superpowers', alsoRuns }))
+
+    expect([ruleOf(union, GSD_NO_BASH_RULE) !== undefined, union.card.isAttended]).toEqual([true, true])
+    expect([ruleOf(alone, GSD_NO_BASH_RULE) !== undefined, alone.card.isAttended]).toEqual([false, false])
+    expect(ruleOf(withBash, GSD_NO_BASH_RULE)).toBeUndefined()
+  })
 })

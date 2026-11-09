@@ -1105,4 +1105,16 @@ describe('union scope over the frameworks the repo records', () => {
     })
     expect(renderRuntimeSettings(tl, alone, LAUNCHER, []).env).toEqual({ CADRE_ROLE: 'tl', CADRE_ROOT: '/repo' })
   })
+
+  test('a superpowers-default role that may also run gsd links the gsd agents of the setup', () => {
+    const scanned = emptySetupScan({ agents: ['gsd-planner', 'my-agent', 'gsd-executor'] })
+    const alsoRuns: FrameworkId[] = ['gsd', 'superpowers']
+    const tl = templateRole('tl')
+    const union = compileScope(tl, context({ framework: 'superpowers', setup: scanned, alsoRuns }))
+    const alone = compileScope(tl, context({ framework: 'superpowers', setup: scanned }))
+    const none = compileScope(templateRole('pm'), context({ framework: 'none', setup: scanned, alsoRuns }))
+
+    expect(union.overlay.agents).toEqual(['gsd-executor', 'gsd-planner'])
+    expect([alone.overlay.agents, none.overlay.agents]).toEqual([[], []])
+  })
 })

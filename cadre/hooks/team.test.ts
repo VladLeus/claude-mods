@@ -9,6 +9,7 @@ import type { Gathered } from './scan/gather'
 import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import {
+  compileAll,
   compileTeam,
   MCP_ROUTE,
   noStateReply,
@@ -285,5 +286,15 @@ describe('init plan', () => {
     expect(attended([gsdHunk({ isRunnable: false })])).toEqual([true, false])
     expect(attended([gsdHunk({ isRequired: false, isAccepted: false })])).toEqual([false, false])
     expect(attended([gsdHunk({ isAccepted: false, file: 'other/config.json' })])).toEqual([false, false])
+  })
+
+  test('a role is attended when any framework it may run is attended; a role on none never is', () => {
+    const team = [withFramework(templateRole('tl'), 'superpowers'), templateRole('pm')]
+    const start: LaunchStart = { kind: 'git-root' }
+    const union = compileAll(team, 'gsd', gathered, new Set(['gsd']), start, ['gsd', 'superpowers'])
+    const alone = compileAll(team, 'gsd', gathered, new Set(['gsd']), start)
+
+    expect([cardOf(union, 'tl').isAttended, cardOf(union, 'pm').isAttended]).toEqual([true, false])
+    expect(cardOf(alone, 'tl').isAttended).toBe(false)
   })
 })
