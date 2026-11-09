@@ -102,9 +102,14 @@ function rolePart(role: RoleSpec): readonly string[] {
   return WORKER_PART
 }
 
-/** The Hierarchy section of ROLE.md: its heading, the lines every role gets, then the role's own part. */
+/**
+ * The Hierarchy section of ROLE.md: its heading, the lines every role gets, the ask line of a role started with
+ * --ask-user, then the role's own part.
+ */
 function hierarchyLines(role: RoleSpec): string[] {
-  return [ARTIFACT.roleMdHierarchy, '', ...COMMON_PART, ...rolePart(role), '']
+  const askLines = role.autopilot.askUser ? [ARTIFACT.roleMdHierarchyAskUser] : []
+
+  return [ARTIFACT.roleMdHierarchy, '', ...COMMON_PART, ...askLines, ...rolePart(role), '']
 }
 
 /**

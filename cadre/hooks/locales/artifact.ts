@@ -36,7 +36,9 @@ export const ARTIFACT = Object.freeze({
   roleMdHierarchy: '## Hierarchy',
   roleMdHierarchyCommonQuestions: `A technical question goes to your parent role and TL decides it; a product or ${
     ''}ticket question goes straight to PM. Send each with inbox_send kind question.`,
-  roleMdHierarchyCommonAsk: 'Only PM asks the user; every other role sends its question up.',
+  roleMdHierarchyCommonAsk: 'In an epic, only PM asks the user; every other role sends its question up.',
+  roleMdHierarchyAskUser:
+    'Outside an epic you start with --ask-user: ask the person your critical questions yourself with AskUserQuestion.',
   roleMdHierarchyCommonRejected:
     'An entry you mark rejected goes back up to the role that sent it, with your reason.',
   roleMdHierarchyCommonEpicEnd: `On epic-end, mark your open inbox entries, write your handoff and answer with a line ${
