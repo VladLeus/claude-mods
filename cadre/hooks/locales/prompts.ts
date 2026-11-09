@@ -94,8 +94,8 @@ export const PROMPTS = Object.freeze({
   // The built-in framework's start (framework/none roleStart): the {start} of kickoffNext.
   builtinRoleStart: 'the plan in .cadre/{roleId}/.runtime/plan.md',
   epicFeedRoles: 'your roles',
-  epicPmNext: `Read .cadre/{id}/ROLE.md and your inbox, fetch the epic with your tracker MCP, resolve its gaps ${
-    ''}(decide or ask the user), then feed {target} ticket by ticket.`,
+  epicPmNext: `Read .cadre/{id}/ROLE.md, inbox_read, get the epic via your tracker MCP, grill the user ${
+    ''}(mattpocock-skills:grilling when available, else yourself), then feed {target} ticket by ticket.`,
   epicPmLine: 'You are the PM of epic {epic}. {next}',
   epicFrom: ' from cadre-{parent}',
   epicWait: 'wait for your parent: wait_for reason session-answer{from}, then work what it sends.',

@@ -33,9 +33,8 @@ function feedTarget(tlId: string | null): string {
 const TITLE_SEPARATOR = ': '
 
 /**
- * The role line of PM's epic kickoff (D-158): the epic key, and its title when there is one, then what PM does first:
- * read its ROLE.md and inbox, fetch the epic with its tracker MCP, resolve its gaps (decide, or ask the user), then
- * feed `target` ticket by ticket (D-144).
+ * The role line of PM's epic kickoff: the epic key, and its title when there is one, then what PM does first: read its
+ * ROLE.md and inbox, get the epic, grill the user as ROLE.md says, then feed `target` ticket by ticket.
  */
 function pmEpicSentence(id: string, key: string, title: string, target: string): string {
   const epic = title === '' ? key : `${key}${TITLE_SEPARATOR}${title}`
@@ -77,16 +76,14 @@ function workerEpicLine(role: RoleSpec, key: string, parent: string | null): str
 }
 
 /**
- * The epic kickoff of a role, the text /cadre epic writes to its `.runtime/kickoff.txt` (D-158 to D-160): D-79's
- * positional autopilot command `/autopilot <duration> <threshold> "<line>"` with the role's own duration and threshold,
- * and a newline. PM's line names the epic key and title and says to fetch the epic with its tracker MCP, resolve its
- * gaps (decide or ask the user) and feed the TL `tlId`, else its roles, ticket by ticket, and it ends ` --ask-user`
- * whatever its role.json says, as PM is the one role that asks the user (D-144). Every other role's line names the role
- * and the key and says to wait for its parent's session `cadre-<parent>` (epicParentOf) with wait_for reason
- * session-answer, then work what it sends, and it never carries ` --ask-user` (D-160). Each line is one line of
- * printable ASCII with no quote or backtick (asciiLine), so it sits inside the command's quotes, at most ROLE_LINE_MAX
- * long: the epic title (PM) or the role title is cut first, so the key stays whole and the line keeps its end whenever
- * the line with no title fits.
+ * The epic kickoff of a role, the text /cadre epic writes to its `.runtime/kickoff.txt`: the positional autopilot
+ * command `/autopilot <duration> <threshold> "<line>"` with the role's own duration and threshold, and a newline. PM's
+ * line names the epic key and title, tells PM to grill the user and feed the TL `tlId`, else its roles, ticket by
+ * ticket, and ends ` --ask-user` whatever its role.json says, as PM is the one role that asks the user. Every other
+ * role's line names the role and the key and says to wait for its parent's session `cadre-<parent>` (epicParentOf) with
+ * wait_for reason session-answer, then work what it sends, and never carries ` --ask-user`. Each line is printable
+ * ASCII with no quote or backtick (asciiLine), at most ROLE_LINE_MAX long: the epic title (PM) or the role title is cut
+ * first, so the key stays whole and the line keeps its end whenever the line with no title fits.
  */
 export function epicKickoffText(input: {
   readonly role: RoleSpec

@@ -57,16 +57,35 @@ function planningDocsLines(role: RoleSpec, card: ScopeCard): string[] {
   ]
 }
 
+/** PM's grill and epic rules in the Hierarchy section of ROLE.md. */
+const PM_PART: readonly string[] = [
+  ARTIFACT.roleMdPmGrill,
+  ARTIFACT.roleMdPmGrillNoSkill,
+  ARTIFACT.roleMdPmGrillRounds,
+  ARTIFACT.roleMdPmGrillDone,
+  ARTIFACT.roleMdPmGrillText,
+  ARTIFACT.roleMdPmGrillMode,
+  ARTIFACT.roleMdPmGrillRecord,
+  ARTIFACT.roleMdPmGrillFeed,
+  ARTIFACT.roleMdPmGrillCritical,
+]
+
+/** The Hierarchy section of ROLE.md: its heading and PM's part, for a role standing for PM only. */
+function hierarchyLines(role: RoleSpec): string[] {
+  if (!standsFor(role, 'pm')) return []
+
+  return [ARTIFACT.roleMdHierarchy, '', ...PM_PART, '']
+}
+
 /**
  * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session; it is never named
- * CLAUDE.md or AGENTS.md (D-50). It holds, in this order: the title and id, the purpose, the framework with the model,
+ * CLAUDE.md or AGENTS.md. It holds, in this order: the title and id, the purpose, the framework with the model,
  * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
  * the adapter, named with the title and the id), "Planning docs" (the start steps of every framework the role may run,
- * when one has a step), "Decisions" (the chain of the card, which follows basedOn),
- * "Handoffs" (the folder autopilot accepts, D-79), "Inbox" (the role's inbox file and how to leave a note in another
- * role's; D-114: text only, no new command) and "Scope" (the lines of the scope card, ROLE-06). The framework is the
- * one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The title and
- * the purpose come from outside, so they are cleaned.
+ * when one has a step), "Decisions" (the chain of the card, which follows basedOn), "Handoffs" (the folder autopilot
+ * accepts), "Inbox" (the role's inbox file and the inbox tools), "Hierarchy" (PM's grill and epic rules) and "Scope"
+ * (the lines of the scope card). The framework is the one the scope was compiled for (`scope.card.framework`), so the
+ * document and the card cannot disagree. The title and the purpose come from outside, so they are cleaned.
  */
 export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
   const { card } = scope
@@ -100,6 +119,7 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     ARTIFACT.roleMdNoteLine,
     ARTIFACT.roleMdInboxStates,
     '',
+    ...hierarchyLines(role),
     ARTIFACT.roleMdScope,
     '',
     ...scopeCardLines(card),

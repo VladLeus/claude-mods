@@ -33,6 +33,23 @@ export const ARTIFACT = Object.freeze({
   roleMdInboxStates: `Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the ${
     ''}entry you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done ${
     ''}(a one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.`,
+  roleMdHierarchy: '## Hierarchy',
+  roleMdPmGrill: `As PM, grill the user on the epic and on every ticket in one attended run until no question is ${
+    ''}open. Use mattpocock-skills:grilling for it when that skill is available.`,
+  roleMdPmGrillNoSkill: `When it is not available (its plugin was declined or did not install), run the grill ${
+    ''}yourself with the same rules.`,
+  roleMdPmGrillRounds: `Ask each round with AskUserQuestion: the whole open frontier per round, up to 4 questions per ${
+    ''}call with 2-4 options each, the recommended option first; split a larger round over several calls.`,
+  roleMdPmGrillDone: 'The grill is done when no question is open and the user confirms.',
+  roleMdPmGrillText: `When AskUserQuestion is unavailable or dismissed, or the user said not to use it, write the ${
+    ''}question as text and call wait_for with reason user-answer.`,
+  roleMdPmGrillMode: `Then propose a planning mode from those your epic brief offers, and do not move on before ${
+    ''}the user confirms it.`,
+  roleMdPmGrillRecord:
+    "Record each ticket's outcome and any size the user pins on it, in the brief and in your handoff.",
+  roleMdPmGrillFeed: `Send TL the brief, then feed it one ticket at a time (in a team without TL, your roles); when ${
+    ''}every ticket is reported, send epic-end.`,
+  roleMdPmGrillCritical: 'After the grill, ask the user only critical questions.',
   roleMdScope: '## Scope',
   // The marker above a part in a built role file (generate/docs partMarker), and the first line of the built and of
   // the private role CLAUDE.md (generate/docs roleClaudeMdText, apply/private privateClaudeMdText).
