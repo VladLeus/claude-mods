@@ -5,6 +5,7 @@ import { sha256Hex } from '../core/hash'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import type { LaunchUser } from '../launch/links'
 import { launchPlan } from '../launch/plan'
+import { MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { compileScope } from '../scope/compile'
 import {
@@ -490,5 +491,115 @@ describe('launch user settings (D-103)', () => {
 
     expect(reads.map(read => read.kind)).toEqual(['ok', 'refuse', 'refuse'])
     expect(leaks(texts.join('\n'), SECRET_FIXTURES)).toEqual([])
+  })
+})
+
+/** The fixture user's installed_plugins.json. */
+const INSTALLED_PLUGINS = '/home/u/.claude/plugins/installed_plugins.json'
+
+/** Where the fixture's mattpocock-skills is installed, as installed_plugins.json records it. */
+const MATT_PATH = '/u/.claude/plugins/cache/x/mattpocock-skills/1.3.1'
+
+/** The skills the fixture plugin.json lists: three paths and one bare name. */
+const MATT_SKILLS = [
+  './skills/productivity/grilling',
+  './skills/productivity/grill-me',
+  './skills/engineering/tdd',
+  'to-spec',
+]
+
+/** installed_plugins.json with these entries for the mattpocock-skills key. */
+function installedText(entries: readonly Record<string, unknown>[]): string {
+  return JSON.stringify({ version: 2, plugins: { [MATTPOCOCK_PLUGIN]: entries } })
+}
+
+/** The plugin.json of the plugin installed at `path`, listing `skills`. */
+function manifestAt(path: string, skills: unknown): Record<string, string> {
+  return { [`${path}/.claude-plugin/plugin.json`]: JSON.stringify({ name: 'mattpocock-skills', skills }) }
+}
+
+/** The files of mattpocock-skills installed at user scope at MATT_PATH, its plugin.json listing `skills`. */
+function userInstall(skills: unknown): Record<string, string> {
+  return {
+    [INSTALLED_PLUGINS]: installedText([{ scope: 'user', installPath: MATT_PATH, version: '1.3.1' }]),
+    ...manifestAt(MATT_PATH, skills),
+  }
+}
+
+describe('the plugin skills and project plugins a launch reads', () => {
+  test('pluginSkills holds the skill names of the installed plugin.json, sorted and once each', async () => {
+    const gathered = await gatheredUser(repoWorld({ files: userInstall([...MATT_SKILLS, 'tdd']) }))
+
+    expect(gathered.pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd', 'to-spec'] })
+  })
+
+  test('the entry for this repo wins over the user one, and another project is never used', async () => {
+    const repoPath = '/repo-install/mattpocock-skills/1.3.1'
+    const otherPath = '/other-install/mattpocock-skills/1.3.1'
+    const entries = [
+      { scope: 'user', installPath: MATT_PATH, version: '1.3.1' },
+      { scope: 'project', projectPath: '/elsewhere', installPath: otherPath, version: '1.3.1' },
+      { scope: 'project', projectPath: '/repo/', installPath: repoPath, version: '1.3.1' },
+    ]
+    const files = {
+      [INSTALLED_PLUGINS]: installedText(entries),
+      ...manifestAt(MATT_PATH, ['grill-me']),
+      ...manifestAt(otherPath, ['tdd']),
+      ...manifestAt(repoPath, ['grilling']),
+    }
+    const onlyOther = { ...files, [INSTALLED_PLUGINS]: installedText(entries.slice(1, 2)) }
+
+    expect((await gatheredUser(repoWorld({ files }))).pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grilling'] })
+    expect('pluginSkills' in (await gatheredUser(repoWorld({ files: onlyOther })))).toBe(false)
+  })
+
+  test('a list read from objects with a name counts like one read from paths', async () => {
+    const gathered = await gatheredUser(repoWorld({ files: userInstall([{ name: 'grilling' }, './skills/x/tdd']) }))
+
+    expect(gathered.pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grilling', 'tdd'] })
+  })
+
+  test('a list it cannot read whole gives no entry for the plugin: it fails closed', async () => {
+    const lists: readonly unknown[] = [
+      undefined,
+      'grilling',
+      [],
+      ['grilling', 7],
+      ['grilling', { title: 'tdd' }],
+      ['grilling', 'Grill-Me'],
+      ['grilling', './skills/x/'],
+      ['grilling', '-tdd'],
+      ['grilling', `a${'b'.repeat(64)}`],
+    ]
+    for (const skills of lists) {
+      const gathered = await gatheredUser(repoWorld({ files: userInstall(skills) }))
+
+      expect([skills, 'pluginSkills' in gathered]).toEqual([skills, false])
+    }
+    const notJson = { ...userInstall(['grilling']), [`${MATT_PATH}/.claude-plugin/plugin.json`]: '{"skills": [' }
+    const noManifest = { [INSTALLED_PLUGINS]: userInstall(['grilling'])[INSTALLED_PLUGINS] ?? '' }
+    const relativePath = installedText([{ scope: 'user', installPath: 'x' }])
+    const relative = { ...userInstall(['grilling']), [INSTALLED_PLUGINS]: relativePath }
+    for (const files of [notJson, noManifest, relative]) {
+      expect('pluginSkills' in (await gatheredUser(repoWorld({ files })))).toBe(false)
+    }
+  })
+
+  test('projectPlugins are the enabledPlugins keys the repo settings turn on', async () => {
+    const enabledPlugins = { [MATTPOCOCK_PLUGIN]: true, 'off@m': false, 'odd@m': 'yes', 'tool@m': true }
+    const files = { '/repo/.claude/settings.json': JSON.stringify({ enabledPlugins }) }
+
+    expect((await gatheredUser(repoWorld({ files }))).projectPlugins).toEqual([MATTPOCOCK_PLUGIN, 'tool@m'])
+  })
+
+  test('with no install and no repo settings the user has neither field', async () => {
+    const gathered = await gatheredUser(repoWorld())
+    const files = { '/repo/.claude/settings.json': '{"enabledPlugins": [' }
+    const malformed = await gatheredUser(repoWorld({ files }))
+
+    expect([gathered, malformed].map(read => ['pluginSkills' in read, 'projectPlugins' in read])).toEqual([
+      [false, false],
+      [false, false],
+    ])
   })
 })

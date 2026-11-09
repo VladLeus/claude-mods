@@ -5,7 +5,7 @@ import { isObject } from '../core/json'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { memorySlug, roleMemoryDir } from '../paths'
-import { INFRA_SKILLS } from '../roles/infra'
+import { GRILL_SKILLS, INFRA_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope } from '../scope/compile'
 import {
@@ -893,5 +893,34 @@ describe('launch properties', () => {
     const { role, scope, plan } = pmCase()
 
     expect(launchProblems({ ...plan, warnings: ['x'] }, role, scope, 'gsd')).toEqual(['warning: x'])
+  })
+})
+
+/** The enabledPlugins record of a launch plan's settings; {} when it is not one. */
+function pluginsOf(plan: LaunchPlan): Readonly<Record<string, unknown>> {
+  return isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+}
+
+describe('plugins the repo settings enable (project scope)', () => {
+  const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] })
+  const listed = { [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd'] }
+
+  test('a project-enabled plugin the scope does not enable renders false; one the scope enables stays on', () => {
+    const be = templateRole('be')
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS] })
+    const launching = user({ projectPlugins: [MATTPOCOCK_PLUGIN, 'tool@m'], pluginSkills: listed })
+    const bePlan = launchPlan(be, compileScope(be, context({ setup })), launching)
+    const pmPlan = launchPlan(pm, compileScope(pm, context({ framework: 'none', setup })), launching)
+
+    expect([pluginsOf(bePlan)[MATTPOCOCK_PLUGIN], pluginsOf(bePlan)['tool@m']]).toEqual([false, false])
+    expect([pluginsOf(pmPlan)[MATTPOCOCK_PLUGIN], pluginsOf(pmPlan)['tool@m']]).toEqual([true, false])
+    expect(pluginsOf(bePlan)['autopilot@local-mods']).toBe(true)
+  })
+
+  test('with no project plugins the rendered plugins are the scope record', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ setup }))
+
+    expect(pluginsOf(launchPlan(be, scope, user()))).toEqual(scope.settings.enabledPlugins)
   })
 })

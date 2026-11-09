@@ -8,7 +8,7 @@ import { adapterOf } from '../framework/registry'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { INSTRUCTIONS_RECORD_FILE, roleMemoryDir } from '../paths'
-import { INFRA_SKILLS } from '../roles/infra'
+import { GRILL_SKILLS, INFRA_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope } from '../scope/compile'
 import {
@@ -39,6 +39,7 @@ import type { HostRunRule, HostWrite, MemWorld } from '../testkit'
 import {
   linkedMemoryDeny,
   lintRuntimeDenyPattern,
+  pluginSkillDeny,
   runtimeDeny,
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
@@ -946,5 +947,75 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     expect(deny.filter(entry => typeof entry === 'string' && entry.includes('/.runtime/'))).toEqual(
       sortedUnique(roots.flatMap(root => ['pm', 'be'].flatMap(id => inboxFileRules(root, id)))),
     )
+  })
+})
+
+/** The skills the installed mattpocock-skills lists in the fixtures. */
+const MATT_LIST = ['grill-me', 'grilling', 'tdd', 'to-spec']
+
+/** PM given the two grill skills. */
+const GRILL_PM = templateRole('pm', { skills: [...GRILL_SKILLS] })
+
+/** GRILL_PM's scope with mattpocock-skills in the setup, so the scope enables it. */
+const GRILL_SCOPE = compileScope(
+  GRILL_PM,
+  context({ framework: 'none', setup: emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] }) }),
+)
+
+/** The launching user whose installed mattpocock-skills lists `skills`. */
+function listing(skills: readonly string[]): LaunchUser {
+  return user({ pluginSkills: { [MATTPOCOCK_PLUGIN]: skills } })
+}
+
+describe('the per-skill deny of a plugin skill list', () => {
+  test('a role given the grill skills gets a deny for every other listed skill and none for its own', () => {
+    const result = pluginSkillDeny(GRILL_PM, GRILL_SCOPE, listing(MATT_LIST))
+
+    expect(result).toEqual({
+      deny: ['Skill(mattpocock-skills:tdd)', 'Skill(mattpocock-skills:to-spec)'],
+      warnings: [],
+      offPlugins: [],
+    })
+    expect(result.deny).not.toContain('Skill(mattpocock-skills:grilling)')
+    expect(result.deny).not.toContain('Skill(mattpocock-skills:grill-me)')
+  })
+
+  test('a skill a plugin update adds is denied at the next launch, in the rendered settings too', () => {
+    const updated = listing([...MATT_LIST, 'wizard'])
+    const deny = denyOf(renderRuntimeSettings(GRILL_PM, GRILL_SCOPE, updated, []))
+
+    expect(pluginSkillDeny(GRILL_PM, GRILL_SCOPE, updated).deny).toContain('Skill(mattpocock-skills:wizard)')
+    expect(deny).toContain('Skill(mattpocock-skills:wizard)')
+    expect(deny).toContain('Skill(mattpocock-skills:tdd)')
+    expect(deny).not.toContain('Skill(mattpocock-skills:grilling)')
+  })
+
+  test('with no skill list the plugin is turned off for the role, with a warning naming it', () => {
+    const result = pluginSkillDeny(GRILL_PM, GRILL_SCOPE, user())
+    const plan = launchPlan(GRILL_PM, GRILL_SCOPE, user())
+    const plugins = isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+
+    expect([result.deny, result.offPlugins]).toEqual([[], [MATTPOCOCK_PLUGIN]])
+    expect(result.warnings.length).toBe(1)
+    expect(result.warnings[0]).toContain(MATTPOCOCK_PLUGIN)
+    expect(plugins[MATTPOCOCK_PLUGIN]).toBe(false)
+    expect(plan.warnings).toContain(result.warnings[0])
+  })
+
+  test('a role whose scope does not enable the plugin gets no rule, no warning and nothing turned off', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ setup: emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] }) }))
+
+    for (const launching of [listing(MATT_LIST), user()]) {
+      expect(pluginSkillDeny(be, scope, launching)).toEqual({ deny: [], warnings: [], offPlugins: [] })
+    }
+  })
+
+  test('every plugin skill deny passes the runtime lint and blocks no handoff skill or infra tool', () => {
+    const result = pluginSkillDeny(GRILL_PM, GRILL_SCOPE, listing([...MATT_LIST, ...INFRA_SKILLS, 'skill']))
+
+    expect(result.deny.length).toBe(MATT_LIST.length - GRILL_SKILLS.length + INFRA_SKILLS.length + 1)
+    expect(result.deny.map(lintRuntimeDenyPattern)).toEqual(result.deny.map(() => null))
+    expect(result.warnings).toEqual([])
   })
 })
