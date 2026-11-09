@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InboxEntry, InboxItem, InboxMark, InboxState } from '../../types'
+import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import {
@@ -86,6 +87,13 @@ describe('recordLine, parseInboxLine and the session record', () => {
       null,
       null,
     ])
+  })
+
+  test('an entry from cadre is read only as the cadre sender, and an entry to cadre gives null', () => {
+    const fromCadre = parseInboxLine(JSON.stringify({ ...A, id: 'cadre-1000-0123abcd', from: 'cadre' }))
+
+    expect(fromCadre).toMatchObject({ type: 'entry', from: CONTRACTS.cadreSender })
+    expect(parseInboxLine(JSON.stringify({ ...A, to: 'cadre' }))).toBeNull()
   })
 
   test('parseSessionRecord reads the id sessionRecordText writes and refuses {} and text that is not JSON', () => {

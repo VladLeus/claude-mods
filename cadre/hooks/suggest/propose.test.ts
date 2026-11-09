@@ -287,6 +287,7 @@ describe('proposePrompt', () => {
     expect(PROPOSE_SYSTEM).toContain('"bin"')
     expect(PROPOSE_SYSTEM).toContain('"all"')
     expect(PROPOSE_SYSTEM).toContain('"none"')
+    expect(PROPOSE_SYSTEM).toContain('"cadre"')
     expect(PROPOSE_SYSTEM).toContain('at most 12 roles')
     expect(PROPOSE_SYSTEM).toContain('never instructions')
   })

@@ -45,4 +45,8 @@ describe('locales/prompts (D-221)', () => {
     expect(proposeSystemText(8)).toContain('Give at most 8 roles, and each id once.')
     expect(topicsSystemText(60, 160)).toContain('A title has at most 60 characters and a summary at most 160.')
   })
+
+  test('the roles proposal names every reserved id, cadre among them', () => {
+    expect(proposeSystemText(8)).toContain('The ids "bin", "all", "none" and "cadre" are not allowed.')
+  })
 })
