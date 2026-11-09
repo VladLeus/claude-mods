@@ -496,6 +496,13 @@ describe('gsdKickoffText', () => {
     expect(text).toContain('Verify with /gsd-validate-phase N and /gsd-code-review N.')
   })
 
+  test('it names every startWork entry word for word, the new project of a checkout with no .planning/ too', () => {
+    const text = gsdKickoffText({ title: 'BE', roleId: 'be', specPath: null })
+
+    expect(GSD_ADAPTER.startWork.filter(entry => !text.includes(entry))).toEqual([])
+    expect(text).toContain('A checkout with no .planning/ starts with /gsd-new-project (no .planning/ yet)')
+  })
+
   test('its last line is the done answer, with no trailing newline', () => {
     const lines = gsdKickoffText({ title: 'BE', roleId: 'be', specPath: null }).split('\n')
 

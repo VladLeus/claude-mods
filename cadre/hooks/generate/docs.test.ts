@@ -312,7 +312,7 @@ describe('role documents', () => {
     ])
   })
 
-  test('ROLE.md has How you work, Decisions, Handoffs, Inbox, Planning docs, Hierarchy, Scope, in that order', () => {
+  test('ROLE.md has How you work, Decisions, Handoffs, Inbox, Planning docs, Hierarchy, Sizing and Scope', () => {
     const be = templateRole('be')
     const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
 
@@ -323,6 +323,7 @@ describe('role documents', () => {
       '## Inbox',
       '## Planning docs',
       '## Hierarchy',
+      '## Sizing',
       '## Scope',
     ])
     expect(text.endsWith('\n')).toBe(true)
@@ -470,6 +471,7 @@ describe('role documents', () => {
       '## Inbox',
       '## Planning docs',
       '## Hierarchy',
+      '## Sizing',
       '## Scope',
     ])
   })
@@ -714,6 +716,26 @@ describe('the Hierarchy section of ROLE.md', () => {
         const asks = lines.filter(line => /\bask the user\b|\bwith AskUserQuestion\b/i.test(line))
 
         expect([role.id, asks.length > 0]).toEqual([role.id, role.id === 'pm'])
+      }
+    }
+  })
+})
+
+describe('the Sizing section of ROLE.md', () => {
+  test('every role gets the four dimensions, who scores which, the size rule, the rubric and the user pin', () => {
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const text = roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES))
+        const section = sectionLines(text, '## Sizing').join('\n')
+
+        expect(section.startsWith('## Sizing\n\n')).toBe(true)
+        expect(section).toContain('four scores, each from 0.1 to 1.0: scope, complexity, risk and effort')
+        expect(section).toContain('PM scores scope and risk; TL adds complexity and effort')
+        expect(section).toContain('The size is the highest of the four')
+        expect(section).toContain('large at or over sizing.threshold in .cadre/cadre.json')
+        expect(section).toContain('the anchors in .cadre/sizing.md')
+        expect(section).toContain('A size the user pins on a ticket overrides the computed class.')
+        expect(text).toContain(`${section}\n## Scope\n`)
       }
     }
   })
