@@ -5379,6 +5379,22 @@ describe('a consented framework install after Confirm', () => {
     expect([lastReview(run).includes(line), host.calls, host.writes]).toEqual([true, [], []])
   })
 
+  test('Yes, then Change roles, then No leaves PM without the grill skills and plans no plugin install', async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Install mattpocock-skills': ['Yes, install it', 'No'],
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
+    const card = review.slice(review.indexOf('Scope card: PM (pm)'))
+
+    expect(run.asked.filter(question => question.startsWith('Install mattpocock-skills'))).toHaveLength(2)
+    expect(review).toContain('Scope card: PM (pm)')
+    expect(card.find(line => line.startsWith('  skills:'))).toBe('  skills: none')
+    expect(review.some(line => line.startsWith('Plugin install from the repo root after Confirm'))).toBe(false)
+  })
+
   test('a --dry-run review names the install, and its Confirm runs nothing and reads the facts no more', async () => {
     const run = queuedIo(fullWorld(), ADJUST_SUPERPOWERS_YES)
     const paged = pagedIo(run)

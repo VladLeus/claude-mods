@@ -23,6 +23,14 @@ function pmPluginAt(roles: readonly RoleSpec[], installed: readonly string[] = [
   return pmPluginStage.enter(stateAt('pm-plugin', wholeDraft({ roles, gathered })))
 }
 
+/** The PM plugin stage entered for `roles` after a Yes earlier in this run, the plugin still missing. */
+function afterYesAt(roles: readonly RoleSpec[]): InitState {
+  const gathered = { ...wholeDraft().gathered, setup: emptySetupScan() }
+  const draft = wholeDraft({ roles, gathered, projectPluginInstalls: [MATTPOCOCK_PLUGIN] })
+
+  return pmPluginStage.enter(stateAt('pm-plugin', draft))
+}
+
 /** The skills of the role `id` the run ended with. */
 function skillsOf(state: InitState, id: string): readonly string[] | undefined {
   return state.draft.roles?.find(role => role.id === id)?.skills
@@ -74,6 +82,47 @@ describe('the PM grill plugin stage', () => {
       expect(run.state.draft.projectPluginInstalls ?? []).toEqual([])
       expect(run.outputs).toEqual([{ kind: 'note', line: PM_PLUGIN_DECLINED }])
     }
+  })
+
+  test('after an earlier Yes, No or a dismissal takes the grill skills off PM and installs nothing', () => {
+    const grilled = [templateRole('pm', { skills: ['mattpocock-skills:tdd', ...GRILL_SKILLS] }), ...TEAM.slice(1)]
+    for (const answers of [['No'], [null], []]) {
+      const run = driven(afterYesAt(grilled), answers)
+
+      expect(skillsOf(run.state, 'pm')).toEqual(['mattpocock-skills:tdd'])
+      expect(run.state.draft.roles?.slice(1)).toEqual(TEAM.slice(1))
+      expect(run.state.draft.projectPluginInstalls).toEqual([])
+      expect(run.outputs).toEqual([{ kind: 'note', line: PM_PLUGIN_DECLINED }])
+    }
+  })
+
+  test('with no earlier Yes, a No keeps a grill skill handed in assign', () => {
+    const handed = [
+      templateRole('pm', { skills: ['mattpocock-skills:tdd', 'mattpocock-skills:grilling'] }),
+      ...TEAM.slice(1),
+    ]
+    const run = driven(pmPluginAt(handed), ['No'])
+
+    expect(run.state.draft.roles).toEqual(handed)
+    expect(run.state.draft.projectPluginInstalls).toEqual([])
+    expect(run.outputs).toEqual([{ kind: 'note', line: PM_PLUGIN_DECLINED }])
+  })
+
+  test('Yes, then the stage entered again on a go-back and answered No, leaves PM without the grill skills', () => {
+    const yes = driven(pmPluginAt(TEAM), ['Yes, install it'])
+    const again = driven(pmPluginStage.enter(stateAt('pm-plugin', yes.state.draft)), ['No'])
+
+    expect(yes.state.draft.projectPluginInstalls).toEqual([MATTPOCOCK_PLUGIN])
+    expect(skillsOf(again.state, 'pm')).toEqual(['mattpocock-skills:tdd'])
+    expect(again.state.draft.projectPluginInstalls).toEqual([])
+  })
+
+  test('a role based on pm loses the grill skills on a No after an earlier Yes too', () => {
+    const product = templateRole('pm', { id: 'product', title: 'Product', skills: [...GRILL_SKILLS] })
+    const run = driven(afterYesAt([product, templateRole('tl')]), ['No'])
+
+    expect(skillsOf(run.state, 'product')).toEqual([])
+    expect(run.state.draft.projectPluginInstalls).toEqual([])
   })
 
   test('an answer that is neither is asked again with why on top', () => {
