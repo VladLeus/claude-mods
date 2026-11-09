@@ -20,6 +20,7 @@ import {
   applyMode,
   askAnswer,
   askQuestionText,
+  asksQueuedQuestion,
   autoAnswersQuestions,
   availMode,
   availStatusLines,
@@ -77,6 +78,7 @@ import {
   questionsBlock,
   queuedAcross,
   queuedResult,
+  removesDrainedQuestion,
   retime,
   revivePrompt,
   roleSection,
@@ -882,6 +884,46 @@ describe('AskUserQuestion while asking is on', () => {
     const wait: Awaiting = { reason: 'user-answer', from: null, note: '#1 Which DB?', since: 0, timeoutAt: null, pinged: false }
     for (const mode of MODES) expect(passesQuestion(mode)).toBe(waitRefusal(wait, mode) === null)
   })
+
+  test('a drained question leaves the queue only on a dialog answer while draining', async () => {
+    const answered = { result: { questions: [], answers: { 'Which DB?': 'Postgres' } } }
+    expect(removesDrainedQuestion('draining', answered)).toBe(true)
+    expect(removesDrainedQuestion('draining', { result: { response: 'Use Postgres 16' } })).toBe(true)
+    for (const mode of ['plain', 'queueing', 'overdue', 'asking'] as const) {
+      expect(removesDrainedQuestion(mode, answered)).toBe(false)
+    }
+  })
+
+  test('a dialog with no answer, a deny, an error or an AFK timeout keeps the drained question queued', async () => {
+    const kept: unknown[] = [
+      { result: { questions: [], answers: {} } },
+      { result: { questions: [], answers: { 'Which DB?': '' } } },
+      { result: { questions: [], answers: { 'Which DB?': '  ' } } },
+      { result: { questions: [] } },
+      { result: { response: '' } },
+      { result: 'Postgres' },
+      { result: null },
+      { deny: 'The person dismissed the question.' },
+      { isError: true, result: { answers: { 'Which DB?': 'Postgres' } } },
+      { result: { answers: { 'Which DB?': 'Postgres' }, afkTimeoutMs: 60_000 } },
+      null,
+      'Postgres',
+    ]
+    for (const ran of kept) expect(removesDrainedQuestion('draining', ran)).toBe(false)
+  })
+
+  test('a dialog asks the queued question when one of its questions holds its text or its #k tag', async () => {
+    const queued: Question = { id: 3, text: 'Which DB?', kind: 'answer', provisional: null, at: 0 }
+    const call = (...texts: unknown[]) => ({ questions: texts.map(question => ({ question, header: 'DB', options: [] })) })
+    expect(asksQueuedQuestion(call('Which DB?'), queued)).toBe(true)
+    expect(asksQueuedQuestion(call('#3 Which database should we use?'), queued)).toBe(true)
+    expect(asksQueuedQuestion(call('Unrelated', 'Before we go on: Which DB?'), queued)).toBe(true)
+    expect(asksQueuedQuestion(call('#30 Which cache?'), queued)).toBe(false)
+    expect(asksQueuedQuestion(call('Which cache?'), queued)).toBe(false)
+    expect(asksQueuedQuestion(call(3), queued)).toBe(false)
+    expect(asksQueuedQuestion({ questions: 'Which DB?' }, queued)).toBe(false)
+    expect(asksQueuedQuestion(null, queued)).toBe(false)
+  })
 })
 
 describe('wait_for', () => {
@@ -1015,9 +1057,15 @@ describe('wait_for', () => {
     expect(plain).not.toContain('or need the person')
     expect(asking).toContain('a workflow or a background task, or need the person, and nothing else useful is left for you')
     expect(asking).toContain('Only when the person is truly required')
+    expect(asking).toContain('ask them with AskUserQuestion: up to 4 questions per call, the recommended option first.')
+    expect(asking).toContain(
+      'For an action the person must take, or when AskUserQuestion is unavailable or the person said not to use it, ' +
+        'write it to them as text, call PushNotification',
+    )
     expect(asking).toContain('call wait_for with reason user-answer (or user-input')
     expect(asking).toContain('Everything else you decide yourself.')
     expect(asking).toContain('- Ordinary questions: decide yourself')
+    expect(plain).not.toContain('AskUserQuestion')
   })
 
   test('a run stored by an older version, without the new fields, reads as not waiting and not asking', async () => {
@@ -1866,15 +1914,19 @@ describe('pending prompts', () => {
     expect(criticalCount(7)).toBe('7 critical questions are')
   })
 
-  test('askQuestionText asks one question as text, then a wait tagged #k', async () => {
+  test('askQuestionText asks an answer through AskUserQuestion, tagged #k, and an action as text with a wait', async () => {
     const answer: Question = { id: 1, text: 'Push the release tag v2.0?', kind: 'answer', provisional: 'kept it local', at: 1 }
     expect(askQuestionText(answer)).toBe(
-      'Ask question #1 now, and only it: "Push the release tag v2.0?" (meanwhile you went with: "kept it local"). Write it to the person as text, call wait_for with reason user-answer and a note that starts with "#1", then end your turn.',
+      'Ask question #1 now, and only it: "Push the release tag v2.0?" (meanwhile you went with: "kept it local"). ' +
+        'Ask it with AskUserQuestion as one question that starts with "#1", the recommended option first. ' +
+        'Only when AskUserQuestion is unavailable or the person said not to use it, write it to the person as text, ' +
+        'call wait_for with reason user-answer and a note that starts with "#1", then end your turn.',
     )
     const action: Question = { id: 2, text: 'Add the deploy key to the repo', kind: 'action', provisional: null, at: 1 }
     expect(askQuestionText(action)).toBe(
       'Ask question #2 now, and only it: "Add the deploy key to the repo". Write it to the person as text, call wait_for with reason user-input and a note that starts with "#2", then end your turn.',
     )
+    expect(askQuestionText(action)).not.toContain('AskUserQuestion')
   })
 
   test('askQuestionText shows the question as one quoted line, controls and bidi marks stripped', async () => {
