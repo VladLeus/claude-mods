@@ -125,6 +125,35 @@ describe('repoGuard and readTeam', () => {
     expect(scopes).not.toEqual(scopesFor(team, 'none', gathered, [], { kind: 'git-root' }))
   })
 
+  test('compileTeam lets every role not on none run every framework cadre.json records', async () => {
+    const roles = [templateRole('pm'), templateRole('be'), withFramework(templateRole('tl'), 'superpowers')]
+    const state = stateOf(roles, { framework: 'gsd', frameworks: ['gsd', 'superpowers'] })
+    const { scopes } = await compileTeam(memIo(gitWorld(), {}).io, DEFAULT_LOCATIONS, state, roles)
+
+    const runs = roles.map(role => [role.id, cardOf(scopes, role.id).framework, cardOf(scopes, role.id).alsoRuns])
+
+    expect(runs).toEqual([
+      ['pm', 'none', []],
+      ['be', 'gsd', ['superpowers']],
+      ['tl', 'superpowers', ['gsd']],
+    ])
+  })
+
+  test('with no recorded frameworks cadre.json runs its stored framework only: no role gains superpowers', async () => {
+    const world = gitWorld({
+      settings: { user: { enabledPlugins: { 'superpowers@claude-plugins-official': true } }, project: {}, local: {} },
+    })
+    const state = stateOf(team, { framework: 'gsd' })
+    const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
+
+    for (const role of team) {
+      const scope = scopes.get(role.id)
+      const superpowers = scope?.settings.enabledPlugins['superpowers@claude-plugins-official']
+
+      expect([role.id, scope?.card.alsoRuns, superpowers]).toEqual([role.id, [], undefined])
+    }
+  })
+
   test('compileTeam judges attended from the config on disk, as regen does (D-70, D-72)', async () => {
     const config = '/repo/.planning/config.json'
     const cases: readonly (readonly [string | null, boolean])[] = [

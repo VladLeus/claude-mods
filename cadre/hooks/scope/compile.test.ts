@@ -2,6 +2,8 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { CompiledScope, FrameworkId, McpRoute, PermissionMode, ProbeCheck, RoleSpec, ScopeRule } from '../../types'
 import { adapterOf } from '../framework/registry'
+import type { LaunchUser } from '../launch/links'
+import { renderRuntimeSettings } from '../launch/settings'
 import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from '../roles/infra'
 import { chainLines, EMPTY_CARRY } from '../roles/template'
 import type { ChainRole } from '../roles/template'
@@ -10,6 +12,7 @@ import {
   BIDI_OVERRIDE,
   context,
   emptySetupScan,
+  HASH,
   hook,
   leaks,
   session,
@@ -1029,5 +1032,77 @@ describe('infra plugins by name in every scope (D-281)', () => {
       'autopilot@local-mods',
       'cadre@local-mods',
     ])
+  })
+})
+
+describe('union scope over the frameworks the repo records', () => {
+  /** A setup whose scan found the official superpowers plugin. */
+  const setup = emptySetupScan({ plugins: ['superpowers@claude-plugins-official'] })
+  /** Every framework the repo records, none included. */
+  const BOTH: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+  /** A launching user at /repo with nothing to carry. */
+  const LAUNCHER: LaunchUser = {
+    root: '/repo',
+    givenRoot: '/repo',
+    home: '/home/u',
+    userDir: '/home/u/.claude',
+    gitCommonDir: '/repo/.git',
+    commonDirHash: HASH,
+    autoCompactWindow: null,
+    statusLine: null,
+    env: {},
+    hooks: [],
+    claudeMd: [],
+    rules: [],
+    roleClaudeMds: [],
+    globalClaudeMd: [],
+    memoryFiles: [],
+    givenMemoryFiles: [],
+    userSkills: [],
+    userAgents: [],
+    codeDirs: [],
+    linkedMemories: [],
+  }
+
+  test('a role on gsd that may run superpowers enables its plugin and keeps both start skill sets', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ framework: 'gsd', setup, alsoRuns: BOTH }))
+
+    expect(scope.settings.enabledPlugins['superpowers@claude-plugins-official']).toBe(true)
+    expect(adapterOf('gsd').startSkills.every(skill => scope.overlay.skills.includes(skill))).toBe(true)
+    expect([scope.card.framework, scope.card.alsoRuns]).toEqual(['gsd', ['superpowers']])
+  })
+
+  test("a none role's enabledPlugins is unchanged when the repo records both frameworks", () => {
+    const pm = templateRole('pm')
+    const alone = compileScope(pm, context({ framework: 'none', setup }))
+    const union = compileScope(pm, context({ framework: 'none', setup, alsoRuns: BOTH }))
+
+    expect(union.settings.enabledPlugins).toEqual(alone.settings.enabledPlugins)
+    expect(union).toEqual(alone)
+    expect(union.card.alsoRuns).toEqual([])
+  })
+
+  test('with nothing recorded a gsd role compiles as before, with no superpowers plugin and alsoRuns []', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ framework: 'gsd', setup }))
+
+    expect([scope.settings.enabledPlugins['superpowers@claude-plugins-official'], scope.card.alsoRuns]).toEqual([
+      undefined,
+      [],
+    ])
+  })
+
+  test('a superpowers-default role that may also run gsd renders GSD_WORKSTREAM', () => {
+    const tl = templateRole('tl')
+    const union = compileScope(tl, context({ framework: 'superpowers', alsoRuns: ['gsd', 'superpowers'] }))
+    const alone = compileScope(tl, context({ framework: 'superpowers' }))
+
+    expect(renderRuntimeSettings(tl, union, LAUNCHER, []).env).toEqual({
+      GSD_WORKSTREAM: 'cadre-tl',
+      CADRE_ROLE: 'tl',
+      CADRE_ROOT: '/repo',
+    })
+    expect(renderRuntimeSettings(tl, alone, LAUNCHER, []).env).toEqual({ CADRE_ROLE: 'tl', CADRE_ROOT: '/repo' })
   })
 })
