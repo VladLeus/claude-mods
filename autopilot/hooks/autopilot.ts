@@ -1252,6 +1252,15 @@ const ASK_PERSON_LINE = [
   'note, and end your turn. Everything else you decide yourself.',
 ].join(' ')
 
+/** The queue_question refusal while the person can be asked: AskUserQuestion first, the notification and wait after. */
+export const ASKING_QUEUE_REFUSAL = [
+  'The person can be asked right now: do not queue. If they are truly required, ask them with AskUserQuestion: up to',
+  '4 questions per call, the recommended option first. For an action they must take, or when AskUserQuestion is',
+  'unavailable or they said not to use it, send one PushNotification with the question, call',
+  `${WAIT_TOOL} with reason user-answer (or user-input for an action they must take) and the question as note, and`,
+  'end your turn.',
+].join(' ')
+
 /** The paused section, with the questions still queued for the person when there are any. */
 function pausedSection(run: Run): string {
   const queued = questionsBlock(run)

@@ -2,6 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Avail, AvailCommand, BadgeAvail, Effective, FinalReason, FinishedRecord, LockOwner, Mode, Pending, Run, TokenWindow } from '../types'
 import {
+  ASKING_QUEUE_REFUSAL,
   CONTINUE_PROMPT,
   DEFAULT_CEILING,
   DEFERRED_NOTE,
@@ -950,9 +951,7 @@ const NO_QUEUE_TEXT = 'Autopilot is not driving right now: no queue.'
 /** Why queue_question is refused in this mode, or null when it is accepted. */
 function queueRefusal(mode: Mode | null): string | null {
   if (mode === 'queueing' || mode === 'overdue' || mode === 'draining') return null
-  if (mode === 'asking') {
-    return `The person can be asked right now: do not queue. If they are truly required, send one PushNotification with the question, call ${WAIT_TOOL} with reason user-answer (or user-input) and the question as note, and end your turn.`
-  }
+  if (mode === 'asking') return ASKING_QUEUE_REFUSAL
   if (mode === 'plain') return 'This run does not ask the person (no --ask-user): decide yourself within your role, record the decision for the handoff, and continue.'
 
   return NO_QUEUE_TEXT
