@@ -10,7 +10,13 @@ import { parseInbox, parseInboxLine, recordLine, sessionRecordText } from './rec
 import { INBOX_LINE_MAX_BYTES } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
-const TEAM: TeamView = { ids: ['pm', 'tl', 'be'], parents: { pm: null, tl: 'pm', be: 'tl' }, pm: 'pm' }
+const TEAM: TeamView = {
+  ids: ['pm', 'tl', 'be'],
+  parents: { pm: null, tl: 'pm', be: 'tl' },
+  pm: 'pm',
+  sizing: { threshold: 0.5, mapping: { small: 'superpowers', large: 'gsd' }, rubric: '.cadre/sizing.md' },
+  frameworks: ['gsd', 'superpowers'],
+}
 const TL_RUNTIME = '/repo/.cadre/tl/.runtime'
 const TL_INBOX = `${TL_RUNTIME}/inbox.jsonl`
 const TL_SESSION = `${TL_RUNTIME}/session.json`
@@ -42,8 +48,9 @@ type SendRun = {
   readonly sends: Sent[]
 }
 
-/** What a send runs with besides its world and its event: the team view, the live answer and the host's runs. */
+/** What a send runs with besides its world and its event: the sender, the team view, the live answer, the runs. */
 type SendOver = {
+  readonly ctx?: RoleContext
   readonly team?: TeamView | null
   readonly isDelivered?: boolean
   readonly runs?: readonly HostRunRule[]
@@ -62,9 +69,9 @@ function tlWorld(over: Partial<MemWorld> = {}): MemWorld {
   return memWorld({ now: 1000, dirs: { [TL_RUNTIME]: [] }, files: TL_FILES, ...over })
 }
 
-/** runInboxSend from be over `world`, with a link that answers `isDelivered` and records each send. */
+/** runInboxSend over `world`, from be unless `over` says else, with a link that answers `isDelivered`. */
 async function sendFrom(world: MemWorld, event: unknown, over: SendOver = {}): Promise<SendRun> {
-  const { team = TEAM, isDelivered = true, runs = [] } = over
+  const { ctx = BE, team = TEAM, isDelivered = true, runs = [] } = over
   const host = memHost(hostWorld({ runs }))
   const sends: Sent[] = []
   const link: SessionLink = {
@@ -74,7 +81,7 @@ async function sendFrom(world: MemWorld, event: unknown, over: SendOver = {}): P
       return isDelivered
     },
   }
-  const outcome = await runInboxSend(memIo(world, {}).io, host.io, link, BE, team, event)
+  const outcome = await runInboxSend(memIo(world, {}).io, host.io, link, ctx, team, event)
 
   return { outcome, host, sends }
 }
@@ -214,6 +221,71 @@ describe('runInboxSend', () => {
 
       expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxAppendFailed, { to: 'tl' }) })
       expect(sends).toEqual([])
+    }
+  })
+})
+
+describe('runInboxSend of a task', () => {
+  const TL: RoleContext = { id: 'tl', root: '/repo' }
+  const VECTOR = { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 }
+  const TASK = {
+    to: 'be',
+    kind: 'task',
+    subject: 'Add the endpoint',
+    body: 'Add the endpoint',
+    ticketKey: 'PROJ-2',
+    vector: VECTOR,
+    use: { framework: 'gsd', gsdPath: 'phase' },
+  }
+
+  /** A world where be was started and published its session id, with the clock at 1000. */
+  function beWorld(): MemWorld {
+    return memWorld({ now: 1000, dirs: { [BE_RUNTIME]: [] }, files: { [BE_SESSION]: sessionRecordText('s-be') } })
+  }
+
+  test('tl sends be a task: the entry carries its vector with the size stamp; the result names the picks', async () => {
+    const { outcome, host } = await sendFrom(beWorld(), TASK, { ctx: TL })
+    const entry = parseInboxLine(firstStdin(host))
+    const id = entry?.id ?? ''
+
+    expect(entry).toMatchObject({
+      kind: 'task',
+      from: 'tl',
+      to: 'be',
+      ticketKey: 'PROJ-2',
+      vector: VECTOR,
+      use: { framework: 'gsd', gsdPath: 'phase' },
+      size: 0.6,
+      large: true,
+    })
+    expect(teeRuns(host)).toEqual([BE_TEE])
+    expect(outcome).toEqual({
+      kind: 'result',
+      text: [
+        fill(PROMPTS.inboxSent, { id, to: 'be' }),
+        fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'large', threshold: 0.5 }),
+        fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'phase' }),
+        fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'phase' }),
+      ].join(' '),
+    })
+  })
+
+  test('the size is stamped from the threshold of the team view, and a small task maps to the small pick', async () => {
+    const team: TeamView = { ...TEAM, sizing: { ...TEAM.sizing, threshold: 0.7 } }
+    const { outcome, host } = await sendFrom(beWorld(), TASK, { ctx: TL, team })
+
+    expect(parseInboxLine(firstStdin(host))).toMatchObject({ size: 0.6, large: false })
+    expect(outcome.text).toContain(fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'small', threshold: 0.7 }))
+    expect(outcome.text).toContain(fill(PROMPTS.inboxSizePick, { mode: 'ticket', framework: 'superpowers' }))
+  })
+
+  test('a task without ticketKey, vector or use is refused, naming the field, and nothing runs', async () => {
+    const fields = ['ticketKey', 'vector', 'use']
+    for (const field of fields) {
+      const { outcome, host, sends } = await sendFrom(beWorld(), { ...TASK, [field]: undefined }, { ctx: TL })
+
+      expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxFieldMissing, { kind: 'task', field }) })
+      expect([host.calls, sends]).toEqual([[], []])
     }
   })
 })

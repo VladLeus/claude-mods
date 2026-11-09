@@ -13,7 +13,13 @@ import {
 } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
-const TEAM: TeamView = { ids: ['pm', 'tl', 'be'], parents: { pm: null, tl: 'pm', be: 'tl' }, pm: 'pm' }
+const TEAM: TeamView = {
+  ids: ['pm', 'tl', 'be'],
+  parents: { pm: null, tl: 'pm', be: 'tl' },
+  pm: 'pm',
+  sizing: { threshold: 0.5, mapping: { small: 'superpowers', large: 'gsd' }, rubric: '.cadre/sizing.md' },
+  frameworks: ['gsd', 'superpowers'],
+}
 const NOTE = { to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
 
 /** A character of four UTF-8 bytes and two UTF-16 units: one code point. */

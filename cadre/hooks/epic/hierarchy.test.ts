@@ -3,6 +3,9 @@ import { describe, expect, test } from 'claude-code/testing'
 import { gitWorld, memIo, onDisk, plannedFiles, stateText, templateRole } from '../testkit'
 import { teamViewOf } from './hierarchy'
 
+/** The sizing of a repo whose stored framework is none and that records no frameworks. */
+const NO_FRAMEWORK_SIZING = { threshold: 0.5, mapping: { small: 'none', large: 'none' }, rubric: '.cadre/sizing.md' }
+
 describe('teamViewOf', () => {
   test('the roles of cadre.json in order, each with its parent: PM on top, TL under PM, others under TL', async () => {
     const files = await plannedFiles(gitWorld(), [templateRole('pm'), templateRole('tl'), templateRole('be')])
@@ -12,6 +15,8 @@ describe('teamViewOf', () => {
       ids: ['pm', 'tl', 'be'],
       parents: { pm: null, tl: 'pm', be: 'tl' },
       pm: 'pm',
+      sizing: NO_FRAMEWORK_SIZING,
+      frameworks: [],
     })
   })
 
@@ -23,6 +28,8 @@ describe('teamViewOf', () => {
       ids: ['tl', 'be'],
       parents: { tl: null, be: null },
       pm: null,
+      sizing: NO_FRAMEWORK_SIZING,
+      frameworks: [],
     })
   })
 
