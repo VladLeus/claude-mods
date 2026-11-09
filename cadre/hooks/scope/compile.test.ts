@@ -925,6 +925,11 @@ describe('scope rules', () => {
       { text: loadsRule('pm'), enforcement: 'none' },
       { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
       {
+        text: 'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them',
+        enforcement: 'hard',
+      },
+      { text: 'Live messages may be held in this permission mode; the inbox is the record', enforcement: 'none' },
+      {
         text: 'Permission mode: bypassPermissions',
         enforcement: 'hard',
         checks: [{ kind: 'permission-mode', token: 'bypassPermissions' }],
@@ -952,6 +957,10 @@ describe('scope rules', () => {
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
       { text: loadsRule('be'), enforcement: 'none' },
       { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
+      {
+        text: 'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them',
+        enforcement: 'best-effort',
+      },
       { text: 'Permission mode: auto', enforcement: 'hard', checks: [{ kind: 'permission-mode', token: 'auto' }] },
       { text: MERGED_ROUTE_RULE, enforcement: 'none' },
     ])

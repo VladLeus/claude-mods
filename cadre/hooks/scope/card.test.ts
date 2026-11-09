@@ -47,6 +47,13 @@ const MERGED_ROUTE_RULE = 'MCP route: merged (no --strict-mcp-config, so /fleet 
 /** The rule on every card that the infra stays (D-77). */
 const AVAILABLE_RULE = 'Autopilot, agent-fleet and the handoff skills are always available'
 
+/** The rule on every card, right after the infra rule, that only the cadre inbox tools write the inbox files. */
+const INBOX_RULE =
+  'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them'
+
+/** The note of a bypass card, right after the inbox rule. */
+const HELD_RULE = 'Live messages may be held in this permission mode; the inbox is the record'
+
 /**
  * The checks of the infra rule (D-112, D-77): the autopilot command, the two handoff skills and autopilot's three MCP
  * tools are in the startup inventory, in this order.
@@ -85,6 +92,39 @@ function memoryLine(id: string): string {
     '(rendered at launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)'
   )
 }
+
+describe('the inbox rules on the card', () => {
+  test('every card has the inbox rule right after the infra rule: hard without Bash, best effort with Bash', () => {
+    const afterInfra = [templateRole('pm'), templateRole('be')].map(role => {
+      const rules = compileScope(role, context()).card.rules
+
+      return rules[rules.findIndex(found => found.text === AVAILABLE_RULE) + 1]
+    })
+
+    expect(afterInfra).toEqual([
+      { text: INBOX_RULE, enforcement: 'hard' },
+      { text: INBOX_RULE, enforcement: 'best-effort' },
+    ])
+  })
+
+  test('a bypass card has the held-messages note right after the inbox rule; no other card has it', () => {
+    const bypass = compileScope(templateRole('pm', { permissionMode: 'bypassPermissions' }), context()).card.rules
+    const others = [templateRole('pm'), templateRole('be')].map(role => compileScope(role, context()))
+
+    expect(bypass[bypass.findIndex(found => found.text === INBOX_RULE) + 1]).toEqual({
+      text: HELD_RULE,
+      enforcement: 'none',
+    })
+    expect(others.map(scope => ruleOf(scope, HELD_RULE))).toEqual([undefined, undefined])
+  })
+
+  test('every card of every role, framework, start and route has the inbox rule exactly once', () => {
+    const count = (scope: CompiledScope): number => scope.card.rules.filter(item => item.text === INBOX_RULE).length
+    const found = routeMatrix().filter(({ scope }) => count(scope) !== 1)
+
+    expect(found.map(({ where }) => where)).toEqual([])
+  })
+})
 
 describe('the loaded instructions on the card (02-GAPS-B2 N9)', () => {
   test("every card names the role's built and private instructions as a none rule, after the Skills rule", () => {
@@ -188,6 +228,7 @@ describe('scopeCardLines', () => {
       '    [best-effort] Skills: only the listed skills are linked',
       `    [none] ${loadsRule('pm')}`,
       '    [hard] Autopilot, agent-fleet and the handoff skills are always available',
+      `    [hard] ${INBOX_RULE}`,
       '    [hard] Permission mode: auto',
       `    [none] ${GSD_NO_BASH_RULE}`,
       `    [none] ${MERGED_ROUTE_RULE}`,
