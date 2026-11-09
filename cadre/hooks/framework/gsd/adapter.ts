@@ -13,6 +13,7 @@ import type {
   GsdFact,
   KickoffContext,
   RepoEntry,
+  RoleWorkContext,
   SettingProposal,
   SetupScan,
   SkillRef,
@@ -284,6 +285,28 @@ export function gsdKickoffText(ctx: KickoffContext): string {
 }
 
 /**
+ * The steps the lead runs to start its own planning in GSD: the project when the checkout has no `.planning/`, its
+ * workstream, the epic as its milestone, then the quick or phase path.
+ */
+const GSD_LEAD_STEPS: readonly string[] = Object.freeze([
+  ARTIFACT.gsdStepNewProject,
+  ARTIFACT.gsdStepWorkstream,
+  ARTIFACT.gsdStepMilestoneLead,
+  ARTIFACT.gsdStepPath,
+])
+
+/**
+ * The steps a worker runs: the project only in a team with no TL and a checkout with no `.planning/`, its workstream,
+ * TL's task as its milestone goal, then the quick or phase path.
+ */
+const GSD_WORKER_STEPS: readonly string[] = Object.freeze([
+  ARTIFACT.gsdStepNewProjectNoLead,
+  ARTIFACT.gsdStepWorkstream,
+  ARTIFACT.gsdStepMilestoneWorker,
+  ARTIFACT.gsdStepPath,
+])
+
+/**
  * The GSD adapter: the contract every framework implements, filled for GSD. Its start, locate, verify and done entries
  * are the ones the role kickoff names, so the two stay in step.
  */
@@ -350,7 +373,10 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
     isPlugin: false,
   }),
   factsHeading: t('framework.gsd.adapter.gsdAdapterFactsHeading'),
-  roleWork: Object.freeze({ workstreamEnv: 'GSD_WORKSTREAM', startSteps: () => Object.freeze([]) }),
+  roleWork: Object.freeze({
+    workstreamEnv: 'GSD_WORKSTREAM',
+    startSteps: (ctx: RoleWorkContext) => (ctx.isLead ? GSD_LEAD_STEPS : GSD_WORKER_STEPS),
+  }),
 })
 
 /** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */

@@ -191,6 +191,24 @@ export const ARTIFACT = Object.freeze({
   gsdKickoffVerify: 'Verify with /gsd-validate-phase N and /gsd-code-review N.',
   gsdHumanGates: 'Human gates:',
   gsdGateLine: '- {where}: {kickoff}',
+  gsdStepNewProject:
+    `If this checkout has no .planning/ yet, run /gsd-new-project here first, deciding its questions yourself ${
+    ''}under autopilot.`,
+  gsdStepNewProjectNoLead:
+    `If your team has no TL and this checkout has no .planning/ yet, run /gsd-new-project here first, deciding ${
+    ''}its questions yourself under autopilot; a checkout that has .planning/ skips this.`,
+  gsdStepWorkstream:
+    `Create your own workstream with GSD's own tool through its resolver: workstream.create "$GSD_WORKSTREAM" ${
+    ''}--no-migrate (a re-run reports that it exists).`,
+  gsdStepMilestoneLead:
+    `If your workstream has no ROADMAP.md, run /gsd-new-milestone in it with the epic as the milestone ${
+    ''}(GSD-epic mode), deciding its questions yourself under autopilot.`,
+  gsdStepMilestoneWorker:
+    `If your workstream has no ROADMAP.md, run /gsd-new-milestone in it with TL's task as the milestone goal, ${
+    ''}deciding its questions yourself under autopilot.`,
+  gsdStepPath:
+    `Then take a small ticket through /gsd-quick, and a large one through /gsd-phase add, /gsd-plan-phase and ${
+    ''}/gsd-execute-phase.`,
   // framework/superpowers/adapter.ts
   spGateBrainstormWhere: 'superpowers:brainstorming hard gate',
   spGateBrainstorm:
@@ -227,6 +245,12 @@ export const ARTIFACT = Object.freeze({
     ''}questions to their owner role instead.`,
   spHumanGates: 'Human gates:',
   spGateLine: '- {where}: {kickoff}',
+  spStepSpec: 'Write the spec to docs/superpowers/specs/tl-<ticket>.md, then write your own plan from it.',
+  spStepPlan:
+    `Write your plan with superpowers:writing-plans; your plan location preference is ${
+    ''}docs/superpowers/plans/{roleId}-<ticket>.md.`,
+  spStepMethod:
+    'Execute your plan with superpowers:subagent-driven-development; never ask which execution method to use.',
   // framework/none/adapter.ts
   builtinGateExitWhere: 'ExitPlanMode',
   builtinGateExit: 'Never call ExitPlanMode (it waits for a human); write the plan file instead.',

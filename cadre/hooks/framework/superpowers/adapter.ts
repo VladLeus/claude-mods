@@ -11,6 +11,7 @@ import type {
   PluginFlag,
   PluginVersion,
   RepoEntry,
+  RoleWorkContext,
   SkillRef,
 } from '../../../types'
 import { freezeRows } from '../../core/freeze'
@@ -208,6 +209,16 @@ export function superpowersKickoffText(ctx: KickoffContext): string {
 }
 
 /**
+ * The steps a role on superpowers runs to start its planning: the lead writes the spec first; every role writes its
+ * plan to its role-named file and executes it subagent-driven.
+ */
+function superpowersStartSteps(ctx: RoleWorkContext): readonly string[] {
+  const plan = [fill(ARTIFACT.spStepPlan, { roleId: ctx.roleId }), ARTIFACT.spStepMethod]
+
+  return Object.freeze(ctx.isLead ? [ARTIFACT.spStepSpec, ...plan] : plan)
+}
+
+/**
  * The superpowers adapter: the contract every framework implements, filled for superpowers. Its gate table and kickoff
  * are the ones the role kickoff names, so the two stay in step. It declares no autonomy settings, and its note says
  * why.
@@ -264,5 +275,5 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
     isPlugin: true,
   }),
   factsHeading: null,
-  roleWork: Object.freeze({ workstreamEnv: null, startSteps: () => Object.freeze([]) }),
+  roleWork: Object.freeze({ workstreamEnv: null, startSteps: superpowersStartSteps }),
 })
