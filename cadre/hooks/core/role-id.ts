@@ -8,10 +8,11 @@
 export const ROLE_ID_PATTERN = /^[a-z][a-z0-9-]{0,23}$/
 
 /**
- * Slugs a role can never take: `bin` is the launcher folder `.cadre/bin/` (Pitfall 7), and `all` and `none` are the
- * answer words of init's "which roles get this?" questions, so a role named so could never be picked alone.
+ * Slugs a role can never take: `bin` is the launcher folder `.cadre/bin/` (Pitfall 7), `all` and `none` are the
+ * answer words of init's "which roles get this?" questions, so a role named so could never be picked alone, and
+ * `cadre` is the sender cadre signs its own inbox entries with.
  */
-export const RESERVED_ROLE_IDS: readonly string[] = Object.freeze(['bin', 'all', 'none'])
+export const RESERVED_ROLE_IDS: readonly string[] = Object.freeze(['bin', 'all', 'none', 'cadre'])
 
 /**
  * Whether a text is a usable role id: it matches ROLE_ID_PATTERN exactly, with no case folding, and is not one of

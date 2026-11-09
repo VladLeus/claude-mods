@@ -1206,6 +1206,7 @@ export const EN = Object.freeze({
   'roles.validate.validateRoleId': 'role id "bin" is reserved: it is the launcher folder .cadre/bin/',
   'roles.validate.validateRoleId2': 'role id "{id}" is reserved: all and none are answer words in init questions',
   'roles.validate.validateRoleId3': 'role id "{id}" must be {slugRule}',
+  'roles.validate.validateRoleIdCadre': 'role id "cadre" is reserved: cadre signs its own inbox entries with it',
   'roles.validate.idProblems': 'duplicate role id "{id}"',
   'roles.validate.validateRoles': 'no roles: describe at least one role',
   'roles.validate.validateRoles2': 'at most {maxRoles} roles (got {count})',

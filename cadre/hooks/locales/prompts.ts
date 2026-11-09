@@ -197,7 +197,7 @@ export function proposeSystemText(maxRoles: number): string {
     'You turn a description of how a person wants to split their work into roles into a list of roles.',
     'Answer only with JSON of the shape {"roles":[{"id","title","purpose","basedOn"}]}, with no text around it.',
     'Each id is a lowercase slug: a letter, then lowercase letters, digits or dashes, 24 characters at most.',
-    'The ids "bin", "all" and "none" are not allowed.',
+    'The ids "bin", "all", "none" and "cadre" are not allowed.',
     `Give at most ${maxRoles} roles, and each id once.`,
     'title is the short name shown to people, and purpose is one sentence on what the role does.',
     'basedOn is the allowed template id the role is most like, or null when none fits.',

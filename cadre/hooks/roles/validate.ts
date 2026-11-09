@@ -11,6 +11,7 @@ import { MAX_HOOK_NAME_CHARS } from '../core/names'
 import { MAX_REPLY_ERRORS } from '../core/reply'
 import { isRoleId, RESERVED_ROLE_IDS } from '../core/role-id'
 import { clean, idLabel } from '../core/text'
+import { CONTRACTS } from '../locales/contracts'
 import { t } from '../locales/t'
 import { ROLE_TEMPLATE } from './template'
 import type { RoleTraits } from './template'
@@ -49,11 +50,13 @@ export function purposeOf(raw: string): string | null {
 }
 
 /**
- * Why a role id cannot be used, or null when it can (D-48, isRoleId). The id must match the slug pattern exactly, with
- * no case folding; `bin` is taken by the launcher folder `.cadre/bin/`, and `all` and `none` by the answer words.
+ * Why a role id cannot be used, or null when it can (isRoleId). The id must match the slug pattern exactly, with no
+ * case folding; `bin` is taken by the launcher folder `.cadre/bin/`, `cadre` by the sender of cadre's own inbox
+ * entries, and `all` and `none` by the answer words.
  */
 export function validateRoleId(id: string): string | null {
   if (id === 'bin') return t('roles.validate.validateRoleId')
+  if (id === CONTRACTS.cadreSender) return t('roles.validate.validateRoleIdCadre')
   if (RESERVED_ROLE_IDS.includes(id)) {
     return t('roles.validate.validateRoleId2', { id: idLabel(id) })
   }
