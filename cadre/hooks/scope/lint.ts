@@ -120,15 +120,16 @@ export function ownRoots(id: string): ReadonlySet<string> {
 
 /**
  * Whether a deny pattern blocks an infra tool. A rule with an argument on an infra tool other than Skill
- * (`PushNotification(*)`) blocks it; `Skill(<name>)` blocks only the skills it can match. A pattern with a glob
- * character counts up to its first one, so `mcp__*` and `mcp__au*` cover `mcp__autopilot__wait_for`. A literal pattern
- * blocks only an infra name it equals, or the tools of a server it names (`mcp__autopilot` covers
- * `mcp__autopilot__wait_for`), so `mcp__a` and `mcp__autopilot__wait` block nothing of the infra (B9).
+ * (`PushNotification(*)`) or on one of cadre's tools (`mcp__cadre__inbox_send(*)`) blocks it; `Skill(<name>)` blocks
+ * only the skills it can match. A pattern with a glob character counts up to its first one, so `mcp__*` and
+ * `mcp__au*` cover `mcp__autopilot__wait_for`. A literal pattern blocks only an infra name it equals, or the tools of a
+ * server it names (`mcp__autopilot` covers `mcp__autopilot__wait_for`), so `mcp__a` and `mcp__autopilot__wait` block
+ * nothing of the infra (B9).
  */
 function blocksInfra(pattern: string): boolean {
   const open = pattern.indexOf('(')
   const tool = open < 0 ? pattern : pattern.slice(0, open)
-  if (INFRA_TOOLS.includes(tool) && (open < 0 || tool !== 'Skill')) return true
+  if ((INFRA_TOOLS.includes(tool) || CADRE_TOOLS.includes(tool)) && (open < 0 || tool !== 'Skill')) return true
   if (GLOB_CHARS.test(pattern)) {
     const literal = pattern.split(GLOB_CHARS)[0] ?? ''
 
