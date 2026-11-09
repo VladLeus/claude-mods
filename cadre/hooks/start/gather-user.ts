@@ -223,8 +223,9 @@ async function jsonOf(io: InitIo, path: string): Promise<unknown> {
 }
 
 /**
- * The install path installed_plugins.json records for MATTPOCOCK_PLUGIN: the first entry for this repo, else the first
- * user entry. Null when that entry has no absolute path.
+ * The install path installed_plugins.json records for MATTPOCOCK_PLUGIN: the first entry for this repo, one for the
+ * root, the root as given or the main checkout of a nested worktree (`roots`), else the first user entry. Null when
+ * that entry has no absolute path.
  */
 function installPathOf(value: unknown, roots: readonly string[]): string | null {
   if (!isObject(value) || !isObject(value.plugins) || !Object.hasOwn(value.plugins, MATTPOCOCK_PLUGIN)) return null
@@ -262,11 +263,10 @@ function skillListOf(value: unknown): string[] | null {
 async function pluginSkillsOf(
   io: InitIo,
   userDir: string,
-  root: string,
-  givenRoot: string,
+  roots: readonly string[],
 ): Promise<Record<string, readonly string[]>> {
   const installed = await jsonOf(io, `${userDir}/plugins/installed_plugins.json`)
-  const installPath = installPathOf(installed, [root, givenRoot])
+  const installPath = installPathOf(installed, roots)
   if (installPath === null) return {}
   const skills = skillListOf(await jsonOf(io, `${installPath}/.claude-plugin/plugin.json`))
 
@@ -345,8 +345,9 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
  *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
  *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
  *   skills and agents, and the code dirs given;
- * - the skill list of the installed mattpocock-skills (pluginSkillsOf) and the plugins the repo's settings file turns
- *   on (projectPluginsOf), each set only when there is one;
+ * - the skill list of the installed mattpocock-skills (pluginSkillsOf), whose install entry is looked up over the same
+ *   roots as the user folder, and the plugins the repo's settings file turns on (projectPluginsOf), each set only when
+ *   there is one;
  * - for a parts-flow role (isPartsFlowRole), the memories its hand-out record names, linked into its role memory
  *   folder with cadre's MEMORY.md block (linkedMemoriesOf, G-02-1f, D-140 q3-a): their link paths are the user's
  *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
@@ -377,7 +378,8 @@ export async function gatherLaunchUser(
   const commonDir = await gitCommonDirOf(io, host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
   const main = mainCheckoutOf(commonDir.gitCommonDir, locations.root)
-  const userDir = userDirOf(locations, [locations.root, locations.givenRoot, ...(main === null ? [] : [main])], [])
+  const roots = [locations.root, locations.givenRoot, ...(main === null ? [] : [main])]
+  const userDir = userDirOf(locations, roots, [])
   // Fail closed: with a home, userDirOf always gives a folder.
   if (userDir === null) return { kind: 'refuse', text: START_NO_HOME }
   const levels = roleFolderLevels(roleMemoryDir({ userDir, ...commonDir }, input.role.id))
@@ -393,7 +395,7 @@ export async function gatherLaunchUser(
   }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
-  const pluginSkills = await pluginSkillsOf(io, userDir, locations.root, locations.givenRoot)
+  const pluginSkills = await pluginSkillsOf(io, userDir, roots)
   const projectPlugins = await projectPluginsOf(io, locations.root)
   const user: LaunchUser = {
     root: locations.root,
