@@ -16,9 +16,11 @@ import { NO_SURFACE } from '../ui/surfaces/none'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
 import { initialState, nextStage, STAGES } from './machine'
 import { INIT_CANCELLED } from './replies'
+import { STAGE_ORDER } from './state'
 import type { Answer, InitState } from './state'
 import { assignStage } from './stages/assign'
 import { instructionsStage } from './stages/instructions'
+import { pmPluginStage } from './stages/pm-plugin'
 import { policyStage } from './stages/policy'
 
 /** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
@@ -46,6 +48,14 @@ describe('init stage machine (D-230)', () => {
     expect(state.outputs).toEqual([])
     expect(state.returnTo).toBeNull()
     expect(initialState(false).dryRun).toBe(false)
+  })
+
+  test('the PM plugin stage comes right after the assignments, before the instructions and improver install', () => {
+    const at = STAGE_ORDER.indexOf('pm-plugin')
+
+    expect([STAGE_ORDER[at - 1], STAGE_ORDER[at + 1]]).toEqual(['assign', 'instructions'])
+    expect(at < STAGE_ORDER.indexOf('improver-install')).toBe(true)
+    expect(STAGES['pm-plugin']).toBe(pmPluginStage)
   })
 
   test('initialState has no page width yet: the run reads it before each step (D-292)', () => {

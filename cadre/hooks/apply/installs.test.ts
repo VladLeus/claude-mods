@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun } from '../../types'
+import { MATTPOCOCK_PLUGIN } from '../roles/infra'
+import { INSTALL_COMMANDS } from '../roles/recommend'
 import { BIDI_OVERRIDE, emptySetupScan, GUIDANCE_KEY, SECURITY_KEY } from '../testkit'
 import {
   frameworkFallbackText,
@@ -155,6 +157,10 @@ describe('project installs', () => {
       isPlugin: true,
     })
     expect([install, install.argv, install.writes].every(part => Object.isFrozen(part))).toBe(true)
+  })
+
+  test('the printed mattpocock-skills command is the argv the project install runs', () => {
+    expect(INSTALL_COMMANDS.mattpocock).toBe(projectPluginInstall(MATTPOCOCK_PLUGIN).argv.join(' '))
   })
 
   test('projectInstallFailureText gives the command to run from the repo root, with the id and command cleaned', () => {
