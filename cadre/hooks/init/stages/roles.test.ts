@@ -281,7 +281,7 @@ describe('adjustLoop', () => {
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'api', 'fe', 'qa', 'security'])
     expect(adjusted?.find(role => role.id === 'api')?.title).toBe('API')
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
-    expect(adjusted?.filter(role => role.framework !== undefined)).toHaveLength(1)
+    expect(adjusted?.filter(role => role.framework !== undefined).map(role => role.id)).toEqual(['pm', 'qa'])
   })
 
   test('Done adjusting gives the adjusted roles, which the roles question still has to confirm', async () => {

@@ -8,9 +8,10 @@
  * check when a user-level GSD is found but not proven (D-243, ASKED #20), only when the check can run and its answer
  * can change something (isGsdCheckUseful, D-269); its result reads again the choice and the frameworks installed for
  * the repo (installedFrameworks), which the roles stage's Adjust loop offers (withGsdIdentityChecked, edge #30). The
- * install question offers a framework the repo does not have (frameworkInstallAsk). Pure: it gives states and never
- * performs an effect, imports apply/installs, core, detect, framework, ui/ask, init/state and init/stages/model (the
- * answer modes and teamContextLine), and never imports init/machine or init/run.
+ * install question offers a framework the repo does not have (frameworkInstallAsk). A role standing for PM on none
+ * keeps none: the answer for all roles skips it and the per-role question does not ask it. Pure: it gives states and
+ * never performs an effect, imports apply/installs, core, detect, framework, roles/template, ui/ask, init/state and
+ * init/stages/model (the answer modes and teamContextLine), and never imports init/machine or init/run.
  */
 import type { AskContext, Choice, ContextRow, Detection, Facts, FrameworkId, GsdFact, RoleSpec } from '../../../types'
 import { projectInstallOf } from '../../apply/installs'
@@ -23,6 +24,7 @@ import { chooseFramework } from '../../framework/contract'
 import { needsGsdCheck, withGsdIdentity } from '../../framework/gsd/identity'
 import { detectAll } from '../../framework/registry'
 import { t } from '../../locales/t'
+import { standsFor } from '../../roles/template'
 import {
   ASK_HEADERS,
   choiceAnswer,
@@ -88,6 +90,11 @@ function parseFramework(answer: string, allowed: readonly FrameworkId[]): Framew
 /** The role with its framework set. */
 function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
   return { ...role, framework }
+}
+
+/** Whether a role stands for PM and runs on none: the framework questions leave it on none. */
+function isPmOnNone(role: RoleSpec): boolean {
+  return standsFor(role, 'pm') && role.framework === 'none'
 }
 
 /** Why init cancels when a framework question is dismissed or not answered (A1, D-45). */
@@ -175,10 +182,16 @@ function framedDone(state: InitState, roles: readonly RoleSpec[], repoDefault: F
   return stageDone({ ...state, draft: { ...state.draft, roles, repoDefault } })
 }
 
-/** The framework question of the role at `index`, asked `tries` times so far, with the roles framed before it. */
+/**
+ * The framework question of the role at `index`, asked `tries` times so far, with the roles framed before it; a PM on
+ * none is framed as it is and not asked.
+ */
 function roleAsked(state: InitState, choice: AskedChoice, roles: readonly RoleSpec[], cursor: EachCursor): InitState {
   const role = roles[cursor.index]
   if (role === undefined) return framedDone(state, cursor.done, null)
+  if (isPmOnNone(role)) {
+    return roleAsked(state, choice, roles, { ...cursor, index: cursor.index + 1, done: [...cursor.done, role] })
+  }
 
   return asked(state, { kind: 'each', ...cursor }, frameworkAsk(choice, frameworkRoleQuestion(role), roles), null)
 }
@@ -416,8 +429,9 @@ function frameworkAnswer(state: InitState, answer: Answer): InitState {
       const next = choiceAnswer(ask, sub, answer.text)
       if (next.kind === 'again') return asked(state, { kind: 'all', tries: next.sub.tries }, ask, next.question)
       if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+      const framed = roles.map(role => (isPmOnNone(role) ? role : withFramework(role, next.value)))
 
-      return framedDone(state, roles.map(role => withFramework(role, next.value)), null)
+      return framedDone(state, framed, null)
     }
     case 'each': {
       const role = roles[sub.index]

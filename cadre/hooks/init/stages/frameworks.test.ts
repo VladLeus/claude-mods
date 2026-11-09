@@ -268,7 +268,7 @@ describe('frameworkStep', () => {
   })
 
   test("resolvedFramework is the role's own framework, else the repo default, else none", () => {
-    const [role] = roles
+    const role = roles.find(candidate => candidate.id === 'tl')
     if (role === undefined) throw new Error('no template role')
     expect(resolvedFramework(withFramework(role, 'superpowers'), 'gsd')).toBe('superpowers')
     expect(resolvedFramework(role, 'gsd')).toBe('gsd')

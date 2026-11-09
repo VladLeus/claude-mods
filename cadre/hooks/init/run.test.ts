@@ -3321,7 +3321,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.adjusted, 'Adjust the roles', 'Adjust'],
       [runs.adjusted, 'Describe your role structure', 'Describe'],
       [runs.perRole, 'Which framework do the roles use', 'Framework'],
-      [runs.perRole, 'Framework for PM (pm)?', 'Framework'],
+      [runs.perRole, 'Framework for Team Lead (tl)?', 'Framework'],
       [runs.security, 'Install from claude-plugins-official', 'Security'],
       [runs.plain, 'Autopilot duration', 'Duration'],
       [runs.plain, 'Model and effort: same', 'Model'],
@@ -3425,7 +3425,7 @@ describe('question context lines (G-02-1)', () => {
         'For example: a PM, one full-stack developer, and a QA who also covers security.',
       ],
       [runs.perRole, FRAMEWORK_QUESTION_PREFIX, `Roles: ${TEAM}.`],
-      [runs.perRole, 'Framework for PM (pm)?', `Roles: ${TEAM}.`],
+      [runs.perRole, 'Framework for Team Lead (tl)?', `Roles: ${TEAM}.`],
       [
         runs.security,
         SECURITY_INSTALL_PREFIX,
@@ -4912,9 +4912,10 @@ describe('init apply hunks (D-120)', () => {
       ])
       expect(reply).not.toContain('denied')
       expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
-      for (const id of ['pm', 'security', 'tl']) {
+      const attended: readonly (readonly [string, boolean])[] = [['pm', false], ['security', true], ['tl', true]]
+      for (const [id, isAttended] of attended) {
         const role = host.writes.find(write => write.path === `/repo/.cadre/${id}/ROLE.md`)?.text ?? ''
-        expect([id, role.includes(ATTENDED_BANNER)]).toEqual([id, true])
+        expect([id, role.includes(ATTENDED_BANNER)]).toEqual([id, isAttended])
       }
     },
   )
@@ -5098,9 +5099,9 @@ describe('a consented framework install after Confirm', () => {
     return installs === null ? draft : { ...draft, frameworkInstalls: installs }
   }
 
-  /** A draft of be on gsd and pm on the repo default, with these frameworks installed and GSD's install consented. */
+  /** A draft of be on gsd and tl on the repo default, with these frameworks installed and GSD's install consented. */
   function gsdDraft(installed: readonly FrameworkId[], repoDefault: FrameworkId = 'none'): Draft {
-    const roles = [withFramework(templateRole('be'), 'gsd'), templateRole('pm')]
+    const roles = [withFramework(templateRole('be'), 'gsd'), templateRole('tl')]
 
     return wholeDraft({ roles, installed, repoDefault, frameworkInstalls: ['gsd'] })
   }
@@ -5269,7 +5270,7 @@ describe('a consented framework install after Confirm', () => {
     const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
     const left = await applied(gsdDraft(['gsd', 'superpowers', 'none'], 'gsd'), failing)
     const none = await applied(gsdDraft(['gsd', 'none'], 'gsd'), failing)
-    const lines = (host: MemHost): string[] => ['be', 'pm'].map(id => frameworkLineOf(host, id))
+    const lines = (host: MemHost): string[] => ['be', 'tl'].map(id => frameworkLineOf(host, id))
 
     expect(lines(left.host)).toEqual(['Framework: superpowers.', 'Framework: superpowers.'])
     expect(lines(none.host)).toEqual(['Framework: built-in.', 'Framework: built-in.'])

@@ -7,6 +7,7 @@
 import type {
   DecisionType,
   Effort,
+  FrameworkId,
   PermissionMode,
   ProposedRole,
   RoleCarry,
@@ -31,6 +32,8 @@ export type TemplateRole = {
   readonly hasBash: boolean
   /** Whether the role starts with `--ask-user` (D-10). */
   readonly askUser: boolean
+  /** The role's own framework; absent for a role that takes the repo default. */
+  readonly framework?: FrameworkId
 }
 
 /** The role template in the order every proposal and every change list keeps: PM, TL, BE, FE, QA, Security. */
@@ -41,6 +44,7 @@ export const ROLE_TEMPLATE: readonly TemplateRole[] = freezeRows([
     purpose: ARTIFACT.templatePmPurpose,
     hasBash: false,
     askUser: true,
+    framework: 'none',
   },
   {
     id: 'tl',
@@ -107,10 +111,11 @@ export const NO_TESTS_REASON = t('roles.template.noTestsReason')
 /** Why BE is dropped (D-85): no source file at all. */
 export const NO_SOURCE_REASON = t('roles.template.noSourceReason')
 
-/** What a role's base decides: whether it has Bash and whether it asks the person. */
+/** What a role's base decides: whether it has Bash, whether it asks the person, and its own framework if any. */
 export type RoleTraits = {
   readonly hasBash: boolean
   readonly askUser: boolean
+  readonly framework?: FrameworkId
 }
 
 /** A role with the defaults every role shares and the traits its base decides: no MCP, no skills, nothing carried. */
@@ -129,6 +134,7 @@ export function roleOf(proposed: ProposedRole, traits: RoleTraits): RoleSpec {
     skills: [],
     instructions: [],
     carry: EMPTY_CARRY,
+    ...(traits.framework === undefined ? {} : { framework: traits.framework }),
   }
 }
 

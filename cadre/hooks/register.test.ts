@@ -3514,7 +3514,7 @@ type WorldExpect = {
 /** The four framework worlds of the matrix, each with the name its tests carry and what only that world shows. */
 const FRAMEWORK_WORLDS: readonly (readonly [string, () => World, WorldExpect])[] = [
   ['GSD only', gsdOnlyWorld, { hunks: 2, frameworkAsks: 0, card: null }],
-  ['superpowers only', superpowersOnlyWorld, { hunks: 0, frameworkAsks: 0, card: 'framework: superpowers;' }],
+  ['superpowers only', superpowersOnlyWorld, { hunks: 0, frameworkAsks: 0, card: 'framework: built-in;' }],
   ['ambiguous', initWorld, { hunks: 2, frameworkAsks: 1, card: null }],
   ['no framework', noFrameworkWorld, { hunks: 0, frameworkAsks: 0, card: 'framework: built-in;' }],
 ]

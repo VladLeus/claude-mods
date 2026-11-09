@@ -443,7 +443,7 @@ describe('runRegen', () => {
   test('with no repo default, the first role in cadre.json order with no framework refuses, naming it', async () => {
     const cases: readonly (readonly [readonly RoleSpec[], string])[] = [
       [team, regenNeedsFramework('be')],
-      [[withFramework(templateRole('be'), 'gsd'), templateRole('pm')], regenNeedsFramework('pm')],
+      [[withFramework(templateRole('be'), 'gsd'), templateRole('tl')], regenNeedsFramework('tl')],
     ]
     for (const [roles, text] of cases) expect(await regenBe(await regenWorld(roles, { framework: null }))).toBe(text)
     const framed = team.map(role => withFramework(role, 'none'))

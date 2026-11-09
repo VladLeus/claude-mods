@@ -224,7 +224,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/pm/role.json",
-        "sha256": "f9f23e920d313fa7baa6f8d1cab14189428d7c7a2a6bf1825baa2b4748896fed",
+        "sha256": "1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68",
         "isWritten": true
       },
       {
@@ -304,7 +304,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "08914686718c7ab04719a4f539f8957db4cdb06fcd7f214d0d1955cb6aedce58",
+        "sha256": "3ca18446903c204d0db39e5ecbdb71e70d1165a68e0e2d5a055e3d2d11c69fd3",
         "isWritten": true
       }
     ],
@@ -366,7 +366,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/role.json\",",
-      "      \"sha256\": \"f9f23e920d313fa7baa6f8d1cab14189428d7c7a2a6bf1825baa2b4748896fed\"",
+      "      \"sha256\": \"1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -640,7 +640,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
     "writes": [
       {
         "path": "/repo/.cadre/INDEX.md",
-        "sha256": "6187ff0cb34a9d46afe5bc5aab0cb9ee963e8405e00d6770e0dd99d4e0e4ff1b",
+        "sha256": "e395d9e6738c8d0bf3f421b6ab3b760337b4589b9d0f1832ee1ab2a5ac6e0af9",
         "isWritten": true
       },
       {
@@ -670,12 +670,12 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/pm/ROLE.md",
-        "sha256": "865e51b739884191a81fc3dd74dba78ea0ed49387c51128f7eb391ae8288a2a8",
+        "sha256": "645c33dd1b97dd7550238b171d3991df968b703c8d32e5c9fd7449d3d0ddc445",
         "isWritten": true
       },
       {
         "path": "/repo/.cadre/pm/kickoff.txt",
-        "sha256": "7d54ac00f2ef4507e6fdffdfacd325d437f817166abf98a77422de0e165e7eb6",
+        "sha256": "22fd17861d0629a70ab5904a951f67f987df2363dbb05d382ba37bfe8ca173da",
         "isWritten": true
       },
       {
@@ -685,7 +685,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/pm/role.json",
-        "sha256": "f9f23e920d313fa7baa6f8d1cab14189428d7c7a2a6bf1825baa2b4748896fed",
+        "sha256": "1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68",
         "isWritten": true
       },
       {
@@ -765,7 +765,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "14560bf87e2044ea3382290dec32b3a29be52d80fad3ff577322c688a7e51f54",
+        "sha256": "15784834de17705e78580ce7ffa1750e652d99e5cce0fb93ea57d7bf6b24ab1e",
         "isWritten": true
       }
     ],
@@ -783,7 +783,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/INDEX.md\",",
-      "      \"sha256\": \"6187ff0cb34a9d46afe5bc5aab0cb9ee963e8405e00d6770e0dd99d4e0e4ff1b\"",
+      "      \"sha256\": \"e395d9e6738c8d0bf3f421b6ab3b760337b4589b9d0f1832ee1ab2a5ac6e0af9\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",
@@ -813,12 +813,12 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/ROLE.md\",",
-      "      \"sha256\": \"865e51b739884191a81fc3dd74dba78ea0ed49387c51128f7eb391ae8288a2a8\"",
+      "      \"sha256\": \"645c33dd1b97dd7550238b171d3991df968b703c8d32e5c9fd7449d3d0ddc445\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/kickoff.txt\",",
-      "      \"sha256\": \"7d54ac00f2ef4507e6fdffdfacd325d437f817166abf98a77422de0e165e7eb6\"",
+      "      \"sha256\": \"22fd17861d0629a70ab5904a951f67f987df2363dbb05d382ba37bfe8ca173da\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -828,7 +828,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/role.json\",",
-      "      \"sha256\": \"f9f23e920d313fa7baa6f8d1cab14189428d7c7a2a6bf1825baa2b4748896fed\"",
+      "      \"sha256\": \"1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
