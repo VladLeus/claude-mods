@@ -1032,6 +1032,9 @@ export const EN = Object.freeze({
 
   'team.noStateReply': 'cadre {command} needs .cadre/cadre.json from /cadre init: run /cadre init first.',
   'team.regenBadState': '.cadre/cadre.json is not valid: fix it, or run /cadre init again.',
+  'team.regenCadreRole':
+    `.cadre/cadre.json lists the role id "cadre", which is reserved: cadre signs its own inbox entries with it. ${
+    ''}Run /cadre init again and give that role another id.`,
   'team.regenNoRole': 'no role {id} in .cadre/cadre.json (roles: {roles})',
   'team.regenBadRole': '.cadre/{id}/role.json is missing or not valid: fix it, or run /cadre init again.',
   'team.regenNeedsFramework':

@@ -28,7 +28,7 @@ import { gatherScans } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { readRepoFile } from './scan/port-read'
 import { compileScope } from './scope/compile'
-import { parseCadreState } from './state/cadre-files'
+import { listsCadreRole, parseCadreState } from './state/cadre-files'
 
 /** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */
 export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | null): FrameworkId {
@@ -124,6 +124,9 @@ export const REGEN_NO_STATE = noStateReply('regen')
  */
 export const REGEN_BAD_STATE = t('team.regenBadState')
 
+/** The reply when `.cadre/cadre.json` lists the role id cadre, which is reserved: it names the rename. */
+export const REGEN_CADRE_ROLE = t('team.regenCadreRole')
+
 /** The reply when `.cadre/cadre.json` does not list the role asked for: it names the roles listed, or none. */
 export function regenNoRole(id: string, roles: readonly string[]): string {
   return t('team.regenNoRole', { id, roles: idsOrNone(roles, SCREEN_LIST_WORDS.none) })
@@ -155,8 +158,9 @@ export function regenRefusal(text: string): RegenRead<never> {
 /**
  * The repo state regen re-renders from, and /cadre start and /cadre status work from (D-68, T-02-36):
  * `.cadre/cadre.json` read through readRepoFile, so a link out of the repo is never read, and checked by
- * parseCadreState. A missing file refuses with noStateReply, worded for `command`; a file that cannot be read, is too
- * large or is not valid state refuses with REGEN_BAD_STATE, and so does a stored launcher folder that is not a folder
+ * parseCadreState. A missing file refuses with noStateReply, worded for `command`; a state that is not valid because
+ * it lists the reserved role id cadre refuses with REGEN_CADRE_ROLE; a file that cannot be read, is too large or is
+ * not valid state otherwise refuses with REGEN_BAD_STATE, and so does a stored launcher folder that is not a folder
  * inside the repo (isRepoFolder).
  */
 async function regenState(
@@ -167,6 +171,7 @@ async function regenState(
   const read = await readRepoFile(io, root, cadreStatePath(), MAX_READ_BYTES)
   if (read.state === 'absent') return regenRefusal(noStateReply(command))
   const state = read.state === 'text' ? parseCadreState(read.text) : null
+  if (state === null && read.state === 'text' && listsCadreRole(read.text)) return regenRefusal(REGEN_CADRE_ROLE)
   if (state === null) return regenRefusal(REGEN_BAD_STATE)
   const start = state.launchStart
   if (start.kind === 'dir' && !(await isRepoFolder(io, root, start.path))) return regenRefusal(REGEN_BAD_STATE)
@@ -214,11 +219,12 @@ export type TeamState = {
 /**
  * The team regen, /cadre start and /cadre status read before they plan or launch anything (D-68, T-02-36). It refuses
  * with an exact reply in this order, which is runRegen's: no `.cadre/cadre.json` (noStateReply, worded for
- * `command`); a cadre.json that cannot be read or is not valid, its stored launcher folder included (REGEN_BAD_STATE);
- * an `id` it does not list (regenNoRole); the first listed role.json, in cadre.json order, that is missing, not valid
- * or holds another id (regenBadRole); and, when the repo has no default framework, the first listed role with none of
- * its own (regenNeedsFramework, D-73). A null `id` (/cadre epic, which asks for no one role) reads the whole team, so
- * the regenNoRole check is skipped. It asks nothing and writes nothing.
+ * `command`); a cadre.json that lists the reserved role id cadre (REGEN_CADRE_ROLE); a cadre.json that cannot be read
+ * or is not valid, its stored launcher folder included (REGEN_BAD_STATE); an `id` it does not list (regenNoRole); the
+ * first listed role.json, in cadre.json order, that is missing, not valid or holds another id (regenBadRole); and,
+ * when the repo has no default framework, the first listed role with none of its own (regenNeedsFramework, D-73). A
+ * null `id` (/cadre epic, which asks for no one role) reads the whole team, so the regenNoRole check is skipped. It
+ * asks nothing and writes nothing.
  */
 export async function readTeam(
   io: InitIo,

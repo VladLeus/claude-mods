@@ -8,6 +8,7 @@ import { isFrameworkId } from '../core/framework-id'
 import { isObject, parseJsonValue } from '../core/json'
 import { SHA256_HEX } from '../core/names'
 import { isRoleId } from '../core/role-id'
+import { CONTRACTS } from '../locales/contracts'
 import { isSafeRelativePath } from '../paths'
 
 /** A cadre version as the manifest and the state file record it: three numbers joined by dots. */
@@ -103,4 +104,12 @@ export function parseCadreState(text: string): CadreState | null {
     launchStart,
     readUserMcp: value.readUserMcp,
   }
+}
+
+/** Whether the text of `.cadre/cadre.json` lists the role id cadre keeps as the sender of its own inbox entries. */
+export function listsCadreRole(text: string): boolean {
+  const value = parseJsonValue(text)?.value
+  const roles = isObject(value) ? value.roles : undefined
+
+  return Array.isArray(roles) && roles.includes(CONTRACTS.cadreSender)
 }
