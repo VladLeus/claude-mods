@@ -47,6 +47,7 @@ import {
   installedFrameworks,
   isGsdCheckUseful,
   parseFrameworkInstall,
+  withConsentedInstall,
 } from './frameworks'
 import { teamContextLine } from './model'
 
@@ -537,6 +538,27 @@ describe('the GSD check only when it can run and matter (D-269)', () => {
     const after = [merged.draft.installed, merged.draft.choice, merged.draft.gsdCheck]
     expect(after).toEqual([['gsd', 'none'], installedOnly, 'run'])
   })
+
+  test('a Yes whose check proves GSD keeps a framework consented from Adjust, and the set question keeps both', () => {
+    const team = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
+    const entry = entryWith([UNPROVEN], {}, { kind: 'none' }, team)
+    const consented: InitState['draft'] = {
+      ...entry.draft,
+      installed: ['superpowers', 'none'],
+      frameworkInstalls: ['superpowers'],
+    }
+    const asked = frameworksStage.enter({ ...entry, draft: consented })
+    const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
+    const merged = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: PROBED } })
+    expect([merged.draft.installed, merged.draft.frameworkInstalls]).toEqual([
+      ['gsd', 'superpowers', 'none'],
+      ['superpowers'],
+    ])
+    expect([merged.sub, merged.openQuestion?.spec.options]).toEqual([
+      { kind: 'set', tries: 1 },
+      [KEEP_BOTH, 'None (built-in)'],
+    ])
+  })
 })
 
 /** A detection of one framework or marker with this status, as detectAll gives it. */
@@ -568,6 +590,24 @@ describe('installedFrameworks (A5)', () => {
     ])
     expect(installedFrameworks([detection('aidlc', 'unsupported'), detection('gsd', 'not-found')])).toEqual(['none'])
     expect(installedFrameworks(detectAll(AMBIGUOUS_FACTS))).toEqual(['gsd', 'superpowers', 'none'])
+  })
+})
+
+describe('a consented framework install', () => {
+  test('a new one joins the installed ones before none, and the installs', () => {
+    const draft = withConsentedInstall({ installed: ['gsd', 'none'] }, 'superpowers')
+    expect([draft.installed, draft.frameworkInstalls]).toEqual([['gsd', 'superpowers', 'none'], ['superpowers']])
+  })
+
+  test('one consented already is kept once in each list', () => {
+    const consented: InitState['draft'] = { installed: ['superpowers', 'none'], frameworkInstalls: ['superpowers'] }
+    const draft = withConsentedInstall(consented, 'superpowers')
+    expect([draft.installed, draft.frameworkInstalls]).toEqual([['superpowers', 'none'], ['superpowers']])
+  })
+
+  test('a draft with no installed ones gets the framework, then none', () => {
+    const draft = withConsentedInstall({}, 'gsd')
+    expect([draft.installed, draft.frameworkInstalls]).toEqual([['gsd', 'none'], ['gsd']])
   })
 })
 

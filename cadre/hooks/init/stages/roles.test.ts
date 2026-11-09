@@ -777,6 +777,19 @@ describe('the GSD check an Adjust that names gsd asks (D-269, edge #35)', () => 
     expect(dismissed.effect).toEqual({ kind: 'end', reply: cancelledReply(GSD_CHECK_DISMISSED_REASON) })
   })
 
+  test('a framework consented before the check stays installed, so a later Adjust to it asks no install', () => {
+    const install = nextStage(adjusting(), { kind: 'answer', text: 'framework tl superpowers' })
+    const consented = nextStage(install, { kind: 'answer', text: 'Yes, install it' })
+    const asked = nextStage(consented, { kind: 'answer', text: 'framework be gsd' })
+    const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
+    const checked = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: PROBED } })
+    const fe = nextStage(checked, { kind: 'answer', text: 'framework fe superpowers' })
+    const frameworkOf = (id: string): FrameworkId | undefined =>
+      fe.sub.kind === 'adjust' ? fe.sub.roles.find(role => role.id === id)?.framework : undefined
+    expect([fe.sub.kind, frameworkOf('be'), frameworkOf('fe')]).toEqual(['adjust', 'gsd', 'superpowers'])
+    expect([fe.draft.frameworkInstalls, fe.draft.installed]).toEqual([['superpowers'], ['gsd', 'superpowers', 'none']])
+  })
+
   test('after a skipped check the Adjust still asks it; after a No or a run it asks the install, not the check', () => {
     const skipped = nextStage(adjusting({ gsdCheck: 'skipped' }), { kind: 'answer', text: GSD_ADJUST })
     expect(skipped.sub.kind).toBe('roles-gsd-check')
