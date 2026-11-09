@@ -8,7 +8,7 @@
 import type { PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
-import { foldersAbove } from '../paths'
+import { foldersAbove, SIZING_RUBRIC_PATH } from '../paths'
 import { WORKTREES_DIR } from './git'
 
 /**
@@ -59,6 +59,11 @@ const GIT_FILE_NAMES: readonly string[] = ['.gitattributes', '.gitignore', '.mai
 /** Whether the last segment of a repo-relative path is one of GIT_FILE_NAMES (03.1 S1). */
 export function isGitFile(path: string): boolean {
   return GIT_FILE_NAMES.includes(path.slice(path.lastIndexOf('/') + 1))
+}
+
+/** Whether a mirror copy is hidden from git by the excludes: a copy of a git file or of the sizing rubric. */
+export function isHiddenCopy(path: string): boolean {
+  return isGitFile(path) || path === SIZING_RUBRIC_PATH
 }
 
 /** A C0 control character or DEL: no gitignore line can hold a name with one (03.1-W2 S2). */
@@ -130,7 +135,10 @@ export function mirrorPaths(
  * - (h) a file whose last segment starts with `.env`, or is `.gitignore`, `.gitattributes` or `.mailmap`
  *   (GIT_FILE_NAMES, which git never reads through a link, 03.1 S1), as the main listing of its folder shows (a regular
  *   file, not a link): a copy step, unless the worktree lists its target;
- * - (i) anything else: a link step to the main checkout's path, unless the worktree lists its target.
+ * - (i) anything else: a link step to the main checkout's path, unless the worktree lists its target;
+ * - (j) once the entries are done, `.cadre/sizing.md` (SIZING_RUBRIC_PATH) when the main listing of `.cadre` shows
+ *   it as a regular file, not a link: the rules above apply first, as for an entry, and then it gets a copy step,
+ *   never a link, so a rubric main has and the worktree lacks is copied into it.
  * A link or copy below a folder the worktree does not list gets a mkdir step for each such folder from the top first,
  * once each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, and the
  * warnings.
@@ -163,7 +171,7 @@ export function mirrorPlan(input: {
   }
   const childrenOf = (folder: string) => sortedUnique((main.get(folder) ?? []).map(entry => entry.name))
 
-  const visit = (path: string): void => {
+  const visit = (path: string, isCopy = false): void => {
     if (isAtOrUnder(path, WORKTREES_DIR)) return
     if (runtimes.some(runtime => isAtOrUnder(path, runtime))) return
     const above = foldersAbove(path)
@@ -197,7 +205,7 @@ export function mirrorPlan(input: {
     placed.add(path)
     const shown = listedEntry(main, path)
     const name = path.slice(path.lastIndexOf('/') + 1)
-    const isCopied = name.startsWith(ENV_PREFIX) || GIT_FILE_NAMES.includes(name)
+    const isCopied = isCopy || name.startsWith(ENV_PREFIX) || GIT_FILE_NAMES.includes(name)
     if (isCopied && shown !== undefined && shown.kind === 'file' && !shown.isLink) {
       steps.push({ kind: 'copy', path: `${worktree}/${path}`, source: `${root}/${path}` })
       copies.push(path)
@@ -207,6 +215,8 @@ export function mirrorPlan(input: {
     links.push(path)
   }
   for (const entry of sortedUnique(input.entries)) visit(entry)
+  const rubric = listedEntry(main, SIZING_RUBRIC_PATH)
+  if (rubric !== undefined && rubric.kind === 'file' && !rubric.isLink) visit(SIZING_RUBRIC_PATH, true)
 
   return { steps, links, copies, warnings }
 }

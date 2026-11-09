@@ -43,10 +43,10 @@ function excludesLine(path: string): string {
 }
 
 /**
- * The text of the worktree's excludes file (D-147): the user's global excludes text, ended with a newline when it is
- * not empty and has none, then EXCLUDES_HEADING, one excludesLine per hidden path (each link, and each copy of a
- * GIT_FILE_NAMES file, 03.1 S1), sorted and once each, and RUNTIME_EXCLUDE_LINE last. The leading `/` matches the link
- * at the worktree root only; an env file copy gets no line, as main ignores it already (D-172).
+ * The text of the worktree's excludes file: the user's global excludes text, ended with a newline when it is not empty
+ * and has none, then EXCLUDES_HEADING, one excludesLine per hidden path (each link, and each copy of a git file or of
+ * the sizing rubric), sorted and once each, and RUNTIME_EXCLUDE_LINE last. The leading `/` matches the link at the
+ * worktree root only; an env file copy gets no line, as main ignores it already (D-172).
  */
 export function excludesText(globalText: string, links: readonly string[]): string {
   const head = globalText === '' || globalText.endsWith('\n') ? globalText : `${globalText}\n`

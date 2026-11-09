@@ -11,7 +11,7 @@ import { attendedNote } from '../framework/gsd/hunks'
 import { gitCommonDirOf } from '../git/common-dir'
 import { hasRunFailed, isStepDone, privateModeArgv } from '../host/steps'
 import { t, tn } from '../locales/t'
-import { displayPath, roleMemoryDir, trimSlash, userDirOf } from '../paths'
+import { displayPath, foldersAbove, roleMemoryDir, trimSlash, userDirOf } from '../paths'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { hunkFailureLine } from './hunks'
@@ -251,6 +251,20 @@ export async function writeSteps(
   allowed: ReadonlySet<string>,
 ): Promise<ApplyOutcome> {
   return (await runSteps(io, host, locations, steps, allowed)).outcome
+}
+
+/** Whether a new file may be written at the repo-relative `path`, with no link, folder or unchecked stat on its way. */
+export async function isNewRepoFileWritable(io: InitIo, root: string, path: string): Promise<boolean> {
+  const base = trimSlash(root)
+  const stats = new Map<string, WriteStat>()
+  for (const key of [...foldersAbove(path), path]) stats.set(key, await io.statForWrite(`${base}/${key}`))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of ['', ...foldersAbove(path)]) {
+    listings.set(folder, await io.list(folder === '' ? base : `${base}/${folder}`))
+  }
+  if (stats.get(path) !== 'absent') return false
+
+  return writeProblem(path, stats, root) === null && listedLinkProblem(path, stats, listings) === null
 }
 
 /** What one run of the steps did: its outcome, and the files it wrote as records, in write order, each once (D-242). */

@@ -24,6 +24,11 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
     ],
     "writes": [
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.git/worktrees/proj-1/cadre-links.exclude",
         "sha256": "5608675a9aba9d732c26529945239c6c9a508850c8201b61dd2cb49c6547d33b",
         "isWritten": true
@@ -31,16 +36,6 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       {
         "path": "/repo/.git/worktrees/proj-1/cadre-epic.json",
         "sha256": "fd4e1658a18531425ae21d3ee54b68c1531a813cd8f5feb5a88faa6ab5a50354",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.cadre/sizing.md",
-        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.claude/worktrees/proj-1/.cadre/sizing.md",
-        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
         "isWritten": true
       },
       {
@@ -145,6 +140,11 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
     ],
     "writes": [
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.git/worktrees/proj-1-x/cadre-links.exclude",
         "sha256": "0a9da303107e0cb96019f23caf634b3590515712e2865ce9ead36dcff4a39d2d",
         "isWritten": true
@@ -152,16 +152,6 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       {
         "path": "/repo/.git/worktrees/proj-1-x/cadre-epic.json",
         "sha256": "ebe832759ff2c3f79532783d88c5b43e6203719260d5f5f83840f142e03719c4",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.cadre/sizing.md",
-        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.claude/worktrees/proj-1-x/.cadre/sizing.md",
-        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
         "isWritten": true
       }
     ],
@@ -200,6 +190,11 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
     ],
     "writes": [
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.git/worktrees/proj-1/cadre-links.exclude",
         "sha256": "5608675a9aba9d732c26529945239c6c9a508850c8201b61dd2cb49c6547d33b",
         "isWritten": true
@@ -207,16 +202,6 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       {
         "path": "/repo/.git/worktrees/proj-1/cadre-epic.json",
         "sha256": "fd4e1658a18531425ae21d3ee54b68c1531a813cd8f5feb5a88faa6ab5a50354",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.cadre/sizing.md",
-        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.claude/worktrees/proj-1/.cadre/sizing.md",
-        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
         "isWritten": true
       },
       {

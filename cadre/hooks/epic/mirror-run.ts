@@ -21,7 +21,7 @@ import {
   WORKTREE_CONFIG_ARGV,
   XDG_ARGV,
 } from './git'
-import { epicStepArgv, isGitFile, MIRROR_STEP_TIMEOUT_MS, mirrorPaths, mirrorPlan } from './mirror'
+import { epicStepArgv, isHiddenCopy, MIRROR_STEP_TIMEOUT_MS, mirrorPaths, mirrorPlan } from './mirror'
 import type { EpicStep } from './mirror'
 
 /**
@@ -109,11 +109,12 @@ async function globalExcludesOf(
  * The mirror of the main checkout at `root` into the worktree (D-147, D-148), whose git dir `gitDir` is absolute: the
  * two ls-files runs (a run that fails or cannot start stops it with epicListFailedReply), the folders mirrorPaths
  * names listed in both checkouts, and mirrorPlan. The excludes file is then written in the git dir: the user's global
- * excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, and each copy of a
- * GIT_FILE_NAMES file, recorded (`recordedCopies`) or planned, once each (D-163, 03.1 S1). The worktree is pointed at
- * it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are idempotent: a write or run that
- * fails stops it with epicExcludesFailedReply, before any step. Each step then runs with its epicStepArgv, and the
- * first one that fails stops it with epicStepFailedReply. What ran before the stop is in the result.
+ * excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, and each hidden copy
+ * (isHiddenCopy: a copy of a git file or of the sizing rubric), recorded (`recordedCopies`) or planned, once each. The
+ * worktree is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are
+ * idempotent: a write or run that fails stops it with epicExcludesFailedReply, before any step. Each step then runs
+ * with its epicStepArgv, and the first one that fails stops it with epicStepFailedReply. What ran before the stop is
+ * in the result.
  */
 export async function mirrorSteps(
   io: InitIo,
@@ -145,8 +146,8 @@ export async function mirrorSteps(
 
   const file = `${input.gitDir}/${EXCLUDES_FILE}`
   const excludesFailed: Mirrored = { failure: epicExcludesFailedReply(key), links: [], copies: [], warnings }
-  const gitFileCopies = [...input.recordedCopies, ...plan.copies].filter(isGitFile)
-  const hidden = sortedUnique([...input.recorded, ...plan.links, ...gitFileCopies])
+  const hiddenCopies = [...input.recordedCopies, ...plan.copies].filter(isHiddenCopy)
+  const hidden = sortedUnique([...input.recorded, ...plan.links, ...hiddenCopies])
   if (!(await host.write(file, excludesText(global.text, hidden)))) return excludesFailed
   for (const argv of [WORKTREE_CONFIG_ARGV(root), EXCLUDES_CONFIG_ARGV(worktree, file)]) {
     const configured = await host.run(argv, { timeoutMs: GIT_TIMEOUT_MS })

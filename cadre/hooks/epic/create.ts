@@ -10,6 +10,7 @@
  * ui and the epic modules; register and the goldens run it.
  */
 import type { CadreState, EpicRecord, HostIo, InitIo, InitLocations, RoleSpec, TerminalChoice } from '../../types'
+import { isNewRepoFileWritable } from '../apply/run'
 import { reportText, sortedUnique } from '../core/text'
 import { rubricText } from '../generate/docs'
 import { hasRuntimeKickoff, shQuote } from '../generate/launcher'
@@ -186,14 +187,6 @@ async function openedLines(
   return [...lines, copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE, ...refusal]
 }
 
-/** Writes the default sizing rubric into each root where the disk clearly has none; a rubric that is there is kept. */
-async function writeRubrics(io: InitIo, host: HostIo, roots: readonly string[]): Promise<void> {
-  for (const root of roots) {
-    const path = `${root}/${SIZING_RUBRIC_PATH}`
-    if ((await io.statForWrite(path)) === 'absent') await host.write(path, rubricText())
-  }
-}
-
 /** PM's epic brief, the first line of PM's new inbox; null with no clock or no team view of the main checkout. */
 async function pmSeed(
   io: InitIo,
@@ -217,8 +210,7 @@ async function pmSeed(
  * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
  * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/`
  * (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf over the whole team and
- * the team's TL, D-158 to D-160), and PM's starts a new inbox with the epic brief (epicEntryLine). Before the first
- * render the sizing rubric is written into the main checkout and the worktree, each where it has none. Its lines: one
+ * the team's TL, D-158 to D-160), and PM's starts a new inbox with the epic brief (epicEntryLine). Its lines: one
  * `warning: <id>: <text>` line per render warning, then the lines of the open stage (openedLines). A role whose render
  * refuses keeps that refusal as its line, which does not stop the others, and one whose launcher in the worktree reads
  * as a text without the epic kickoff line (hasRuntimeKickoff) gets epicWorktreeLauncherLine and does not open, and one
@@ -249,7 +241,6 @@ async function renderedLines(
   const worktreeLocations: InitLocations = { ...locations, root: worktree, givenRoot: worktree }
   const warnings: string[] = []
   const rendered: RenderedRole[] = []
-  await writeRubrics(io, host, [locations.root, worktree])
   const seed = await pmSeed(io, locations.root, { key, title: epicWorktree.title, roles })
   for (const role of team.picked) {
     const { id } = role
@@ -286,14 +277,16 @@ async function renderedLines(
 
 /**
  * The mirror and render stages of runEpic and their reply (D-147, D-157, D-163, D-164): a worktree whose git dir git
- * did not name absolutely gets epicExcludesFailedReply, as its links could not be hidden. Otherwise mirrorSteps runs
- * with the record's links and copies, and the record is written to the git dir with its links and copies joined, once
- * each, with those this run made, also when the mirror stopped, so the next run and the epic's removal find them. A
- * stopped mirror replies with its failure, then one `warning: ` line per mirror warning as epicCreatedText prints them
- * (D-240) and the epicNoRecordWarning line when the record write failed (D-272, #37), and renders nothing; else the
- * reply is epicCreatedText with what this run linked and copied, the mirror's warnings and the epicNoRecordWarning line
- * when the record write failed, then the lines of the render stage (renderedLines), which renders each picked role
- * into the worktree and opens it there.
+ * did not name absolutely gets epicExcludesFailedReply, as its links could not be hidden. Otherwise main's sizing
+ * rubric is written first, only where it is absent with no link on its way (isNewRepoFileWritable), and a refused or
+ * failed write says nothing; the worktree gets the rubric from the mirror, as a link or a hidden, recorded copy, and
+ * never as a write of its own. Then mirrorSteps runs with the record's links and copies, and the record is written to
+ * the git dir with its links and copies joined, once each, with those this run made, also when the mirror stopped, so
+ * the next run and the epic's removal find them. A stopped mirror replies with its failure, then one `warning: ` line
+ * per mirror warning as epicCreatedText prints them (D-240) and the epicNoRecordWarning line when the record write
+ * failed (D-272, #37), and renders nothing; else the reply is epicCreatedText with what this run linked and copied,
+ * the mirror's warnings and the epicNoRecordWarning line when the record write failed, then the lines of the render
+ * stage (renderedLines), which renders each picked role into the worktree and opens it there.
  */
 async function mirroredReply(
   io: InitIo,
@@ -321,6 +314,9 @@ async function mirroredReply(
   const { key } = epic
   const { path, gitDir, record } = worktree
   if (!gitDir.startsWith('/')) return epicExcludesFailedReply(key)
+  if (await isNewRepoFileWritable(io, epic.root, SIZING_RUBRIC_PATH)) {
+    await host.write(`${epic.root}/${SIZING_RUBRIC_PATH}`, rubricText())
+  }
   const mirrored = await mirrorSteps(io, host, {
     ...epic,
     worktree: path,
@@ -367,7 +363,9 @@ async function mirroredReply(
  * Either way the main checkout is then mirrored into the worktree (mirroredReply, D-147, D-148): what git does not
  * track or ignores there and the worktree lacks is linked in or copied, hidden from git by the worktree's own excludes
  * file, which keeps the user's global excludes and is set up before the first link; a worktree whose git dir git does
- * not name as an absolute path stops with epicExcludesFailedReply. The record is then written to that git dir with its
+ * not name as an absolute path stops with epicExcludesFailedReply. Right before the mirror, main's sizing rubric is
+ * written where it is absent and safe to write (isNewRepoFileWritable); the worktree gets it from the mirror, as a link
+ * or a hidden, recorded copy, never as a write of its own. The record is then written to that git dir with its
  * links and copies joined with those this run made (D-163); a reused worktree whose record is unreadable gets a new one
  * from this run's key, title and branch, with no base. A write that fails adds the epicNoRecordWarning line. Once the
  * mirror ran every step, each picked role is rendered into the worktree (renderedLines, D-157): the team read from the
