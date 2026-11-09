@@ -34,6 +34,8 @@ describe('ADAPTERS', () => {
       expect(Object.isFrozen(adapter.locations.spec)).toBe(true)
       expect(Object.isFrozen(adapter.locations.plan)).toBe(true)
       expect(Object.isFrozen(adapter.doneSignal)).toBe(true)
+      const install = adapter.projectInstall
+      expect([install, install?.argv, install?.writes].every(part => Object.isFrozen(part))).toBe(true)
     }
   })
 })
@@ -70,7 +72,11 @@ describe('adapter contract (DET-04)', () => {
       expect(optional.every(value => value === null || typeof value === 'string')).toBe(true)
       expect(typeof adapter.needsBash).toBe('boolean')
       expect(adapter.autonomy.length > 0 || (adapter.autonomyNote ?? '').trim() !== '').toBe(true)
+      const install = adapter.projectInstall
+      const isInstall = install !== null && install.argv.length > 0 && install.writes.length > 0
+      expect([Object.hasOwn(adapter, 'projectInstall'), install === null || isInstall]).toEqual([true, true])
     }
+    expect(ADAPTERS.filter(adapter => adapter.projectInstall === null).map(adapter => adapter.id)).toEqual(['none'])
   })
 
   test('every gate table passes the gate contract', () => {

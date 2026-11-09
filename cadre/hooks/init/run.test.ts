@@ -21,6 +21,7 @@ import type {
   InstructionPart,
   MemoryItem,
   Plan,
+  PluginFlag,
   PortEntry,
   RawGsdCandidate,
   RoleSpec,
@@ -5030,7 +5031,46 @@ const SUPERPOWERS_PROJECT_INSTALL = [
   'project',
 ]
 
+/** The run that installs GSD at project scope, as its adapter declares it. */
+const GSD_PROJECT_INSTALL = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+
 describe('a consented framework install after Confirm', () => {
+  /** superpowers enabled for the project, as its install leaves it. */
+  const SUPERPOWERS_ENABLED: PluginFlag = { key: 'superpowers@claude-plugins-official', source: 'project', value: true }
+  /** GSD proven in the repo, as its install leaves it. */
+  const GSD_PROVEN: GsdFact = {
+    location: 'project',
+    dir: '<repo>/.claude/gsd-core',
+    version: '1.16.0',
+    identity: 'proven',
+    runtimeIdentityTried: false,
+  }
+  /** An install run that exited 1. */
+  const FAILED_INSTALL: HostRun = { exitCode: 1, stdout: '', stderr: 'npm ERR! network' }
+  /** The problem line of a GSD install that failed. */
+  const GSD_INSTALL_FAILURE =
+    `could not install @opengsd/gsd-core: run it yourself from the repo root: ${GSD_PROJECT_INSTALL.join(' ')}`
+  /** The review line of the superpowers install. */
+  const SUPERPOWERS_REVIEW_LINE =
+    'Framework install from the repo root after Confirm (a --dry-run installs nothing): ' +
+    `${SUPERPOWERS_PROJECT_INSTALL.join(' ')}; it writes enabledPlugins in .claude/settings.json`
+  /** The answers of an init that sets be to superpowers through Adjust and answers Yes to its install. */
+  const ADJUST_SUPERPOWERS_YES = {
+    ...INIT_ANSWERS,
+    'Use these roles?': ['Adjust them', 'Use these roles'],
+    'Adjust the roles': ['framework be superpowers', 'Done adjusting'],
+    'Install superpowers for this repo?': 'Yes, install it',
+  }
+
+  /** The facts with these frameworks shown installed, as init reads them again once their installs worked. */
+  function showing(initFacts: InitFacts, ids: readonly FrameworkId[]): InitFacts {
+    const { facts } = initFacts
+    const enabledPlugins = [...facts.enabledPlugins, ...(ids.includes('superpowers') ? [SUPERPOWERS_ENABLED] : [])]
+    const gsd = [...facts.gsd, ...(ids.includes('gsd') ? [GSD_PROVEN] : [])]
+
+    return { ...initFacts, facts: { ...facts, enabledPlugins, gsd } }
+  }
+
   /** A draft of be alone on superpowers, GSD and superpowers taken as installed, with these installs consented. */
   function superpowersDraft(installs: readonly FrameworkId[] | null): Draft {
     const draft = wholeDraft({
@@ -5039,6 +5079,20 @@ describe('a consented framework install after Confirm', () => {
     })
 
     return installs === null ? draft : { ...draft, frameworkInstalls: installs }
+  }
+
+  /** A draft of be on gsd and pm on the repo default, with these frameworks installed and GSD's install consented. */
+  function gsdDraft(installed: readonly FrameworkId[], repoDefault: FrameworkId = 'none'): Draft {
+    const roles = [withFramework(templateRole('be'), 'gsd'), templateRole('pm')]
+
+    return wholeDraft({ roles, installed, repoDefault, frameworkInstalls: ['gsd'] })
+  }
+
+  /** The framework line the apply wrote into the ROLE.md of a role; '' when it wrote none. */
+  function frameworkLineOf(host: MemHost, id: string): string {
+    const text = host.writes.find(write => write.path === `/repo/.cadre/${id}/ROLE.md`)?.text ?? ''
+
+    return /Framework: [^.]+\./.exec(text)?.[0] ?? ''
   }
 
   /** The plan the review made of the draft: planStep over the git world. */
@@ -5058,10 +5112,14 @@ describe('a consented framework install after Confirm', () => {
     })
   }
 
-  /** The apply of the confirmed draft, each host run and write and each facts read recorded in one list, in order. */
+  /**
+   * The apply of the confirmed draft, each host run and write and each facts read recorded in one list, in order; the
+   * facts read after the installs show the frameworks `found`.
+   */
   async function applied(
     draft: Draft,
     runs: readonly HostRunRule[] = [],
+    found: readonly FrameworkId[] = [],
   ): Promise<{ readonly host: MemHost; readonly events: string[]; readonly problems: readonly string[] }> {
     const host = memHost(hostWorld({ runs }))
     const recorded = withHostEvents(host)
@@ -5071,7 +5129,7 @@ describe('a consented framework install after Confirm', () => {
       facts: async locations => {
         recorded.events.push('facts')
 
-        return run.io.facts(locations)
+        return showing(await run.io.facts(locations), found)
       },
     }
     const reviewed = { draft, planned: await plannedOf(draft) }
@@ -5084,7 +5142,7 @@ describe('a consented framework install after Confirm', () => {
   }
 
   test('superpowers installs from the repo root before any other run or write, then the facts are read', async () => {
-    const { host, events } = await applied(superpowersDraft(['superpowers']))
+    const { host, events } = await applied(superpowersDraft(['superpowers']), [], ['superpowers'])
     const installAt = events.indexOf(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
     const factsAt = events.indexOf('facts')
     const firstWriteAt = events.findIndex(event => event.startsWith('write '))
@@ -5103,21 +5161,67 @@ describe('a consented framework install after Confirm', () => {
   })
 
   test('an Adjust to superpowers answered Yes installs it from the repo root, before any write', async () => {
-    const run = queuedIo(fullWorld(), {
-      ...INIT_ANSWERS,
-      'Use these roles?': ['Adjust them', 'Use these roles'],
-      'Adjust the roles': ['framework be superpowers', 'Done adjusting'],
-      'Install superpowers for this repo?': 'Yes, install it',
-    })
+    const run = queuedIo(fullWorld(), ADJUST_SUPERPOWERS_YES)
     const host = memHost(hostWorld({}))
     const recorded = withHostEvents(host)
-    await runInit(run.io, { dryRun: false, host: recorded.io })
+    const isInstalled = (): boolean => recorded.events.includes(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => showing(await run.io.facts(locations), isInstalled() ? ['superpowers'] : []),
+    }
+    await runInit(io, { dryRun: false, host: recorded.io })
     const installAt = recorded.events.indexOf(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
     const firstWriteAt = recorded.events.findIndex(event => event.startsWith('write '))
     const role = host.writes.find(write => write.path === '/repo/.cadre/be/ROLE.md')?.text ?? ''
 
     expect(host.calls[0]).toEqual({ argv: SUPERPOWERS_PROJECT_INSTALL, options: { cwd: '/repo', timeoutMs: 180_000 } })
     expect([installAt, installAt < firstWriteAt, role.includes('Framework: superpowers.')]).toEqual([0, true, true])
+  })
+
+  test('a GSD install that exits 1 or is rejected gives its command, runs once, and be falls back', async () => {
+    for (const result of [FAILED_INSTALL, null]) {
+      const { host, problems } = await applied(gsdDraft(['gsd', 'none']), [{ argv: GSD_PROJECT_INSTALL, result }])
+      const runs = host.calls.filter(call => call.argv[0] === 'npx')
+      const after = [runs.length, problems, frameworkLineOf(host, 'be')]
+      expect(after).toEqual([1, [GSD_INSTALL_FAILURE], 'Framework: built-in.'])
+    }
+    const installed = await applied(gsdDraft(['gsd', 'none']), [], ['gsd'])
+    expect([installed.problems, frameworkLineOf(installed.host, 'be')]).toEqual([[], 'Framework: GSD.'])
+  })
+
+  test('roles and a repo default on a failed install fall back to the first framework left, else none', async () => {
+    const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const left = await applied(gsdDraft(['gsd', 'superpowers', 'none'], 'gsd'), failing)
+    const none = await applied(gsdDraft(['gsd', 'none'], 'gsd'), failing)
+    const lines = (host: MemHost): string[] => ['be', 'pm'].map(id => frameworkLineOf(host, id))
+
+    expect(lines(left.host)).toEqual(['Framework: superpowers.', 'Framework: superpowers.'])
+    expect(lines(none.host)).toEqual(['Framework: built-in.', 'Framework: built-in.'])
+  })
+
+  test('a --dry-run review names the install, and its Confirm runs nothing and reads the facts no more', async () => {
+    const run = queuedIo(fullWorld(), ADJUST_SUPERPOWERS_YES)
+    const paged = pagedIo(run)
+    const events: string[] = []
+    const io: InitIo = {
+      ...paged,
+      facts: async locations => {
+        events.push('facts')
+
+        return paged.facts(locations)
+      },
+      ask: async (question, spec) => {
+        events.push(spec.context?.kind === 'review' ? 'review' : 'ask')
+
+        return paged.ask(question, spec)
+      },
+    }
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(io, { dryRun: true })
+    const [review = []] = reviewsOf(run)
+
+    expect([review.includes(SUPERPOWERS_REVIEW_LINE), reply.startsWith('cadre init --dry-run')]).toEqual([true, true])
+    expect([events.lastIndexOf('facts') < events.indexOf('review'), host.calls, host.writes]).toEqual([true, [], []])
   })
 })
 

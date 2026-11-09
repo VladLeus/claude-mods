@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionHandout, Plan, RoleChange } from '../../../types'
+import type { FrameworkId, InstructionHandout, Plan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { clean } from '../../core/text'
 import { PANE_LIST_WORDS } from '../../locales/t'
@@ -736,3 +736,29 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
   })
 })
 
+
+describe('the framework installs in the review', () => {
+  /** How a framework install line starts in the review. */
+  const START = 'Framework install from the repo root after Confirm (a --dry-run installs nothing): '
+
+  /** The framework install lines of the review of REVIEW_DRAFT with these installs consented, page by page. */
+  async function installLines(frameworkInstalls: readonly FrameworkId[]): Promise<string[]> {
+    const entered = reviewAt({ frameworkInstalls })
+    const asking = nextStage(entered, planAnswer(await plannedFor(entered)))
+
+    return pagedLines(asking).filter(line => line.startsWith(START))
+  }
+
+  test("GSD's line names its npx command, from the repo root after Confirm, and the five paths it writes", async () => {
+    const writes = '.claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json'
+    const line = `${START}npx -y @opengsd/gsd-core@latest --claude --local; it writes ${writes}`
+    expect(await installLines(['gsd'])).toEqual([line])
+    expect(line).toContain('.claude/settings.local.json')
+  })
+
+  test("superpowers' line names its plugin install and the setting it writes; no install shows no line", async () => {
+    const command = 'claude plugin install superpowers@claude-plugins-official --scope project'
+    const line = `${START}${command}; it writes enabledPlugins in .claude/settings.json`
+    expect([await installLines(['superpowers']), await installLines([])]).toEqual([[line], []])
+  })
+})

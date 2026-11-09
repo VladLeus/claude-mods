@@ -8,6 +8,10 @@ import {
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   pluginInstallArgv,
+  PROJECT_INSTALL_TIMEOUT_MS,
+  projectInstallFailureText,
+  projectInstallOf,
+  projectPluginInstall,
   PYTHON_VERSION_ARGV,
   pythonProblem,
   setupAfterInstalls,
@@ -118,5 +122,44 @@ describe('install runs (decision #39)', () => {
     expect(installedLine([SECURITY_KEY, GUIDANCE_KEY])).toBe(
       `Installed ${SECURITY_KEY} and ${GUIDANCE_KEY}: run /reload-plugins to load them in this session.`,
     )
+  })
+})
+
+describe('project installs', () => {
+  test("projectInstallOf gives each adapter's install: GSD's npx, superpowers' plugin install, none for none", () => {
+    expect(projectInstallOf('gsd')).toEqual({
+      id: '@opengsd/gsd-core',
+      argv: ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local'],
+      timeoutMs: PROJECT_INSTALL_TIMEOUT_MS,
+      writes: [
+        '.claude/gsd-core',
+        '.claude/commands',
+        '.claude/agents',
+        '.claude/hooks',
+        '.claude/settings.local.json',
+      ],
+      isPlugin: false,
+    })
+    expect(projectInstallOf('superpowers')).toEqual(projectPluginInstall('superpowers@claude-plugins-official'))
+    expect([projectInstallOf('none'), PROJECT_INSTALL_TIMEOUT_MS]).toEqual([null, 600_000])
+  })
+
+  test('projectPluginInstall installs the exact key at project scope and says what it writes, frozen', () => {
+    const install = projectPluginInstall(SECURITY_KEY)
+    expect(install).toEqual({
+      id: SECURITY_KEY,
+      argv: ['claude', 'plugin', 'install', SECURITY_KEY, '--scope', 'project'],
+      timeoutMs: 180_000,
+      writes: ['enabledPlugins in .claude/settings.json'],
+      isPlugin: true,
+    })
+    expect([install, install.argv, install.writes].every(part => Object.isFrozen(part))).toBe(true)
+  })
+
+  test('projectInstallFailureText gives the command to run from the repo root, with the id and command cleaned', () => {
+    const command = `claude plugin install ${GUIDANCE_KEY} --scope project`
+    const text = `could not install ${GUIDANCE_KEY}: run it yourself from the repo root: ${command}`
+    expect(projectInstallFailureText(projectPluginInstall(GUIDANCE_KEY))).toBe(text)
+    expect(projectInstallFailureText(projectPluginInstall(`evil${BIDI_OVERRIDE}@market`))).not.toContain(BIDI_OVERRIDE)
   })
 })

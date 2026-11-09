@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile } from '../../types'
+import type { DesiredFile, FrameworkId, HostRun, ProjectInstall } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { attendedNote } from '../framework/gsd/hunks'
 import { untrackedPartsWarning } from '../generate/gittrack'
@@ -11,10 +11,12 @@ import { hunkFailureLine } from './hunks'
 import type { HunkRun } from './hunks'
 import { improverArgv } from './improver'
 import type { BuiltFile } from './improver'
+import { MARKETPLACE_ADD_ARGV, projectInstallFailureText, projectInstallOf } from './installs'
 import type { ApplyInput, ApplyStep } from './private'
 import {
   APPLIED_NONE_NOTE,
   appliedLines,
+  installProject,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
   roleFoldersOf,
@@ -222,5 +224,57 @@ describe('roleFoldersOf (D-238)', () => {
 
       expect(folderOf?.('be')).toBe(`/home/u/.claude/cadre/${slug}/be`)
     }
+  })
+})
+
+/** The project install of a framework that has one; a spec fails for one that has none. */
+function installOf(id: FrameworkId): ProjectInstall {
+  const install = projectInstallOf(id)
+  if (install === null) throw new Error(`${id} has no project install`)
+
+  return install
+}
+
+/** An install run that exited 1. */
+const FAILED_RUN: HostRun = { exitCode: 1, stdout: '', stderr: 'npm ERR! network' }
+
+describe('installProject', () => {
+  test('runs each install in order from the repo root with its own timeout; exit 0 counts it installed', async () => {
+    const [gsd, superpowers] = [installOf('gsd'), installOf('superpowers')]
+    const host = memHost(hostWorld({}))
+    const outcome = await installProject(host.io, '/repo', '/home/u', [gsd, superpowers])
+    expect(host.calls).toEqual([
+      { argv: gsd.argv, options: { cwd: '/repo', timeoutMs: 600_000 } },
+      { argv: superpowers.argv, options: { cwd: '/repo', timeoutMs: 180_000 } },
+    ])
+    expect(outcome).toEqual({ installed: [gsd.id, superpowers.id], installProblems: [] })
+  })
+
+  test('a failed GSD install runs once, adds no marketplace, and gives its command from the repo root', async () => {
+    const gsd = installOf('gsd')
+    for (const result of [FAILED_RUN, null]) {
+      const host = memHost(hostWorld({ runs: [{ argv: gsd.argv, result }] }))
+      const outcome = await installProject(host.io, '/repo', '/home/u', [gsd])
+      expect(host.calls.map(call => call.argv)).toEqual([gsd.argv])
+      expect(outcome).toEqual({ installed: [], installProblems: [projectInstallFailureText(gsd)] })
+    }
+  })
+
+  test('a plugin install failing twice adds the marketplace once from home, retries once from the root', async () => {
+    const superpowers = installOf('superpowers')
+    const host = memHost(hostWorld({ runs: [{ argv: superpowers.argv, result: FAILED_RUN }] }))
+    const outcome = await installProject(host.io, '/repo', '/home/u', [superpowers])
+    const fromRoot = { argv: superpowers.argv, options: { cwd: '/repo', timeoutMs: 180_000 } }
+    const add = { argv: MARKETPLACE_ADD_ARGV, options: { cwd: '/home/u', timeoutMs: 180_000 } }
+    expect(host.calls).toEqual([fromRoot, add, fromRoot])
+    expect(outcome).toEqual({ installed: [], installProblems: [projectInstallFailureText(superpowers)] })
+  })
+
+  test('with no home folder a plugin install runs from the root, adds no marketplace, gives its command', async () => {
+    const superpowers = installOf('superpowers')
+    const host = memHost(hostWorld({ runs: [{ argv: superpowers.argv, result: FAILED_RUN }] }))
+    const outcome = await installProject(host.io, '/repo', null, [superpowers])
+    expect(host.calls).toEqual([{ argv: superpowers.argv, options: { cwd: '/repo', timeoutMs: 180_000 } }])
+    expect(outcome).toEqual({ installed: [], installProblems: [projectInstallFailureText(superpowers)] })
   })
 })
