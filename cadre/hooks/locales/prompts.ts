@@ -100,6 +100,27 @@ export const PROMPTS = Object.freeze({
   epicFrom: ' from cadre-{parent}',
   epicWait: 'wait for your parent: wait_for reason session-answer{from}, then work what it sends.',
   epicWorkerLine: 'You are {title} (cadre role {id}) on epic {key}. Read .cadre/{id}/ROLE.md, then {wait}',
+  // PM's epic brief, the first entry of PM's inbox in an epic (epic/brief epicEntryLine): its subject, then its body,
+  // one line per text.
+  epicBriefSubject: 'Epic {epic}',
+  epicBriefIntro: 'cadre opened epic {epic} for your team in its worktree.',
+  epicBriefModes: 'Planning modes this repo offers: {modes}.',
+  epicBriefNoModes: 'This repo offers no planning mode: no supported framework is installed for it.',
+  epicBriefSizing: `A ticket's size is the highest of its scope, complexity, risk and effort scores, each from 0.1 to ${
+    ''}1.0; it is large at {threshold} or more. The rubric is {rubric}.`,
+  epicBriefTeam: 'The team, each role with its parent: {team}.',
+  epicBriefTop: '{id} (top)',
+  epicBriefChild: '{id} (parent {parent})',
+  epicBriefSteps: 'Your steps:',
+  epicBriefFetch: '1. Fetch the epic with your tracker MCP.',
+  epicBriefGrill: '2. With the user, grill the epic and every ticket until no question is open.',
+  epicBriefPropose: '3. Propose a planning mode from those offered, and record any size the user pins on a ticket.',
+  epicBriefSend: '4. Send {leads} the brief: a note with the mode you agreed.',
+  epicBriefSendEpic:
+    '4. Send {leads} the brief: a note with the mode you agreed and, in gsd-epic mode, tickets: every ticket key.',
+  epicBriefFeed:
+    '5. Feed {leads} one ticket at a time: a ticket with its key, your scope and risk scores and the report form.',
+  epicBriefEnd: '6. When every ticket is reported, send epic-end.',
   // The prompt of the probe's one short turn (generate/launcher, D-112).
   probe: 'Reply with OK.',
   // The prompt of one claude-md-improver run on a built role file (apply/improver improverArgv, D-141).

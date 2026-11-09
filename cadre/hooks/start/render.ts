@@ -100,6 +100,8 @@ export type EpicRender = {
   readonly mainRoot: string
   /** The text of the role's epic kickoff, written to `.runtime/kickoff.txt` right before the stamp (D-158). */
   readonly kickoff: string
+  /** The record line a new inbox of the role starts with: PM's epic brief. */
+  readonly inboxSeed?: string
 }
 
 /**
@@ -178,6 +180,7 @@ export async function renderRole(
   const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
   // Only an epic render names a kickoff, so a /cadre start render never writes or removes one (D-168).
   const kickoff = input.epic === null ? {} : { kickoff: input.epic.kickoff }
+  const seed = input.epic?.inboxSeed === undefined ? {} : { inboxSeed: input.epic.inboxSeed }
   const render = renderSteps({
     root: user.root,
     id,
@@ -186,6 +189,7 @@ export async function renderRole(
     ...disk,
     memories: launch.memories,
     ...kickoff,
+    ...seed,
     ...(rotation === null ? {} : { rotation }),
   })
   if (render.refusal !== null) return { kind: 'refuse', text: render.refusal }

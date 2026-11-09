@@ -318,6 +318,8 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
       EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES).join(' '),
       ln.join(' '),
       `write ${BARE_RECORD}`,
+      `write ${MAIN_RUBRIC}`,
+      `write ${WORKTREE_RUBRIC}`,
     ])
     expect(parseEpicRecord(record?.text ?? '')?.links).toEqual(['node_modules'])
     expect(run.reply).toContain('Linked 1, copied 0.')
@@ -1133,6 +1135,8 @@ describe('safety net: epic failure paths (A8)', () => {
     ])
     expect(events.slice(events.indexOf(`write ${record}`))).toEqual([
       `write ${record}`,
+      `write ${MAIN_RUBRIC}`,
+      `write ${WORKTREE}/.cadre/sizing.md`,
       GIT_COMMON_DIR_ARGV.join(' '),
       GIT_COMMON_DIR_ARGV.join(' '),
       '/usr/bin/uname -s',

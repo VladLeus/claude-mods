@@ -34,6 +34,16 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
         "isWritten": true
       },
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
+        "path": "/repo/.claude/worktrees/proj-1/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/settings.json",
         "sha256": "9f95266ec6338cd3627338a3ef5472ac5456b3bcea6bbc0035147af15cd2e61c",
         "isWritten": true
@@ -143,6 +153,16 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
         "path": "/repo/.git/worktrees/proj-1-x/cadre-epic.json",
         "sha256": "ebe832759ff2c3f79532783d88c5b43e6203719260d5f5f83840f142e03719c4",
         "isWritten": true
+      },
+      {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
+        "path": "/repo/.claude/worktrees/proj-1-x/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
       }
     ],
     "calls": [
@@ -187,6 +207,16 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       {
         "path": "/repo/.git/worktrees/proj-1/cadre-epic.json",
         "sha256": "fd4e1658a18531425ae21d3ee54b68c1531a813cd8f5feb5a88faa6ab5a50354",
+        "isWritten": true
+      },
+      {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
+        "path": "/repo/.claude/worktrees/proj-1/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
         "isWritten": true
       },
       {

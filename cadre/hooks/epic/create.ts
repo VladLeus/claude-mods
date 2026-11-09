@@ -11,13 +11,14 @@
  */
 import type { CadreState, EpicRecord, HostIo, InitIo, InitLocations, RoleSpec, TerminalChoice } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
+import { rubricText } from '../generate/docs'
 import { hasRuntimeKickoff, shQuote } from '../generate/launcher'
 import { GIT_TIMEOUT_MS } from '../git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
 import { repoGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
 import { t } from '../locales/t'
-import { launcherPath } from '../paths'
+import { launcherPath, SIZING_RUBRIC_PATH } from '../paths'
 import { standIn } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeRefusal } from '../start/claude-version'
@@ -44,6 +45,8 @@ import {
   worktreeAddArgv,
   worktreePathOf,
 } from './git'
+import { epicEntryLine } from './brief'
+import { teamViewOf } from './hierarchy'
 import { epicBadKeyReply, epicBadNameReply, epicKeyOf, epicSlug, isEpicSlug } from './key'
 import { epicKickoffText } from './kickoff'
 import type { EpicWorktree } from './kickoff'
@@ -183,6 +186,28 @@ async function openedLines(
   return [...lines, copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE, ...refusal]
 }
 
+/** Writes the default sizing rubric into each root where the disk clearly has none; a rubric that is there is kept. */
+async function writeRubrics(io: InitIo, host: HostIo, roots: readonly string[]): Promise<void> {
+  for (const root of roots) {
+    const path = `${root}/${SIZING_RUBRIC_PATH}`
+    if ((await io.statForWrite(path)) === 'absent') await host.write(path, rubricText())
+  }
+}
+
+/** PM's epic brief, the first line of PM's new inbox; null with no clock or no team view of the main checkout. */
+async function pmSeed(
+  io: InitIo,
+  root: string,
+  epic: { readonly key: string; readonly title: string; readonly roles: readonly RoleSpec[] },
+): Promise<string | null> {
+  const at = await io.now()
+  if (at === null) return null
+  const team = await teamViewOf(io, root)
+  if (team === null) return null
+
+  return epicEntryLine({ ...epic, team, at })
+}
+
 /**
  * The render stage of runEpic (D-157, D-102, RESEARCH Pattern 1), once the mirror ran every step: the team, read in the
  * main checkout, is compiled there once (compileTeam), and each picked role, in cadre.json order, is rendered for the
@@ -192,12 +217,14 @@ async function openedLines(
  * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
  * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/`
  * (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf over the whole team and
- * the team's TL, D-158 to D-160). Its lines: one `warning: <id>: <text>` line per render warning, then the lines of
- * the open stage (openedLines). A role whose render refuses keeps that refusal as its line, which does not stop the
- * others, and one whose launcher in the worktree reads as a text without the epic kickoff line (hasRuntimeKickoff)
- * gets epicWorktreeLauncherLine and does not open, and one that is there but is not the launcher text runEpic checked
- * in the main checkout, or cannot be read in full, gets epicWorktreeLauncherChangedLine and does not open either
- * (epicWorktreeLauncherCheck, 03.1-W4 S1); a role whose worktree has no launcher stays openable.
+ * the team's TL, D-158 to D-160), and PM's starts a new inbox with the epic brief (epicEntryLine). Before the first
+ * render the sizing rubric is written into the main checkout and the worktree, each where it has none. Its lines: one
+ * `warning: <id>: <text>` line per render warning, then the lines of the open stage (openedLines). A role whose render
+ * refuses keeps that refusal as its line, which does not stop the others, and one whose launcher in the worktree reads
+ * as a text without the epic kickoff line (hasRuntimeKickoff) gets epicWorktreeLauncherLine and does not open, and one
+ * that is there but is not the launcher text runEpic checked in the main checkout, or cannot be read in full, gets
+ * epicWorktreeLauncherChangedLine and does not open either (epicWorktreeLauncherCheck, 03.1-W4 S1); a role whose
+ * worktree has no launcher stays openable.
  */
 async function renderedLines(
   io: InitIo,
@@ -222,6 +249,8 @@ async function renderedLines(
   const worktreeLocations: InitLocations = { ...locations, root: worktree, givenRoot: worktree }
   const warnings: string[] = []
   const rendered: RenderedRole[] = []
+  await writeRubrics(io, host, [locations.root, worktree])
+  const seed = await pmSeed(io, locations.root, { key, title: epicWorktree.title, roles })
   for (const role of team.picked) {
     const { id } = role
     const scope = scopes.get(id)
@@ -232,6 +261,7 @@ async function renderedLines(
     }
     const parent = epicParentOf(role, roles, team.pmId)
     const kickoff = epicKickoffText({ role, key, title: epicWorktree.title, isPm: id === team.pmId, parent, tlId })
+    const inboxSeed = id === team.pmId && seed !== null ? { inboxSeed: seed } : {}
     const render = await renderRole(io, host, {
       locations: worktreeLocations,
       state,
@@ -239,7 +269,7 @@ async function renderedLines(
       scope,
       codeDirs: gathered.repo.codeDirs,
       mcpRoots: [worktree, locations.root, locations.givenRoot],
-      epic: { mainRoot: locations.root, kickoff },
+      epic: { mainRoot: locations.root, kickoff, ...inboxSeed },
     })
     if (render.kind === 'refuse') {
       rendered.push({ id, line: render.text })

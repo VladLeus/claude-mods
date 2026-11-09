@@ -119,6 +119,8 @@ export type RenderInput = {
   readonly kickoff?: string
   /** Set only when the inbox is a real file over the rotation threshold. */
   readonly rotation?: InboxRotation
+  /** The record line an epic render starts a new inbox with: PM's brief. */
+  readonly inboxSeed?: string
 }
 
 /** The steps of a render in order, the warnings to show, and why it was refused: a refused render has no step. */
@@ -400,12 +402,16 @@ function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
   return [mkdirStep(link.target), ...chmods]
 }
 
-/** The inbox's steps in fileWrites: the move and the fresh entry of a rotation, else the create when there is none. */
+/**
+ * The inbox's steps in fileWrites: the move and the fresh entry of a rotation, else the create when there is none, with
+ * the epic's seed after a newline when the render has one.
+ */
 function inboxSteps(input: RenderInput, inbox: string): RenderStep[] {
-  const { rotation } = input
+  const { rotation, inboxSeed } = input
   if (rotation !== undefined) return [moveStep(inbox, rotation.archive), appendStep(inbox, `\n${rotation.text}`)]
+  if (isRealEntry(statAt(input, inbox))) return []
 
-  return isRealEntry(statAt(input, inbox)) ? [] : [appendStep(inbox, '')]
+  return [appendStep(inbox, inboxSeed === undefined ? '' : `\n${inboxSeed}`)]
 }
 
 /**
