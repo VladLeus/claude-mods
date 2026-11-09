@@ -747,6 +747,11 @@ export function waitPhaseRefusal(phase: Phase): string | null {
 
 const PERSON_REASONS: readonly WaitReason[] = ['user-answer', 'user-input']
 
+/** Whether the person can answer a question now, so AskUserQuestion reaches them. */
+export function passesQuestion(mode: Mode): boolean {
+  return mode === 'asking' || mode === 'draining'
+}
+
 /**
  * Why a wait is refused, or null when allowed. Waiting for the person needs a
  * mode that asks them (asking, draining), and then the question or action as
