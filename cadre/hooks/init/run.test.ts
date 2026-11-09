@@ -186,7 +186,7 @@ import { PANE_FULLSCREEN } from '../ui/surfaces/pane-fullscreen'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
 import type { Draft, PlanResult } from './draft'
 import { CONFLICT_CONTEXT } from './initapply'
-import { initFrameworks, initSizing } from './initplan'
+import { consentedPluginKeys, initFrameworks, initSizing } from './initplan'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
   APPLY_HUNKS_PROGRESS,
@@ -5203,6 +5203,32 @@ describe('a consented framework install after Confirm', () => {
     }
     const installed = await applied(gsdDraft(['gsd', 'none']), [], ['gsd'])
     expect([installed.problems, frameworkLineOf(installed.host, 'be')]).toEqual([[], 'Framework: GSD.'])
+  })
+
+  test('consentedPluginKeys gives the plugin installs consented, less those that failed', () => {
+    const keys = [
+      consentedPluginKeys({ frameworkInstalls: ['superpowers'] }, []),
+      consentedPluginKeys({ frameworkInstalls: ['gsd'] }, []),
+      consentedPluginKeys({ frameworkInstalls: ['superpowers'] }, ['superpowers']),
+      consentedPluginKeys({}, []),
+    ]
+    expect(keys).toEqual([['superpowers@claude-plugins-official'], [], [], []])
+  })
+
+  test('a consented plugin install that detection shows is enabled for its role, whatever its exit code', async () => {
+    const draft = superpowersDraft(['superpowers'])
+    const key = 'superpowers@claude-plugins-official'
+    const failing = [{ argv: SUPERPOWERS_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const detected = await applied(draft, failing, ['superpowers'])
+    const unseen = await applied(draft)
+    const settingsOf = (host: MemHost): string =>
+      host.writes.find(write => write.path === '/repo/.cadre/be/settings.json')?.text ?? ''
+
+    expect(settingsOf(detected.host)).toContain(`"${key}": true`)
+    expect([settingsOf(unseen.host).includes(key), frameworkLineOf(unseen.host, 'be')]).toEqual([
+      false,
+      'Framework: GSD.',
+    ])
   })
 
   test('roles and a repo default on a failed install fall back to the first framework left, else none', async () => {

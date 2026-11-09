@@ -761,4 +761,16 @@ describe('the framework installs in the review', () => {
     const line = `${START}${command}; it writes enabledPlugins in .claude/settings.json`
     expect([await installLines(['superpowers']), await installLines([])]).toEqual([[line], []])
   })
+
+  test('a consented superpowers install counts as installed in the scopes the review plans', () => {
+    const roles = [withFramework(templateRole('be'), 'superpowers')]
+    const isEnabled = (over: Partial<Draft>): boolean => {
+      const { effect } = reviewAt({ roles, ...over })
+      if (effect.kind !== 'io' || effect.call.id !== 'plan') return false
+      const scope = effect.call.input.scopes.get('be')
+
+      return scope?.settings.enabledPlugins['superpowers@claude-plugins-official'] === true
+    }
+    expect([isEnabled({ frameworkInstalls: ['superpowers'] }), isEnabled({})]).toEqual([true, false])
+  })
 })
