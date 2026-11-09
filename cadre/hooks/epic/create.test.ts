@@ -312,14 +312,13 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
 
     expect(run.writes.find(write => write.path === BARE_EXCLUDES)?.text).toBe(excludesText('', ['node_modules']))
     expect(run.events.filter(isMirrorEvent)).toEqual([
+      `write ${MAIN_RUBRIC}`,
       GLOBAL_EXCLUDES_ARGV('/repo').join(' '),
       `write ${BARE_EXCLUDES}`,
       WORKTREE_CONFIG_ARGV('/repo').join(' '),
       EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES).join(' '),
       ln.join(' '),
       `write ${BARE_RECORD}`,
-      `write ${MAIN_RUBRIC}`,
-      `write ${WORKTREE_RUBRIC}`,
     ])
     expect(parseEpicRecord(record?.text ?? '')?.links).toEqual(['node_modules'])
     expect(run.reply).toContain('Linked 1, copied 0.')
@@ -738,19 +737,60 @@ describe("PM's epic brief and the sizing rubric of an epic", () => {
     expect(seed[0]?.type === 'entry' ? seed[0].body : '').toContain('PROJ-1')
   })
 
-  test('the rubric is written into the main checkout and the worktree where it is absent', async () => {
+  test("main's rubric is written where absent, before the excludes; the worktree's is never written", async () => {
     const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const paths = run.writes.map(write => write.path)
 
-    expect([lastWrite(run, MAIN_RUBRIC), lastWrite(run, WORKTREE_RUBRIC)]).toEqual([rubricText(), rubricText()])
+    expect(lastWrite(run, MAIN_RUBRIC)).toBe(rubricText())
+    expect([paths.indexOf(MAIN_RUBRIC) < paths.indexOf(BARE_EXCLUDES), paths.includes(WORKTREE_RUBRIC)]).toEqual([
+      true,
+      false,
+    ])
   })
 
-  test('a rubric the main checkout already has is never written over; the worktree still gets one', async () => {
+  test('a rubric main tracks and the worktree lacks is copied, hidden and recorded, never written', async () => {
     const world = await renderWorld()
-    const edited = { ...world, files: { ...world.files, [MAIN_RUBRIC]: 'my anchors\n' } }
-    const run = await epic(edited, RENDER_RULES, 'PROJ-1', '')
+    const files = { ...world.files, [MAIN_RUBRIC]: 'my anchors\n' }
+    const dirs = { ...world.dirs, '/repo/.cadre': [entry('sizing.md')] }
+    const run = await epic({ ...world, files, dirs }, RENDER_RULES, 'PROJ-1', '')
+    const excludes = (lastWrite(run, BARE_EXCLUDES) ?? '').split('\n')
+    const copies = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')?.copies
+    const paths = run.writes.map(write => write.path)
 
-    expect(run.writes.map(write => write.path)).not.toContain(MAIN_RUBRIC)
-    expect(lastWrite(run, WORKTREE_RUBRIC)).toBe(rubricText())
+    expect(run.events).toContain(['/bin/cp', '-p', '--', MAIN_RUBRIC, WORKTREE_RUBRIC].join(' '))
+    expect([excludes.includes('/.cadre/sizing.md'), copies, run.reply.includes('Linked 0, copied 1.')]).toEqual([
+      true,
+      ['.cadre/sizing.md'],
+      true,
+    ])
+    expect([paths.includes(MAIN_RUBRIC), paths.includes(WORKTREE_RUBRIC)]).toEqual([false, false])
+  })
+
+  test('a rubric main does not track is linked into the worktree and hidden, never copied or written', async () => {
+    const world = await renderWorld()
+    const files = { ...world.files, [MAIN_RUBRIC]: 'my anchors\n' }
+    const dirs = { ...world.dirs, '/repo/.cadre': [entry('sizing.md')] }
+    const rules = [rule(LS_OTHERS_ARGV('/repo'), 0, '.cadre/sizing.md\0'), ...RENDER_RULES]
+    const run = await epic({ ...world, files, dirs }, rules, 'PROJ-1', '')
+    const excludes = (lastWrite(run, BARE_EXCLUDES) ?? '').split('\n')
+    const isCopied = run.events.some(event => event.startsWith('/bin/cp '))
+
+    expect(run.events).toContain(['/bin/ln', '-s', '--', MAIN_RUBRIC, WORKTREE_RUBRIC].join(' '))
+    expect([excludes.includes('/.cadre/sizing.md'), isCopied]).toEqual([true, false])
+    expect(run.writes.map(write => write.path)).not.toContain(WORKTREE_RUBRIC)
+  })
+
+  test("a dangling link at main's rubric, or a linked .cadre in main, is never written through", async () => {
+    const world = await renderWorld()
+    const dangling = { ...world, dirs: { ...world.dirs, '/repo/.cadre': [link('sizing.md')] } }
+    const realPaths = { '/repo/.cadre': '/elsewhere/.cadre' }
+    const linked = { ...world, dirs: { ...world.dirs, '/repo/.cadre': [] }, realPaths }
+    for (const over of [dangling, linked]) {
+      const run = await epic(over, RENDER_RULES, 'PROJ-1', '')
+
+      expect(run.reply).toContain('Linked 0, copied 0.')
+      expect(run.writes.map(write => write.path)).not.toContain(MAIN_RUBRIC)
+    }
   })
 
   test('with no clock there is no seed, and the render goes on', async () => {
@@ -1135,12 +1175,12 @@ describe('safety net: epic failure paths (A8)', () => {
     ])
     expect(events.slice(events.indexOf(`write ${record}`))).toEqual([
       `write ${record}`,
-      `write ${MAIN_RUBRIC}`,
-      `write ${WORKTREE}/.cadre/sizing.md`,
       GIT_COMMON_DIR_ARGV.join(' '),
       GIT_COMMON_DIR_ARGV.join(' '),
       '/usr/bin/uname -s',
     ])
+    const rubricAt = events.indexOf(`write ${MAIN_RUBRIC}`)
+    expect([rubricAt >= 0, rubricAt < events.indexOf(`write ${GIT_DIR}/${EXCLUDES_FILE}`)]).toEqual([true, true])
   })
 
   test('create: a worktree or branch list git cannot give stops before any add, the list run last', async () => {

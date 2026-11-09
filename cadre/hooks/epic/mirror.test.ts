@@ -2,7 +2,14 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry } from '../../types'
 import { BARE_WORKTREE, entry, link } from '../testkit'
-import { epicStepArgv, mirrorLinkedParentWarning, mirrorPaths, mirrorPlan, mirrorUnhideableWarning } from './mirror'
+import {
+  epicStepArgv,
+  isHiddenCopy,
+  mirrorLinkedParentWarning,
+  mirrorPaths,
+  mirrorPlan,
+  mirrorUnhideableWarning,
+} from './mirror'
 import type { EpicStep } from './mirror'
 
 describe('mirroring the main checkout into the epic worktree (D-147, D-148)', () => {
@@ -178,5 +185,37 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
       main: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'a/b', 'web'],
       tree: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'a', 'a/b', 'web'],
     })
+  })
+})
+
+describe('the sizing rubric in the mirror', () => {
+  /** Main's .cadre listing with the rubric as a regular file. */
+  const MAIN = new Map([['.cadre', [entry('sizing.md')]]])
+  /** A worktree whose root lists .cadre, a folder its branch tracks, with no rubric in it. */
+  const TREE = new Map([['', [entry('.cadre', 'dir')]]])
+
+  test('a rubric main has, that no entry names, is copied into a worktree that lacks it', () => {
+    const plan = planOf([], MAIN, TREE)
+    const copy = { kind: 'copy', path: `${BARE_WORKTREE}/.cadre/sizing.md`, source: '/repo/.cadre/sizing.md' }
+
+    expect([plan.steps, plan.copies, plan.links]).toEqual([[copy], ['.cadre/sizing.md'], []])
+  })
+
+  test('an untracked rubric is linked; one the worktree lists, or a link in main, gets no step', () => {
+    const untracked = planOf(['.cadre/sizing.md'], MAIN, TREE)
+    const listed = planOf([], MAIN, new Map([['', [entry('.cadre', 'dir')]], ['.cadre', [entry('sizing.md')]]]))
+    const linked = planOf([], new Map([['.cadre', [link('sizing.md')]]]), TREE)
+
+    expect([untracked.steps.map(stepLine), untracked.copies]).toEqual([['link .cadre/sizing.md'], []])
+    expect([listed.steps, linked.steps]).toEqual([[], []])
+  })
+
+  test('isHiddenCopy holds for a git file and the sizing rubric, not for an env file', () => {
+    expect(['.cadre/sizing.md', '.gitignore', 'web/.mailmap', '.env'].map(path => isHiddenCopy(path))).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ])
   })
 })

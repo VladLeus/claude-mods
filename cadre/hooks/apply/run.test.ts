@@ -6,7 +6,18 @@ import { attendedNote } from '../framework/gsd/hunks'
 import { untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { planWithManifest } from '../plan/plan'
-import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, outcomeOf, USER_DIR_LISTED } from '../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  entry,
+  hostWorld,
+  link,
+  memHost,
+  memIo,
+  memWorld,
+  outcomeOf,
+  USER_DIR_LISTED,
+} from '../testkit'
+import type { MemWorld } from '../testkit'
 import { hunkFailureLine } from './hunks'
 import type { HunkRun } from './hunks'
 import { improverArgv } from './improver'
@@ -17,6 +28,7 @@ import {
   APPLIED_NONE_NOTE,
   appliedLines,
   installProject,
+  isNewRepoFileWritable,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
   roleFoldersOf,
@@ -224,6 +236,30 @@ describe('roleFoldersOf (D-238)', () => {
 
       expect(folderOf?.('be')).toBe(`/home/u/.claude/cadre/${slug}/be`)
     }
+  })
+})
+
+describe('a new file in the repo', () => {
+  /** The repo root and its .cadre folder as real folders, the rubric not in .cadre. */
+  const FOLDERS = { '/repo': [entry('.cadre', 'dir')], '/repo/.cadre': [entry('cadre.json')] }
+
+  /** Whether the rubric may be written new over the world `over` describes. */
+  async function isRubricWritable(over: Partial<MemWorld>): Promise<boolean> {
+    return isNewRepoFileWritable(memIo(memWorld(over), {}).io, '/repo', '.cadre/sizing.md')
+  }
+
+  test('isNewRepoFileWritable: only an absent path under real folders, with no link on its way', async () => {
+    const there = { '/repo/.cadre/sizing.md': 'my anchors\n' }
+    const dangling = { ...FOLDERS, '/repo/.cadre': [link('sizing.md')] }
+    const linked = { '/repo/.cadre': '/elsewhere/.cadre' }
+
+    expect([
+      await isRubricWritable({ dirs: FOLDERS }),
+      await isRubricWritable({ dirs: FOLDERS, files: there }),
+      await isRubricWritable({ dirs: dangling }),
+      await isRubricWritable({ dirs: FOLDERS, realPaths: linked }),
+      await isRubricWritable({ dirs: FOLDERS, unknownPaths: ['/repo/.cadre/sizing.md'] }),
+    ]).toEqual([true, false, false, false, false])
   })
 })
 
