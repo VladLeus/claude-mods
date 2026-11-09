@@ -29,6 +29,7 @@ import { gatherScans } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { readRepoFile } from './scan/port-read'
 import { compileScope } from './scope/compile'
+import { runnableFrameworks } from './scope/frameworks'
 import { listsCadreRole, parseCadreState } from './state/cadre-files'
 
 /** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */
@@ -59,10 +60,10 @@ function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySe
 }
 
 /**
- * One compiled scope per role, by role id (ROLE-06, D-80): each role is compiled for the framework it runs on
- * (resolvedFramework), with the setup and the code dirs of the scans, the MCP route of every role (MCP_ROUTE, D-104),
- * where the launchers start, so the card tells what loads there (D-122), the whole team for the decision chain, as
- * attended when its framework is in `attended`, and with the repo's `frameworks`, when given, as what it may also run.
+ * One compiled scope per role, by role id: each role is compiled for the framework it runs on (resolvedFramework),
+ * with the setup and the code dirs of the scans, the MCP route of every role (MCP_ROUTE), where the launchers start, so
+ * the card tells what loads there, the whole team for the decision chain, and with the repo's `frameworks`, when
+ * given, as what it may also run. A role is attended when any framework it may run is in `attended`.
  */
 export function compileAll(
   roles: readonly RoleSpec[],
@@ -72,6 +73,8 @@ export function compileAll(
   launchStart: LaunchStart,
   frameworks?: readonly FrameworkId[],
 ): ReadonlyMap<string, CompiledScope> {
+  const alsoRuns = frameworks === undefined ? {} : { alsoRuns: frameworks }
+
   return new Map(
     roles.map((role): [string, CompiledScope] => {
       const framework = resolvedFramework(role, repoDefault)
@@ -79,11 +82,11 @@ export function compileAll(
         framework,
         setup: gathered.setup,
         codeDirs: gathered.repo.codeDirs,
-        isAttended: attended.has(framework),
+        isAttended: runnableFrameworks({ framework, ...alsoRuns }).some(id => attended.has(id)),
         mcpRoute: MCP_ROUTE,
         launchStart,
         roles,
-        ...(frameworks === undefined ? {} : { alsoRuns: frameworks }),
+        ...alsoRuns,
       }
 
       return [role.id, compileScope(role, context)]
@@ -94,8 +97,8 @@ export function compileAll(
 /**
  * The scope of every role, which init shows and plans from (ROLE-06, D-78, D-104): compileScope with the role's own
  * framework or the repo default, the setup and the code dirs of the scans, MCP_ROUTE, where the launchers start (D-122)
- * and the whole team. A role is attended when an unmet hunk is on its framework's config file (A5). Keyed by role id,
- * in role order.
+ * and the whole team. A role is attended when an unmet hunk is on the config file of any framework it may run. Keyed
+ * by role id, in role order.
  */
 export function scopesFor(
   roles: readonly RoleSpec[],

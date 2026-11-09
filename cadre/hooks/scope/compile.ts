@@ -105,17 +105,23 @@ function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
 }
 
 /**
- * The skills and agents linked into the overlay at launch (spike S4 V3): the handoff skills, the start skills of every
- * framework the role may run and the skills of the role, and for a role on GSD the `gsd-*` agents of the setup. Under
- * `--setting-sources project` a user-level skill is absent unless the overlay links it. A skill named `plugin:skill`
- * is not linked: its plugin is enabled instead.
+ * The skills and agents linked into the overlay at launch: the handoff skills, the start skills of every framework the
+ * role may run and the skills of the role, and the agents of the setup of every framework the role may run, by each
+ * adapter's prefix (`gsd-*` for GSD). Under `--setting-sources project` a user-level skill is absent unless the overlay
+ * links it. A skill named `plugin:skill` is not linked: its plugin is enabled instead.
  */
 function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay'] {
-  const startSkills = runnableFrameworks(ctx).flatMap(id => adapterOf(id).startSkills)
+  const runnable = runnableFrameworks(ctx)
+  const startSkills = runnable.flatMap(id => adapterOf(id).startSkills)
   const names = [...INFRA_SKILLS, ...startSkills, ...role.skills]
   const skills = sortedUnique(names.filter(name => skillPlugin(name) === null))
-  const prefix = adapterOf(ctx.framework).agentPrefix
-  const agents = prefix === null ? [] : sortedUnique(ctx.setup.agents.filter(name => name.startsWith(prefix)))
+  const agents = sortedUnique(
+    runnable.flatMap(id => {
+      const prefix = adapterOf(id).agentPrefix
+
+      return prefix === null ? [] : ctx.setup.agents.filter(name => name.startsWith(prefix))
+    }),
+  )
 
   return { skills, agents }
 }

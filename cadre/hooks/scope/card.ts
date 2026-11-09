@@ -231,11 +231,14 @@ function partialMcpRules(setup: SetupScan): ScopeRule[] {
 }
 
 /**
- * Whether the role runs GSD without Bash. GSD workflows need Bash, so such a role keeps its start skills and runs them
- * through a person, which makes it attended (A1).
+ * Whether the role runs GSD without Bash: a framework the role may run needs Bash, and the role has no Bash. GSD
+ * workflows need Bash, so such a role keeps its start skills and runs them through a person, which makes it attended
+ * (A1).
  */
 function isGsdWithoutBash(role: RoleSpec, ctx: ScopeContext): boolean {
-  return adapterOf(ctx.framework).needsBash && !role.hasBash
+  if (role.hasBash) return false
+
+  return runnableFrameworks(ctx).some(id => adapterOf(id).needsBash)
 }
 
 /**
