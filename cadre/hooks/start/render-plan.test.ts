@@ -255,6 +255,16 @@ describe('runtime render (D-102)', () => {
     ])
   })
 
+  test('an epic seed is appended after a newline when there is no inbox, and never to an inbox that is there', () => {
+    const inbox = `${RUNTIME}/inbox.jsonl`
+    const kept = disk({ [RUNTIME]: folder(RUNTIME), [inbox]: regular(inbox) })
+    const seeded = renderSteps(input({ inboxSeed: 'L\n' })).steps
+    const reused = renderSteps(input({ inboxSeed: 'L\n', stats: kept })).steps
+
+    expect(seeded.filter(step => step.path === inbox)).toEqual([{ kind: 'append', path: inbox, text: '\nL\n' }])
+    expect(reused.filter(step => step.path === inbox)).toEqual([])
+  })
+
   test('an inbox.md of an older setup is left alone, file or link, and the empty inbox.jsonl is created', () => {
     const old = `${RUNTIME}/inbox.md`
     for (const stat of [regular(old), DANGLING]) {

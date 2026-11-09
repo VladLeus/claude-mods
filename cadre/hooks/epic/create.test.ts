@@ -4,9 +4,10 @@ import type { HostIo, ManifestEntry, MemoryItem, RoleSpec } from '../../types'
 import { instructionsRecordPath, instructionsRecordText } from '../apply/private'
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue, stableJson } from '../core/json'
-import { cadreJsonText, roleJsonText } from '../generate/docs'
+import { cadreJsonText, roleJsonText, rubricText } from '../generate/docs'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
+import { parseInbox } from '../messages/record'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeTooOldReply } from '../start/claude-version'
 import { START_NO_GIT_DIR } from '../start/gather-user'
@@ -607,7 +608,7 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
 
     expect(paths).toContain(`${BARE_WORKTREE}/.cadre/pm/.runtime/settings.json`)
     expect(paths).toContain(`${BARE_WORKTREE}/.cadre/be/.runtime/stamp`)
-    expect(paths.filter(path => path.startsWith('/repo/.cadre/'))).toEqual([])
+    expect(paths.filter(path => path.startsWith('/repo/.cadre/') && path !== MAIN_RUBRIC)).toEqual([])
     expect(run.reply.split('\n').slice(-4)).toEqual([
       `  pm: ${epicCommand('pm')}`,
       `  be: ${epicCommand('be')}`,
@@ -709,6 +710,54 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
 
 /** PM, TL and BE, in the order cadre.json lists them in the role picker specs. */
 const TRIO: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templateRole('be')]
+
+/** The sizing rubric of the main checkout and of BARE_WORKTREE. */
+const MAIN_RUBRIC = '/repo/.cadre/sizing.md'
+const WORKTREE_RUBRIC = `${BARE_WORKTREE}/.cadre/sizing.md`
+
+/** The stdin of the inbox append of each role an epic run rendered, by role id. */
+function inboxStdins(run: EpicRun, ids: readonly string[]): (string | undefined)[] {
+  return ids.map(id => {
+    const path = `${BARE_WORKTREE}/.cadre/${id}/.runtime/inbox.jsonl`
+
+    return run.calls.find(call => call.argv[0] === '/usr/bin/tee' && call.argv[2] === path)?.options.stdin
+  })
+}
+
+describe("PM's epic brief and the sizing rubric of an epic", () => {
+  test("the PM's new inbox starts with the epic brief from cadre; every other inbox starts empty", async () => {
+    const run = await epic(await renderWorld(TRIO), RENDER_RULES, 'PROJ-1', '')
+    const [pm = '', tl, be] = inboxStdins(run, ['pm', 'tl', 'be'])
+    const seed = parseInbox(pm)
+
+    expect([pm.startsWith('\n'), tl, be]).toEqual([true, '', ''])
+    expect(seed).toHaveLength(1)
+    expect(seed[0]).toMatchObject({ type: 'entry', from: 'cadre', to: 'pm', kind: 'note', at: 1_000_000 })
+    expect(seed[0]?.type === 'entry' ? seed[0].body : '').toContain('PROJ-1')
+  })
+
+  test('the rubric is written into the main checkout and the worktree where it is absent', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+
+    expect([lastWrite(run, MAIN_RUBRIC), lastWrite(run, WORKTREE_RUBRIC)]).toEqual([rubricText(), rubricText()])
+  })
+
+  test('a rubric the main checkout already has is never written over; the worktree still gets one', async () => {
+    const world = await renderWorld()
+    const edited = { ...world, files: { ...world.files, [MAIN_RUBRIC]: 'my anchors\n' } }
+    const run = await epic(edited, RENDER_RULES, 'PROJ-1', '')
+
+    expect(run.writes.map(write => write.path)).not.toContain(MAIN_RUBRIC)
+    expect(lastWrite(run, WORKTREE_RUBRIC)).toBe(rubricText())
+  })
+
+  test('with no clock there is no seed, and the render goes on', async () => {
+    const run = await epic({ ...(await renderWorld()), now: null }, RENDER_RULES, 'PROJ-1', '')
+
+    expect(inboxStdins(run, ['pm', 'be'])).toEqual(['', ''])
+    expect(run.writes.map(write => write.path)).toContain(`${BARE_WORKTREE}/.cadre/pm/.runtime/stamp`)
+  })
+})
 
 /** The ids of the roles an epic run rendered into BARE_WORKTREE: the role of each `.runtime/stamp` write, in order. */
 function stampedRoles(run: EpicRun): string[] {
