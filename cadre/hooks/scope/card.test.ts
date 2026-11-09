@@ -575,3 +575,37 @@ describe('safety net: mcpToolName (A8)', () => {
     expect(mcpToolName('Jira_cloud-2')).toBe('mcp__Jira_cloud-2')
   })
 })
+
+describe('every framework a role may run on the card', () => {
+  /** The card lines that say what else the role may run. */
+  function alsoRunsLines(scope: CompiledScope): string[] {
+    return scopeCardLines(scope.card).filter(line => line.startsWith('  also runs: '))
+  }
+
+  test('a role that may also run superpowers has the line naming it, right after its framework line', () => {
+    const be = templateRole('be')
+    const union = compileScope(be, context({ framework: 'gsd', alsoRuns: ['gsd', 'superpowers'] }))
+    const lines = scopeCardLines(union.card)
+
+    expect(alsoRunsLines(union)).toEqual(['  also runs: superpowers'])
+    expect(lines[lines.indexOf('  also runs: superpowers') - 1]?.startsWith('  framework: GSD;')).toBe(true)
+  })
+
+  test('a card with nothing else to run, or of a role on none, has no such line', () => {
+    const alone = compileScope(templateRole('be'), context({ framework: 'gsd' }))
+    const none = compileScope(templateRole('pm'), context({ framework: 'none', alsoRuns: ['gsd', 'superpowers'] }))
+
+    expect([alsoRunsLines(alone), alsoRunsLines(none)]).toEqual([[], []])
+  })
+
+  test("the start skills of every framework the role may run count as given, so none of them is 'not given'", () => {
+    const skills = [skillRef('gsd-plan-phase'), skillRef('gsd-execute-phase'), skillRef('mine')]
+    const setup = emptySetupScan({ skills })
+    const tl = templateRole('tl')
+    const union = compileScope(tl, context({ framework: 'superpowers', setup, alsoRuns: ['superpowers', 'gsd'] }))
+    const alone = compileScope(tl, context({ framework: 'superpowers', setup }))
+
+    expect(union.card.notGiven.skills).toEqual(['mine'])
+    expect(alone.card.notGiven.skills).toEqual(['gsd-execute-phase', 'gsd-plan-phase', 'mine'])
+  })
+})

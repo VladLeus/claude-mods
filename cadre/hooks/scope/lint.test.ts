@@ -466,3 +466,18 @@ describe('isInfraPlugin (D-252)', () => {
     expect(isInfraPlugin('autopilotx@m')).toBe(false)
   })
 })
+
+describe('the lint over every framework a role may run', () => {
+  test("a gsd role that may run superpowers has a problem while superpowers' start skills have no plugin", () => {
+    const be = templateRole('be')
+    const union = compileScope(be, context({ framework: 'gsd', alsoRuns: ['gsd', 'superpowers'] }))
+    const alone = compileScope(be, context({ framework: 'gsd' }))
+    const setup = emptySetupScan({ plugins: ['superpowers@claude-plugins-official'] })
+    const enabled = compileScope(be, context({ framework: 'gsd', setup, alsoRuns: ['gsd', 'superpowers'] }))
+
+    expect(infraViolations(union, 'gsd')).toContain(
+      'start skill superpowers:brainstorming of superpowers needs the plugin superpowers, which is not enabled',
+    )
+    expect([infraViolations(alone, 'gsd'), infraViolations(enabled, 'gsd')]).toEqual([[], []])
+  })
+})
