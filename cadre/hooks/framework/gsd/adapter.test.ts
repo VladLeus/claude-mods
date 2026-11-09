@@ -709,3 +709,44 @@ describe('GSD_ADAPTER', () => {
     expect([GSD_ADAPTER.startSkills, GSD_ADAPTER.pluginsToEnable].every(list => Object.isFrozen(list))).toBe(true)
   })
 })
+
+/** Whether every step is one line of printable ASCII. */
+function isPrintable(steps: readonly string[]): boolean {
+  return steps.every(step => /^[\x20-\x7e]+$/.test(step))
+}
+
+describe('the GSD start steps of a role', () => {
+  const lead = GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true })
+  const worker = GSD_ADAPTER.roleWork.startSteps({ roleId: 'be', isLead: false })
+  /** What each step runs, in order: the new project, the workstream, the milestone, then the quick or phase path. */
+  const RUNS = [
+    '/gsd-new-project',
+    'workstream.create "$GSD_WORKSTREAM" --no-migrate',
+    '/gsd-new-milestone',
+    '/gsd-quick',
+  ]
+
+  test('the lead: /gsd-new-project with no .planning/, the workstream, the epic milestone, then quick or phase', () => {
+    expect(lead.map((step, at) => step.includes(RUNS[at] ?? '-'))).toEqual([true, true, true, true])
+    expect([lead[0]?.includes('.planning/'), lead[2]?.includes('epic')]).toEqual([true, true])
+    for (const run of ['/gsd-phase add', '/gsd-plan-phase', '/gsd-execute-phase']) expect(lead[3]).toContain(run)
+    expect([Object.isFrozen(lead), isPrintable(lead)]).toEqual([true, true])
+  })
+
+  test("a worker: the no-TL new project step, the workstream, TL's task as milestone goal, then quick or phase", () => {
+    expect(worker.map((step, at) => step.includes(RUNS[at] ?? '-'))).toEqual([true, true, true, true])
+    const facts = [worker[0]?.includes('no TL'), worker[0]?.includes('.planning/'), worker[2]?.includes("TL's task")]
+
+    expect(facts).toEqual([true, true, true])
+    expect(worker).not.toContain(lead[0])
+    expect([worker[1], worker[3]]).toEqual([lead[1], lead[3]])
+    expect([Object.isFrozen(worker), isPrintable(worker)]).toEqual([true, true])
+  })
+
+  test('no step names a direct write under .planning/ or the workstreams skill that migrates', () => {
+    for (const step of [...lead, ...worker]) {
+      expect(step.includes('gsd-workstreams')).toBe(false)
+      expect(/\b(write|edit|create) \.planning\//i.test(step)).toBe(false)
+    }
+  })
+})

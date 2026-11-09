@@ -518,3 +518,24 @@ describe('SUPERPOWERS_ADAPTER', () => {
     expect(lists.every(list => Object.isFrozen(list))).toBe(true)
   })
 })
+
+describe('the superpowers start steps of a role', () => {
+  test('a worker plans in its role-named file and executes it subagent-driven, never asking for the method', () => {
+    const steps = SUPERPOWERS_ADAPTER.roleWork.startSteps({ roleId: 'be', isLead: false })
+    const text = steps.join('\n')
+
+    expect(text).toContain('docs/superpowers/plans/be-<ticket>.md')
+    expect(text).toContain('superpowers:subagent-driven-development')
+    expect(/never ask/i.test(text)).toBe(true)
+    expect(text).not.toContain('docs/superpowers/specs/')
+    expect([Object.isFrozen(steps), steps.every(step => /^[\x20-\x7e]+$/.test(step))]).toEqual([true, true])
+  })
+
+  test('the lead also writes the spec to docs/superpowers/specs/tl-<ticket>.md, then its own plan', () => {
+    const text = SUPERPOWERS_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }).join('\n')
+
+    expect(text).toContain('docs/superpowers/specs/tl-<ticket>.md')
+    expect(text).toContain('docs/superpowers/plans/tl-<ticket>.md')
+    expect(text).toContain('superpowers:subagent-driven-development')
+  })
+})

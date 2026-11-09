@@ -36,6 +36,10 @@ describe('ADAPTERS', () => {
       expect(Object.isFrozen(adapter.doneSignal)).toBe(true)
       const install = adapter.projectInstall
       expect([install, install?.argv, install?.writes].every(part => Object.isFrozen(part))).toBe(true)
+      expect(Object.isFrozen(adapter.roleWork)).toBe(true)
+      for (const isLead of [true, false]) {
+        expect(Object.isFrozen(adapter.roleWork.startSteps({ roleId: 'be', isLead }))).toBe(true)
+      }
     }
   })
 })
@@ -75,6 +79,10 @@ describe('adapter contract (DET-04)', () => {
       const install = adapter.projectInstall
       const isInstall = install !== null && install.argv.length > 0 && install.writes.length > 0
       expect([Object.hasOwn(adapter, 'projectInstall'), install === null || isInstall]).toEqual([true, true])
+      const { roleWork } = adapter
+      const env = roleWork.workstreamEnv
+      expect([Object.hasOwn(adapter, 'roleWork'), typeof roleWork.startSteps]).toEqual([true, 'function'])
+      expect(env === null || /^[A-Z][A-Z0-9_]*$/.test(env)).toBe(true)
     }
     expect(ADAPTERS.filter(adapter => adapter.projectInstall === null).map(adapter => adapter.id)).toEqual(['none'])
   })
@@ -95,6 +103,12 @@ describe('adapter contract (DET-04)', () => {
         const decided = gate.decisionType === null ? gate.kind === 'standing-rule' : isDecisionType(gate.decisionType)
         expect(decided).toBe(true)
       }
+    }
+  })
+
+  test('the built-in fallback has no start step for any role', () => {
+    for (const roleId of ['tl', 'be', 'pm']) {
+      for (const isLead of [true, false]) expect(BUILTIN_ADAPTER.roleWork.startSteps({ roleId, isLead })).toEqual([])
     }
   })
 
