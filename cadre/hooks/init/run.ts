@@ -9,6 +9,7 @@
 import type {
   CadreState,
   DesiredFile,
+  FrameworkId,
   HostIo,
   InitFacts,
   InitIo,
@@ -39,6 +40,7 @@ import type { ApplyOutcome } from '../apply/run'
 import { applySteps, planMismatchProblem } from '../apply/steps'
 import { sha256Hex } from '../core/hash'
 import { needsGsdCheck, provenUserDir, withGsdIdentity } from '../framework/gsd/identity'
+import { detectAll } from '../framework/registry'
 import { desiredFiles } from '../generate/files'
 import { trackedParts } from '../generate/gittrack'
 import { builtClaudeMdPath } from '../generate/launcher'
@@ -80,13 +82,13 @@ import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
 import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
-import type { PlanResult, Reviewed } from './draft'
+import type { Draft, PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
 import { initSizing, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
-import { gsdCheckAsk } from './stages/frameworks'
+import { gsdCheckAsk, installedFrameworks } from './stages/frameworks'
 import type { Answer, Effect, InitStage, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
 
 /**
@@ -290,6 +292,23 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
 }
 
 /**
+ * The roles and repo default once the consented framework installs ran: an install whose framework the facts read
+ * again do not show failed, and a role or repo default on it falls back to the first framework of the set chosen, else
+ * of the installed ones, that did not fail, else none.
+ */
+function withoutFailedInstalls(draft: Draft, found: readonly FrameworkId[]): Pick<Draft, 'roles' | 'repoDefault'> {
+  const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
+  if (failed.length === 0) return { roles: draft.roles, repoDefault: draft.repoDefault }
+  const fallback = (draft.frameworkSet ?? draft.installed).find(id => !failed.includes(id)) ?? 'none'
+  const kept = (framework: FrameworkId): FrameworkId => (failed.includes(framework) ? fallback : framework)
+  const roles = draft.roles.map(role =>
+    role.framework === undefined ? role : { ...role, framework: kept(role.framework) },
+  )
+
+  return { roles, repoDefault: draft.repoDefault === null ? null : kept(draft.repoDefault) }
+}
+
+/**
  * Writes the plan the person confirmed (D-105, LNCH-01), in this order:
  * 1. The Keep mine or Take new questions, the only questions after Confirm (D-105, D-67): one for each conflicted file
  *    of the confirmed plan (conflictPaths), in plan order, before any host call (conflictQuestion with
@@ -301,6 +320,7 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
  *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again. A
  *    plugin among them that installed joins the setup as step 4's plugins do, and each failure is an install problem.
+ *    A role or repo default on a framework the facts do not show then falls back (withoutFailedInstalls).
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -358,7 +378,7 @@ async function applyConfirmed(
   reviewed: Reviewed,
 ): Promise<StepResult<{ readonly planned: PlanResult; readonly outcome: ApplyOutcome }>> {
   const { draft } = reviewed
-  const { locations, gathered, roles, repoDefault, launchStart } = draft
+  const { locations, gathered, launchStart } = draft
   const choices = new Map<string, ConflictChoice>()
   for (const path of conflictPaths(reviewed.planned.plan)) {
     const disk = await readRepoFile(io, locations.root, path, MAX_READ_BYTES)
@@ -382,6 +402,7 @@ async function applyConfirmed(
   }
   const project = await installProject(host, locations.root, locations.home, projectInstalls)
   const scanned = projectInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
+  const { roles, repoDefault } = withoutFailedInstalls(draft, installedFrameworks(detectAll(scanned.facts.facts)))
   const projectPlugins = projectInstalls.flatMap(install =>
     install.isPlugin && project.installed.includes(install.id) ? [install.id] : [],
   )

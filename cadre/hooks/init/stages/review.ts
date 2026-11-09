@@ -10,7 +10,7 @@
  * init/machine or init/run.
  */
 import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
-import { setupAfterInstalls } from '../../apply/installs'
+import { projectInstallOf, setupAfterInstalls } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
@@ -352,7 +352,8 @@ function handoutLines(draft: Draft, words: ListWords): string[] {
  * the policy is `ignore`, so both items with a review button of their own can be checked before Confirm, then the scan
  * warnings of the run, kept for this review, then the recommendations for the team as the security stage shows them
  * (recommend over the roles, their resolved frameworks and the scans before any install; recommendationLines,
- * ROLE-03), so every surface shows them, paged, before Confirm (WD-M2), then the plugins Confirm installs when the
+ * ROLE-03), so every surface shows them, paged, before Confirm (WD-M2), then each framework Confirm installs at
+ * project scope with its command and what its installer writes, then the plugins Confirm installs when the
  * person answered Install for any (the security plugins, decision #39, and claude-md-management, D-141), each key
  * cleaned and capped as a report cell is (decision #69 B7), and last, when claude-md-management is installed or
  * answered Install and the improver has a built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4).
@@ -367,6 +368,12 @@ function reviewLines(
 ): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
   const installLine = t('init.review.reviewLines', { keys })
+  const frameworkLines = (draft.frameworkInstalls ?? []).flatMap(id => {
+    const install = projectInstallOf(id)
+    if (install === null) return []
+
+    return [t('init.review.frameworkInstall', { command: install.argv.join(' '), writes: install.writes.join(', ') })]
+  })
   const rows = draft.roles.map(role => privateFilesRow(role.id))
   const privateRows = draft.instructions.kind === 'parts' ? [] : [PRIVATE_FILES_HEADING, ...rows]
   const count = improverRunCount(draft, plan)
@@ -388,6 +395,7 @@ function reviewLines(
     ...(draft.policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
     ...recommendationLines(recommendations, draft.roles),
+    ...frameworkLines,
     ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
     ...improver,
   ].map(line => redactedText(line))

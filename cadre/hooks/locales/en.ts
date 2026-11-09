@@ -317,6 +317,8 @@ export const EN = Object.freeze({
     ''}repo, never committed)`,
   'init.review.privateFilesHeading': 'Private files per role (written after Confirm):',
   'init.review.reviewLines': 'Plugins to install after Confirm (a --dry-run installs nothing): {keys}',
+  'init.review.frameworkInstall':
+    'Framework install from the repo root after Confirm (a --dry-run installs nothing): {command}; it writes {writes}',
   'init.review.rolesHeading': 'Roles:',
   'init.review.roleRow': '  {title} ({id})',
   'init.review.title': 'Review',
