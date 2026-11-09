@@ -150,6 +150,15 @@ describe('lintDenyPattern', () => {
     expect(INFRA_CHECKS.filter(check => check.token.startsWith('mcp__cadre__'))).toEqual([])
   })
 
+  test('a rule with an argument on a cadre tool is refused at commit and at launch', () => {
+    const message = 'would block an infra tool'
+    const names = ['mcp__cadre__inbox_send', 'mcp__cadre__inbox_read', 'mcp__cadre__inbox_mark']
+    const refused = names.flatMap(name => [`${name}(*)`, `${name}(x)`])
+
+    expect(refused.filter(pattern => lintDenyPattern(pattern) !== message)).toEqual([])
+    expect(refused.filter(pattern => lintRuntimeDenyPattern(pattern) !== message)).toEqual([])
+  })
+
   test('a literal pattern blocks only the infra name it equals or the server it names, not a longer one (B9)', () => {
     const passing = ['mcp__a', 'mcp__auto', 'mcp__autopilot_', 'mcp__autopilot__wait', 'mcp__autopilot__wait_fo']
 

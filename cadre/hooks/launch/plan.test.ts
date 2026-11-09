@@ -289,6 +289,14 @@ describe('launch render', () => {
     expect(Object.keys(plan.settings.env ?? {})).toEqual(['ALPHA', 'JIRA_URL', 'ZED', 'CADRE_ROLE', 'CADRE_ROOT'])
   })
 
+  test("cadre's CADRE_ROLE and CADRE_ROOT win over the values of the same names the role carries", () => {
+    const role = templateRole('be', { carry: { ...CARRY_ALL, env: ['CADRE_ROLE', 'CADRE_ROOT', 'TOKEN'] } })
+    const scope = compileScope(role, context())
+    const plan = launchPlan(role, scope, user({ env: { CADRE_ROLE: 'x', CADRE_ROOT: '/elsewhere', TOKEN: 'v' } }))
+
+    expect(plan.settings.env).toEqual({ CADRE_ROLE: 'be', CADRE_ROOT: '/repo', TOKEN: 'v' })
+  })
+
   test('a carried env name the user has no value for is left out, and so is an empty env', () => {
     const role = templateRole('pm', { carry: { ...CARRY_ALL, env: ['JIRA_URL', 'MISSING'] } })
     const scope = compileScope(role, context())
@@ -666,6 +674,17 @@ function withSetting(plan: LaunchPlan, key: string, value: unknown): LaunchPlan 
 describe('launch properties', () => {
   test('every role, framework and assignment of the matrix gives a plan without a problem (ISO-04, D-77, D-84)', () => {
     expect(matrixProblems()).toEqual([])
+  })
+
+  test('every matrix plan runs as its role id, with CADRE_ROOT the root of its launching user', () => {
+    const wrong = matrixCases(MATRIX_USER).filter(item => {
+      const env = item.plan.settings.env
+      if (!isObject(env)) return true
+
+      return env.CADRE_ROLE !== item.role.id || env.CADRE_ROOT !== item.launcher.root
+    })
+
+    expect(wrong.map(item => item.label)).toEqual([])
   })
 
   test('the matrix is not empty: seven roles, three frameworks, two assignment sets, and links to check', () => {

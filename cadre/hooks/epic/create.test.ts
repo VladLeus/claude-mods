@@ -657,6 +657,15 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     expect(kickoff.endsWith(' --ask-user\n')).toBe(true)
     expect(paths.indexOf(`${runtime}/stamp`) - paths.indexOf(`${runtime}/kickoff.txt`)).toBe(1)
   })
+
+  test('each role rendered into the worktree runs as its id, with the worktree root as CADRE_ROOT', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const envs = TEAM.map(role => settingsAt(run.writes, BARE_WORKTREE, role.id).env)
+
+    expect(envs.map(env => (isObject(env) ? [env.CADRE_ROLE, env.CADRE_ROOT] : null))).toEqual(
+      TEAM.map(role => [role.id, BARE_WORKTREE]),
+    )
+  })
 })
 
 describe('the epic kickoff of each role (D-158 to D-160)', () => {
