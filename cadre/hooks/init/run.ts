@@ -33,7 +33,7 @@ import type { ConflictChoice } from '../apply/conflict'
 import { hunkRuns, hunksAfterRuns } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
-import { noHomeInstallText, projectInstallOf, setupAfterInstalls } from '../apply/installs'
+import { frameworkFallbackText, noHomeInstallText, projectInstallOf, setupAfterInstalls } from '../apply/installs'
 import type { ApplyInput } from '../apply/private'
 import { installPlugins, installProject, NOTHING_APPLIED, privatePlanOf, writeWithImprover } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
@@ -88,7 +88,7 @@ import { consentedPluginKeys, initFrameworks, privatesOf, repoPartsOf, withRepoR
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
-import { gsdCheckAsk, installedFrameworks } from './stages/frameworks'
+import { FRAMEWORK_LABELS, gsdCheckAsk, installedFrameworks } from './stages/frameworks'
 import type { Answer, Effect, InitStage, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
 
 /**
@@ -293,19 +293,45 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
 }
 
 /**
- * The roles and repo default once the consented framework installs ran: a role or repo default on a framework whose
- * install `failed` falls back to the first framework of the set chosen, else of the installed ones, that did not fail,
- * else none.
+ * What a role or repo default on a framework whose install `failed` falls back to: the first framework of the set
+ * chosen, else of the installed ones, that did not fail, else none.
  */
+function fallbackOf(draft: Draft, failed: readonly FrameworkId[]): FrameworkId {
+  return (draft.frameworkSet ?? draft.installed).find(id => !failed.includes(id)) ?? 'none'
+}
+
+/** The roles and repo default once the consented framework installs ran, those on a failed one moved to fallbackOf. */
 function withoutFailedInstalls(draft: Draft, failed: readonly FrameworkId[]): Pick<Draft, 'roles' | 'repoDefault'> {
   if (failed.length === 0) return { roles: draft.roles, repoDefault: draft.repoDefault }
-  const fallback = (draft.frameworkSet ?? draft.installed).find(id => !failed.includes(id)) ?? 'none'
+  const fallback = fallbackOf(draft, failed)
   const kept = (framework: FrameworkId): FrameworkId => (failed.includes(framework) ? fallback : framework)
   const roles = draft.roles.map(role =>
     role.framework === undefined ? role : { ...role, framework: kept(role.framework) },
   )
 
   return { roles, repoDefault: draft.repoDefault === null ? null : kept(draft.repoDefault) }
+}
+
+/**
+ * One problem line per consented framework install that detection does not show, in `failed` order: the roles and
+ * the repo default on it, what they fell back to (fallbackOf), and the command to run before init runs again.
+ */
+function fallbackProblems(draft: Draft, failed: readonly FrameworkId[]): string[] {
+  const fallback = FRAMEWORK_LABELS[fallbackOf(draft, failed)]
+
+  return failed.flatMap(id => {
+    const install = projectInstallOf(id)
+    if (install === null) return []
+    const fallen = {
+      name: FRAMEWORK_LABELS[id],
+      command: install.argv.join(' '),
+      roles: draft.roles.filter(role => role.framework === id).map(role => role.id),
+      isRepoDefault: draft.repoDefault === id,
+      fallback,
+    }
+
+    return [frameworkFallbackText(fallen)]
+  })
 }
 
 /**
@@ -318,11 +344,12 @@ function withoutFailedInstalls(draft: Draft, failed: readonly FrameworkId[]): Pi
  *    asked again with why on top (D-136). A dismissal cancels with CONFLICT_DISMISSED_REASON and MAX_ASKS answers that
  *    are neither with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
  * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
- *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again. A
- *    consented plugin install that the facts show joins the setup as step 4's plugins do (consentedPluginKeys), and
- *    each failure is an install problem. An install whose framework the facts do not show failed: a role or repo
- *    default on it falls back (withoutFailedInstalls), and cadre.json records the frameworks and sizing without it
- *    (initFrameworks).
+ *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again, and
+ *    only they tell whether an install worked, never its exit code. A consented plugin install that the facts show
+ *    joins the setup as step 4's plugins do (consentedPluginKeys). An install whose framework the facts do not show
+ *    failed: a role or repo default on it falls back (withoutFailedInstalls), cadre.json records the frameworks and
+ *    sizing without it (initFrameworks), and the reply names who fell back to what and the command to run
+ *    (fallbackProblems).
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -368,10 +395,10 @@ function withoutFailedInstalls(draft: Draft, failed: readonly FrameworkId[]): Pi
  *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
  *    offered, its label is set before the writes and again before each improver run (IMPROVER_PROGRESS, D-284, S-02).
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
- *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
- *    (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and tally of 6a
- *    (improverWarnings, improved), which the reply prints, each failure with the command to run (D-106, decision
- *    #39).
+ *    framework installs the facts show by install id and then the plugins installed (installed), the fallback line of
+ *    each framework install they do not show and the problems of step 4 (installProblems), the untracked-parts
+ *    warnings of 5a (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and
+ *    tally of 6a (improverWarnings, improved), which the reply prints, each failure with the command to run.
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
  */
 async function applyConfirmed(
@@ -402,7 +429,7 @@ async function applyConfirmed(
   if (projectInstalls.length > 0) {
     await io.progress(FRAMEWORK_INSTALL_PROGRESS, countsText([['frameworks', projectInstalls.length]]))
   }
-  const project = await installProject(host, locations.root, locations.home, projectInstalls)
+  await installProject(host, locations.root, locations.home, projectInstalls)
   const scanned = projectInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
   const found = installedFrameworks(detectAll(scanned.facts.facts))
   const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
@@ -463,12 +490,13 @@ async function applyConfirmed(
       ? await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
       : { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
+  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id))
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
-    installed: installs.installed,
-    installProblems: [...project.installProblems, ...installs.installProblems],
+    installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...installs.installed],
+    installProblems: [...fallbackProblems(draft, failed), ...installs.installProblems],
     untrackedParts: tracked.warnings,
     privateProblems: [...privatePlan.problems, ...written.privateProblems],
   }

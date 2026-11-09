@@ -668,6 +668,14 @@ export const EN = Object.freeze({
     'could not install {shown}: no home folder is known to run it from: run it yourself: {command}',
   'apply.installs.projectInstallFailureText':
     'could not install {shown}: run it yourself from the repo root: {command}',
+  'apply.installs.frameworkFallback':
+    `{name} did not install, so {moved} fell back to {fallback}: run {command} from the repo root, ${
+    ''}then /cadre init again`,
+  'apply.installs.frameworkFallbackNone':
+    '{name} did not install: run {command} from the repo root, then /cadre init again',
+  'apply.installs.fallbackRoles.one': 'role {ids}',
+  'apply.installs.fallbackRoles.other': 'roles {ids}',
+  'apply.installs.fallbackDefault': 'the repo default',
 
   'apply.hunks.hunkFailureLine': 'the {file} change {key}',
   'apply.hunks.hunkFailureLine2': '{change} failed: run it yourself: {display}',

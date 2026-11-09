@@ -130,6 +130,30 @@ export function projectInstallFailureText(install: ProjectInstall): string {
   })
 }
 
+/** The line of a framework install detection does not show: who fell back to what, and the command to run. */
+export function frameworkFallbackText(fallen: {
+  readonly name: string
+  readonly command: string
+  readonly roles: readonly string[]
+  readonly isRepoDefault: boolean
+  readonly fallback: string
+}): string {
+  const { name, roles, isRepoDefault, fallback } = fallen
+  const command = reportText(fallen.command)
+  const moved = [
+    ...(roles.length === 0 ? [] : [tn('apply.installs.fallbackRoles', roles.length, { ids: roles.join(', ') })]),
+    ...(isRepoDefault ? [t('apply.installs.fallbackDefault')] : []),
+  ]
+  if (moved.length === 0) return t('apply.installs.frameworkFallbackNone', { name, command })
+
+  return t('apply.installs.frameworkFallback', {
+    name,
+    moved: moved.join(t('apply.installs.namesJoin')),
+    fallback,
+    command,
+  })
+}
+
 /**
  * The setup scan the plan is made again from after the installs (decision #39): the setup with each installed plugin
  * key added to its plugins and to its installed plugins, sorted and once each, as the next scan lists them, so a
