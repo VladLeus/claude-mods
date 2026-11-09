@@ -312,16 +312,17 @@ describe('role documents', () => {
     ])
   })
 
-  test('ROLE.md has How you work, Planning docs, Decisions, Handoffs, Inbox and Scope, in that order', () => {
+  test('ROLE.md has How you work, Decisions, Handoffs, Inbox, Planning docs, Hierarchy, Scope, in that order', () => {
     const be = templateRole('be')
     const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
 
     expect(headings(text)).toEqual([
       '## How you work',
-      '## Planning docs',
       '## Decisions',
       '## Handoffs',
       '## Inbox',
+      '## Planning docs',
+      '## Hierarchy',
       '## Scope',
     ])
     expect(text.endsWith('\n')).toBe(true)
@@ -334,10 +335,8 @@ describe('role documents', () => {
       const adapter = ADAPTER_OF[framework]
       const text = roleMdText(api, scopeOf(api, framework, [api]))
       const kickoff = adapter.kickoffText({ title: 'Backend API', roleId: 'api', specPath: null })
-      const hasSteps = adapter.roleWork.startSteps({ roleId: 'api', isLead: false }).length > 0
-      const next = hasSteps ? '## Planning docs' : '## Decisions'
 
-      expect(text).toContain(`## How you work\n\n${kickoff}\n\n${next}\n`)
+      expect(text).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
       expect(text).toContain(`Framework: ${adapter.name}. Model: opus + medium. Permission mode: auto.`)
     }
   })
@@ -401,7 +400,8 @@ describe('role documents', () => {
         'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).\n' +
         'Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the entry ' +
         'you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done (a ' +
-        'one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.\n\n## Scope\n',
+        'one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.\n\n' +
+        '## Planning docs\n',
     )
     expect(text).not.toContain('inbox.md')
     expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(
@@ -465,10 +465,10 @@ describe('role documents', () => {
     expect(lines[2]).toBe('Owns a thing.## Injectedmore')
     expect(headings(text)).toEqual([
       '## How you work',
-      '## Planning docs',
       '## Decisions',
       '## Handoffs',
       '## Inbox',
+      '## Planning docs',
       '## Hierarchy',
       '## Scope',
     ])
@@ -662,5 +662,59 @@ describe('the Hierarchy section of ROLE.md', () => {
 
     expect(text).not.toContain('mattpocock-skills:grilling')
     expect(text).not.toContain('grill the user')
+  })
+
+  test('TL sizes each ticket, plans it, sends BE and FE their tasks in parallel, waits and reports to PM', () => {
+    const text = hierarchyOf(templateRole('tl'), 'gsd')
+
+    expect(text).toContain('Your ticket loop as TL: on each ticket PM sends, add complexity and effort')
+    expect(text).toContain('compute the size and pick the framework or GSD path')
+    expect(text).toContain('record the vector with a one-line reason')
+    expect(text).toContain('Plan the ticket in your own planning docs.')
+    expect(text).toContain('Send BE and FE their tasks in parallel (inbox_send kind task), split by area')
+    expect(text).toContain('a file both would touch is yours to serialise')
+    expect(text).toContain('Wait for every report, then report to PM in the form PM asked')
+    expect(text).toContain(
+      'outcome, changes, verification, the vector with its reason, the framework used, the doc paths and the open ' +
+        'questions',
+    )
+    expect(text).toContain('wait for the next ticket')
+  })
+
+  test('BE plans in its own docs, commits only its own files, reports to TL and sizes alone with no TL', () => {
+    const text = hierarchyOf(templateRole('be'), 'gsd')
+
+    expect(text).toContain('Plan and execute each task in your own planning docs.')
+    expect(text).toContain('Commit only your own files on the epic branch: git add <paths>, never git add -A.')
+    expect(text).toContain('When git reports an index lock, wait and retry')
+    expect(text).toContain('never rebase or reset the shared branch')
+    expect(text).toContain('Report each task to TL when it is done')
+    expect(text).toContain('A technical question goes to your parent role and TL decides it')
+    expect(text).toContain('In a team without TL, PM sends you the ticket: add complexity and effort')
+    expect(text).toContain('take the no-TL step of Planning docs when it has one')
+  })
+
+  test('every role is told where a question goes, that only PM asks the user, a rejection and the epic end', () => {
+    for (const role of TEMPLATE_ROLES) {
+      const text = hierarchyOf(role, 'gsd')
+
+      expect(text.startsWith('## Hierarchy\n\nA technical question goes to your parent role')).toBe(true)
+      expect(text).toContain('a product or ticket question goes straight to PM')
+      expect(text).toContain('Only PM asks the user')
+      expect(text).toContain('An entry you mark rejected goes back up to the role that sent it')
+      expect(text).toContain('On epic-end, mark your open inbox entries, write your handoff')
+      expect(text).toContain('AUTOPILOT_DONE; PM does this last.')
+    }
+  })
+
+  test('no role but PM gets a line telling it to ask the user', () => {
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const lines = roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES)).split('\n')
+        const asks = lines.filter(line => /\bask the user\b|\bwith AskUserQuestion\b/i.test(line))
+
+        expect([role.id, asks.length > 0]).toEqual([role.id, role.id === 'pm'])
+      }
+    }
   })
 })
