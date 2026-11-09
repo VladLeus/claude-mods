@@ -14,6 +14,7 @@ import { compareText } from '../core/text'
 import { GSD_ADAPTER } from '../framework/gsd/adapter'
 import { BUILTIN_ADAPTER } from '../framework/none/adapter'
 import { SUPERPOWERS_ADAPTER } from '../framework/superpowers/adapter'
+import { ARTIFACT } from '../locales/artifact'
 import { scopeCardLines } from '../scope/card'
 import { parseCadreState } from '../state/cadre-files'
 import {
@@ -454,6 +455,14 @@ describe('role documents', () => {
     expect(bannerLines(text)).toEqual([ATTENDED_LINE])
     expect(text.split('\n').filter(line => line.startsWith('    [none] Attended:'))).toHaveLength(2)
     expect(text).not.toContain('Attended: Attended:')
+  })
+
+  test('TL on GSD, started with --ask-user, holds the banner once; BE on GSD holds none', () => {
+    const banners = [templateRole('tl'), templateRole('be')].map(
+      role => roleMdText(role, scopeOf(role, 'gsd', TEMPLATE_ROLES)).split(ARTIFACT.roleMdAttended).length - 1,
+    )
+
+    expect(banners).toEqual([1, 0])
   })
 
   test('a title and a purpose are cleaned before they reach the document', () => {

@@ -10,6 +10,7 @@ import type {
   ScopeRule,
   SetupScan,
 } from '../../types'
+import { ARTIFACT } from '../locales/artifact'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import {
   BIDI_OVERRIDE,
@@ -619,5 +620,39 @@ describe('every framework a role may run on the card', () => {
     expect([ruleOf(union, GSD_NO_BASH_RULE) !== undefined, union.card.isAttended]).toEqual([true, true])
     expect([ruleOf(alone, GSD_NO_BASH_RULE) !== undefined, alone.card.isAttended]).toEqual([false, false])
     expect(ruleOf(withBash, GSD_NO_BASH_RULE)).toBeUndefined()
+  })
+})
+
+describe('a role started with --ask-user', () => {
+  /** Whether the card is attended, then whether it carries the rule that framework menus reach the person. */
+  function askMarks(scope: CompiledScope): boolean[] {
+    return [scope.card.isAttended, ruleOf(scope, ARTIFACT.cardAttendedAsk) !== undefined]
+  }
+
+  test('TL on GSD is attended and carries the ask rule', () => {
+    expect(askMarks(compileScope(templateRole('tl'), context({ framework: 'gsd' })))).toEqual([true, true])
+  })
+
+  test('TL on superpowers or none is neither, and TL on superpowers that may also run GSD is both', () => {
+    const tl = templateRole('tl')
+    const superpowers = compileScope(tl, context({ framework: 'superpowers' }))
+    const none = compileScope(tl, context({ framework: 'none' }))
+    const union = compileScope(tl, context({ framework: 'superpowers', alsoRuns: ['superpowers', 'gsd'] }))
+
+    expect([askMarks(superpowers), askMarks(none), askMarks(union)]).toEqual([
+      [false, false],
+      [false, false],
+      [true, true],
+    ])
+  })
+
+  test('TL started without --ask-user and BE on GSD are neither', () => {
+    const quiet = templateRole('tl', { autopilot: { ...templateRole('tl').autopilot, askUser: false } })
+    const scopes = [quiet, templateRole('be')].map(role => compileScope(role, context({ framework: 'gsd' })))
+
+    expect(scopes.map(askMarks)).toEqual([
+      [false, false],
+      [false, false],
+    ])
   })
 })

@@ -265,7 +265,8 @@ describe('GSD_GATES', () => {
         needsHuman: false,
         handling: 'autopilot-denies',
         kickoff:
-          'Autopilot answers GSD menus with "decide yourself": ' +
+          'While asking is on and the person is not away, a GSD menu reaches them as an AskUserQuestion dialog; ' +
+          'while they are away or asking is off, autopilot answers it with "decide yourself": ' +
           'take the recommended option and log it in decisions.md.',
       },
       {
@@ -519,7 +520,9 @@ describe('gsdKickoffText', () => {
     expect(gateLines).toEqual(GSD_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`))
     expect(gateLines[0]).toBe(
       '- AskUserQuestion menus inside GSD workflows: ' +
-        'Autopilot answers GSD menus with "decide yourself": take the recommended option and log it in decisions.md.',
+        'While asking is on and the person is not away, a GSD menu reaches them as an AskUserQuestion dialog; ' +
+        'while they are away or asking is off, autopilot answers it with "decide yourself": ' +
+        'take the recommended option and log it in decisions.md.',
     )
   })
 
@@ -748,6 +751,22 @@ describe('the GSD start steps of a role', () => {
     expect(worker).not.toContain(lead[0])
     expect([worker[1], worker[3]]).toEqual([lead[1], lead[3]])
     expect([Object.isFrozen(worker), isPrintable(worker)]).toEqual([true, true])
+  })
+
+  test('the new project and milestone steps send their menus to the person while asking is on', () => {
+    const steps = [lead[0], lead[2], worker[0], worker[2]]
+    const said = steps.map(step => [
+      step?.includes('go to the person while asking is on'),
+      step?.includes('decide them yourself'),
+    ])
+
+    expect(said).toEqual([
+      [true, true],
+      [true, true],
+      [true, true],
+      [true, true],
+    ])
+    expect([...lead, ...worker].filter(step => step.includes('under autopilot'))).toEqual([])
   })
 
   test('no step names a direct write under .planning/ or the workstreams skill that migrates', () => {
