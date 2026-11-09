@@ -126,12 +126,23 @@ export const PROMPTS = Object.freeze({
   inboxNotStarted: 'Not sent: {to} has no inbox yet. Run /cadre start {to} first.',
   inboxUnsafe: 'Not sent: the inbox of {to} is a link or not a regular file, so cadre does not write to it.',
   inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read.',
+  // The kind fields of inbox_send (messages/send): the refusal of a missing or a bad field; then the size line a send
+  // result ends with, and the pick it names per planning mode (messages/sizing sizeText).
+  inboxFieldMissing: 'A {kind} needs {field}.',
+  inboxTicketKeyBad:
+    'ticketKey must be a ticket key of at most {max} characters: a letter or digit, then letters, digits, . - or _.',
+  inboxVectorBad: 'vector must hold scope, complexity, risk and effort, each a number from 0.1 to 1.0.',
+  inboxUseBad: 'use must hold a framework (gsd, superpowers or none) and, only with gsd, a gsdPath of quick or phase.',
+  inboxSpecPathBad: 'specPath must be a path from the git root, with no .. and no spaces.',
+  inboxSize: 'Size {size}, so {sizeClass} (the threshold is {threshold}).',
+  inboxSizePick: 'In {mode} mode: {framework}.',
+  inboxSizePickGsd: 'In {mode} mode: gsd, GSD path {gsdPath}.',
   // The descriptions of the inbox tools (register.tsx), and the refusals of a call outside a role session or a call
   // that failed.
   inboxSendDescription:
     `cadre: send a message to another role of your team. It is added to that role's inbox, stamped with your role ${
-    ''}and the time, and the role is woken to read it. to: the role id. kind: ticket, report, question, answer, ${
-    ''}epic-end or note. replyTo: the id of the entry you answer, if any.`,
+    ''}and the time, and the role is woken to read it. to: the role id. kind: ticket, task, report, question, ${
+    ''}answer, epic-end or note. replyTo: the id of the entry you answer, if any.`,
   inboxReadDescription:
     `cadre: read your own inbox. Each entry shows its id, state, kind, sender and subject, then its body. all: true ${
     ''}also lists the entries marked done or rejected.`,

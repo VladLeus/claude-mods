@@ -2,7 +2,16 @@
  * The inbox record, a layer 7 module: where a role's inbox.jsonl and session.json lie, the one-line JSON of an entry
  * or a mark, its fail-closed parse, and the session record a role publishes so other roles can wake it.
  */
-import type { InboxEntry, InboxEvent, InboxItem, InboxMark, InboxState } from '../../types'
+import type {
+  InboxEntry,
+  InboxEntryFields,
+  InboxEvent,
+  InboxItem,
+  InboxMark,
+  InboxState,
+  SizeVector,
+  TaskUse,
+} from '../../types'
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue } from '../core/json'
 import { isRoleId } from '../core/role-id'
@@ -11,7 +20,8 @@ import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { INBOX_LOG_FILE, runtimeFileOf, SESSION_FILE } from '../paths'
-import { bodyShown, ENTRY_ID_PATTERN, markStateOf, MESSAGE_KINDS, NOTE_MAX_CHARS } from './send'
+import { bodyShown, ENTRY_ID_PATTERN, markStateOf, MESSAGE_KINDS, NOTE_MAX_CHARS, parseKindFields } from './send'
+import { parseScore } from './sizing'
 
 /** How many hex characters of the content's SHA-256 an entry id keeps. */
 const ENTRY_ID_HASH_CHARS = 8
@@ -48,6 +58,32 @@ export async function entryIdOf(from: string, at: number, content: string): Prom
   return `${from}-${at}-${hash.slice(0, ENTRY_ID_HASH_CHARS)}`
 }
 
+function orderedVector(vector: SizeVector): SizeVector {
+  const { scope, complexity, risk, effort } = vector
+
+  return { scope, complexity, risk, effort }
+}
+
+function orderedUse(use: TaskUse): TaskUse {
+  const { framework, gsdPath } = use
+
+  return gsdPath === undefined ? { framework } : { framework, gsdPath }
+}
+
+/** The kind fields and stamps of an entry in the record's fixed order, each nested object in its own fixed order. */
+function orderedFields(entry: InboxEntry): InboxEntryFields {
+  const { ticketKey, vector, use, specPath, size, large } = entry
+
+  return {
+    ...(ticketKey === undefined ? {} : { ticketKey }),
+    ...(vector === undefined ? {} : { vector: orderedVector(vector) }),
+    ...(use === undefined ? {} : { use: orderedUse(use) }),
+    ...(specPath === undefined ? {} : { specPath }),
+    ...(size === undefined ? {} : { size }),
+    ...(large === undefined ? {} : { large }),
+  }
+}
+
 /** The event with its keys in the record's fixed order and no other key. */
 function orderedEvent(event: InboxEvent): InboxEvent {
   if (event.type === CONTRACTS.inboxMarkType) {
@@ -66,7 +102,19 @@ function orderedEvent(event: InboxEvent): InboxEvent {
   }
   const { v, type, id, at, from, to, kind, subject, body, replyTo } = event
 
-  return { v, type, id, at, from, to, kind, subject, body, ...(replyTo === undefined ? {} : { replyTo }) }
+  return {
+    v,
+    type,
+    id,
+    at,
+    from,
+    to,
+    kind,
+    subject,
+    body,
+    ...(replyTo === undefined ? {} : { replyTo }),
+    ...orderedFields(event),
+  }
 }
 
 /** One inbox.jsonl line: the event as JSON with no spaces, then a newline. */
@@ -86,6 +134,16 @@ function isRole(value: unknown): value is string {
   return typeof value === 'string' && isRoleId(value)
 }
 
+/** The size stamps of a stored entry: both absent, or a size that is a score and a large that is true or false. */
+function sizeStampsOf(value: Readonly<Record<string, unknown>>): InboxEntryFields | null {
+  const { size, large } = value
+  if (size === undefined && large === undefined) return {}
+  const score = parseScore(size)
+  if (score === null || typeof large !== 'boolean') return null
+
+  return { size: score, large }
+}
+
 function entryOf(value: Readonly<Record<string, unknown>>): InboxEntry | null {
   const { id, at, from, to, kind, subject, body, replyTo } = value
   if (!isEntryId(id) || !isEpochMs(at) || !isRole(to)) return null
@@ -93,9 +151,12 @@ function entryOf(value: Readonly<Record<string, unknown>>): InboxEntry | null {
   const kindName = MESSAGE_KINDS.find(known => known === kind)
   if (kindName === undefined || typeof subject !== 'string' || typeof body !== 'string') return null
   if (replyTo !== undefined && !isEntryId(replyTo)) return null
+  const fields = parseKindFields(kindName, value)
+  const stamps = sizeStampsOf(value)
+  if (fields.kind === 'error' || stamps === null) return null
   const entry: InboxEntry = { v: 1, type: CONTRACTS.inboxEntryType, id, at, from, to, kind: kindName, subject, body }
 
-  return replyTo === undefined ? entry : { ...entry, replyTo }
+  return { ...entry, ...(replyTo === undefined ? {} : { replyTo }), ...fields.fields, ...stamps }
 }
 
 function markOf(value: Readonly<Record<string, unknown>>): InboxMark | null {

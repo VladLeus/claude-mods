@@ -506,6 +506,12 @@ export function cadreStatePath(): string {
   return '.cadre/cadre.json'
 }
 
+/** The repo-relative path of the sizing rubric: the anchors each size dimension is scored against. */
+export const SIZING_RUBRIC_PATH = '.cadre/sizing.md'
+
+/** The size from which a ticket is large when cadre.json holds no sizing block. */
+export const DEFAULT_SIZE_THRESHOLD = 0.5
+
 /** The repo-relative path of a role's role.json: what regen reads the role from, and never plans (A5). */
 export function roleJsonPath(id: string): string {
   return `.cadre/${id}/role.json`

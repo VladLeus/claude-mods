@@ -6,6 +6,7 @@
 import type {
   HostIo,
   InboxEntry,
+  InboxEntryFields,
   InboxEvent,
   InboxMark,
   InitIo,
@@ -42,6 +43,7 @@ import {
   parseSendInput,
   SUBJECT_MAX_CHARS,
 } from './send'
+import { isLarge, modesOffered, sizeOf, sizeText } from './sizing'
 import { wakeText } from './wake'
 
 /** The most bytes of a session.json that are read. */
@@ -133,13 +135,14 @@ async function appendLine(host: HostIo, path: string, line: string): Promise<boo
   return run !== null && run.exitCode === 0
 }
 
-/** What a role sends: the receiver, the kind, the subject and body, and the entry it replies to. */
+/** What a role sends: the receiver, the kind, the subject and body, the entry it replies to and the kind fields. */
 type Message = {
   readonly to: string
   readonly kindName: MessageKind
   readonly subject: string
   readonly body: string
   readonly replyTo: string | null
+  readonly fields: InboxEntryFields
 }
 
 /**
@@ -154,7 +157,7 @@ async function deliver(
   at: number,
   message: Message,
 ): Promise<ToolOutcome> {
-  const { to, kindName, subject, body, replyTo } = message
+  const { to, kindName, subject, body, replyTo, fields } = message
   const id = await entryIdOf(ctx.id, at, [to, kindName, subject, body].join('\n'))
   const entry: InboxEntry = {
     v: 1,
@@ -167,6 +170,7 @@ async function deliver(
     subject,
     body,
     ...(replyTo === null ? {} : { replyTo }),
+    ...fields,
   }
   const line = recordLine(entry)
   if (utf8Bytes(line) > INBOX_LINE_MAX_BYTES) {
@@ -181,7 +185,18 @@ async function deliver(
   return { kind: 'result', text: fill(isDelivered ? PROMPTS.inboxSent : PROMPTS.inboxSentUndelivered, { id, to }) }
 }
 
-/** inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. */
+/** The kind fields with cadre's stamps: an entry with a vector gets its size and class at the team's threshold. */
+function stampedFields(fields: InboxEntryFields, team: TeamView): InboxEntryFields {
+  const { vector } = fields
+  if (vector === undefined) return fields
+
+  return { ...fields, size: sizeOf(vector), large: isLarge(vector, team.sizing.threshold) }
+}
+
+/**
+ * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A sent
+ * vector's result ends with its size and the pick in each mode the repo offers.
+ */
 export async function runInboxSend(
   io: InitIo,
   host: HostIo,
@@ -195,8 +210,12 @@ export async function runInboxSend(
   if (input.kind === 'error') return deny(input.message)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
+  const fields = stampedFields(input.fields, team)
+  const outcome = await deliver(io, host, link, ctx, at, { ...input, fields })
+  const { vector } = fields
+  if (outcome.kind === 'deny' || vector === undefined) return outcome
 
-  return deliver(io, host, link, ctx, at, input)
+  return { kind: 'result', text: `${outcome.text} ${sizeText(vector, team.sizing, modesOffered(team.frameworks))}` }
 }
 
 /** inbox_read: the session's own inbox, folded; an absent inbox reads as empty. */
@@ -257,7 +276,14 @@ export async function runInboxMark(
   if (reason === null || team === null) return { kind: 'result', text: fill(PROMPTS.inboxMarked, { id, state }) }
   const to = rejectionTarget(team, entry.from, ctx.id)
   const subject = clean(fill(PROMPTS.inboxRejectSubject, { subject: entry.subject }), SUBJECT_MAX_CHARS)
-  const forward = await deliver(io, host, link, ctx, at, { to, kindName: 'note', subject, body: reason, replyTo: id })
+  const forward = await deliver(io, host, link, ctx, at, {
+    to,
+    kindName: 'note',
+    subject,
+    body: reason,
+    replyTo: id,
+    fields: {},
+  })
 
   return { kind: 'result', text: fill(PROMPTS.inboxMarkedRejected, { id, forward: forward.text }) }
 }

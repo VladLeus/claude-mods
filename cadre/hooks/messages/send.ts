@@ -3,14 +3,26 @@
  * parse of the model's tool input into a message cadre can stamp. Only the keys it names are read, so a sender or any
  * other key the model adds is never used.
  */
-import type { InboxState, MessageKind, RoleContext, TeamView } from '../../types'
+import type {
+  GsdPath,
+  InboxEntryFields,
+  InboxState,
+  MessageKind,
+  RoleContext,
+  TaskUse,
+  TeamView,
+} from '../../types'
+import { isFrameworkId } from '../core/framework-id'
 import { isObject } from '../core/json'
 import { clean, reportText } from '../core/text'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
+import { isSafeRelativePath } from '../paths'
+import { parseVector } from './sizing'
 
 export const MESSAGE_KINDS: readonly MessageKind[] = Object.freeze([
   'ticket',
+  'task',
   'report',
   'question',
   'answer',
@@ -47,6 +59,11 @@ const PM_KINDS: readonly MessageKind[] = Object.freeze(['ticket', 'epic-end'])
 /** An inbox entry id: the sender, the time in epoch ms and the first 8 hex of the content's SHA-256. */
 export const ENTRY_ID_PATTERN = /^[a-z0-9-]{1,64}-\d{1,16}-[0-9a-f]{8}$/
 
+export const TICKET_KEY_MAX_CHARS = 64
+
+/** A ticket key: a letter or digit, then letters, digits, dots, dashes or underscores, so it is safe in a file name. */
+export const TICKET_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
 /** A send the model asked for, checked, or why it is refused. */
 export type SendInput =
   | {
@@ -56,7 +73,13 @@ export type SendInput =
       readonly subject: string
       readonly body: string
       readonly replyTo: string | null
+      readonly fields: InboxEntryFields
     }
+  | { readonly kind: 'error'; readonly message: string }
+
+/** The fields of a kind as the model gave them, checked, or why they are refused. */
+export type KindFields =
+  | { readonly kind: 'ok'; readonly fields: InboxEntryFields }
   | { readonly kind: 'error'; readonly message: string }
 
 /** A line break as a model may send it: CR LF, CR or LF. */
@@ -84,9 +107,61 @@ function bodyText(raw: unknown): string {
   return typeof raw === 'string' ? bodyShown(raw) : ''
 }
 
+function fieldsError(message: string): KindFields {
+  return { kind: 'error', message }
+}
+
+function fieldMissing(kind: MessageKind, field: string): KindFields {
+  return fieldsError(fill(PROMPTS.inboxFieldMissing, { kind, field }))
+}
+
+function isTicketKey(value: unknown): value is string {
+  return typeof value === 'string' && TICKET_KEY_PATTERN.test(value)
+}
+
+function isGsdPath(value: unknown): value is GsdPath {
+  return value === 'quick' || value === 'phase'
+}
+
+/** The framework of a task and, only on gsd, its GSD path; null for anything else. */
+function parseUse(value: unknown): TaskUse | null {
+  if (!isObject(value)) return null
+  const { framework, gsdPath } = value
+  if (!isFrameworkId(framework)) return null
+  if (gsdPath === undefined) return { framework }
+  if (framework !== 'gsd' || !isGsdPath(gsdPath)) return null
+
+  return { framework, gsdPath }
+}
+
+/** The fields of a task: its ticket key, the full vector and what to run it on are needed, a spec path may follow. */
+function taskFields(fields: Readonly<Record<string, unknown>>): KindFields {
+  const { ticketKey, specPath } = fields
+  if (ticketKey === undefined) return fieldMissing('task', 'ticketKey')
+  if (!isTicketKey(ticketKey)) return fieldsError(fill(PROMPTS.inboxTicketKeyBad, { max: TICKET_KEY_MAX_CHARS }))
+  if (fields.vector === undefined) return fieldMissing('task', 'vector')
+  const vector = parseVector(fields.vector)
+  if (vector === null) return fieldsError(PROMPTS.inboxVectorBad)
+  if (fields.use === undefined) return fieldMissing('task', 'use')
+  const use = parseUse(fields.use)
+  if (use === null) return fieldsError(PROMPTS.inboxUseBad)
+  if (specPath === undefined) return { kind: 'ok', fields: { ticketKey, vector, use } }
+  if (typeof specPath !== 'string' || !isSafeRelativePath(specPath)) return fieldsError(PROMPTS.inboxSpecPathBad)
+
+  return { kind: 'ok', fields: { ticketKey, vector, use, specPath } }
+}
+
+/** The fields the kind takes, read from the model's input or a stored line; a kind with no fields has none. */
+export function parseKindFields(kind: MessageKind, fields: Readonly<Record<string, unknown>>): KindFields {
+  if (kind === 'task') return taskFields(fields)
+
+  return { kind: 'ok', fields: {} }
+}
+
 /**
  * The inbox_send input as a message to stamp, checked in the order to, kind (ticket and epic-end only from the PM
- * stand-in), subject, body, replyTo. The subject is cut to its cap; a body over its cap is refused, never cut.
+ * stand-in), subject, body, the fields of the kind, replyTo. The subject is cut to its cap; a body over its cap is
+ * refused, never cut.
  */
 export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView): SendInput {
   const fields: Readonly<Record<string, unknown>> = isObject(event) ? event : {}
@@ -109,10 +184,12 @@ export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView)
   if (Array.from(body).length > BODY_MAX_CHARS) {
     return sendError(fill(PROMPTS.inboxBodyTooLong, { max: BODY_MAX_CHARS }))
   }
-  if (replyTo === undefined) return { kind: 'ok', to, kindName, subject, body, replyTo: null }
+  const read = parseKindFields(kindName, fields)
+  if (read.kind === 'error') return read
+  if (replyTo === undefined) return { kind: 'ok', to, kindName, subject, body, replyTo: null, fields: read.fields }
   if (typeof replyTo !== 'string' || !ENTRY_ID_PATTERN.test(replyTo)) return sendError(PROMPTS.inboxReplyToBad)
 
-  return { kind: 'ok', to, kindName, subject, body, replyTo }
+  return { kind: 'ok', to, kindName, subject, body, replyTo, fields: read.fields }
 }
 
 /** A mark the model asked for, checked, or why it is refused. */

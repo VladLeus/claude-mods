@@ -757,7 +757,70 @@ export type HostIo = {
 }
 
 /** What an inbox entry is: the kinds a role may send. */
-export type MessageKind = 'ticket' | 'report' | 'question' | 'answer' | 'epic-end' | 'note'
+export type MessageKind = 'ticket' | 'task' | 'report' | 'question' | 'answer' | 'epic-end' | 'note'
+
+/** The size of a ticket: four scores, each from 0.1 to 1.0. */
+export type SizeVector = {
+  readonly scope: number
+  readonly complexity: number
+  readonly risk: number
+  readonly effort: number
+}
+
+/** The scores the PM gives a ticket from its requirements; the role that plans it adds the other two. */
+export type ProductScores = {
+  readonly scope: number
+  readonly risk: number
+}
+
+/** How an epic is planned: as one GSD milestone, or ticket by ticket with a framework picked by each ticket's size. */
+export type PlanningMode = 'gsd-epic' | 'ticket'
+
+/** How a ticket runs on GSD: /gsd-quick when small, a phase when large. */
+export type GsdPath = 'quick' | 'phase'
+
+/** The `sizing` block of `.cadre/cadre.json`: the threshold of a large ticket, the framework per size, the rubric. */
+export type Sizing = {
+  readonly threshold: number
+  readonly mapping: {
+    readonly small: FrameworkId
+    readonly large: FrameworkId
+  }
+  readonly rubric: string
+}
+
+/** The framework a task runs on and, on gsd, its GSD path. */
+export type TaskUse = {
+  readonly framework: FrameworkId
+  readonly gsdPath?: GsdPath
+}
+
+/**
+ * The fields of an inbox entry beside its subject and body that inbox_send checks per kind, and the stamps cadre adds:
+ * `size` and `large` on an entry with a vector, `planPath` and `method` on a superpowers task.
+ */
+export type InboxEntryFields = {
+  readonly ticketKey?: string
+  readonly scores?: ProductScores
+  readonly pin?: 'small' | 'large'
+  readonly reportForm?: string
+  readonly vector?: SizeVector
+  readonly use?: TaskUse
+  readonly specPath?: string
+  readonly outcome?: 'done' | 'blocked' | 'partial'
+  readonly changes?: string
+  readonly verification?: string
+  readonly reason?: string
+  readonly frameworkUsed?: FrameworkId
+  readonly docPaths?: readonly string[]
+  readonly openQuestions?: readonly string[]
+  readonly mode?: PlanningMode
+  readonly tickets?: readonly string[]
+  readonly size?: number
+  readonly large?: boolean
+  readonly planPath?: string
+  readonly method?: string
+}
 
 /** The state of an inbox entry: unread until its owner marks it. */
 export type InboxState = 'unread' | 'read' | 'awaiting' | 'blocked' | 'rejected' | 'done'
@@ -774,7 +837,7 @@ export type InboxEntry = {
   readonly subject: string
   readonly body: string
   readonly replyTo?: string
-}
+} & InboxEntryFields
 
 /** A state change of an entry, appended to the inbox that holds the entry. */
 export type InboxMark = {
@@ -814,13 +877,15 @@ export type RoleContext = {
 }
 
 /**
- * The roles of the team, each role's parent (null for the top of the hierarchy) and pm, the PM stand-in, null when the
- * team has none.
+ * The roles of the team, each role's parent (null for the top of the hierarchy), pm, the PM stand-in, null when the
+ * team has none, and the repo's sizing and frameworks.
  */
 export type TeamView = {
   readonly ids: readonly string[]
   readonly parents: Readonly<Record<string, string | null>>
   readonly pm: string | null
+  readonly sizing: Sizing
+  readonly frameworks: readonly FrameworkId[]
 }
 
 /** Sends a live message to a session by its id; true when the host delivered it. */
@@ -1109,6 +1174,10 @@ export type CadreState = {
    * ~/.claude.json only when it is true, so the MCP denies init compiled from it are kept (A1).
    */
   readonly readUserMcp: boolean
+  /** The sizing block; absent in a setup that never recorded one, which then takes the default. */
+  readonly sizing?: Sizing
+  /** The frameworks recorded for the repo; absent in a setup from before they were recorded. */
+  readonly frameworks?: readonly FrameworkId[]
 }
 
 /** What the repo scan found (SCAN-01): a separate type beside the frozen Facts (D-88). */

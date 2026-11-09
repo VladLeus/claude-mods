@@ -82,6 +82,7 @@ describe('parseSendInput', () => {
       subject: 'Hi',
       body: 'Hello',
       replyTo: null,
+      fields: {},
     })
   })
 
