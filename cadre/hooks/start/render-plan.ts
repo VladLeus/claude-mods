@@ -18,7 +18,7 @@ import type { LaunchPlan } from '../launch/plan'
 import { CONTRACTS } from '../locales/contracts'
 import { fill, t } from '../locales/t'
 import {
-  INBOX_FILE,
+  INBOX_LOG_FILE,
   isDirInsideRoot,
   parentOf,
   PRIVATE_INSTRUCTIONS_LINK,
@@ -44,13 +44,13 @@ const OVERLAY_FOLDER = 'overlay'
 
 /**
  * The files a render writes into `.runtime`, in the order it writes them: the settings, the MCP config, the probe
- * expectations, the inbox when there is none, and the stamp last (D-102, D-114).
+ * expectations, the inbox.jsonl when there is none, and the stamp last.
  */
 const WRITTEN_FILES: readonly string[] = Object.freeze([
   SETTINGS_FILE,
   MCP_FILE,
   PROBE_EXPECTATIONS_FILE,
-  INBOX_FILE,
+  INBOX_LOG_FILE,
   RUNTIME_STAMP_FILE,
 ])
 
@@ -389,12 +389,12 @@ function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
 
 /**
  * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, an
- * empty inbox only when there is none, so a note another role left there is never lost (D-114, Pitfall 3), and for an
- * epic render the epic kickoff (D-158), the step right before the stamp. An inbox that is a link is removed first
- * (linkRemovals), so it counts as none.
+ * empty inbox.jsonl only when there is none, so an entry another role appended is never lost, and for an epic render
+ * the epic kickoff, the step right before the stamp. An inbox that is a link is removed first (linkRemovals), so it
+ * counts as none. An inbox.md of an older setup is never written or removed.
  */
 function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
-  const inbox = `${runtime}/${INBOX_FILE}`
+  const inbox = `${runtime}/${INBOX_LOG_FILE}`
   const writes = [
     writeStep(`${runtime}/${SETTINGS_FILE}`, stableJson(input.plan.settings)),
     writeStep(`${runtime}/${MCP_FILE}`, input.mcpText),

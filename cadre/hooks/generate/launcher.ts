@@ -248,8 +248,8 @@ export function hasRuntimeKickoff(text: string): boolean {
  * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing; or `.cadre/cadre.json` or the
  *   role's role.json, settings.json or mcp.json is newer than it, so a render the role files changed after never
  *   starts; or the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render
- *   did not finish (D-102). The stamp is checked first, since `-nt` against a missing file is true; inbox.md is never
- *   compared, other roles append to it;
+ *   did not finish (D-102). The stamp is checked first, since `-nt` against a missing file is true; inbox.jsonl is
+ *   never compared, cadre's inbox tools append to it;
  * - the rendered settings.json or mcp.json is missing, empty or not valid JSON, since the engine drops an invalid
  *   settings file in silence with every deny in it (D-107). jq checks them when it is on PATH, else node, else one
  *   line says they were not checked again: `/cadre start` checked them when it rendered them (D-129).

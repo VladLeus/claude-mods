@@ -38,7 +38,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
         "isWritten": true
       },
       {
-        "path": "/repo/.cadre/be/.runtime/inbox.md",
+        "path": "/repo/.cadre/be/.runtime/inbox.jsonl",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "isWritten": true
       },
