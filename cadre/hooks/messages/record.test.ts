@@ -74,6 +74,26 @@ describe('recordLine, parseInboxLine and the session record', () => {
     )
   })
 
+  test('recordLine writes a vector in the order scope, complexity, risk, effort, with the numbers as given', () => {
+    const task: InboxEntry = {
+      ...A,
+      kind: 'task',
+      ticketKey: 'PROJ-2',
+      vector: { effort: 0.5, risk: 0.30000000000000004, complexity: 0.6, scope: 0.4 },
+      use: { gsdPath: 'phase', framework: 'gsd' },
+      size: 0.6,
+      large: true,
+    }
+
+    expect(recordLine(task)).toBe(
+      '{"v":1,"type":"entry","id":"be-1000-0123abcd","at":1000,"from":"be","to":"tl","kind":"task",' +
+        '"subject":"Hi","body":"Hello","ticketKey":"PROJ-2",' +
+        '"vector":{"scope":0.4,"complexity":0.6,"risk":0.30000000000000004,"effort":0.5},' +
+        '"use":{"framework":"gsd","gsdPath":"phase"},"size":0.6,"large":true}\n',
+    )
+    expect(parseInboxLine(recordLine(task))).toEqual(task)
+  })
+
   test('parseInboxLine reads back what recordLine wrote; v 2 or an unknown kind, sender or id gives null', () => {
     const awaiting = mark(A.id, 3000, 'awaiting', { waitsFor: 'pm-2000-89abcdef' })
     const bad = (over: Readonly<Record<string, unknown>>) => parseInboxLine(JSON.stringify({ ...A, ...over }))

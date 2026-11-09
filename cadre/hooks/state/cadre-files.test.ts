@@ -230,6 +230,69 @@ describe('parseCadreState', () => {
   })
 })
 
+describe('parseCadreState: the sizing block and the recorded frameworks', () => {
+  const SIZING = { threshold: 0.6, mapping: { small: 'superpowers', large: 'gsd' }, rubric: '.cadre/sizing.md' }
+
+  test('a state with no sizing block and no frameworks parses, with neither key', () => {
+    const state = parseCadreState(stateText())
+
+    expect(state).not.toBeNull()
+    expect(Object.keys(state ?? {}).filter(key => key === 'sizing' || key === 'frameworks')).toEqual([])
+  })
+
+  test('a valid sizing block and a list of frameworks come back as they are', () => {
+    const state = parseCadreState(stateText({ sizing: SIZING, frameworks: ['gsd', 'superpowers'] }))
+
+    expect([state?.sizing, state?.frameworks]).toEqual([SIZING, ['gsd', 'superpowers']])
+    expect(parseCadreState(stateText({ frameworks: ['gsd'] }))?.frameworks).toEqual(['gsd'])
+  })
+
+  test('a threshold of 0.1 or 1 is kept, and a field the block does not name is dropped', () => {
+    for (const threshold of [0.1, 1]) {
+      expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold } }))?.sizing?.threshold).toBe(threshold)
+    }
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, extra: 1 } }))?.sizing).toEqual(SIZING)
+  })
+
+  test('a sizing block with threshold 0 makes the state null', () => {
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold: 0 } }))).toBeNull()
+  })
+
+  test('a sizing block with threshold 1.5 makes the state null', () => {
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold: 1.5 } }))).toBeNull()
+  })
+
+  test('a threshold that is no number, or a sizing block that is no object, makes the state null', () => {
+    for (const threshold of ['0.5', null, undefined]) {
+      expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold } }))).toBeNull()
+    }
+    for (const sizing of [null, 'small', [], 0.5]) {
+      expect(parseCadreState(stateText({ sizing }))).toBeNull()
+    }
+  })
+
+  test('a mapping value that is no framework id makes the state null', () => {
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, mapping: { small: 'aidlc', large: 'gsd' } } }))).toBeNull()
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, mapping: { small: 'gsd' } } }))).toBeNull()
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, mapping: null } }))).toBeNull()
+  })
+
+  test('a rubric path that isSafeRelativePath refuses makes the state null', () => {
+    for (const rubric of ['../sizing.md', '/abs/sizing.md', 'a b.md', '', 5]) {
+      expect(parseCadreState(stateText({ sizing: { ...SIZING, rubric } }))).toBeNull()
+    }
+  })
+
+  test('frameworks with an id that is no framework id make the state null', () => {
+    expect(parseCadreState(stateText({ frameworks: ['x'] }))).toBeNull()
+    expect(parseCadreState(stateText({ frameworks: 'gsd' }))).toBeNull()
+  })
+
+  test('frameworks with an id listed twice make the state null', () => {
+    expect(parseCadreState(stateText({ frameworks: ['gsd', 'gsd'] }))).toBeNull()
+  })
+})
+
 describe('listsCadreRole', () => {
   test('it is true only for a cadre.json text whose roles list holds the role id cadre', () => {
     expect(listsCadreRole(stateText({ roles: ['pm', 'cadre'] }))).toBe(true)

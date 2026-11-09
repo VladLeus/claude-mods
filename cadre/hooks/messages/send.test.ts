@@ -10,6 +10,7 @@ import {
   parseMarkInput,
   parseSendInput,
   SUBJECT_MAX_CHARS,
+  TICKET_KEY_MAX_CHARS,
 } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
@@ -109,6 +110,30 @@ describe('parseSendInput', () => {
     expect(parseSendInput({ ...NOTE, replyTo: 'tl-1000-0123abcd' }, BE, TEAM)).toMatchObject({
       replyTo: 'tl-1000-0123abcd',
     })
+  })
+})
+
+describe('parseSendInput of a task', () => {
+  const TASK = {
+    to: 'tl',
+    kind: 'task',
+    subject: 'Add the endpoint',
+    body: 'Add it',
+    ticketKey: 'PROJ-2',
+    vector: { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 },
+    use: { framework: 'gsd', gsdPath: 'phase' },
+  }
+
+  test('a task with a gsdPath while use.framework is superpowers is refused', () => {
+    expect(refusalOf({ ...TASK, use: { framework: 'superpowers', gsdPath: 'quick' } })).toBe(PROMPTS.inboxUseBad)
+    expect(refusalOf({ ...TASK, use: { framework: 'superpowers' } })).toBeNull()
+  })
+
+  test('a ticketKey of ../x is refused', () => {
+    const refusal = fill(PROMPTS.inboxTicketKeyBad, { max: TICKET_KEY_MAX_CHARS })
+
+    expect(refusalOf({ ...TASK, ticketKey: '../x' })).toBe(refusal)
+    expect(refusalOf({ ...TASK, ticketKey: 'a b' })).toBe(refusal)
   })
 })
 

@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { CadreState, Sizing, TeamView } from '../../types'
 import { gitWorld, memIo, onDisk, plannedFiles, stateText, templateRole } from '../testkit'
 import { teamViewOf } from './hierarchy'
+
+/** The team view of pm and tl over files planned with the state `over` changes. */
+async function viewOver(over: Partial<CadreState>): Promise<TeamView | null> {
+  const files = await plannedFiles(gitWorld(), [templateRole('pm'), templateRole('tl')], over)
+  const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: onDisk(files) })
+
+  return teamViewOf(memIo(world, {}).io, '/repo')
+}
 
 /** The sizing of a repo whose stored framework is none and that records no frameworks. */
 const NO_FRAMEWORK_SIZING = { threshold: 0.5, mapping: { small: 'none', large: 'none' }, rubric: '.cadre/sizing.md' }
@@ -39,6 +48,30 @@ describe('teamViewOf', () => {
     const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: listed })
 
     expect(await teamViewOf(memIo(world, {}).io, '/repo')).toBeNull()
+  })
+
+  test('a sizing block with threshold 0.7 in cadre.json is the sizing of the view', async () => {
+    const sizing: Sizing = { threshold: 0.7, mapping: { small: 'gsd', large: 'gsd' }, rubric: '.cadre/sizing.md' }
+    const view = await viewOver({ framework: 'gsd', sizing })
+
+    expect([view?.sizing, view?.frameworks]).toEqual([sizing, ['gsd']])
+  })
+
+  test('the frameworks cadre.json records are the view\'s; with no sizing block the default maps both', async () => {
+    const view = await viewOver({ framework: 'gsd', frameworks: ['gsd', 'superpowers'] })
+
+    expect(view?.frameworks).toEqual(['gsd', 'superpowers'])
+    expect(view?.sizing).toEqual({
+      threshold: 0.5,
+      mapping: { small: 'superpowers', large: 'gsd' },
+      rubric: '.cadre/sizing.md',
+    })
+  })
+
+  test('a setup with neither and the stored framework gsd gets gsd alone and its default sizing', async () => {
+    const view = await viewOver({ framework: 'gsd' })
+
+    expect([view?.frameworks, view?.sizing.mapping]).toEqual([['gsd'], { small: 'gsd', large: 'gsd' }])
   })
 
   test('a team that cannot be read gives null', async () => {
