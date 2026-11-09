@@ -13,7 +13,7 @@ import {
 } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
-const TEAM: TeamView = { ids: ['pm', 'tl', 'be'], parents: { pm: null, tl: 'pm', be: 'tl' } }
+const TEAM: TeamView = { ids: ['pm', 'tl', 'be'], parents: { pm: null, tl: 'pm', be: 'tl' }, pm: 'pm' }
 const NOTE = { to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
 
 /** A character of four UTF-8 bytes and two UTF-16 units: one code point. */
@@ -77,6 +77,25 @@ describe('parseSendInput', () => {
       body: 'Hello',
       replyTo: null,
     })
+  })
+
+  test('ticket and epic-end are sent only by the PM stand-in; every other kind by any role', () => {
+    const TL: RoleContext = { id: 'tl', root: '/repo' }
+    const PM: RoleContext = { id: 'pm', root: '/repo' }
+    const refusalFrom = (ctx: RoleContext, kind: string, team: TeamView = TEAM): string | null => {
+      const input = parseSendInput({ ...NOTE, to: 'be', kind }, ctx, team)
+
+      return input.kind === 'error' ? input.message : null
+    }
+
+    expect(['ticket', 'epic-end'].map(kind => refusalFrom(TL, kind))).toEqual([
+      fill(PROMPTS.inboxKindPmOnly, { kind: 'ticket', pm: 'pm' }),
+      fill(PROMPTS.inboxKindPmOnly, { kind: 'epic-end', pm: 'pm' }),
+    ])
+    expect(['ticket', 'epic-end'].map(kind => refusalFrom(PM, kind))).toEqual([null, null])
+    const anyRole = ['report', 'note', 'question', 'answer']
+    expect(anyRole.map(kind => refusalFrom(TL, kind))).toEqual([null, null, null, null])
+    expect(refusalFrom(TL, 'ticket', { ...TEAM, pm: null })).toBe(fill(PROMPTS.inboxKindNoPm, { kind: 'ticket' }))
   })
 
   test('a replyTo that is an entry id is kept', () => {

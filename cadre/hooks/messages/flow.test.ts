@@ -10,7 +10,7 @@ import { parseInbox, parseInboxLine, recordLine, sessionRecordText } from './rec
 import { INBOX_LINE_MAX_BYTES } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
-const TEAM: TeamView = { ids: ['pm', 'tl', 'be'], parents: { pm: null, tl: 'pm', be: 'tl' } }
+const TEAM: TeamView = { ids: ['pm', 'tl', 'be'], parents: { pm: null, tl: 'pm', be: 'tl' }, pm: 'pm' }
 const TL_RUNTIME = '/repo/.cadre/tl/.runtime'
 const TL_INBOX = `${TL_RUNTIME}/inbox.jsonl`
 const TL_SESSION = `${TL_RUNTIME}/session.json`

@@ -3930,6 +3930,10 @@ const ROLE_BE_JSON = '/repo/.cadre/be/role.json'
 /** TL's runtime folder in roleWorld, where its inbox and the session id it published lie. */
 const ROLE_TL_RUNTIME = '/repo/.cadre/tl/.runtime'
 
+/** BE's runtime folder and the session.json in it, in place only in beStartedWorld. */
+const ROLE_BE_RUNTIME = '/repo/.cadre/be/.runtime'
+const ROLE_BE_SESSION = `${ROLE_BE_RUNTIME}/session.json`
+
 /**
  * A role session of BE: the runtime env names BE and /repo, cadre.json lists pm, tl and be with their role.json files,
  * TL's runtime folder holds the session id it published, an append to TL's inbox exits 0 and writes are allowed. Pass
@@ -3954,6 +3958,19 @@ function roleWorld(over: Partial<World> = {}): World {
     runResults: { [`/usr/bin/tee -a ${ROLE_TL_RUNTIME}/inbox.jsonl`]: { exitCode: 0, stdout: '' } },
     isWriteAllowed: true,
     ...over,
+  }
+}
+
+/** roleWorld with BE's runtime folder in place and its session.json holding s1, the session id of the world. */
+function beStartedWorld(): World {
+  const base = roleWorld()
+
+  return {
+    ...base,
+    sessionId: 's1',
+    dirs: [...base.dirs, ROLE_BE_RUNTIME],
+    files: { ...base.files, [ROLE_BE_SESSION]: sessionRecordText('s1') },
+    realPaths: { ...base.realPaths, [ROLE_BE_RUNTIME]: ROLE_BE_RUNTIME },
   }
 }
 
@@ -4006,11 +4023,11 @@ describe('the inbox tools in a role session', () => {
     expect(log.writes).toEqual([])
   })
 
-  test('a turn start publishes the session id again only when it changed', async ($, on) => {
+  test("a turn start writes session.json only when it does not hold this session's id", async ($, on) => {
     const log = newLog()
     let sessionId = 's1'
     const world: World = {
-      ...roleWorld(),
+      ...beStartedWorld(),
       get sessionId() {
         return sessionId
       },
@@ -4024,8 +4041,29 @@ describe('the inbox tools in a role session', () => {
     sessionId = 's2'
     await $.turn.start({ text: '', turnId: 't3' })
 
-    expect(sameId).toEqual(['/repo/.cadre/be/.runtime/session.json'])
-    expect(log.writes).toEqual(['/repo/.cadre/be/.runtime/session.json', '/repo/.cadre/be/.runtime/session.json'])
+    expect(sameId).toEqual([])
+    expect(log.writes).toEqual([ROLE_BE_SESSION])
+  })
+
+  test('a turn start after another session overwrote session.json writes it back', async ($, on) => {
+    const log = newLog()
+    let published = sessionRecordText('s1')
+    const started = beStartedWorld()
+    const world: World = {
+      ...started,
+      get files() {
+        return { ...started.files, [ROLE_BE_SESSION]: published }
+      },
+    }
+    fakeHost(on, world, log)
+    on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+    await startSession($, on)
+    const atStart = [...log.writes]
+    published = sessionRecordText('s-probe')
+    await $.turn.start({ text: '', turnId: 't1' })
+
+    expect(atStart).toEqual([])
+    expect(log.writes).toEqual([ROLE_BE_SESSION])
   })
 
   test('inbox_send in a role session appends to the inbox of the receiver, then sends one live wake', async ($, on) => {
