@@ -6,7 +6,7 @@ import { fill } from '../locales/t'
 import { hostWorld, memHost, memIo, memWorld } from '../testkit'
 import type { HostRunRule, MemHost, MemWorld } from '../testkit'
 import { publishSession, roleContextOf, runInboxMark, runInboxRead, runInboxSend } from './flow'
-import { parseInboxLine, recordLine, sessionRecordText } from './record'
+import { parseInbox, parseInboxLine, recordLine, sessionRecordText } from './record'
 import { INBOX_LINE_MAX_BYTES } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
@@ -117,13 +117,33 @@ describe('runInboxSend', () => {
     const id = entry?.id ?? ''
 
     expect(host.calls.map(call => call.argv)).toEqual([TEE])
-    expect(stdin.indexOf('\n')).toBe(stdin.length - 1)
+    expect([stdin.startsWith('\n'), stdin.endsWith('\n'), stdin.split('\n').length - 1]).toEqual([true, true, 2])
     expect(entry).toMatchObject({ type: 'entry', from: 'be', to: 'tl', at: 1000, kind: 'note', subject: 'Hi' })
     expect(id).toMatch(/^be-1000-[0-9a-f]{8}$/)
     expect(sends.map(send => send.sessionId)).toEqual(['s-tl'])
     expect(sends[0]?.text ?? '').toContain(id)
     expect(sends.map(send => send.runsBefore)).toEqual([1])
     expect(outcome).toEqual({ kind: 'result', text: fill(PROMPTS.inboxSent, { id, to: 'tl' }) })
+  })
+
+  test('a torn last line with no newline costs only itself: the next send still reads as its own entry', async () => {
+    const earlier: InboxEntry = {
+      v: 1,
+      type: 'entry',
+      id: 'pm-900-0123abcd',
+      at: 900,
+      from: 'pm',
+      to: 'tl',
+      kind: 'note',
+      subject: 'Earlier',
+      body: 'Torn',
+    }
+    const { host } = await sendFrom(tlWorld(), NOTE)
+    const stdin = firstStdin(host)
+    const sent = parseInboxLine(stdin)
+
+    expect(sent).toMatchObject({ type: 'entry', from: 'be', to: 'tl' })
+    expect(parseInbox(`${recordLine(earlier).slice(0, 30)}${stdin}`)).toEqual([sent])
   })
 
   test('a from key in the input is ignored: the entry carries the role of the session', async () => {

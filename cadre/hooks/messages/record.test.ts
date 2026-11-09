@@ -183,6 +183,22 @@ describe('inboxReadText', () => {
 
     expect(text).toBe(['be-1000-0123abcd [unread] note from be: Hi', '  ab', 'note: no'].join('\n'))
   })
+
+  test('a body line of 1000 code points is shown whole after its indent, and a tab in a body line is kept', () => {
+    const line = 'x'.repeat(1000)
+    const entry: InboxEntry = { ...A, body: `${line}\n\tindented` }
+
+    expect(inboxReadText([unread(entry)], true).split('\n').slice(1)).toEqual([`  ${line}`, '  \tindented'])
+  })
+
+  test('a note of 300 code points is shown whole; a stored note of 301 is cut to 299 and an ellipsis', () => {
+    const note = 'n'.repeat(300)
+    const lastLine = (held: string): string | undefined =>
+      inboxReadText([{ ...unread(A), state: 'blocked', note: held }], true).split('\n').at(-1)
+
+    expect(lastLine(note)).toBe(`note: ${note}`)
+    expect(lastLine(`${note}n`)).toBe(`note: ${'n'.repeat(299)}…`)
+  })
 })
 
 describe('parseReadInput', () => {
