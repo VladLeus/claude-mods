@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry, PortStat, ScopeContext } from '../../types'
 import { stableJson } from '../core/json'
-import { renderArgv } from '../host/steps'
+import { isStepDone, renderArgv } from '../host/steps'
 import type { RenderStep } from '../host/steps'
 import type { LaunchUser, OverlayLink } from '../launch/links'
 import { launchPlan } from '../launch/plan'
@@ -10,7 +10,7 @@ import type { LaunchPlan } from '../launch/plan'
 import { RUNTIME_KICKOFF_FILE } from '../paths'
 import { ignoreLines } from '../plan/gitignore'
 import { compileScope } from '../scope/compile'
-import { BIDI_OVERRIDE, emptySetupScan, entry, link, ROOT, templateRole } from '../testkit'
+import { BIDI_OVERRIDE, emptySetupScan, entry, hostWorld, link, memHost, ROOT, templateRole } from '../testkit'
 import {
   NO_MEMORY_LINKS,
   notReplacedText,
@@ -143,8 +143,8 @@ function fileWritesOf(plan: LaunchPlan): RenderStep[] {
   ]
 }
 
-/** The write of an empty inbox. */
-const INBOX_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/inbox.jsonl`, text: '' }
+/** The create of an empty inbox: an append of nothing, which never truncates an inbox that is there. */
+const INBOX_CREATE: RenderStep = { kind: 'append', path: `${RUNTIME}/inbox.jsonl`, text: '' }
 
 /** The write of the stamp, the last step of every render (LNCH-03). */
 const STAMP_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/stamp`, text: STAMP_TEXT }
@@ -231,7 +231,7 @@ describe('runtime render (D-102)', () => {
         { kind: 'mkdir', path: RUNTIME },
         { kind: 'mkdir', path: `${RUNTIME}/overlay` },
         ...fileWritesOf(BE_PLAN),
-        INBOX_WRITE,
+        INBOX_CREATE,
         STAMP_WRITE,
       ],
       warnings: [],
@@ -255,13 +255,13 @@ describe('runtime render (D-102)', () => {
     ])
   })
 
-  test('an inbox.md of an older setup is left alone, file or link, and the empty inbox.jsonl is written', () => {
+  test('an inbox.md of an older setup is left alone, file or link, and the empty inbox.jsonl is created', () => {
     const old = `${RUNTIME}/inbox.md`
     for (const stat of [regular(old), DANGLING]) {
       const steps = renderSteps(input({ stats: rendered({ [old]: stat }) })).steps
 
       expect(steps.filter(step => step.path === old)).toEqual([])
-      expect(steps.filter(step => step.path === INBOX_WRITE.path)).toEqual([INBOX_WRITE])
+      expect(steps.filter(step => step.path === INBOX_CREATE.path)).toEqual([INBOX_CREATE])
     }
   })
 
@@ -278,6 +278,19 @@ describe('runtime render (D-102)', () => {
       SKILL_LINK.path,
     ])
     expect(renderArgv({ kind: 'write', path: `${RUNTIME}/mcp.json`, text: MCP_TEXT })).toBeNull()
+    expect(renderArgv(INBOX_CREATE)).toEqual(['/usr/bin/tee', '-a', INBOX_CREATE.path])
+  })
+
+  test('an append step runs tee -a with its text as stdin, writes nothing, and fails on a non-zero exit', async () => {
+    const path = `${RUNTIME}/inbox.jsonl`
+    const argv = ['/usr/bin/tee', '-a', path]
+    const done = memHost(hostWorld({}))
+    const failed = memHost(hostWorld({ runs: [{ argv, result: { exitCode: 1, stdout: '', stderr: '' } }] }))
+
+    expect(await isStepDone(done.io, { kind: 'append', path, text: 'x\n' })).toBe(true)
+    expect(done.calls).toEqual([{ argv, options: { stdin: 'x\n', timeoutMs: 10_000 } }])
+    expect(done.writes).toEqual([])
+    expect(await isStepDone(failed.io, { kind: 'append', path, text: '' })).toBe(false)
   })
 
   test('every step of a render lies in the .runtime folder of the role', () => {
@@ -345,7 +358,7 @@ describe('runtime render links', () => {
         { kind: 'mkdir', path: SKILLS },
         { kind: 'link', path: SKILL_LINK.path, target: SKILL_LINK.target },
         ...fileWritesOf(LINKED_PLAN),
-        INBOX_WRITE,
+        INBOX_CREATE,
         STAMP_WRITE,
       ],
       warnings: [],
@@ -441,7 +454,7 @@ describe('runtime render links', () => {
       { kind: 'remove', path: inbox },
     ])
     expect(steps.filter(step => step.path === settings).map(step => step.kind)).toEqual(['remove', 'write'])
-    expect(steps.filter(step => step.path === inbox)).toEqual([{ kind: 'remove', path: inbox }, INBOX_WRITE])
+    expect(steps.filter(step => step.path === inbox)).toEqual([{ kind: 'remove', path: inbox }, INBOX_CREATE])
   })
 
   test('a file the render writes that is a folder, or any kind but a file or a link, refuses with no step', () => {
@@ -589,7 +602,7 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
       ...fileWritesOf(BE_PLAN),
-      INBOX_WRITE,
+      INBOX_CREATE,
       { kind: 'write', path: `${RUNTIME}/${RUNTIME_KICKOFF_FILE}`, text: 'X\n' },
       STAMP_WRITE,
     ])
@@ -664,7 +677,7 @@ describe('built files reach the session (G-02-1f)', () => {
       ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
       { kind: 'link', path: PRIVATE_LINK.path, target: PRIVATE_FOLDER },
       ...fileWritesOf(PRIVATE_PLAN),
-      INBOX_WRITE,
+      INBOX_CREATE,
       STAMP_WRITE,
     ])
   })

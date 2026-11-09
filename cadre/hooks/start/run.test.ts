@@ -113,6 +113,7 @@ describe('built files reach the session (G-02-1f)', () => {
       ['/bin/mkdir', '-p', '--', privateFolder],
       ...(await startLevels()).map(level => ['/bin/chmod', '700', level]),
       ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
+      ['/usr/bin/tee', '-a', `${RUNTIME}/inbox.jsonl`],
     ])
     expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
   })
@@ -608,9 +609,11 @@ async function startBe(
 /** The options of every render step the host runs: no cwd, the render step timeout. */
 const STEP_OPTIONS = { timeoutMs: 10_000 }
 
-/** The runs of a start that remove, make a folder, chmod it or link: a refused start makes none of them. */
+/** The runs of a start that remove, make a folder, chmod it, link or append: a refused start makes none of them. */
 function renderRuns(start: StartRun): HostCall[] {
-  return start.calls.filter(call => ['/bin/rm', '/bin/mkdir', '/bin/chmod', '/bin/ln'].includes(call.argv[0] ?? ''))
+  const steps = ['/bin/rm', '/bin/mkdir', '/bin/chmod', '/bin/ln', '/usr/bin/tee']
+
+  return start.calls.filter(call => steps.includes(call.argv[0] ?? ''))
 }
 
 /** The paths of the files a start wrote, in order. */
@@ -671,7 +674,7 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
 
   test('every check passed: claude --version runs first, the stamp is written last, the command follows', async () => {
     const start = await startBe(await appliedWorld())
-    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
+    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
     const lines = start.reply.split('\n')
     const runAt = lines.indexOf('Run this in a terminal to start role be:')
 
@@ -686,6 +689,7 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
       { argv: ['/bin/mkdir', '-p', '--', privateFolder], options: STEP_OPTIONS },
       ...chmods,
       { argv: ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`], options: STEP_OPTIONS },
+      { argv: ['/usr/bin/tee', '-a', `${RUNTIME}/inbox.jsonl`], options: { ...STEP_OPTIONS, stdin: '' } },
     ])
     expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
     expect(runAt).toBeGreaterThan(1)

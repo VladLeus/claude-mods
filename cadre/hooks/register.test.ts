@@ -483,9 +483,9 @@ function startStateText(roles: readonly string[]): string {
 /**
  * The repo of regenHostWorld after a plain init of BE (D-102, LNCH-04): its cadre.json and role.json, the folder
  * `.cadre/be` resolving inside the repo, the launcher `.cadre/bin/be` and a manifest whose `.cadre/bin/be` entry holds
- * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the mkdirs of a render
- * and the chmod 700 of each level of BE's role memory folder (02-GAPS-B3 S7) exit 0, and writes are allowed. Pass
- * `over` to change one part of it.
+ * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the mkdirs, the link
+ * and the inbox append of a render and the chmod 700 of each level of BE's role memory folder (02-GAPS-B3 S7) exit 0,
+ * and writes are allowed. Pass `over` to change one part of it.
  */
 async function startHostWorld(over: Partial<World> = {}): Promise<World> {
   const base = regenHostWorld()
@@ -514,6 +514,7 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
       [`/bin/mkdir -p -- ${privateFolder}`]: done,
       ...Object.fromEntries(levels.map(level => [`/bin/chmod 700 ${level}`, done])),
       [`/bin/ln -sfn ${privateFolder} ${START_RUNTIME}/private-instructions`]: done,
+      [`/usr/bin/tee -a ${START_RUNTIME}/inbox.jsonl`]: done,
     },
     isWriteAllowed: true,
     ...over,
@@ -3354,7 +3355,7 @@ describe('cadre start with a faked host', () => {
     const log = newLog()
     fakeHost(on, await startHostWorld(), log)
     const lines = (await $.command.run({ command: 'cadre', args: 'start be' })).text.split('\n')
-    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
+    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
     expect(log.writes).toEqual(written.map(name => `${START_RUNTIME}/${name}`))
     expect(log.ops.filter(op => op.startsWith('fs.write ')).at(-1)).toBe(`fs.write ${START_RUNTIME}/stamp`)
     // The n-th process.run op is the n-th run, so the mkdir of .runtime is found among the ops by its run index.
