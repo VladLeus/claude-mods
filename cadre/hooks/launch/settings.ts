@@ -55,12 +55,15 @@ function carriedEnv(role: RoleSpec, user: LaunchUser): Record<string, string> {
   return Object.fromEntries(entries)
 }
 
-/** The workstream env of a role session: its framework's workstream env name set to the role's workstream, if any. */
+/**
+ * The workstream env of a role session: the workstream env name of every framework the role may run, set to the role's
+ * workstream.
+ */
 function workstreamEnv(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, string> {
-  const name = adapterOf(scope.card.framework).roleWork.workstreamEnv
-  if (name === null) return {}
+  const names = [scope.card.framework, ...scope.card.alsoRuns].flatMap(id => adapterOf(id).roleWork.workstreamEnv ?? [])
+  const name = workstreamName(role.id, user.epicSlug ?? null)
 
-  return { [name]: workstreamName(role.id, user.epicSlug ?? null) }
+  return Object.fromEntries(names.map((env): [string, string] => [env, name]))
 }
 
 /**

@@ -1373,6 +1373,8 @@ export type ScopeContext = {
    * roles.ts: a role id, or a role's id with the template role it is based on.
    */
   readonly roles: readonly (string | Pick<RoleSpec, 'id' | 'basedOn'>)[]
+  /** Every framework the repo records, which a role not on none may also run; absent when none is passed. */
+  readonly alsoRuns?: readonly FrameworkId[]
 }
 
 /** The committed settings template: portable keys only (D-84). Per-user values are rendered at launch. */
@@ -1393,6 +1395,8 @@ export type ScopeCard = {
   readonly roleId: string
   readonly title: string
   readonly framework: FrameworkId
+  /** The frameworks the role may run besides `framework`; [] for a role on none. */
+  readonly alsoRuns: readonly FrameworkId[]
   readonly model: string
   readonly effort: Effort
   readonly permissionMode: PermissionMode

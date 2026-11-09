@@ -19,6 +19,7 @@ import {
 import { standsFor } from '../roles/template'
 import { cardFor, mcpToolName, notGivenMcp } from './card'
 import type { DenyPlan } from './card'
+import { runnableFrameworks } from './frameworks'
 import {
   isInfraPlugin,
   isSafeDir,
@@ -40,19 +41,19 @@ function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean
 /**
  * The plugins the role session loads under the whitelist: the three infra plugins, every scanned key whose name part
  * is an infra plugin name under any marketplace (isInfraPlugin, D-281), and every scanned key of a plugin that adds a
- * skill of the role or a start skill of its framework (a skill named `plugin:skill` is present only when its plugin is
- * enabled). The superpowers framework also enables every scanned `superpowers@` key. A scanned key of a plugin named in
- * SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is that key exactly, never by its
- * plugin name, since the scanned keys include the repo's own settings (T-03-46, T-03-47); every other plugin is
- * matched by its name. A role that stands for Security also gets SECURITY_GUIDANCE_PLUGIN itself when the setup holds
- * that exact key, so its hooks warn that role about risky edits (decision #39); another role enables it only for a
- * `security-guidance:` skill the person gave it (decision #69 B4).
+ * skill of the role or a start skill of a framework it may run (runnableFrameworks; a skill named `plugin:skill` is
+ * present only when its plugin is enabled). The superpowers framework also enables every scanned `superpowers@` key.
+ * A scanned key of a plugin named in SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is
+ * that key exactly, never by its plugin name, since the scanned keys include the repo's own settings (T-03-46,
+ * T-03-47); every other plugin is matched by its name. A role that stands for Security also gets
+ * SECURITY_GUIDANCE_PLUGIN itself when the setup holds that exact key, so its hooks warn that role about risky edits
+ * (decision #39); another role enables it only for a `security-guidance:` skill the person gave it (decision #69 B4).
  */
 function pluginsFor(role: RoleSpec, ctx: ScopeContext): Readonly<Record<string, boolean>> {
-  const adapter = adapterOf(ctx.framework)
-  const skills = [...adapter.startSkills, ...role.skills]
+  const adapters = runnableFrameworks(ctx).map(adapterOf)
+  const skills = [...adapters.flatMap(adapter => adapter.startSkills), ...role.skills]
   const wanted = new Set(skills.map(skillPlugin).filter((plugin): plugin is string => plugin !== null))
-  for (const plugin of adapter.pluginsToEnable) wanted.add(plugin)
+  for (const plugin of adapters.flatMap(adapter => adapter.pluginsToEnable)) wanted.add(plugin)
   const scanned = ctx.setup.plugins.filter(key => {
     const name = pluginName(key)
     const exact = SECURITY_PLUGINS.find(official => pluginName(official) === name)
@@ -104,16 +105,16 @@ function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
 }
 
 /**
- * The skills and agents linked into the overlay at launch (spike S4 V3): the handoff skills, the start skills of the
- * framework and the skills of the role, and for GSD the `gsd-*` agents of the setup. Under `--setting-sources project`
- * a user-level skill is absent unless the overlay links it. A skill named `plugin:skill` is not linked: its plugin is
- * enabled instead.
+ * The skills and agents linked into the overlay at launch (spike S4 V3): the handoff skills, the start skills of every
+ * framework the role may run and the skills of the role, and for a role on GSD the `gsd-*` agents of the setup. Under
+ * `--setting-sources project` a user-level skill is absent unless the overlay links it. A skill named `plugin:skill`
+ * is not linked: its plugin is enabled instead.
  */
 function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay'] {
-  const adapter = adapterOf(ctx.framework)
-  const names = [...INFRA_SKILLS, ...adapter.startSkills, ...role.skills]
+  const startSkills = runnableFrameworks(ctx).flatMap(id => adapterOf(id).startSkills)
+  const names = [...INFRA_SKILLS, ...startSkills, ...role.skills]
   const skills = sortedUnique(names.filter(name => skillPlugin(name) === null))
-  const prefix = adapter.agentPrefix
+  const prefix = adapterOf(ctx.framework).agentPrefix
   const agents = prefix === null ? [] : sortedUnique(ctx.setup.agents.filter(name => name.startsWith(prefix)))
 
   return { skills, agents }

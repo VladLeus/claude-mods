@@ -25,6 +25,7 @@ import { fill } from '../locales/t'
 import { handoffFolderOf } from '../paths'
 import { INFRA_MCP_SERVERS, INFRA_SKILLS } from '../roles/infra'
 import { chainLines } from '../roles/template'
+import { runnableFrameworks } from './frameworks'
 import {
   checkedRule,
   INFRA_CHECKS,
@@ -347,6 +348,7 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
     roleId: role.id,
     title: role.title,
     framework: ctx.framework,
+    alsoRuns: runnableFrameworks(ctx).filter(id => id !== ctx.framework),
     model: role.model,
     effort: role.effort,
     permissionMode: role.permissionMode,

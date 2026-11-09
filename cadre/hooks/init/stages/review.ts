@@ -11,6 +11,7 @@
  */
 import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
 import { projectInstallOf, projectPluginInstall, setupAfterInstalls } from '../../apply/installs'
+import { repoFrameworks } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
@@ -424,7 +425,9 @@ function reviewPlanOf(draft: Draft): {
     ...(draft.projectPluginInstalls ?? []),
   ])
   const gathered = { ...draft.gathered, setup }
-  const scopes = scopesFor(draft.roles, draft.repoDefault, gathered, draft.hunks, draft.launchStart)
+  const recorded = initFrameworks(draft, [])
+  const frameworks = repoFrameworks({ framework: draft.repoDefault, ...recorded })
+  const scopes = scopesFor(draft.roles, draft.repoDefault, gathered, draft.hunks, draft.launchStart, frameworks)
   const repoParts = repoPartsOf(draft.instructions)
   const input = {
     roles: withRepoRecords(draft.roles, draft.instructions, repoParts),
@@ -437,7 +440,7 @@ function reviewPlanOf(draft: Draft): {
     locations: draft.locations,
     readUserMcp: draft.readUserMcp,
     repoParts,
-    ...initFrameworks(draft, []),
+    ...recorded,
   }
 
   return { scopes, input }

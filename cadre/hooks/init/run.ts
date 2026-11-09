@@ -46,6 +46,7 @@ import type { ApplyInput } from '../apply/private'
 import { installPlugins, installProject, NOTHING_APPLIED, privatePlanOf, writeWithImprover } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
 import { applySteps, planMismatchProblem } from '../apply/steps'
+import { repoFrameworks } from '../core/framework-id'
 import { sha256Hex } from '../core/hash'
 import { needsGsdCheck, provenUserDir, withGsdIdentity } from '../framework/gsd/identity'
 import { detectAll } from '../framework/registry'
@@ -491,7 +492,9 @@ async function applyConfirmed(
   ])
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const attended = await attendedByConfig(io, locations.root, frameworks, setup)
-  const scopes = compileAll(roles, repoDefault, { ...scanned, setup }, attended, launchStart)
+  const recorded = initFrameworks(draft, failed)
+  const frameworksRun = repoFrameworks({ framework: repoDefault, ...recorded })
+  const scopes = compileAll(roles, repoDefault, { ...scanned, setup }, attended, launchStart, frameworksRun)
   const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
   const owed = privatesOf(draft.instructions, roles)
   const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })
@@ -506,7 +509,7 @@ async function applyConfirmed(
     locations,
     readUserMcp: draft.readUserMcp,
     repoParts: tracked.repoParts,
-    ...initFrameworks(draft, failed),
+    ...recorded,
   })
   const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
   // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).

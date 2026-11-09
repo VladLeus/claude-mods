@@ -16,6 +16,7 @@ import type {
   ScopeContext,
   SetupScan,
 } from '../types'
+import { repoFrameworks } from './core/framework-id'
 import { idsOrNone } from './core/text'
 import { isAttendedFromConfig, isUnmetHunk } from './framework/gsd/hunks'
 import { ADAPTERS } from './framework/registry'
@@ -60,8 +61,8 @@ function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySe
 /**
  * One compiled scope per role, by role id (ROLE-06, D-80): each role is compiled for the framework it runs on
  * (resolvedFramework), with the setup and the code dirs of the scans, the MCP route of every role (MCP_ROUTE, D-104),
- * where the launchers start, so the card tells what loads there (D-122), the whole team for the decision chain, and as
- * attended when its framework is in `attended`.
+ * where the launchers start, so the card tells what loads there (D-122), the whole team for the decision chain, as
+ * attended when its framework is in `attended`, and with the repo's `frameworks`, when given, as what it may also run.
  */
 export function compileAll(
   roles: readonly RoleSpec[],
@@ -69,6 +70,7 @@ export function compileAll(
   gathered: Gathered,
   attended: ReadonlySet<FrameworkId>,
   launchStart: LaunchStart,
+  frameworks?: readonly FrameworkId[],
 ): ReadonlyMap<string, CompiledScope> {
   return new Map(
     roles.map((role): [string, CompiledScope] => {
@@ -81,6 +83,7 @@ export function compileAll(
         mcpRoute: MCP_ROUTE,
         launchStart,
         roles,
+        ...(frameworks === undefined ? {} : { alsoRuns: frameworks }),
       }
 
       return [role.id, compileScope(role, context)]
@@ -100,8 +103,9 @@ export function scopesFor(
   gathered: Gathered,
   hunks: readonly HunkOp[],
   launchStart: LaunchStart,
+  frameworks?: readonly FrameworkId[],
 ): ReadonlyMap<string, CompiledScope> {
-  return compileAll(roles, repoDefault, gathered, attendedByHunks(gathered.setup, hunks), launchStart)
+  return compileAll(roles, repoDefault, gathered, attendedByHunks(gathered.setup, hunks), launchStart, frameworks)
 }
 
 /** The cadre commands that work from an applied team, so they need `.cadre/cadre.json`. */
@@ -275,7 +279,8 @@ export async function attendedByConfig(
  * The scans and the compiled scopes of a team, as regen and /cadre start use them (D-68, D-70, D-72): the scans of one
  * run (gatherScans), which read ~/.claude.json only when cadre.json records the consent (readUserMcp, A1); attended
  * judged from the config on disk with no question asked (attendedByConfig); and every role compiled on its own
- * framework or the repo default, for cadre.json's launch start (compileAll, D-122).
+ * framework or the repo default, for cadre.json's launch start, with the frameworks the repo records (repoFrameworks)
+ * as what it may also run (compileAll, D-122).
  */
 export async function compileTeam(
   io: InitIo,
@@ -287,5 +292,7 @@ export async function compileTeam(
   const frameworks = roles.map(role => resolvedFramework(role, state.framework))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
 
-  return { gathered, scopes: compileAll(roles, state.framework, gathered, attended, state.launchStart) }
+  const scopes = compileAll(roles, state.framework, gathered, attended, state.launchStart, repoFrameworks(state))
+
+  return { gathered, scopes }
 }
