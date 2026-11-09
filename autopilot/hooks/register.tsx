@@ -21,6 +21,7 @@ import {
   applyAvail,
   applyMode,
   askAnswer,
+  asksQueuedQuestion,
   autoAnswersQuestions,
   availMode,
   availStatusLines,
@@ -72,6 +73,7 @@ import {
   questionsBlock,
   queuedAcross,
   queuedResult,
+  removesDrainedQuestion,
   resolveHandoffPath,
   restartsText,
   retime,
@@ -1604,7 +1606,11 @@ export const register: Register = on => {
       // The person can answer now: the dialog and its result are theirs, never rewritten.
       if (mode !== null && passesQuestion(mode)) {
         await log($, `question passed to the person (${mode})`)
-        return await next(e)
+        const asked = run?.questions?.find(question => question.id === run?.askingId) ?? null
+        const ran = await next(e)
+        if (removesDrainedQuestion(mode, ran) && asked !== null && asksQueuedQuestion(e, asked)) await removeAnswered($)
+
+        return ran
       }
       await log($, `question answered by autopilot (decide yourself): ${JSON.stringify(e).slice(0, 400)}`)
       return { deny: askAnswer(mode ?? 'plain') }
