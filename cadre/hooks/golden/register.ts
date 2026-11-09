@@ -48,6 +48,19 @@ export const GOLDEN_PREVIEWS: readonly {
   {
     "header": "Framework",
     "options": [
+      "Keep GSD and superpowers (Recommended)",
+      "None (built-in)",
+      "Describe your own"
+    ],
+    "previews": [
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
+    ]
+  },
+  {
+    "header": "Framework",
+    "options": [
       "Same for all roles",
       "Per role"
     ],

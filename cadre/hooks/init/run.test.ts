@@ -186,7 +186,7 @@ import { PANE_FULLSCREEN } from '../ui/surfaces/pane-fullscreen'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
 import type { Draft, PlanResult } from './draft'
 import { CONFLICT_CONTEXT } from './initapply'
-import { initSizing } from './initplan'
+import { initFrameworks, initSizing } from './initplan'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
   APPLY_HUNKS_PROGRESS,
@@ -738,16 +738,15 @@ describe('runInit framework and recommendations', () => {
       gsdUserDir: '/home/u/.claude/gsd-core',
     }
     const check = "ask Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)"
-    const framework =
-      'ask Which framework do the roles use? (asked because none is in use here, but some are installed for you)'
     const cases: readonly (readonly [string, number])[] = [['No, skip the check', 0], ['Yes, run the check', 1]]
     for (const [answer, runs] of cases) {
       const run = memIo(gitWorld({ facts }), { ...INIT_ANSWERS, "Run GSD's own check": answer })
       const { io, events } = withEvents(run)
       await runInit(io, { dryRun: true })
       const checkAt = events.indexOf(check)
+      const setAt = events.findIndex(event => event.startsWith(`ask ${SET_QUESTION_START}`))
 
-      const order = [checkAt >= 0, checkAt < events.indexOf(framework)]
+      const order = [checkAt >= 0, checkAt < setAt]
       expect([...order, run.gsdIdentityCalls.length]).toEqual([true, true, runs])
     }
   })
@@ -3131,8 +3130,14 @@ describe('refusal re-ask (G-02-6b)', () => {
         '"No, skip it", "Yes, read names only"',
       ],
       [
-        'framework mode',
+        'framework set',
         () => driven(frameworksStage.enter(stateAt('frameworks', frameworksDraft)), ['zzz']).asked,
+        '"Keep GSD and superpowers (Recommended)", "None (built-in)", ' +
+          'or the frameworks by name: GSD, superpowers, none',
+      ],
+      [
+        'framework mode',
+        () => driven(frameworksStage.enter(stateAt('frameworks', frameworksDraft)), [KEEP_BOTH, 'zzz']).asked.slice(1),
         '"Same for all roles", "Per role"',
       ],
       [
@@ -3521,7 +3526,13 @@ async function initFiles(
 const GIT_TEAM_HAS_SECURITY = true
 
 /** The sizing block init records in the fixture worlds of these specs: none of them has a framework installed. */
-const NO_FRAMEWORK_SIZING: Sizing = initSizing(['none'])
+const NO_FRAMEWORK_SIZING: Sizing = initSizing(undefined, [])
+
+/** How the framework set question starts, whichever frameworks it found. */
+const SET_QUESTION_START = 'Which frameworks does this team use?'
+
+/** The answer that keeps both frameworks found. */
+const KEEP_BOTH = 'Keep GSD and superpowers (Recommended)'
 
 /** The op a re-run with unchanged answers gives a planned file: leave, and none for the rubric on disk. */
 function reRunKind(path: string): string | undefined {
@@ -4059,7 +4070,12 @@ describe('reviewStep', () => {
     expect(firstPass).toContain(DURATION_QUESTION)
     expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
     expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
-    expect(between(run.asked, REVIEW_QUESTION)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
+    expect(firstPass.some(question => question.startsWith(SET_QUESTION_START))).toBe(true)
+    // The set the team keeps stays in the draft across the go-back, so only its per-role questions come again.
+    const isAskedAgain = (question: string): boolean =>
+      question !== DURATION_QUESTION && !question.startsWith(SET_QUESTION_START)
+    const again = firstPass.filter(isAskedAgain)
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual(again)
     const folded = run.specs.filter(spec => spec.context?.lines[0] === t('ui.recommendations.recommendationsHeading'))
     expect(folded).toHaveLength(2)
     expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
@@ -6178,7 +6194,8 @@ describe('the sizing rubric and the sizing block at init', () => {
     const unsized = await planStep(memIo(gitWorld(), {}).io, await rubricInput(gitWorld()))
     const cadreJson = sized.desired.find(file => file.path === '.cadre/cadre.json')?.content ?? ''
 
-    expect(initSizing(['gsd', 'superpowers', 'none']).mapping).toEqual({ small: 'superpowers', large: 'gsd' })
+    const installed = wholeDraft({ installed: ['gsd', 'superpowers', 'none'] })
+    expect(initFrameworks(installed, []).sizing.mapping).toEqual({ small: 'superpowers', large: 'gsd' })
     expect(NO_FRAMEWORK_SIZING.mapping).toEqual({ small: 'none', large: 'none' })
     expect([sized.state.sizing, parseCadreState(cadreJson)?.sizing]).toEqual([NO_FRAMEWORK_SIZING, NO_FRAMEWORK_SIZING])
     expect(Object.keys(unsized.state)).not.toContain('sizing')

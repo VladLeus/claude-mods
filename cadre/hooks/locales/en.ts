@@ -159,6 +159,13 @@ export const EN = Object.freeze({
   'init.frameworks.installCommand': 'cadre runs {command} from the repo root after Confirm.',
   'init.frameworks.installWrites': 'It writes {writes}.',
   'init.frameworks.installTitle': 'Install {name}',
+  'init.frameworks.setQuestion':
+    'Which frameworks does this team use? Found: {found}. Adding one installs it at project scope after Confirm.',
+  'init.frameworks.setNamesJoin': ' and ',
+  'init.frameworks.setKeep': 'Keep {names} (Recommended)',
+  'init.frameworks.setAdd': 'Add {name} too',
+  'init.frameworks.setNone': 'None (built-in)',
+  'init.frameworks.setAccepts': '{labels}, or the frameworks by name: {words}',
   'init.frameworks.installNo': 'No',
   'init.frameworks.installYes': 'Yes, install it',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',

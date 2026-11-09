@@ -33,6 +33,7 @@ export const GOLDEN_TUI: {
     null,
     null,
     null,
+    null,
     "Recommending skills…",
     "Recommending skills…",
     "Recommending skills…",
@@ -71,6 +72,19 @@ export const GOLDEN_TUI: {
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      ]
+    },
+    {
+      "header": "Framework",
+      "options": [
+        "Keep GSD and superpowers (Recommended)",
+        "None (built-in)",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
       ]
     },
     {

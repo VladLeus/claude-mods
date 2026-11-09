@@ -287,6 +287,9 @@ export type EachCursor = {
  * - `back`: the review goes back to the stage `to` (D-204); nextStage enters it.
  * - `mode`, `all`, `each`: a question asked once for every role or per role, asked `tries` times so far: the mode
  *   question, the question for all roles, or the question of the role at `index`, with the roles answered before it.
+ * - `set`: the question of which frameworks the team keeps is out, asked `tries` times so far.
+ * - `set-install`: the install question of `framework` is out for a set answer that adds it, asked `tries` times so
+ *   far; `pending` keeps the frameworks the set holds so far and the ones still to ask about.
  * - `roles`: the roles question about `roles` with their scan `changes` is out, asked `tries` times so far, in the
  *   `rounds`-th proposal of the roles stage.
  * - `adjust`: the Adjust question is out for the `round`-th time, with the roles as adjusted so far, in proposal
@@ -336,6 +339,13 @@ export type StageSub =
   | { readonly kind: 'back'; readonly to: InitStage }
   | { readonly kind: 'mode'; readonly tries: number }
   | { readonly kind: 'all'; readonly tries: number }
+  | { readonly kind: 'set'; readonly tries: number }
+  | {
+      readonly kind: 'set-install'
+      readonly tries: number
+      readonly framework: FrameworkId
+      readonly pending: { readonly set: readonly FrameworkId[]; readonly rest: readonly FrameworkId[] }
+    }
   | ({ readonly kind: 'each' } & EachCursor)
   | {
       readonly kind: 'roles'

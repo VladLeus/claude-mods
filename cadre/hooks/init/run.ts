@@ -84,7 +84,7 @@ import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import type { Draft, PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
-import { initSizing, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
+import { initFrameworks, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
@@ -262,6 +262,7 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
     launchStart,
     readUserMcp,
     ...(input.sizing === undefined ? {} : { sizing: input.sizing }),
+    ...(input.frameworks === undefined ? {} : { frameworks: input.frameworks }),
   }
   const parts = repoParts === undefined ? {} : { repoParts }
   const generated = desiredFiles({ roles, scopes, state, only: null, ...parts })
@@ -292,12 +293,11 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
 }
 
 /**
- * The roles and repo default once the consented framework installs ran: an install whose framework the facts read
- * again do not show failed, and a role or repo default on it falls back to the first framework of the set chosen, else
- * of the installed ones, that did not fail, else none.
+ * The roles and repo default once the consented framework installs ran: a role or repo default on a framework whose
+ * install `failed` falls back to the first framework of the set chosen, else of the installed ones, that did not fail,
+ * else none.
  */
-function withoutFailedInstalls(draft: Draft, found: readonly FrameworkId[]): Pick<Draft, 'roles' | 'repoDefault'> {
-  const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
+function withoutFailedInstalls(draft: Draft, failed: readonly FrameworkId[]): Pick<Draft, 'roles' | 'repoDefault'> {
   if (failed.length === 0) return { roles: draft.roles, repoDefault: draft.repoDefault }
   const fallback = (draft.frameworkSet ?? draft.installed).find(id => !failed.includes(id)) ?? 'none'
   const kept = (framework: FrameworkId): FrameworkId => (failed.includes(framework) ? fallback : framework)
@@ -320,7 +320,8 @@ function withoutFailedInstalls(draft: Draft, found: readonly FrameworkId[]): Pic
  * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
  *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again. A
  *    plugin among them that installed joins the setup as step 4's plugins do, and each failure is an install problem.
- *    A role or repo default on a framework the facts do not show then falls back (withoutFailedInstalls).
+ *    An install whose framework the facts do not show failed: a role or repo default on it falls back
+ *    (withoutFailedInstalls), and cadre.json records the frameworks and sizing without it (initFrameworks).
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -402,7 +403,9 @@ async function applyConfirmed(
   }
   const project = await installProject(host, locations.root, locations.home, projectInstalls)
   const scanned = projectInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
-  const { roles, repoDefault } = withoutFailedInstalls(draft, installedFrameworks(detectAll(scanned.facts.facts)))
+  const found = installedFrameworks(detectAll(scanned.facts.facts))
+  const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
+  const { roles, repoDefault } = withoutFailedInstalls(draft, failed)
   const projectPlugins = projectInstalls.flatMap(install =>
     install.isPlugin && project.installed.includes(install.id) ? [install.id] : [],
   )
@@ -444,7 +447,7 @@ async function applyConfirmed(
     locations,
     readUserMcp: draft.readUserMcp,
     repoParts: tracked.repoParts,
-    sizing: initSizing(draft.installed),
+    ...initFrameworks(draft, failed),
   })
   const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
   // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).

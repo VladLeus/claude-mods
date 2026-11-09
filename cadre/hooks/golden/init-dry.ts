@@ -204,6 +204,19 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Which frameworks does this team use? Found: GSD. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, be, fe, qa, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD (Recommended)",
+          "Add superpowers too",
+          "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.",
           "Nothing is installed before you confirm the final review, and a --dry-run installs nothing."
         ],
@@ -422,6 +435,19 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Which frameworks does this team use? Found: superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, be, fe, qa, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep superpowers (Recommended)",
+          "Add GSD too",
+          "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.",
           "Nothing is installed before you confirm the final review, and a --dry-run installs nothing."
         ],
@@ -609,6 +635,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Use these roles",
           "Adjust them",
           "Describe my own structure"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD and superpowers (Recommended)",
+          "None (built-in)"
         ],
         "multiSelect": false
       },

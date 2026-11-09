@@ -2,9 +2,9 @@
  * The plan side of init (PLAN-01, PLAN-03, PLAN-04, D-67, D-230, G-02-1f), a layer 10 module, its pure parts: the repo
  * parts each role was given (repoPartsOf), the role.json records regen compares against (withRepoRecords), what each
  * role is owed outside the repo (privatesOf), and PlanStepInput, what the plan of a draft is made from; init/run makes
- * the plan itself (planStep), which reads the disk, and the sizing block both the review and the apply plan with
- * (initSizing). Pure: it imports apply, core, launch, messages/sizing, records and the types, and never imports
- * init/machine or init/run.
+ * the plan itself (planStep), which reads the disk, and the frameworks and sizing block both the review and the apply
+ * plan with (initFrameworks, initSizing). Pure: it imports apply, core, launch, messages/sizing, records, the draft
+ * type and the types, and never imports init/machine or init/run.
  */
 import type {
   CompiledScope,
@@ -24,6 +24,7 @@ import { compareText } from '../core/text'
 import { isPartsFlowRole } from '../launch/links'
 import { defaultSizing } from '../messages/sizing'
 import { partRecord, withPartRecords } from '../records'
+import type { Draft } from './draft'
 
 /**
  * The parts each role was given that were read from the repo, by role id (G-02-1f Storage split): for a parts
@@ -114,12 +115,36 @@ export type PlanStepInput = {
   readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
   /** The sizing block cadre.json records; absent leaves it out. */
   readonly sizing?: Sizing
+  /** The frameworks cadre.json records as the person's answer; absent records none. */
+  readonly frameworks?: readonly FrameworkId[]
 }
 
 /**
- * The sizing block init records in cadre.json: the default for the frameworks installed for the repo. The review and
- * the apply both plan with it, so the plan the person confirms holds the cadre.json apply writes.
+ * The sizing block init records in cadre.json for the frameworks a run ends with: a stored block keeps its threshold
+ * and rubric, and its mapping while both of its frameworks are in the set, else takes the mapping of the default; with
+ * none stored, the default of the set.
  */
-export function initSizing(installed: readonly FrameworkId[]): Sizing {
-  return defaultSizing(installed.filter(id => id !== 'none'))
+export function initSizing(stored: Sizing | undefined, frameworks: readonly FrameworkId[]): Sizing {
+  const sized = defaultSizing(frameworks)
+  if (stored === undefined) return sized
+  const { small, large } = stored.mapping
+  const isKept = frameworks.includes(small) && frameworks.includes(large)
+
+  return { ...stored, mapping: isKept ? stored.mapping : sized.mapping }
+}
+
+/**
+ * The frameworks and sizing block init records in cadre.json: the frameworks the run ends with are the set the person
+ * chose, else the supported ones installed, without those whose install failed; they are recorded only when the
+ * person chose the set, and the sizing block is that of those frameworks (initSizing). The review and the apply both
+ * plan with it, so the plan the person confirms holds the cadre.json apply writes when every install works.
+ */
+export function initFrameworks(
+  draft: Pick<Draft, 'frameworkSet' | 'installed' | 'gathered'>,
+  failed: readonly FrameworkId[],
+): { readonly frameworks?: readonly FrameworkId[]; readonly sizing: Sizing } {
+  const frameworks = (draft.frameworkSet ?? draft.installed).filter(id => id !== 'none' && !failed.includes(id))
+  const sizing = initSizing(draft.gathered.repo.cadre.state?.sizing, frameworks)
+
+  return draft.frameworkSet === undefined ? { sizing } : { frameworks, sizing }
 }

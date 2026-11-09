@@ -2835,6 +2835,8 @@ const TUI_ASKS_AT_BASE: readonly string[] = [
     'session.',
   'ask Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the ' +
     'scan.',
+  'ask Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project ' +
+    'scope after Confirm.\nRoles: pm, tl, security.\nOr press n, type your own answer, then Enter.',
   'ask Which framework do the roles use? (asked because more than one framework is in use)\nRoles: ' +
     'pm, tl, security.',
   'ask Framework for all roles?\nRoles: pm, tl, security.\nOr press n, type your own answer, then ' +

@@ -762,6 +762,42 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "acceptsTyped": false
     },
     {
+      "header": "Framework",
+      "context": {
+        "title": "Frameworks",
+        "lines": [
+          "GSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)",
+          "superpowers: not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)"
+        ],
+        "kind": "detection",
+        "summary": "1 framework found: gsd",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Which frameworks does this team use? Found: GSD. Adding one installs it at project scope after Confirm.\nRoles: pm, tl, be, fe, qa, security.",
+          "text": "Which frameworks does this team use? Found: GSD. Adding one installs it at project scope after Confirm.\n1 framework found: gsd"
+        }
+      },
+      "acceptsTyped": true
+    },
+    {
       "header": "Security",
       "context": {
         "title": "Security plugins",
@@ -1457,6 +1493,42 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "acceptsTyped": false
     },
     {
+      "header": "Framework",
+      "context": {
+        "title": "Frameworks",
+        "lines": [
+          "GSD: not found (no .planning/; no gsd-core install proven)",
+          "superpowers: in use (docs/superpowers/)"
+        ],
+        "kind": "detection",
+        "summary": "1 framework found: superpowers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "not found (no .planning/; no gsd-core install proven)",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "in use (docs/superpowers/)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Which frameworks does this team use? Found: superpowers. Adding one installs it at project scope after Confirm.\nRoles: pm, tl, be, fe, qa, security.",
+          "text": "Which frameworks does this team use? Found: superpowers. Adding one installs it at project scope after Confirm.\n1 framework found: superpowers"
+        }
+      },
+      "acceptsTyped": true
+    },
+    {
       "header": "Security",
       "context": {
         "title": "Security plugins",
@@ -2064,6 +2136,42 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": false
+    },
+    {
+      "header": "Framework",
+      "context": {
+        "title": "Frameworks",
+        "lines": [
+          "GSD: in use (.planning/ (dir))",
+          "superpowers: in use (docs/superpowers/)"
+        ],
+        "kind": "detection",
+        "summary": "2 frameworks found: gsd, superpowers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "in use (.planning/ (dir))",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "in use (docs/superpowers/)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.\nRoles: pm, tl, security.",
+          "text": "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.\n2 frameworks found: gsd, superpowers"
+        }
+      },
+      "acceptsTyped": true
     },
     {
       "header": "Framework",

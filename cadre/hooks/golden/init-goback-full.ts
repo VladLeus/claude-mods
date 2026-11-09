@@ -39,6 +39,18 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD and superpowers (Recommended)",
+          "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Which framework do the roles use? (asked because more than one framework is in use)",
           "Roles: pm, tl, security."
         ],
@@ -422,6 +434,18 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
           "Use these roles",
           "Adjust them",
           "Describe my own structure"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD and superpowers (Recommended)",
+          "None (built-in)"
         ],
         "multiSelect": false
       },
@@ -814,6 +838,18 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD and superpowers (Recommended)",
+          "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Which framework do the roles use? (asked because more than one framework is in use)",
           "Roles: pm, tl, security."
         ],
@@ -1172,6 +1208,18 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
           "Use these roles",
           "Adjust them",
           "Describe my own structure"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD and superpowers (Recommended)",
+          "None (built-in)"
         ],
         "multiSelect": false
       },
