@@ -1,9 +1,10 @@
 /**
  * The PM plugin stage of init, a layer 10 module: the question that offers PM's grill plugin, mattpocock-skills, for
  * install at project scope after Confirm, the declining answer first, and pmPluginStage, the pure stage that gives
- * every role standing for PM the grill skills when the plugin is installed and asks only while it is missing. Pure: it
- * gives states and never performs an effect, imports core, roles, ui/ask, ui/blocks/context and init/state, and never
- * imports init/machine or init/run.
+ * every role standing for PM the grill skills when the plugin is installed and asks only while it is missing. A
+ * decline after an earlier Yes takes the grill skills off again, so a go-back that declines leaves PM without them.
+ * Pure: it gives states and never performs an effect, imports core, roles, ui/ask, ui/blocks/context and init/state,
+ * and never imports init/machine or init/run.
  */
 import type { AskSpec, RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
@@ -22,7 +23,7 @@ import {
 } from '../../ui/ask'
 import { rolesContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
-import type { Answer, InitState, StageDef } from '../state'
+import type { Answer, InitState, Output, StageDef } from '../state'
 
 /** The question that offers PM's grill plugin: it names the plugin and the grill skills it gives PM. */
 export const PM_PLUGIN_QUESTION = t('init.pmPlugin.question', {
@@ -74,19 +75,36 @@ function withGrillSkills(roles: readonly RoleSpec[]): RoleSpec[] {
   })
 }
 
+/** The roles with each grill skill taken off every role standing for PM, its other skills in order. */
+function withoutGrillSkills(roles: readonly RoleSpec[]): RoleSpec[] {
+  return roles.map(role => {
+    if (!standsFor(role, 'pm')) return role
+
+    return { ...role, skills: role.skills.filter(skill => !GRILL_SKILLS.includes(skill)) }
+  })
+}
+
 /** The stage done with these roles and the project plugin installs to run after Confirm. */
 function pmPluginDone(state: InitState, roles: readonly RoleSpec[], installs: readonly string[]): InitState {
   return stageDone({ ...state, draft: { ...state.draft, roles, projectPluginInstalls: installs } })
 }
 
-/** The stage done with no install and the roles as they are, printing the command that adds the grill skills. */
+/**
+ * The stage done with no install, printing the command that adds the grill skills. When an earlier Yes in this run
+ * gave PM the grill skills, they are taken off again; skills handed in assign stand.
+ */
 function declined(state: InitState, roles: readonly RoleSpec[]): InitState {
-  return withOutputs(pmPluginDone(state, roles, []), [{ kind: 'note', line: PM_PLUGIN_DECLINED }])
+  const note: Output[] = [{ kind: 'note', line: PM_PLUGIN_DECLINED }]
+  const isAfterYes = (state.draft.projectPluginInstalls ?? []).includes(MATTPOCOCK_PLUGIN)
+  if (!isAfterYes) return withOutputs(pmPluginDone(state, roles, []), note)
+
+  return withOutputs(pmPluginDone(state, withoutGrillSkills(roles), []), note)
 }
 
 /**
- * The answer to the question: Yes records MATTPOCOCK_PLUGIN to install and gives PM the grill skills; No or a dismissal
- * declines. An answer that is neither is asked again with why on top.
+ * The answer to the question: Yes records MATTPOCOCK_PLUGIN to install and gives PM the grill skills; No or a
+ * dismissal declines, and takes off the grill skills an earlier Yes gave. An answer that is neither is asked again
+ * with why on top.
  */
 function pmPluginAnswer(state: InitState, answer: Answer): InitState {
   const { roles } = state.draft
