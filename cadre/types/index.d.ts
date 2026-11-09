@@ -807,10 +807,14 @@ export type RoleContext = {
   readonly root: string
 }
 
-/** The roles of the team and each role's parent, null for the top of the hierarchy. */
+/**
+ * The roles of the team, each role's parent (null for the top of the hierarchy) and pm, the PM stand-in, null when the
+ * team has none.
+ */
 export type TeamView = {
   readonly ids: readonly string[]
   readonly parents: Readonly<Record<string, string | null>>
+  readonly pm: string | null
 }
 
 /** Sends a live message to a session by its id; true when the host delivered it. */

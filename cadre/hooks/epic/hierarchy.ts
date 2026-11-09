@@ -7,7 +7,7 @@ import { standIn } from '../roles/template'
 import { readTeam } from '../team'
 import { epicParentOf } from './pick'
 
-/** The team view of the repo at `root`; null when the team cannot be read. With no PM every parent is null. */
+/** The team view of the repo at `root`; null when the team cannot be read. With no PM, pm and every parent are null. */
 export async function teamViewOf(io: InitIo, root: string): Promise<TeamView | null> {
   const read = await readTeam(io, root, 'start', null)
   if (read.kind === 'refuse') return null
@@ -17,5 +17,5 @@ export async function teamViewOf(io: InitIo, root: string): Promise<TeamView | n
     roles.map((role): [string, string | null] => [role.id, pmId === null ? null : epicParentOf(role, roles, pmId)]),
   )
 
-  return { ids: state.roles, parents }
+  return { ids: state.roles, parents, pm: pmId }
 }

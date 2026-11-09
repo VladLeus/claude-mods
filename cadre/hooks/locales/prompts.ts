@@ -116,6 +116,8 @@ export const PROMPTS = Object.freeze({
   inboxToNotTeam: 'to must name a role of the team: {ids}.',
   inboxToSelf: 'to is your own role: send to another role of the team.',
   inboxKindUnknown: 'kind must be one of {kinds}.',
+  inboxKindPmOnly: 'kind {kind} is sent only by the PM ({pm}): send a report or a note instead.',
+  inboxKindNoPm: 'kind {kind} is sent only by the PM, and this team has no PM: send a report or a note instead.',
   inboxSubjectEmpty: 'subject is empty or not text: give a short subject line.',
   inboxBodyEmpty: 'body is empty or not text: write the message in body.',
   inboxBodyTooLong: 'body is over {max} characters: shorten it or split it into several entries.',

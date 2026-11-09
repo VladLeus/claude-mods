@@ -35,6 +35,9 @@ export const INBOX_APPEND_TIMEOUT_MS = 10_000
 
 export const NOTE_MAX_CHARS = 300
 
+/** The kinds only the team's PM stand-in sends. */
+const PM_KINDS: readonly MessageKind[] = Object.freeze(['ticket', 'epic-end'])
+
 /** An inbox entry id: the sender, the time in epoch ms and the first 8 hex of the content's SHA-256. */
 export const ENTRY_ID_PATTERN = /^[a-z0-9-]{1,64}-\d{1,16}-[0-9a-f]{8}$/
 
@@ -76,8 +79,8 @@ function bodyText(raw: unknown): string {
 }
 
 /**
- * The inbox_send input as a message to stamp, checked in the order to, kind, subject, body, replyTo. The subject is
- * cut to its cap; a body over its cap is refused, never cut.
+ * The inbox_send input as a message to stamp, checked in the order to, kind (ticket and epic-end only from the PM
+ * stand-in), subject, body, replyTo. The subject is cut to its cap; a body over its cap is refused, never cut.
  */
 export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView): SendInput {
   const fields: Readonly<Record<string, unknown>> = isObject(event) ? event : {}
@@ -88,6 +91,11 @@ export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView)
   if (to === ctx.id) return sendError(PROMPTS.inboxToSelf)
   const kindName = MESSAGE_KINDS.find(known => known === kind)
   if (kindName === undefined) return sendError(fill(PROMPTS.inboxKindUnknown, { kinds: MESSAGE_KINDS.join(', ') }))
+  const { pm } = team
+  if (PM_KINDS.includes(kindName) && pm === null) return sendError(fill(PROMPTS.inboxKindNoPm, { kind: kindName }))
+  if (PM_KINDS.includes(kindName) && pm !== null && pm !== ctx.id) {
+    return sendError(fill(PROMPTS.inboxKindPmOnly, { kind: kindName, pm }))
+  }
   const subject = subjectText(fields.subject)
   if (subject === '') return sendError(PROMPTS.inboxSubjectEmpty)
   const body = bodyText(fields.body)
