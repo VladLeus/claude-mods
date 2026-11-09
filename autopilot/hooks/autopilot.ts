@@ -752,6 +752,46 @@ export function passesQuestion(mode: Mode): boolean {
   return mode === 'asking' || mode === 'draining'
 }
 
+/** A string with something besides whitespace. */
+function hasText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+/**
+ * Whether a drained question's dialog was answered, so the question leaves the queue: only while draining, on a result
+ * with no deny, no error and no AFK timeout that holds a non-empty answer or a free-text response. Anything else keeps
+ * the question queued.
+ */
+export function removesDrainedQuestion(mode: Mode, ran: unknown): boolean {
+  if (mode !== 'draining' || typeof ran !== 'object' || ran === null) return false
+  if ('deny' in ran && ran.deny !== undefined) return false
+  if ('isError' in ran && ran.isError === true) return false
+  if (!('result' in ran) || typeof ran.result !== 'object' || ran.result === null) return false
+  const result = ran.result
+  if ('afkTimeoutMs' in result && result.afkTimeoutMs !== undefined) return false
+  if ('response' in result && hasText(result.response)) return true
+  if (!('answers' in result) || typeof result.answers !== 'object' || result.answers === null) return false
+
+  return Object.values(result.answers).some(hasText)
+}
+
+/**
+ * Whether an AskUserQuestion call asks the queued question `q`: one of its questions holds the queued text or the tag
+ * `#k`, not as the start of a longer number.
+ */
+export function asksQueuedQuestion(call: unknown, q: Question): boolean {
+  if (typeof call !== 'object' || call === null || !('questions' in call)) return false
+  if (!Array.isArray(call.questions)) return false
+  const tag = new RegExp(`#${q.id}(?!\\d)`)
+
+  return call.questions.some((item: unknown) => {
+    if (typeof item !== 'object' || item === null || !('question' in item)) return false
+    const text = item.question
+
+    return typeof text === 'string' && (text.includes(q.text) || tag.test(text))
+  })
+}
+
 /**
  * Why a wait is refused, or null when allowed. Waiting for the person needs a
  * mode that asks them (asking, draining), and then the question or action as
@@ -890,14 +930,24 @@ export function criticalCount(n: number): string {
 }
 
 /**
- * How to ask one queued question: as text, then a wait whose note starts with
- * its #k tag. Shared by drainPrompt and the draining role section (task 05).
+ * How to ask one queued question: an answer through AskUserQuestion as one question tagged #k, and as text with a wait
+ * tagged #k only when that tool cannot be used; an action as text, then a wait tagged #k. Shared by drainPrompt and
+ * the draining role section.
  */
 export function askQuestionText(q: Question): string {
   const meanwhile = q.provisional ? ` (meanwhile you went with: ${quoteValue(q.provisional, MAX_PROVISIONAL)})` : ''
-  const reason = q.kind === 'action' ? 'user-input' : 'user-answer'
+  const asked = `Ask question #${q.id} now, and only it: ${quoteValue(q.text, MAX_QUESTION)}${meanwhile}.`
+  const tagged = `a note that starts with "#${q.id}", then end your turn.`
+  if (q.kind === 'action') {
+    return `${asked} Write it to the person as text, call ${WAIT_TOOL} with reason user-input and ${tagged}`
+  }
 
-  return `Ask question #${q.id} now, and only it: ${quoteValue(q.text, MAX_QUESTION)}${meanwhile}. Write it to the person as text, call ${WAIT_TOOL} with reason ${reason} and a note that starts with "#${q.id}", then end your turn.`
+  return [
+    asked,
+    `Ask it with AskUserQuestion as one question that starts with "#${q.id}", the recommended option first.`,
+    'Only when AskUserQuestion is unavailable or the person said not to use it, write it to the person as text,',
+    `call ${WAIT_TOOL} with reason user-answer and ${tagged}`,
+  ].join(' ')
 }
 
 /** The prompt for the one ping when a session's away time ends with questions queued (spec §7.2). */
@@ -1188,7 +1238,13 @@ const CRITICAL_WHEN =
 const PLAIN_PERSON_LINE =
   '- Only when a question truly cannot wait for the person and blocks all useful work, call the PushNotification tool with a one-line question (under 200 characters), then continue with whatever else you can do.'
 
-const ASK_PERSON_LINE = `- Only when the person is truly required — ${CRITICAL_WHEN} — call PushNotification with the one-line question, then call ${WAIT_TOOL} with reason user-answer (or user-input for an action the person must take) and the question as note, and end your turn. Everything else you decide yourself.`
+const ASK_PERSON_LINE = [
+  `- Only when the person is truly required — ${CRITICAL_WHEN} — ask them with AskUserQuestion: up to 4 questions per`,
+  'call, the recommended option first. For an action the person must take, or when AskUserQuestion is unavailable or',
+  'the person said not to use it, write it to them as text, call PushNotification with the one-line question, then',
+  `call ${WAIT_TOOL} with reason user-answer (or user-input for an action the person must take) and the question as`,
+  'note, and end your turn. Everything else you decide yourself.',
+].join(' ')
 
 /** The paused section, with the questions still queued for the person when there are any. */
 function pausedSection(run: Run): string {

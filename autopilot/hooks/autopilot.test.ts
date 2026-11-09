@@ -881,7 +881,8 @@ describe('AskUserQuestion while asking is on', () => {
   })
 
   test('it passes in exactly the modes that allow a wait for the person', async () => {
-    const wait: Awaiting = { reason: 'user-answer', from: null, note: '#1 Which DB?', since: 0, timeoutAt: null, pinged: false }
+    const note = '#1 Which DB?'
+    const wait: Awaiting = { reason: 'user-answer', from: null, note, since: 0, timeoutAt: null, pinged: false }
     for (const mode of MODES) expect(passesQuestion(mode)).toBe(waitRefusal(wait, mode) === null)
   })
 
@@ -914,7 +915,9 @@ describe('AskUserQuestion while asking is on', () => {
 
   test('a dialog asks the queued question when one of its questions holds its text or its #k tag', async () => {
     const queued: Question = { id: 3, text: 'Which DB?', kind: 'answer', provisional: null, at: 0 }
-    const call = (...texts: unknown[]) => ({ questions: texts.map(question => ({ question, header: 'DB', options: [] })) })
+    const call = (...texts: unknown[]) => ({
+      questions: texts.map(question => ({ question, header: 'DB', options: [] })),
+    })
     expect(asksQueuedQuestion(call('Which DB?'), queued)).toBe(true)
     expect(asksQueuedQuestion(call('#3 Which database should we use?'), queued)).toBe(true)
     expect(asksQueuedQuestion(call('Unrelated', 'Before we go on: Which DB?'), queued)).toBe(true)
@@ -1914,7 +1917,7 @@ describe('pending prompts', () => {
     expect(criticalCount(7)).toBe('7 critical questions are')
   })
 
-  test('askQuestionText asks an answer through AskUserQuestion, tagged #k, and an action as text with a wait', async () => {
+  test('askQuestionText asks an answer with AskUserQuestion tagged #k, and an action as text with a wait', async () => {
     const answer: Question = { id: 1, text: 'Push the release tag v2.0?', kind: 'answer', provisional: 'kept it local', at: 1 }
     expect(askQuestionText(answer)).toBe(
       'Ask question #1 now, and only it: "Push the release tag v2.0?" (meanwhile you went with: "kept it local"). ' +
