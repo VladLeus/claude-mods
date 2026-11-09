@@ -268,6 +268,18 @@ function setAskOf(state: InitState): { ask: FrameworkAsk<readonly FrameworkId[]>
   return { ask: frameworkSetAsk(found, missing, roles), found }
 }
 
+/**
+ * The set cadre.json stores for the repo when every framework in it is still installed, so a re-run keeps the answer
+ * without asking; null when none is stored or one of them is no longer installed.
+ */
+function storedSet(state: InitState): readonly FrameworkId[] | null {
+  const stored = state.draft.gathered?.repo.cadre.state?.frameworks
+  const { installed } = state.draft
+  if (stored === undefined || installed === undefined) return null
+
+  return stored.every(id => installed.includes(id)) ? stored : null
+}
+
 /** The set question asked `tries` times so far; `question` is its text after a refusal. */
 function setAsked(state: InitState, tries: number, question: string | null): InitState {
   const set = setAskOf(state)
@@ -547,10 +559,10 @@ function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: 
 
 /**
  * The framework step once the GSD check, if any, is behind it. A set kept in the draft is framed again (framedSet).
- * With any framework found, in use or installed, the set question is asked (frameworkAnswer): one framework kept is the
- * repo default and the roles keep `framework` absent (an Adjust override stays); two ask whether one framework serves
- * all roles or each picks its own. Unsupported and none ask nothing and give the built-in default; unsupported notes
- * what was found.
+ * With any framework found, in use or installed, the set cadre.json stores is kept when all of it is still installed
+ * (storedSet), else the set question is asked (frameworkAnswer): one framework kept is the repo default and the roles
+ * keep `framework` absent (an Adjust override stays); two ask whether one framework serves all roles or each picks its
+ * own. Unsupported and none ask nothing and give the built-in default; unsupported notes what was found.
  */
 function frameworkStep(state: InitState): InitState {
   const { choice, roles, frameworkSet } = state.draft
@@ -559,8 +571,11 @@ function frameworkStep(state: InitState): InitState {
   switch (choice.kind) {
     case 'chosen':
     case 'ambiguous':
-    case 'installed-only':
-      return setAsked(state, 1, null)
+    case 'installed-only': {
+      const stored = storedSet(state)
+
+      return stored === null ? setAsked(state, 1, null) : setChosen(state, stored)
+    }
     case 'unsupported':
       return framedDone(withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]), roles, 'none')
     case 'none':
