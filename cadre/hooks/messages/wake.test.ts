@@ -18,6 +18,20 @@ const ENTRY: InboxEntry = {
 }
 
 describe('wakeText', () => {
+  test('the wake of a superpowers task names the method and stays one ASCII line within ROLE_LINE_MAX', () => {
+    const method = 'superpowers:subagent-driven-development'
+    const task: InboxEntry = { ...ENTRY, kind: 'task', ticketKey: 'PROJ-2', method }
+    for (const subject of ['Add the endpoint', 'S'.repeat(SUBJECT_MAX_CHARS)]) {
+      const text = wakeText({ ...task, subject })
+
+      expect(text).toContain(method)
+      expect(text).toContain(ENTRY.id)
+      expect(/^[\x20-\x7E]*$/.test(text)).toBe(true)
+      expect(text.length).toBeLessThanOrEqual(ROLE_LINE_MAX)
+    }
+    expect(wakeText(ENTRY)).not.toContain(method)
+  })
+
   test('one line of printable ASCII within ROLE_LINE_MAX that holds the entry id and names inbox_read', () => {
     const subjects = ['Hi', 'S'.repeat(SUBJECT_MAX_CHARS), 'caf\u00e9 "quoted" `tick`\nnext line\u200B']
     for (const subject of subjects) {

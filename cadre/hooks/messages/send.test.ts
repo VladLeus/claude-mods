@@ -5,12 +5,16 @@ import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import {
   BODY_MAX_CHARS,
+  CHANGES_MAX_CHARS,
+  LIST_ITEM_MAX_CHARS,
+  LIST_MAX_ITEMS,
   MESSAGE_KINDS,
   NOTE_MAX_CHARS,
   parseMarkInput,
   parseSendInput,
   SUBJECT_MAX_CHARS,
   TICKET_KEY_MAX_CHARS,
+  TICKETS_MAX_ITEMS,
 } from './send'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
@@ -22,6 +26,49 @@ const TEAM: TeamView = {
   frameworks: ['gsd', 'superpowers'],
 }
 const NOTE = { to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
+const PM: RoleContext = { id: 'pm', root: '/repo' }
+const VECTOR = { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 }
+const TICKET = {
+  to: 'tl',
+  kind: 'ticket',
+  subject: 'Add login',
+  body: 'The acceptance criteria',
+  ticketKey: 'PROJ-2',
+  scores: { scope: 0.3, risk: 0.9 },
+  pin: 'large',
+  reportForm: 'Outcome first, then the changes',
+}
+const TASK_INPUT = {
+  to: 'tl',
+  kind: 'task',
+  subject: 'Add the endpoint',
+  body: 'Add it',
+  ticketKey: 'PROJ-2',
+  vector: VECTOR,
+  use: { framework: 'gsd', gsdPath: 'phase' },
+}
+const REPORT = {
+  to: 'tl',
+  kind: 'report',
+  subject: 'PROJ-2 done',
+  body: 'Done',
+  outcome: 'done',
+  changes: 'Added the endpoint',
+  verification: 'The specs pass',
+  vector: VECTOR,
+  reason: 'A new endpoint over an existing model',
+  frameworkUsed: 'gsd',
+  docPaths: ['.planning/workstreams/cadre-be', 'docs/superpowers/plans/be-PROJ-2.md'],
+  openQuestions: [],
+}
+const BRIEF = {
+  to: 'tl',
+  kind: 'note',
+  subject: 'Epic PROJ-1',
+  body: 'The plan of the epic',
+  mode: 'gsd-epic',
+  tickets: ['PROJ-2', 'PROJ-3'],
+}
 
 /** A character of four UTF-8 bytes and two UTF-16 units: one code point. */
 const WIDE = '\u{1F600}'
@@ -29,6 +76,13 @@ const WIDE = '\u{1F600}'
 /** The refusal of a send, null when it is accepted. */
 function refusalOf(event: unknown): string | null {
   const input = parseSendInput(event, BE, TEAM)
+
+  return input.kind === 'error' ? input.message : null
+}
+
+/** The refusal of a send by the role of `ctx`, null when it is accepted. */
+function refusalAs(ctx: RoleContext, event: unknown): string | null {
+  const input = parseSendInput(event, ctx, TEAM)
 
   return input.kind === 'error' ? input.message : null
 }
@@ -90,8 +144,12 @@ describe('parseSendInput', () => {
   test('ticket and epic-end are sent only by the PM stand-in; every other kind by any role', () => {
     const TL: RoleContext = { id: 'tl', root: '/repo' }
     const PM: RoleContext = { id: 'pm', root: '/repo' }
+    const fieldsOf: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+      ticket: { ticketKey: TICKET.ticketKey, scores: TICKET.scores },
+      report: { ...REPORT, to: 'be', kind: 'report' },
+    }
     const refusalFrom = (ctx: RoleContext, kind: string, team: TeamView = TEAM): string | null => {
-      const input = parseSendInput({ ...NOTE, to: 'be', kind }, ctx, team)
+      const input = parseSendInput({ ...NOTE, ...fieldsOf[kind], to: 'be', kind }, ctx, team)
 
       return input.kind === 'error' ? input.message : null
     }
@@ -134,6 +192,141 @@ describe('parseSendInput of a task', () => {
 
     expect(refusalOf({ ...TASK, ticketKey: '../x' })).toBe(refusal)
     expect(refusalOf({ ...TASK, ticketKey: 'a b' })).toBe(refusal)
+  })
+})
+
+describe('parseSendInput of a ticket', () => {
+  test('a ticket with its key, scores, pin and report form is accepted and carries them', () => {
+    expect(parseSendInput(TICKET, PM, TEAM)).toMatchObject({
+      kind: 'ok',
+      kindName: 'ticket',
+      fields: {
+        ticketKey: 'PROJ-2',
+        scores: { scope: 0.3, risk: 0.9 },
+        pin: 'large',
+        reportForm: 'Outcome first, then the changes',
+      },
+    })
+  })
+
+  test('no ticketKey or scores, a key ../x or a b, a complexity in scores or pin medium is refused', () => {
+    const keyBad = fill(PROMPTS.inboxTicketKeyBad, { max: TICKET_KEY_MAX_CHARS })
+    const cases: readonly (readonly [unknown, string])[] = [
+      [{ ...TICKET, ticketKey: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', field: 'ticketKey' })],
+      [{ ...TICKET, ticketKey: '../x' }, keyBad],
+      [{ ...TICKET, ticketKey: 'a b' }, keyBad],
+      [{ ...TICKET, scores: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', field: 'scores' })],
+      [{ ...TICKET, scores: { scope: 0.3, risk: 0.9, complexity: 0.5 } }, PROMPTS.inboxScoresBad],
+      [{ ...TICKET, pin: 'medium' }, fill(PROMPTS.inboxPinBad, { pins: 'small, large' })],
+    ]
+
+    expect(cases.map(([event]) => refusalAs(PM, event))).toEqual(cases.map(([, message]) => message))
+  })
+})
+
+describe('parseSendInput of a report', () => {
+  test('a report with every field and no open question is accepted and carries them', () => {
+    expect(parseSendInput(REPORT, BE, TEAM)).toMatchObject({
+      kind: 'ok',
+      fields: {
+        outcome: 'done',
+        changes: 'Added the endpoint',
+        verification: 'The specs pass',
+        vector: VECTOR,
+        reason: 'A new endpoint over an existing model',
+        frameworkUsed: 'gsd',
+        docPaths: ['.planning/workstreams/cadre-be', 'docs/superpowers/plans/be-PROJ-2.md'],
+        openQuestions: [],
+      },
+    })
+  })
+
+  test('outcome ok, a docPaths entry ../x, 11 open questions or a missing reason is refused', () => {
+    const questions = Array.from({ length: LIST_MAX_ITEMS + 1 }, (_, index) => `Question ${index}?`)
+    const cases: readonly (readonly [unknown, string])[] = [
+      [{ ...REPORT, outcome: 'ok' }, fill(PROMPTS.inboxOutcomeBad, { outcomes: 'done, blocked, partial' })],
+      [
+        { ...REPORT, docPaths: ['../x'] },
+        fill(PROMPTS.inboxDocPathsBad, { max: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS }),
+      ],
+      [
+        { ...REPORT, openQuestions: questions },
+        fill(PROMPTS.inboxOpenQuestionsBad, { max: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS }),
+      ],
+      [{ ...REPORT, reason: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'report', field: 'reason' })],
+    ]
+
+    expect(cases.map(([event]) => refusalOf(event))).toEqual(cases.map(([, message]) => message))
+  })
+
+  test('a report text is kept whole on one line at its cap; over its cap or blank it is refused, never cut', () => {
+    const atCap = parseSendInput({ ...REPORT, changes: `${'c'.repeat(CHANGES_MAX_CHARS - 2)}\nd` }, BE, TEAM)
+
+    expect(atCap).toMatchObject({ fields: { changes: `${'c'.repeat(CHANGES_MAX_CHARS - 2)} d` } })
+    expect(refusalOf({ ...REPORT, changes: 'c'.repeat(CHANGES_MAX_CHARS + 1) })).toBe(
+      fill(PROMPTS.inboxFieldTooLong, { field: 'changes', max: CHANGES_MAX_CHARS }),
+    )
+    expect(refusalOf({ ...REPORT, reason: ' \u200B\n' })).toBe(fill(PROMPTS.inboxFieldEmpty, { field: 'reason' }))
+  })
+})
+
+describe('parseSendInput of an epic brief', () => {
+  test('a gsd-epic brief of 11 tickets keeps all 11 in order; a ticket without ticketKey is refused', () => {
+    const tickets = Array.from({ length: 11 }, (_, index) => `PROJ-${index + 1}`)
+
+    expect(parseSendInput({ ...BRIEF, tickets }, BE, TEAM)).toMatchObject({
+      kind: 'ok',
+      fields: { mode: 'gsd-epic', tickets },
+    })
+    expect(refusalAs(PM, { ...TICKET, ticketKey: undefined })).toBe(
+      fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', field: 'ticketKey' }),
+    )
+  })
+
+  test('a tickets item ../x and 101 tickets are refused; tickets need mode gsd-epic', () => {
+    const many = Array.from({ length: TICKETS_MAX_ITEMS + 1 }, (_, index) => `PROJ-${index + 1}`)
+    const ticketsBad = fill(PROMPTS.inboxTicketsBad, { max: TICKETS_MAX_ITEMS })
+
+    expect(refusalOf({ ...BRIEF, tickets: ['PROJ-2', '../x'] })).toBe(ticketsBad)
+    expect(refusalOf({ ...BRIEF, tickets: many })).toBe(ticketsBad)
+    expect(refusalOf({ ...BRIEF, mode: 'ticket' })).toBe(PROMPTS.inboxTicketsNotEpic)
+    expect(refusalOf({ ...BRIEF, mode: undefined })).toBe(PROMPTS.inboxTicketsNotEpic)
+    expect(refusalOf({ ...BRIEF, mode: 'sprint' })).toBe(fill(PROMPTS.inboxModeBad, { modes: 'gsd-epic, ticket' }))
+  })
+
+  test('a ticket-mode brief takes no tickets, a gsd-epic brief needs them, and a note with no mode is plain', () => {
+    expect(parseSendInput({ ...BRIEF, mode: 'ticket', tickets: undefined }, BE, TEAM)).toMatchObject({
+      kind: 'ok',
+      fields: { mode: 'ticket' },
+    })
+    expect(refusalOf({ ...BRIEF, tickets: undefined })).toBe(PROMPTS.inboxEpicNeedsTickets)
+    expect(refusalOf({ ...BRIEF, tickets: [] })).toBe(PROMPTS.inboxEpicNeedsTickets)
+    expect(parseSendInput(NOTE, BE, TEAM)).toMatchObject({ kind: 'ok', fields: {} })
+  })
+})
+
+describe('parseSendInput: the fields each kind takes', () => {
+  test('a field on a kind that does not take it is refused, naming both; ticketKey goes on a ticket and a task', () => {
+    const notFor = (field: string, kind: string): string => fill(PROMPTS.inboxFieldNotForKind, { field, kind })
+    const cases: readonly (readonly [RoleContext, unknown, string])[] = [
+      [BE, { ...TASK_INPUT, scores: { scope: 0.3, risk: 0.9 } }, notFor('scores', 'task')],
+      [BE, { ...NOTE, vector: VECTOR }, notFor('vector', 'note')],
+      [PM, { ...TICKET, mode: 'ticket' }, notFor('mode', 'ticket')],
+      [BE, { ...NOTE, ticketKey: 'PROJ-2' }, notFor('ticketKey', 'note')],
+      [PM, { ...TICKET, tickets: ['PROJ-2'] }, notFor('tickets', 'ticket')],
+      [BE, { ...REPORT, ticketKey: 'PROJ-2' }, notFor('ticketKey', 'report')],
+      [BE, { ...NOTE, kind: 'question', outcome: 'done' }, notFor('outcome', 'question')],
+    ]
+
+    expect(cases.map(([ctx, event]) => refusalAs(ctx, event))).toEqual(cases.map(([, , message]) => message))
+    expect([refusalAs(PM, TICKET), refusalAs(BE, TASK_INPUT)]).toEqual([null, null])
+  })
+
+  test('the stamps cadre adds are never read from the input', () => {
+    const stamps = { size: 0.1, large: false, planPath: 'x.md', method: 'ask' }
+    const input = parseSendInput({ ...TASK_INPUT, ...stamps }, BE, TEAM)
+
+    expect(input).toEqual(parseSendInput(TASK_INPUT, BE, TEAM))
   })
 })
 

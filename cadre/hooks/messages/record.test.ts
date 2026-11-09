@@ -15,6 +15,7 @@ import {
   recordLine,
   sessionRecordText,
 } from './record'
+import { CHANGES_MAX_CHARS } from './send'
 
 const A: InboxEntry = {
   v: 1,
@@ -131,6 +132,85 @@ describe('recordLine, parseInboxLine and the session record', () => {
   })
 })
 
+describe('the kind fields of an entry on its line', () => {
+  const VECTOR = { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 }
+  const TICKET: InboxEntry = {
+    ...B,
+    to: 'tl',
+    ticketKey: 'PROJ-2',
+    scores: { scope: 0.3, risk: 0.9 },
+    pin: 'large',
+    reportForm: 'Outcome first',
+  }
+  const REPORT: InboxEntry = {
+    ...C,
+    outcome: 'partial',
+    changes: 'Added the endpoint',
+    verification: 'The specs pass',
+    vector: VECTOR,
+    reason: 'A new endpoint',
+    frameworkUsed: 'gsd',
+    docPaths: ['.planning/workstreams/cadre-be'],
+    openQuestions: ['Which status code?'],
+    size: 0.6,
+    large: true,
+  }
+  const TASK: InboxEntry = {
+    ...A,
+    kind: 'task',
+    ticketKey: 'PROJ-2',
+    vector: VECTOR,
+    use: { framework: 'superpowers' },
+    specPath: 'docs/specs/PROJ-2.md',
+    size: 0.6,
+    large: true,
+    planPath: 'docs/superpowers/plans/tl-PROJ-2.md',
+    method: 'superpowers:subagent-driven-development',
+  }
+  const BRIEF: InboxEntry = { ...A, mode: 'gsd-epic', tickets: ['PROJ-2', 'PROJ-3'] }
+
+  test('a ticket, a report, a superpowers task and a brief come back as they were written', () => {
+    for (const entry of [TICKET, REPORT, TASK, BRIEF]) {
+      expect(parseInboxLine(recordLine(entry))).toEqual(entry)
+    }
+  })
+
+  test('recordLine writes the kind fields after the body, then the stamps, each in the fixed order', () => {
+    expect(recordLine({ ...TICKET, reportForm: 'R', pin: 'small', scores: { risk: 0.9, scope: 0.3 } })).toBe(
+      '{"v":1,"type":"entry","id":"pm-2000-89abcdef","at":2000,"from":"pm","to":"tl","kind":"ticket",' +
+        '"subject":"Ship it","body":"Line one\\nLine two","ticketKey":"PROJ-2","scores":{"scope":0.3,"risk":0.9},' +
+        '"pin":"small","reportForm":"R"}\n',
+    )
+    expect(Object.keys(parseInboxLine(recordLine(TASK)) ?? {}).slice(9)).toEqual([
+      'ticketKey',
+      'vector',
+      'use',
+      'specPath',
+      'size',
+      'large',
+      'planPath',
+      'method',
+    ])
+  })
+
+  test('a ticket or a report written before these fields existed still reads, with none of them', () => {
+    expect(parseInboxLine(recordLine(B))).toEqual(B)
+    expect(parseInboxLine(recordLine(C))).toEqual(C)
+  })
+
+  test('a stored field with a bad value makes the line null', () => {
+    const bad = (over: Readonly<Record<string, unknown>>) => parseInboxLine(JSON.stringify({ ...REPORT, ...over }))
+
+    expect([
+      bad({ outcome: 'ok' }),
+      bad({ vector: { ...VECTOR, risk: 2 } }),
+      bad({ docPaths: ['../x'] }),
+      bad({ size: 'big' }),
+      parseInboxLine(JSON.stringify({ ...TASK, planPath: '../x.md' })),
+    ]).toEqual([null, null, null, null, null])
+  })
+})
+
 describe('parseInbox and foldInbox', () => {
   test('parseInbox keeps the good lines in file order and skips the rest, line by line', () => {
     const text = [
@@ -226,6 +306,82 @@ describe('inboxReadText', () => {
 
     expect(lastLine(note)).toBe(`note: ${note}`)
     expect(lastLine(`${note}n`)).toBe(`note: ${'n'.repeat(299)}…`)
+  })
+})
+
+describe('inboxReadText of the kind fields', () => {
+  const VECTOR = { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 }
+
+  test('a superpowers task shows one line per field under its body, the method with the line not to ask', () => {
+    const task: InboxEntry = {
+      ...A,
+      kind: 'task',
+      ticketKey: 'PROJ-2',
+      vector: VECTOR,
+      use: { framework: 'superpowers' },
+      specPath: 'docs/specs/PROJ-2.md',
+      size: 0.6,
+      large: true,
+      planPath: 'docs/superpowers/plans/tl-PROJ-2.md',
+      method: 'superpowers:subagent-driven-development',
+    }
+    const field = (name: string, value: string): string => fill(PROMPTS.inboxItemField, { field: name, value })
+    const vector = fill(PROMPTS.inboxItemVector, VECTOR)
+
+    expect(inboxReadText([unread(task)], true).split('\n')).toEqual([
+      'be-1000-0123abcd [unread] task from be: Hi',
+      '  Hello',
+      field('ticketKey', 'PROJ-2'),
+      field('vector', fill(PROMPTS.inboxItemSized, { vector, size: 0.6, sizeClass: 'large' })),
+      field('use', 'superpowers'),
+      field('specPath', 'docs/specs/PROJ-2.md'),
+      field('planPath', 'docs/superpowers/plans/tl-PROJ-2.md'),
+      field('method', fill(PROMPTS.inboxItemMethod, { method: 'superpowers:subagent-driven-development' })),
+    ])
+  })
+
+  test('a ticket, a report and a brief show their fields; an empty list shows none', () => {
+    const ticket: InboxEntry = { ...B, ticketKey: 'PROJ-2', scores: { scope: 0.3, risk: 0.9 }, pin: 'large' }
+    const report: InboxEntry = {
+      ...C,
+      outcome: 'done',
+      vector: VECTOR,
+      frameworkUsed: 'gsd',
+      docPaths: ['a.md', 'cadre-be'],
+      openQuestions: [],
+    }
+    const gsdTask: InboxEntry = { ...A, kind: 'task', use: { framework: 'gsd', gsdPath: 'phase' } }
+    const brief: InboxEntry = { ...A, mode: 'gsd-epic', tickets: ['PROJ-2', 'PROJ-3'] }
+    const field = (name: string, value: string): string => fill(PROMPTS.inboxItemField, { field: name, value })
+    const linesOf = (entry: InboxEntry): string[] => inboxReadText([unread(entry)], true).split('\n')
+
+    expect(linesOf(ticket).slice(3)).toEqual([
+      field('ticketKey', 'PROJ-2'),
+      field('scores', fill(PROMPTS.inboxItemScores, { scope: 0.3, risk: 0.9 })),
+      field('pin', 'large'),
+    ])
+    expect(linesOf(gsdTask).slice(2)).toEqual([field('use', fill(PROMPTS.inboxItemUseGsd, { gsdPath: 'phase' }))])
+    expect(linesOf(report).slice(2)).toEqual([
+      field('vector', fill(PROMPTS.inboxItemVector, VECTOR)),
+      field('outcome', 'done'),
+      field('frameworkUsed', 'gsd'),
+      field('docPaths', 'a.md, cadre-be'),
+      field('openQuestions', PROMPTS.inboxItemNone),
+    ])
+    expect(linesOf(brief).slice(2)).toEqual([field('mode', 'gsd-epic'), field('tickets', 'PROJ-2, PROJ-3')])
+  })
+
+  test('changes are shown whole up to their cap, and every value is cleaned', () => {
+    const changes = 'c'.repeat(CHANGES_MAX_CHARS)
+    const report: InboxEntry = { ...C, changes, reason: 'R\u202Eeason', openQuestions: ['Why\u200B?', 'How?'] }
+    const lines = inboxReadText([unread(report)], true).split('\n')
+    const field = (name: string, value: string): string => fill(PROMPTS.inboxItemField, { field: name, value })
+
+    expect(lines.slice(2)).toEqual([
+      field('changes', changes),
+      field('reason', 'Reason'),
+      field('openQuestions', 'Why?; How?'),
+    ])
   })
 })
 

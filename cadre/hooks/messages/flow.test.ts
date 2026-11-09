@@ -96,6 +96,13 @@ function secondStdin(host: MemHost): string {
   return host.calls[1]?.options.stdin ?? ''
 }
 
+/** The entry a record line holds; null for a mark or a line that does not parse. */
+function entryLine(text: string): InboxEntry | null {
+  const event = parseInboxLine(text)
+
+  return event?.type === 'entry' ? event : null
+}
+
 /** The argv of every append a host ran with tee. */
 function teeRuns(host: MemHost): (readonly string[])[] {
   return host.calls.map(call => call.argv).filter(argv => argv[0] === '/usr/bin/tee')
@@ -287,6 +294,153 @@ describe('runInboxSend of a task', () => {
       expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxFieldMissing, { kind: 'task', field }) })
       expect([host.calls, sends]).toEqual([[], []])
     }
+  })
+})
+
+describe('runInboxSend of the ticket loop', () => {
+  const PM: RoleContext = { id: 'pm', root: '/repo' }
+  const TL: RoleContext = { id: 'tl', root: '/repo' }
+  const VECTOR = { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 }
+  const TICKET = {
+    to: 'tl',
+    kind: 'ticket',
+    subject: 'Add login',
+    body: 'The acceptance criteria',
+    ticketKey: 'PROJ-2',
+    scores: { scope: 0.3, risk: 0.9 },
+    pin: 'large',
+    reportForm: 'Outcome first',
+  }
+  const TASK = {
+    to: 'be',
+    kind: 'task',
+    subject: 'Add the endpoint',
+    body: 'Add it',
+    ticketKey: 'PROJ-2',
+    vector: VECTOR,
+    use: { framework: 'superpowers' },
+  }
+  const REPORT = {
+    to: 'tl',
+    kind: 'report',
+    subject: 'PROJ-2 done',
+    body: 'Done',
+    outcome: 'done',
+    changes: 'Added the endpoint',
+    verification: 'The specs pass',
+    vector: VECTOR,
+    reason: 'A new endpoint',
+    frameworkUsed: 'superpowers',
+    docPaths: ['docs/superpowers/plans/be-PROJ-2.md'],
+    openQuestions: [],
+  }
+  const BRIEF = {
+    to: 'tl',
+    kind: 'note',
+    subject: 'Epic PROJ-1',
+    body: 'The plan',
+    mode: 'gsd-epic',
+    tickets: ['PROJ-2', 'PROJ-3'],
+  }
+
+  /** A world where be was started and published its session id, with the clock at 1000. */
+  function beWorld(): MemWorld {
+    return memWorld({ now: 1000, dirs: { [BE_RUNTIME]: [] }, files: { [BE_SESSION]: sessionRecordText('s-be') } })
+  }
+
+  /** The team view with the repo frameworks given. */
+  function teamWith(frameworks: TeamView['frameworks']): TeamView {
+    return { ...TEAM, frameworks }
+  }
+
+  test('pm sends tl a ticket: the entry carries its key, scores, pin and report form, and no size', async () => {
+    const { outcome, host } = await sendFrom(tlWorld(), TICKET, { ctx: PM })
+    const entry = entryLine(firstStdin(host))
+
+    expect(entry).toMatchObject({
+      kind: 'ticket',
+      from: 'pm',
+      ticketKey: 'PROJ-2',
+      scores: { scope: 0.3, risk: 0.9 },
+      pin: 'large',
+      reportForm: 'Outcome first',
+    })
+    expect([entry?.size, entry?.large]).toEqual([undefined, undefined])
+    expect(outcome).toEqual({ kind: 'result', text: fill(PROMPTS.inboxSent, { id: entry?.id ?? '', to: 'tl' }) })
+  })
+
+  test('the same ticket key sent twice gives two entries with two ids; nothing is merged', async () => {
+    const first = await sendFrom(tlWorld(), { ...TICKET, body: 'First version' }, { ctx: PM })
+    const second = await sendFrom(tlWorld(), { ...TICKET, body: 'Second version' }, { ctx: PM })
+    const entries = [entryLine(firstStdin(first.host)), entryLine(firstStdin(second.host))]
+
+    expect(entries.map(entry => entry?.ticketKey)).toEqual(['PROJ-2', 'PROJ-2'])
+    expect(entries[0]?.id).not.toBe(entries[1]?.id)
+  })
+
+  test('be reports to tl: the entry carries every report field and the size stamp of its vector', async () => {
+    const { outcome, host } = await sendFrom(tlWorld(), REPORT)
+
+    expect(parseInboxLine(firstStdin(host))).toMatchObject({
+      kind: 'report',
+      outcome: 'done',
+      frameworkUsed: 'superpowers',
+      openQuestions: [],
+      vector: VECTOR,
+      size: 0.6,
+      large: true,
+    })
+    expect(outcome.text).toContain(fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'large', threshold: 0.5 }))
+  })
+
+  test('a superpowers task gets the plan file of its receiver and ticket and the method, never its own', async () => {
+    const { host } = await sendFrom(beWorld(), { ...TASK, planPath: 'mine.md', method: 'ask me' }, { ctx: TL })
+
+    expect(parseInboxLine(firstStdin(host))).toMatchObject({
+      planPath: 'docs/superpowers/plans/be-PROJ-2.md',
+      method: 'superpowers:subagent-driven-development',
+    })
+  })
+
+  test('a gsd task gets neither the plan file nor the method', async () => {
+    const gsdTask = { ...TASK, use: { framework: 'gsd', gsdPath: 'quick' } }
+    const entry = entryLine(firstStdin((await sendFrom(beWorld(), gsdTask, { ctx: TL })).host))
+
+    expect(entry).toMatchObject({ use: { framework: 'gsd', gsdPath: 'quick' } })
+    expect([entry?.planPath, entry?.method]).toEqual([undefined, undefined])
+  })
+
+  test('a gsd-epic brief is sent with gsd and superpowers; with gsd alone or none it is refused, no run', async () => {
+    const both = await sendFrom(tlWorld(), BRIEF, { ctx: PM })
+    const gsdOnly = await sendFrom(tlWorld(), BRIEF, { ctx: PM, team: teamWith(['gsd']) })
+    const none = await sendFrom(tlWorld(), BRIEF, { ctx: PM, team: teamWith([]) })
+
+    expect(parseInboxLine(firstStdin(both.host))).toMatchObject({ mode: 'gsd-epic', tickets: ['PROJ-2', 'PROJ-3'] })
+    expect([gsdOnly.outcome, none.outcome]).toEqual([
+      { kind: 'deny', text: fill(PROMPTS.inboxModeNotOffered, { mode: 'gsd-epic', modes: 'ticket' }) },
+      { kind: 'deny', text: fill(PROMPTS.inboxModeNotOffered, { mode: 'gsd-epic', modes: PROMPTS.inboxItemNone }) },
+    ])
+    expect([gsdOnly.host.calls, none.host.calls]).toEqual([[], []])
+  })
+
+  test('a ticket-mode brief is sent with one framework and refused with none', async () => {
+    const brief = { ...BRIEF, mode: 'ticket', tickets: undefined }
+    const gsdOnly = await sendFrom(tlWorld(), brief, { ctx: PM, team: teamWith(['gsd']) })
+    const none = await sendFrom(tlWorld(), brief, { ctx: PM, team: teamWith([]) })
+
+    expect(parseInboxLine(firstStdin(gsdOnly.host))).toMatchObject({ kind: 'note', mode: 'ticket' })
+    expect(none.outcome).toEqual({
+      kind: 'deny',
+      text: fill(PROMPTS.inboxModeNotOffered, { mode: 'ticket', modes: PROMPTS.inboxItemNone }),
+    })
+  })
+
+  test('a brief whose tickets bring the line over the line cap is refused before any run', async () => {
+    const tickets = Array.from({ length: 62 }, (_, index) => `PROJ-${index}`.padEnd(64, 'x'))
+    const { outcome, host } = await sendFrom(tlWorld(), { ...BRIEF, tickets }, { ctx: PM })
+
+    expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxLineTooLarge, { max: INBOX_LINE_MAX_BYTES }) })
+    expect(teeRuns(host)).toEqual([])
   })
 })
 
