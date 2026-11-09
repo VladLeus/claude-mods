@@ -13,6 +13,7 @@ import { ARTIFACT } from '../locales/artifact'
 import { t } from '../locales/t'
 import { handoffFolderOf } from '../paths'
 import { CADRE_TOOLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from '../roles/infra'
+import { runnableFrameworks } from './frameworks'
 
 /**
  * The reads every role is denied, best effort (ROLE-05, D-97c): the repo's .env files and the user's ssh and aws
@@ -250,8 +251,9 @@ function startSkillProblem(name: string, scope: CompiledScope, framework: Framew
  * The checker behind ISO-04 (D-77): every way a compiled scope could block autopilot, agent-fleet or the handoff
  * skills, each as a message that names what broke, and an empty list when none. (a) No deny entry may block an infra
  * tool or server (blocksInfra), cover a handoff skill as `Skill(<name>)`, or name an infra plugin by its key. (b) The
- * three infra plugins must be on, the handoff skills must be in the overlay, every start skill of the framework must
- * be present (in the overlay, or through an enabled plugin), and no flag may turn off slash commands. Absence matters
+ * three infra plugins must be on, the handoff skills must be in the overlay, every start skill of every framework the
+ * role may run (`framework` and the card's alsoRuns) must be present (in the overlay, or through an enabled plugin),
+ * and no flag may turn off slash commands. Absence matters
  * as much as denial: under `--setting-sources project` a user-level skill is missing unless the overlay links it. The
  * result does not depend on the order of the deny list.
  */
@@ -264,8 +266,8 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
     ...INFRA_SKILLS.filter(name => !scope.overlay.skills.includes(name)).map(
       name => t('scope.lint.infraViolations2', { name }),
     ),
-    ...adapterOf(framework).startSkills
-      .map(name => startSkillProblem(name, scope, framework))
+    ...runnableFrameworks({ framework, alsoRuns: scope.card.alsoRuns })
+      .flatMap(id => adapterOf(id).startSkills.map(name => startSkillProblem(name, scope, id)))
       .filter((problem): problem is string => problem !== null),
     ...scope.flags
       .filter(flag => flag === DISABLE_SLASH_FLAG || flag.startsWith(`${DISABLE_SLASH_FLAG}=`))

@@ -70,7 +70,8 @@ function hasScannedSkill(skill: SkillRef, given: ReadonlySet<string>, enabled: R
 
 /** The scanned skill names this role does not have; see hasScannedSkill. */
 function notGivenSkills(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[]): string[] {
-  const given = new Set([...INFRA_SKILLS, ...adapterOf(ctx.framework).startSkills, ...role.skills])
+  const startSkills = runnableFrameworks(ctx).flatMap(id => adapterOf(id).startSkills)
+  const given = new Set([...INFRA_SKILLS, ...startSkills, ...role.skills])
   const enabled = new Set(plugins.map(pluginName))
   const missing = ctx.setup.skills.filter(skill => !hasScannedSkill(skill, given, enabled))
 
@@ -367,16 +368,19 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
 
 /**
  * The lines of a scope card, as init shows it and ROLE.md holds it (ROLE-06): the title, the framework with the model,
- * effort and permission mode, the skills and MCP servers, the skills and the MCP servers the role was not given, the
- * hooks loaded, loaded by project settings and not loaded, one line per list so a list cut at the line cap never hides
- * another (B6), each rule marked `[hard]`, `[best-effort]` or `[none]`, the decision chain and the memory folder. Every
- * line passes through reportText, so a hostile value cannot add a line or hide text.
+ * effort and permission mode, the other frameworks the role may run when there is one, the skills and MCP servers, the
+ * skills and the MCP servers the role was not given, the hooks loaded, loaded by project settings and not loaded, one
+ * line per list so a list cut at the line cap never hides another (B6), each rule marked `[hard]`, `[best-effort]` or
+ * `[none]`, the decision chain and the memory folder. Every line passes through reportText, so a hostile value cannot
+ * add a line or hide text.
  */
 export function scopeCardLines(card: ScopeCard): string[] {
   const framework = adapterOf(card.framework).name
+  const also = card.alsoRuns.map(id => adapterOf(id).name).join(', ')
   const lines = [
     fill(ARTIFACT.cardTitle, { title: card.title, id: card.roleId }),
     fill(ARTIFACT.cardFramework, { framework, model: card.model, effort: card.effort, mode: card.permissionMode }),
+    ...(card.alsoRuns.length === 0 ? [] : [fill(ARTIFACT.cardAlsoRuns, { frameworks: also })]),
     fill(ARTIFACT.cardSkillsLine, { skills: cardList(card.skills, CARD_LIST_WORDS) }),
     fill(ARTIFACT.cardMcpLine, { servers: cardList(card.mcp, CARD_LIST_WORDS) }),
     fill(ARTIFACT.cardNotGivenSkills, { skills: cardList(card.notGiven.skills, CARD_LIST_WORDS) }),

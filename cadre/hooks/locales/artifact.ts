@@ -117,6 +117,7 @@ export const ARTIFACT = Object.freeze({
   // The lines of a scope card (scope/card scopeCardLines), as ROLE.md holds it and init shows it.
   cardTitle: 'Scope card: {title} ({id})',
   cardFramework: '  framework: {framework}; model: {model} + {effort}; permission mode: {mode}',
+  cardAlsoRuns: '  also runs: {frameworks}',
   cardSkillsLine: '  skills: {skills}',
   cardMcpLine: '  MCP servers: {servers}',
   cardNotGivenSkills: '  not given skills: {skills}',
