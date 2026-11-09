@@ -268,14 +268,20 @@ function setAskOf(state: InitState): { ask: FrameworkAsk<readonly FrameworkId[]>
   return { ask: frameworkSetAsk(found, missing, roles), found }
 }
 
+/** Whether `set` holds every framework the person consented to install in this run. */
+function keepsConsented(draft: InitState['draft'], set: readonly FrameworkId[]): boolean {
+  return (draft.frameworkInstalls ?? []).every(id => set.includes(id))
+}
+
 /**
- * The set cadre.json stores for the repo when every framework in it is still installed, so a re-run keeps the answer
- * without asking; null when none is stored or one of them is no longer installed.
+ * The set cadre.json stores for the repo, kept without asking while every framework in it is still installed and it
+ * holds every framework consented in this run; null when none is stored or it fails either.
  */
 function storedSet(state: InitState): readonly FrameworkId[] | null {
   const stored = state.draft.gathered?.repo.cadre.state?.frameworks
   const { installed } = state.draft
   if (stored === undefined || installed === undefined) return null
+  if (!keepsConsented(state.draft, stored)) return null
 
   return stored.every(id => installed.includes(id)) ? stored : null
 }
@@ -571,33 +577,23 @@ function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: 
 }
 
 /**
- * The framework step once the GSD check, if any, is behind it. A set kept in the draft is framed again (framedSet).
- * With any framework found, in use or installed, the set cadre.json stores is kept when all of it is still installed
- * (storedSet), else the set question is asked (frameworkAnswer): one framework kept is the repo default and the roles
- * keep `framework` absent (an Adjust override stays); two ask whether one framework serves all roles or each picks its
- * own. Unsupported and none ask nothing and give the built-in default; unsupported notes what was found.
+ * The framework step once the GSD check, if any, is behind it. A set kept in the draft is framed again (framedSet)
+ * while it holds every framework consented to install. With any framework found, in use, installed or consented, the
+ * set cadre.json stores is kept while all of it is still installed and it holds every consented one (storedSet), else
+ * the set question is asked (frameworkAnswer): one framework kept is the repo default and the roles keep `framework`
+ * absent (an Adjust override stays); two ask whether one framework serves all roles or each picks its own. None found
+ * gives the built-in default; an unsupported scan notes what it found.
  */
 function frameworkStep(state: InitState): InitState {
-  const { choice, roles, frameworkSet } = state.draft
+  const { choice, roles, frameworkSet, installed = [] } = state.draft
   if (choice === undefined || roles === undefined) return stageFailed(state)
-  if (frameworkSet !== undefined) return framedSet(state, frameworkSet)
-  switch (choice.kind) {
-    case 'chosen':
-    case 'ambiguous':
-    case 'installed-only': {
-      const stored = storedSet(state)
+  if (frameworkSet !== undefined && keepsConsented(state.draft, frameworkSet)) return framedSet(state, frameworkSet)
+  const noted =
+    choice.kind === 'unsupported' ? withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]) : state
+  if (foundOf(choice, installed).found.length === 0) return framedDone(noted, roles, 'none')
+  const stored = storedSet(noted)
 
-      return stored === null ? setAsked(state, 1, null) : setChosen(state, stored)
-    }
-    case 'unsupported':
-      return framedDone(withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]), roles, 'none')
-    case 'none':
-      return framedDone(state, roles, 'none')
-    default: {
-      const unreachable: never = choice
-      return unreachable
-    }
-  }
+  return stored === null ? setAsked(noted, 1, null) : setChosen(noted, stored)
 }
 
 /**
