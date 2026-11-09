@@ -183,6 +183,7 @@ import type { SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { PANE_FULLSCREEN } from '../ui/surfaces/pane-fullscreen'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
+import type { Draft, PlanResult } from './draft'
 import { CONFLICT_CONTEXT } from './initapply'
 import { initSizing } from './initplan'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
@@ -5013,6 +5014,89 @@ function installedWorld(keys: readonly string[]): MemWorld {
 
   return gitWorld({ files: { [INSTALLED_PLUGINS_PATH]: JSON.stringify({ plugins }) } })
 }
+
+/** The run that installs superpowers at project scope, as its adapter declares it. */
+const SUPERPOWERS_PROJECT_INSTALL = [
+  'claude',
+  'plugin',
+  'install',
+  'superpowers@claude-plugins-official',
+  '--scope',
+  'project',
+]
+
+describe('a consented framework install after Confirm', () => {
+  /** A draft of be alone on superpowers, GSD and superpowers taken as installed, with these installs consented. */
+  function superpowersDraft(installs: readonly FrameworkId[] | null): Draft {
+    const draft = wholeDraft({
+      roles: [withFramework(templateRole('be'), 'superpowers')],
+      installed: ['gsd', 'superpowers', 'none'],
+    })
+
+    return installs === null ? draft : { ...draft, frameworkInstalls: installs }
+  }
+
+  /** The plan the review made of the draft: planStep over the git world. */
+  async function plannedOf(draft: Draft): Promise<PlanResult> {
+    const scans = await scansOf(gitWorld())
+
+    return planStep(memIo(gitWorld(), {}).io, {
+      roles: draft.roles,
+      repoDefault: draft.repoDefault,
+      policy: draft.policy,
+      launchStart: draft.launchStart,
+      scopes: scopesFor(draft.roles, draft.repoDefault, scans, [], draft.launchStart),
+      hunks: [],
+      repo: scans.repo,
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+    })
+  }
+
+  /** The apply of the confirmed draft, each host run and write and each facts read recorded in one list, in order. */
+  async function applied(
+    draft: Draft,
+    runs: readonly HostRunRule[] = [],
+  ): Promise<{ readonly host: MemHost; readonly events: string[]; readonly problems: readonly string[] }> {
+    const host = memHost(hostWorld({ runs }))
+    const recorded = withHostEvents(host)
+    const run = memIo(gitWorld(), {})
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        recorded.events.push('facts')
+
+        return run.io.facts(locations)
+      },
+    }
+    const reviewed = { draft, planned: await plannedOf(draft) }
+    const effect: Parameters<typeof perform>[2] = { kind: 'io', call: { id: 'apply', reviewed } }
+    const answer = await perform(io, { dryRun: false, host: recorded.io }, effect)
+    const result = answer.kind === 'io' && answer.result.id === 'apply' ? answer.result.result : null
+    const problems = result?.kind === 'accepted' ? result.value.outcome.installProblems : []
+
+    return { host, events: recorded.events, problems }
+  }
+
+  test('superpowers installs from the repo root before any other run or write, then the facts are read', async () => {
+    const { host, events } = await applied(superpowersDraft(['superpowers']))
+    const installAt = events.indexOf(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const factsAt = events.indexOf('facts')
+    const firstWriteAt = events.findIndex(event => event.startsWith('write '))
+    const role = host.writes.find(write => write.path === '/repo/.cadre/be/ROLE.md')?.text ?? ''
+
+    expect(host.calls[0]).toEqual({ argv: SUPERPOWERS_PROJECT_INSTALL, options: { cwd: '/repo', timeoutMs: 180_000 } })
+    expect([installAt, installAt < factsAt, factsAt < firstWriteAt]).toEqual([0, true, true])
+    expect(role).toContain('Framework: superpowers.')
+  })
+
+  test('with no install consented the apply runs no project install and reads no facts', async () => {
+    const { host, events } = await applied(superpowersDraft(null))
+
+    expect(host.calls.filter(call => call.argv.includes('--scope'))).toEqual([])
+    expect(events).not.toContain('facts')
+  })
+})
 
 describe('security plugin installs (decision #39)', () => {
   test('init asks it after the recommendations, before the duration; a dry run answered Install plans it', async () => {
