@@ -2,10 +2,11 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun, InitLocations, LaunchStart, RoleSpec, ScopeContext } from '../../types'
 import { sha256Hex } from '../core/hash'
+import { isObject } from '../core/json'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import type { LaunchUser } from '../launch/links'
 import { launchPlan } from '../launch/plan'
-import { MATTPOCOCK_PLUGIN } from '../roles/infra'
+import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { compileScope } from '../scope/compile'
 import {
@@ -526,6 +527,26 @@ function userInstall(skills: unknown): Record<string, string> {
   }
 }
 
+/** The files of mattpocock-skills installed for the project at `projectPath`, at MATT_PATH, listing MATT_SKILLS. */
+function projectInstall(projectPath: string): Record<string, string> {
+  return {
+    [INSTALLED_PLUGINS]: installedText([{ scope: 'project', projectPath, installPath: MATT_PATH, version: '1.3.1' }]),
+    ...manifestAt(MATT_PATH, MATT_SKILLS),
+  }
+}
+
+/** A start in the worktree /repo/.claude/worktrees/proj-1, nested in the main checkout /repo. */
+const WORKTREE: InitLocations = {
+  ...DEFAULT_LOCATIONS,
+  root: '/repo/.claude/worktrees/proj-1',
+  givenRoot: '/repo/.claude/worktrees/proj-1',
+}
+
+/** The launch user gathered in WORKTREE over `world`. */
+async function worktreeUser(world: MemWorld): Promise<LaunchUser> {
+  return userOf((await gather(world, [GIT_OK], WORKTREE)).read)
+}
+
 describe('the plugin skills and project plugins a launch reads', () => {
   test('pluginSkills holds the skill names of the installed plugin.json, sorted and once each', async () => {
     const gathered = await gatheredUser(repoWorld({ files: userInstall([...MATT_SKILLS, 'tdd']) }))
@@ -551,6 +572,39 @@ describe('the plugin skills and project plugins a launch reads', () => {
 
     expect((await gatheredUser(repoWorld({ files }))).pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grilling'] })
     expect('pluginSkills' in (await gatheredUser(repoWorld({ files: onlyOther })))).toBe(false)
+  })
+
+  test('a worktree nested in the main checkout reads the install for the main checkout', async () => {
+    const gathered = await worktreeUser(repoWorld({ files: projectInstall('/repo') }))
+
+    expect([gathered.mainRoot, gathered.pluginSkills]).toEqual([
+      '/repo',
+      { [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd', 'to-spec'] },
+    ])
+  })
+
+  test('a worktree never reads the install of another project; the main checkout reads its own', async () => {
+    const elsewhere = await worktreeUser(repoWorld({ files: projectInstall('/elsewhere') }))
+    const main = await gatheredUser(repoWorld({ files: projectInstall('/repo') }))
+
+    expect('pluginSkills' in elsewhere).toBe(false)
+    expect(main.pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd', 'to-spec'] })
+  })
+
+  test("PM's runtime in such a worktree keeps the plugin on and allows only the grill skills", async () => {
+    const gathered = await worktreeUser(repoWorld({ files: projectInstall('/repo') }))
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS] })
+    const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] })
+    const plan = launchPlan(pm, compileScope(pm, { ...context(), framework: 'none', setup }), gathered)
+    const plugins = isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+    const permissions = plan.settings.permissions
+    const deny: readonly unknown[] = isObject(permissions) && Array.isArray(permissions.deny) ? permissions.deny : []
+
+    expect(plugins[MATTPOCOCK_PLUGIN]).toBe(true)
+    expect(deny).toContain('Skill(mattpocock-skills:tdd)')
+    expect(deny).toContain('Skill(mattpocock-skills:to-spec)')
+    for (const skill of GRILL_SKILLS) expect(deny).not.toContain(`Skill(${skill})`)
+    expect(plan.warnings.filter(warning => warning.includes(MATTPOCOCK_PLUGIN))).toEqual([])
   })
 
   test('a list read from objects with a name counts like one read from paths', async () => {
