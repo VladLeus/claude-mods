@@ -2861,7 +2861,7 @@ const TUI_ASKS_AT_BASE: readonly string[] = [
   'ask Where should the role launchers start their sessions? (asked once for this repo)\nThe ' +
     'launcher of each role (pm, tl, security) starts its session there.',
   'ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one ' +
-    'item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: ' +
+    'item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: ' +
     'commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, ' +
     'or type duration, model, assignments, memory, env or hunks as a note (press n).',
 ]

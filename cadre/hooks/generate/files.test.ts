@@ -30,7 +30,16 @@ import {
   TEMPLATE_ROLES,
   templateRole,
 } from '../testkit'
-import { cadreJsonText, indexMdText, mcpText, roleClaudeMdText, roleJsonText, roleMdText, settingsText } from './docs'
+import {
+  cadreJsonText,
+  indexMdText,
+  mcpText,
+  roleClaudeMdText,
+  roleJsonText,
+  roleMdText,
+  rubricText,
+  settingsText,
+} from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { kickoffText } from './kickoff'
@@ -75,6 +84,7 @@ const BE_PATHS: readonly string[] = [
   '.cadre/be/settings.json',
   '.cadre/bin/be',
   '.cadre/cadre.json',
+  '.cadre/sizing.md',
 ]
 
 /** The desired paths that belong to one role: its folder and its launcher. */
@@ -113,7 +123,7 @@ function indexRowOf(index: string, id: string): string | undefined {
 }
 
 describe('desiredFiles', () => {
-  test('one role gives its five definition files, its launcher, the index and the repo state, sorted by path', () => {
+  test('one role gives its five definition files, launcher, index, repo state and rubric, sorted by path', () => {
     const files = desiredFiles(inputOf([templateRole('be')], 'gsd'))
 
     expect(files.map(file => file.path)).toEqual(BE_PATHS)
@@ -161,10 +171,10 @@ describe('desiredFiles', () => {
     expect(indexRowOf(contentOf(files, '.cadre/INDEX.md') ?? '', 'be')).toContain(' | superpowers | ')
   })
 
-  test('the six template roles give 36 role files, the index and the repo state, sorted and once each', () => {
+  test('the six template roles give 36 role files, the index, the repo state and the rubric, sorted, once each', () => {
     const paths = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd')).map(file => file.path)
 
-    expect(paths).toHaveLength(6 * 6 + 2)
+    expect(paths).toHaveLength(6 * 6 + 3)
     expect(paths).toEqual([...paths].sort(compareText))
     expect(new Set(paths).size).toBe(paths.length)
     expect(paths.filter(path => path.startsWith('.cadre/bin/'))).toEqual(
@@ -174,8 +184,17 @@ describe('desiredFiles', () => {
 
   test('with only a role id the set is that role, its launcher and the index, and no repo state (D-68)', () => {
     const files = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd', { only: 'be' }))
+    const repoFiles = ['.cadre/cadre.json', '.cadre/sizing.md']
 
-    expect(files.map(file => file.path)).toEqual(BE_PATHS.filter(path => path !== '.cadre/cadre.json'))
+    expect(files.map(file => file.path)).toEqual(BE_PATHS.filter(path => !repoFiles.includes(path)))
+  })
+
+  test('init gives the sizing rubric with the rubric text as a plain file; a regen of one role does not', () => {
+    const rubric = desiredFiles(inputOf([templateRole('be')], 'gsd')).find(file => file.path === '.cadre/sizing.md')
+    const regen = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd', { only: 'be' }))
+
+    expect(rubric).toEqual({ path: '.cadre/sizing.md', content: rubricText(), mode: 'file' })
+    expect(regen.map(file => file.path)).not.toContain('.cadre/sizing.md')
   })
 
   test('with only an id that is not on the team the set is the index alone', () => {
@@ -427,7 +446,7 @@ const settingsFilesCheck: FilesCheck = (input, files) =>
   })
 
 describe('generated file properties', () => {
-  test('the matrix is six roles, three frameworks, two assignments and two contexts of 38 files each', () => {
+  test('the matrix is six roles, three frameworks, two assignments and two contexts of 39 files each', () => {
     let runs = 0
     const sizes = new Set<number>()
     worldProblems((_input, files) => {
@@ -438,7 +457,7 @@ describe('generated file properties', () => {
     })
 
     expect(runs).toBe(3 * 2 * 2)
-    expect(Array.from(sizes)).toEqual([6 * 6 + 2])
+    expect(Array.from(sizes)).toEqual([6 * 6 + 3])
     expect(WORLD_ASSIGNMENTS.map(([label]) => label)).toEqual(['nothing assigned', 'everything assigned'])
   })
 

@@ -688,8 +688,9 @@ describe('regen apply', () => {
     const run = memIo(beOnlyWorld(), {})
     const host = memHost(hostWorld({}))
     const reply = await runRegen(run.io, { id: 'be', dryRun: false, host: host.io })
-    // Regen passes no repo parts, so it builds no CLAUDE.md (02-GAPS-B2 S1).
-    const files = (await plannedFiles(gitWorld(), [be])).filter(file => file.path !== '.cadre/be/CLAUDE.md')
+    // Regen passes no repo parts, so it builds no CLAUDE.md (02-GAPS-B2 S1), and only init plans the sizing rubric.
+    const notRegenerated = ['.cadre/be/CLAUDE.md', '.cadre/sizing.md']
+    const files = (await plannedFiles(gitWorld(), [be])).filter(file => !notRegenerated.includes(file.path))
     const written = files.filter(file => !NOT_WRITTEN.includes(file.path))
     const recorded = files.filter(file => file.path !== '.cadre/cadre.json')
     expect(host.writes).toEqual([

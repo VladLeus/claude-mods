@@ -25,6 +25,7 @@ import type {
   RawGsdCandidate,
   RoleSpec,
   SetupScan,
+  Sizing,
   TemplateRoleId,
 } from '../../types'
 import { CONFLICT_OPTIONS, conflictQuestion } from '../apply/conflict'
@@ -53,7 +54,7 @@ import {
 import { sha256Hex } from '../core/hash'
 import { compareText } from '../core/text'
 import { attendedNote, NOT_SET_TEXT } from '../framework/gsd/hunks'
-import { roleClaudeMdText } from '../generate/docs'
+import { roleClaudeMdText, rubricText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
@@ -69,6 +70,7 @@ import {
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
 import { PANE_LIST_WORDS, t } from '../locales/t'
+import { SIZING_RUBRIC_PATH } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
@@ -182,6 +184,7 @@ import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { PANE_FULLSCREEN } from '../ui/surfaces/pane-fullscreen'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
 import { CONFLICT_CONTEXT } from './initapply'
+import { initSizing } from './initplan'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
   APPLY_HUNKS_PROGRESS,
@@ -3513,6 +3516,14 @@ async function initFiles(
 /** The default team of the git fixture world has a Security role, so its ignore block holds the reports line. */
 const GIT_TEAM_HAS_SECURITY = true
 
+/** The sizing block init records in the fixture worlds of these specs: none of them has a framework installed. */
+const NO_FRAMEWORK_SIZING: Sizing = initSizing(['none'])
+
+/** The op a re-run with unchanged answers gives a planned file: leave, and none for the rubric on disk. */
+function reRunKind(path: string): string | undefined {
+  return path === SIZING_RUBRIC_PATH ? undefined : 'leave'
+}
+
 /** The kind of the op of each path in the file plan of a reply. */
 function opKinds(reply: string): Map<string, string> {
   const kinds = new Map<string, string>()
@@ -3605,7 +3616,7 @@ describe('init plan', () => {
   )
 
   test('a re-run over the planned files, manifest and .gitignore plans only leave ops (PLAN-04)', async () => {
-    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
     const disk = {
       ...onDisk(files),
       '/repo/.cadre/manifest.json': await manifestOf(files),
@@ -3614,9 +3625,10 @@ describe('init plan', () => {
     const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: true })
     const kinds = opKinds(reply)
-    // Each built CLAUDE.md as the last apply left it gets no op: its manifest entry is kept (02-GAPS-B3 S1).
+    // Each built CLAUDE.md as the last apply left it gets no op: its manifest entry is kept (02-GAPS-B3 S1). Nor does
+    // the sizing rubric, which a re-run never plans over.
     const built = files.filter(file => file.path.endsWith('/CLAUDE.md')).length
-    const left = files.length + 2 - built
+    const left = files.length + 2 - built - 1
     expect([built, kinds.size]).toEqual([3, left])
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
     expect(reply.split('\n')).toContain(`Summary: 0 create, 0 change, ${left} leave, 0 conflict, 0 hunks`)
@@ -3624,7 +3636,7 @@ describe('init plan', () => {
 
   test('init stores the consent answer: over a stored yes, yes leaves cadre.json and no changes it (A1)', async () => {
     const team = await defaultRoles(gitWorld())
-    const files = await plannedFiles(gitWorld(), team, { readUserMcp: true })
+    const files = await plannedFiles(gitWorld(), team, { readUserMcp: true, sizing: NO_FRAMEWORK_SIZING })
     const world = gitWorld({
       dirs: { '/repo/.git': [], '/repo/.cadre': [] },
       files: { ...onDisk(files), '/repo/.cadre/manifest.json': await manifestOf(files) },
@@ -3641,7 +3653,7 @@ describe('init plan', () => {
   })
 
   test('a file edited since the last run is a conflict, with the new version planned beside it (D-67)', async () => {
-    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
     const disk = {
       ...onDisk(files),
       '/repo/.cadre/manifest.json': await manifestOf(files),
@@ -3702,10 +3714,12 @@ describe('init plan', () => {
         carry,
       }
     })
-    const files = await plannedFiles(world, roles)
+    const files = await plannedFiles(world, roles, { sizing: NO_FRAMEWORK_SIZING })
     const run = memIo({ ...world, files: { ...world.files, ...onDisk(files) } }, answers)
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    expect(files.map(file => [file.path, kinds.get(file.path)])).toEqual(files.map(file => [file.path, 'leave']))
+    expect(files.map(file => [file.path, kinds.get(file.path)])).toEqual(
+      files.map(file => [file.path, reRunKind(file.path)]),
+    )
     const text = (path: string): string => files.find(file => file.path === path)?.content ?? ''
     const index = text('.cadre/INDEX.md').split('\n')
     for (const [id, model, effort] of picks) {
@@ -3942,7 +3956,7 @@ describe('reviewStep', () => {
     const first = memIo(world, INIT_ANSWERS)
     await runInit(first.io, { dryRun: true })
     const reviewAt = firstLines(first.asked).indexOf(REVIEW_QUESTION)
-    expect(first.specs[reviewAt]).toEqual(firstPageSpec(expected, first.asked[reviewAt], '46 files, 6 roles'))
+    expect(first.specs[reviewAt]).toEqual(firstPageSpec(expected, first.asked[reviewAt], '47 files, 6 roles'))
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3974,6 +3988,7 @@ describe('reviewStep', () => {
     const files = await initFiles(
       gitWorld(),
       team.map((role): RoleSpec => ({ ...role, model: 'sonnet', effort: 'high' })),
+      { sizing: NO_FRAMEWORK_SIZING },
     )
     const run = queuedIo(withDisk(gitWorld(), files), {
       ...INIT_ANSWERS,
@@ -3982,7 +3997,7 @@ describe('reviewStep', () => {
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
-    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
+    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(file => reRunKind(file.path)))
   })
 
   test('duration re-asks only the duration, and every role takes it', async () => {
@@ -3990,6 +4005,7 @@ describe('reviewStep', () => {
     const files = await initFiles(
       gitWorld(),
       team.map((role): RoleSpec => ({ ...role, autopilot: { ...role.autopilot, duration: '90m' } })),
+      { sizing: NO_FRAMEWORK_SIZING },
     )
     const run = queuedIo(withDisk(gitWorld(), files), {
       ...INIT_ANSWERS,
@@ -3998,7 +4014,7 @@ describe('reviewStep', () => {
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([DURATION_QUESTION])
-    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
+    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(file => reRunKind(file.path)))
   })
 
   test('each typed item re-asks only its own questions, in the order init first asked them', async () => {
@@ -4331,7 +4347,7 @@ describe('review question hint (G-02-7)', () => {
     const paged = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(pagedIo(paged), { dryRun: true })
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    const summary = '25 files, 3 roles'
+    const summary = '26 files, 3 roles'
     expect(run.specs[reviewAt]).toEqual(firstPageSpec(lastReview(paged), run.asked[reviewAt], summary))
   })
 
@@ -4445,7 +4461,7 @@ describe('init apply (D-105)', () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const host = memHost(hostWorld({}))
     await runInit(run.io, { dryRun: false, host: host.io })
-    const desired = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const desired = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
     const ignore = mergeIgnoreBlock(null, gitignoreLines('definitions', null, true))
     expect(host.writes).toEqual([
       ...desired.map(file => ({ path: `/repo/${file.path}`, text: file.content, isWritten: true })),
@@ -4489,7 +4505,7 @@ describe('init apply (D-105)', () => {
     const first = memHost(hostWorld({}))
     await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: first.io })
     const again = memHost(hostWorld({}))
-    const world = withWrites(gitWorld(), first.writes)
+    const world = withWrites(gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] } }), first.writes)
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: false, host: again.io })
     expect(reply.split('\n').slice(-3)).toEqual([APPLIED_NONE_NOTE, DEFAULT_FOLDERS_UNKNOWN, NEXT_STEP_NOTE])
     expect([again.writes, again.calls]).toEqual([[], [COMMON_DIR_CALL]])
@@ -4650,7 +4666,7 @@ type EditedRole = {
  * manifest records the hash of an older cadre text for it, so init plans it as the one conflict (D-67).
  */
 async function editedRoleWorld(): Promise<EditedRole> {
-  const files = await initFiles(fullWorld(), await defaultRoles(fullWorld()))
+  const files = await initFiles(fullWorld(), await defaultRoles(fullWorld()), { sizing: NO_FRAMEWORK_SIZING })
   const role = files.find(file => file.path === '.cadre/be/ROLE.md')?.content ?? ''
   const older = files.map(file =>
     file.path === '.cadre/be/ROLE.md' ? { ...file, content: 'older cadre text\n' } : file,
@@ -5593,11 +5609,11 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     const firstWrite = events.findIndex(event => event.startsWith('write '))
     const repoStats = events.slice(0, firstWrite).filter(event => event.startsWith('stat '))
     expect([repoStats.at(0), repoStats.at(-1)]).toEqual(['stat /repo/.cadre', 'stat /repo/.gitignore'])
-    expect(repoStats).toHaveLength(53)
+    expect(repoStats).toHaveLength(54)
     expect(repoStats).toEqual([...new Set(repoStats)].sort(compareText))
     const repoWrites = events.filter(event => event.startsWith('write /repo/'))
     const firstPass = repoWrites.slice(0, repoWrites.indexOf('write /repo/.gitignore') + 1)
-    expect(firstPass).toHaveLength(45)
+    expect(firstPass).toHaveLength(46)
     expect(firstPass).toEqual([...new Set(firstPass)].sort(compareText))
     for (const id of BUILT_TEAM) {
       const at = events.indexOf(`write /repo/.cadre/bin/${id}`)
@@ -5844,6 +5860,118 @@ describe('init plan', () => {
       const stored = parseCadreState(desired.find(file => file.path === '.cadre/cadre.json')?.content ?? '')
       expect([readUserMcp, stored?.readUserMcp]).toEqual([readUserMcp, readUserMcp])
     }
+  })
+})
+
+describe('the sizing rubric and the sizing block at init', () => {
+  /** planStep's input for the default team of the git fixture world over `world`, with `over` added. */
+  async function rubricInput(
+    world: MemWorld,
+    over: Partial<Parameters<typeof planStep>[1]> = {},
+  ): Promise<Parameters<typeof planStep>[1]> {
+    const team = await defaultRoles(gitWorld())
+    const scans = await scansOf(world)
+
+    return {
+      roles: team,
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes: scopesFor(team, 'none', scans, [], { kind: 'git-root' }),
+      hunks: [],
+      repo: scans.repo,
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+      ...over,
+    }
+  }
+
+  /** The kinds of the ops a plan has for the sizing rubric: none when it is not planned. */
+  function rubricOps(plan: Plan): string[] {
+    return plan.ops.flatMap(op => (op.kind !== 'hunk' && op.path === SIZING_RUBRIC_PATH ? [op.kind] : []))
+  }
+
+  /** The repo as an init with the INIT_ANSWERS defaults left it, a listed `.cadre/`, with these files on top. */
+  async function afterInit(edited: Readonly<Record<string, string>> = {}): Promise<MemWorld> {
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
+    const disk = {
+      ...onDisk(files),
+      '/repo/.cadre/manifest.json': await manifestOf(files),
+      '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null, true)) ?? '',
+      ...edited,
+    }
+
+    return gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
+  }
+
+  test('the planned cadre.json records the default sizing of the installed frameworks, none left out', async () => {
+    const input = await rubricInput(gitWorld(), { sizing: NO_FRAMEWORK_SIZING })
+    const sized = await planStep(memIo(gitWorld(), {}).io, input)
+    const unsized = await planStep(memIo(gitWorld(), {}).io, await rubricInput(gitWorld()))
+    const cadreJson = sized.desired.find(file => file.path === '.cadre/cadre.json')?.content ?? ''
+
+    expect(initSizing(['gsd', 'superpowers', 'none']).mapping).toEqual({ small: 'superpowers', large: 'gsd' })
+    expect(NO_FRAMEWORK_SIZING.mapping).toEqual({ small: 'none', large: 'none' })
+    expect([sized.state.sizing, parseCadreState(cadreJson)?.sizing]).toEqual([NO_FRAMEWORK_SIZING, NO_FRAMEWORK_SIZING])
+    expect(Object.keys(unsized.state)).not.toContain('sizing')
+  })
+
+  test('over a fresh repo the plan creates .cadre/sizing.md with the rubric text', async () => {
+    const result = await planStep(memIo(gitWorld(), {}).io, await rubricInput(gitWorld()))
+
+    expect(rubricOps(result.plan)).toEqual(['create'])
+    expect(result.desired.find(file => file.path === SIZING_RUBRIC_PATH)).toEqual({
+      path: SIZING_RUBRIC_PATH,
+      content: rubricText(),
+      mode: 'file',
+    })
+  })
+
+  test('an edited rubric whose manifest entry holds the default text gets no op and keeps that entry', async () => {
+    const world = await afterInit({ '/repo/.cadre/sizing.md': 'my own anchors\n' })
+    const result = await planStep(memIo(world, {}).io, await rubricInput(world, { sizing: NO_FRAMEWORK_SIZING }))
+    const entry = result.manifest.files.find(file => file.path === SIZING_RUBRIC_PATH)
+
+    expect(rubricOps(result.plan)).toEqual([])
+    expect(result.desired.map(file => file.path)).not.toContain(SIZING_RUBRIC_PATH)
+    expect(entry).toEqual({ path: SIZING_RUBRIC_PATH, sha256: await sha256Hex(rubricText()), mode: 'file' })
+  })
+
+  test('a rubric on disk that no manifest records gets no op either, and the manifest does not list it', async () => {
+    const world = gitWorld({ files: { '/repo/.cadre/sizing.md': 'my own anchors\n' } })
+    const result = await planStep(memIo(world, {}).io, await rubricInput(world))
+
+    expect(rubricOps(result.plan)).toEqual([])
+    expect(result.manifest.files.map(file => file.path)).not.toContain(SIZING_RUBRIC_PATH)
+  })
+
+  test('apply over an edited rubric asks nothing about it and never writes it', async () => {
+    const run = memIo(await afterInit({ '/repo/.cadre/sizing.md': 'my own anchors\n' }), INIT_ANSWERS)
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const asked = firstLines(run.asked)
+
+    expect(opKinds(reply).get(SIZING_RUBRIC_PATH)).toBeUndefined()
+    expect(host.writes.map(write => write.path)).not.toContain(`/repo/${SIZING_RUBRIC_PATH}`)
+    expect(asked.slice(asked.indexOf(REVIEW_QUESTION) + 1)).toEqual([])
+  })
+
+  test('the review plans the cadre.json apply writes: a setup with no sizing block sees it change', async () => {
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const world = gitWorld({
+      dirs: { '/repo/.git': [], '/repo/.cadre': [] },
+      files: {
+        ...onDisk(files),
+        '/repo/.cadre/manifest.json': await manifestOf(files),
+        '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null, true)) ?? '',
+      },
+    })
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    const written = host.writes.find(write => write.path === '/repo/.cadre/cadre.json')?.text ?? ''
+
+    expect(opKinds(reply).get('.cadre/cadre.json')).toBe('change')
+    expect(parseCadreState(written)?.sizing).toEqual(NO_FRAMEWORK_SIZING)
   })
 })
 

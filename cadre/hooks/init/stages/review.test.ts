@@ -211,7 +211,7 @@ async function plannedFor(state: InitState): Promise<PlanResult> {
 const GIT_POLICY_ASK_TEXT = withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)
 
 /** The summary of the review of REVIEW_DRAFT (D-310): the files its plan writes or keeps and its three roles. */
-const REVIEW_SUMMARY = '25 files, 3 roles'
+const REVIEW_SUMMARY = '26 files, 3 roles'
 
 /** The answer to the plan io effect: the plan made. */
 function planAnswer(planned: PlanResult): Answer {
@@ -720,7 +720,7 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
     expect(shown.length < PANE_PAGE_ROWS).toBe(true)
     expect(asking.openQuestion?.spec.options).toEqual(['Confirm', 'Change something…'])
     // One page has no place to name: a pane surface asks the review question with its summary alone (D-310).
-    const summary = '4 files, 0 roles'
+    const summary = '5 files, 0 roles'
     const pane = paneOf(asking, summary)
     const context = { title: 'Review', lines: shown, kind: 'review', summary, pane }
     expect(asking.openQuestion?.spec.context).toEqual(context)

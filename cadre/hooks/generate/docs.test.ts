@@ -26,7 +26,7 @@ import {
   TEMPLATE_ROLES,
   templateRole,
 } from '../testkit'
-import { cadreJsonText, indexMdText, partsBody, roleClaudeMdText, roleMdText } from './docs'
+import { cadreJsonText, indexMdText, partsBody, roleClaudeMdText, roleMdText, rubricText } from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { builtClaudeMdPath } from './launcher'
@@ -85,6 +85,7 @@ const BE_PATHS: readonly string[] = [
   '.cadre/be/settings.json',
   '.cadre/bin/be',
   '.cadre/cadre.json',
+  '.cadre/sizing.md',
 ]
 
 /** The desired paths that belong to one role: its folder and its launcher. */
@@ -99,6 +100,34 @@ function builtHeader(id: string): string {
     `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
   )
 }
+
+describe('rubricText', () => {
+  const lines = rubricText().split('\n')
+
+  test('printable ASCII lines ending in one newline, the same text every time, with no date and no count', () => {
+    expect(/^[\x20-\x7E\n]*$/.test(rubricText())).toBe(true)
+    expect([rubricText().endsWith('\n'), rubricText().endsWith('\n\n')]).toEqual([true, false])
+    expect(rubricText()).toBe(rubricText())
+    expect(/\d{4}-\d{2}-\d{2}/.test(rubricText())).toBe(false)
+  })
+
+  test('each of the four dimensions has a heading with its anchors at 0.2, 0.5 and 0.9, in that order', () => {
+    for (const dimension of ['scope', 'complexity', 'risk', 'effort']) {
+      const at = lines.findIndex(line => line.startsWith(`## ${dimension}: `))
+
+      expect(at).toBeGreaterThan(0)
+      expect(lines.slice(at + 1, at + 4).map(line => line.slice(0, 7))).toEqual(['- 0.2: ', '- 0.5: ', '- 0.9: '])
+    }
+  })
+
+  test('it says a size is the highest of the four scores and is large at the threshold in cadre.json', () => {
+    const text = rubricText()
+
+    expect(text).toContain('highest of its four scores')
+    expect(text).toContain('sizing.threshold in .cadre/cadre.json')
+    expect(text).toContain('from 0.1 to 1.0')
+  })
+})
 
 describe('roleClaudeMdText (G-02-1f)', () => {
   test('the header line, a blank line, then each part under its marker, a blank line apart, one final newline', () => {
