@@ -924,3 +924,38 @@ describe('plugins the repo settings enable (project scope)', () => {
     expect(pluginsOf(launchPlan(be, scope, user()))).toEqual(scope.settings.enabledPlugins)
   })
 })
+
+describe('the GSD workstream env', () => {
+  /** The env BE renders on `framework` for the launching user `launching`. */
+  function envOf(framework: FrameworkId, launching: LaunchUser, role = templateRole('be')): unknown {
+    return renderRuntimeSettings(role, compileScope(role, context({ framework })), launching, []).env
+  }
+
+  test('a gsd role renders GSD_WORKSTREAM: cadre-<epic slug>-<id> in an epic, else cadre-<id>', () => {
+    expect(envOf('gsd', user({ epicSlug: 'proj-1' }))).toEqual({
+      GSD_WORKSTREAM: 'cadre-proj-1-be',
+      CADRE_ROLE: 'be',
+      CADRE_ROOT: '/repo',
+    })
+    expect(envOf('gsd', user())).toEqual({ GSD_WORKSTREAM: 'cadre-be', CADRE_ROLE: 'be', CADRE_ROOT: '/repo' })
+  })
+
+  test('a role on none or superpowers renders no GSD_WORKSTREAM', () => {
+    const others: readonly FrameworkId[] = ['none', 'superpowers']
+
+    for (const framework of others) {
+      expect(envOf(framework, user({ epicSlug: 'proj-1' }))).toEqual({ CADRE_ROLE: 'be', CADRE_ROOT: '/repo' })
+    }
+  })
+
+  test("cadre's workstream name wins over a GSD_WORKSTREAM the role carries from the user", () => {
+    const be = templateRole('be')
+    const carrier = { ...be, carry: { ...be.carry, env: ['GSD_WORKSTREAM'] } }
+
+    expect(envOf('gsd', user({ env: { GSD_WORKSTREAM: 'mine' } }), carrier)).toEqual({
+      GSD_WORKSTREAM: 'cadre-be',
+      CADRE_ROLE: 'be',
+      CADRE_ROOT: '/repo',
+    })
+  })
+})
