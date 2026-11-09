@@ -334,7 +334,8 @@ function useShown(use: TaskUse): string {
 
 /**
  * One line per kind field and stamp the entry holds, in the record's order, each value cleaned. A text whose cap is
- * over the report cap is shown whole up to its own cap, as the send kept it.
+ * over the report cap is shown whole up to its own cap, as the send kept it, and specPath, which has no cap of its
+ * own, is shown whole.
  */
 function fieldLines(entry: InboxEntry): string[] {
   const shown: readonly (readonly [string, string | undefined])[] = [
@@ -344,7 +345,7 @@ function fieldLines(entry: InboxEntry): string[] {
     ['reportForm', shownOf(entry.reportForm, text => clean(text, REPORT_FORM_MAX_CHARS))],
     ['vector', shownOf(entry.vector, vector => vectorShown(entry, vector))],
     ['use', shownOf(entry.use, useShown)],
-    ['specPath', shownOf(entry.specPath, reportText)],
+    ['specPath', shownOf(entry.specPath, path => clean(path, Number.POSITIVE_INFINITY))],
     ['planPath', shownOf(entry.planPath, reportText)],
     ['method', shownOf(entry.method, method => fill(PROMPTS.inboxItemMethod, { method: reportText(method) }))],
     ['outcome', shownOf(entry.outcome, reportText)],
