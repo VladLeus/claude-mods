@@ -486,19 +486,19 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/pm/role.json 1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68 true",
     "write /repo/.cadre/pm/settings.json d7b4731f3ed8b9a775cc9a1142db81a387d9775dc514c48949ed681f1dc3d595 true",
     "write /repo/.cadre/security/CLAUDE.md 803d386590d1d71564306fc3c3de7758fd656f8b306f95bcc6fe25d892f62332 true",
-    "write /repo/.cadre/security/ROLE.md 813b6673490165b1a3c7ba93320efe35d8de1666026f9ae92f085df686644fe8 true",
+    "write /repo/.cadre/security/ROLE.md fde8155ffd91652284ce02f9a79a67928e5ee5031024a1d1022b3b2883d65631 true",
     "write /repo/.cadre/security/kickoff.txt 5d2443a198212d243c3c7ea23ef89a91211e2ae1038cb36634ad65d0d237cd78 true",
     "write /repo/.cadre/security/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/security/role.json ef8efa2fc4ef98dc07e9e64145a6bf71192d299146a8e2c8078a965d9c1825ae true",
     "write /repo/.cadre/security/settings.json 8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25 true",
     "write /repo/.cadre/sizing.md 9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3 true",
     "write /repo/.cadre/tl/CLAUDE.md a77e9dd5552ffce1e5b1c4402fa884759db6cf017af7d98bfb88c8ba6fd554e8 true",
-    "write /repo/.cadre/tl/ROLE.md 56abb52c5d8e99d30cf675e28c60162eabfeb4b2436c28c35a0b88884b7009f2 true",
+    "write /repo/.cadre/tl/ROLE.md f8266463d541dbd59a58821fc272c0d8338a0b118e8e8c4cd0241c85087886b7 true",
     "write /repo/.cadre/tl/kickoff.txt 5ba0cf5aa7bfb58e7e9c52f5952f5edffd2026f7536f2e22dade82d984eab592 true",
     "write /repo/.cadre/tl/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/tl/role.json c738e88f9a512e380cd53a6aeaf748571056e08847b842ed48cd59b503067219 true",
     "write /repo/.cadre/tl/settings.json 8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25 true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json 7c9f2700c10e9e52fa556edc663fc3dd8c57e14ab3564ab964ffe09944c6be5e true"
+    "write /repo/.cadre/manifest.json b0a1ca623e0e37917ccdc03bcbb38f3b3fa8ec14bcbf08762dff759e34006b06 true"
   ]
 }

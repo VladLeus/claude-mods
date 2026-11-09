@@ -50,6 +50,9 @@ const ATTENDED_RULE = 'Attended: this role needs a person for framework steps th
 /** The rule the card of a role without Bash carries on GSD: GSD workflows need Bash, so a person runs them (A1). */
 const GSD_NO_BASH_RULE = 'Attended: GSD workflows need Bash; this role runs them through a person'
 
+/** The rule of a role started with --ask-user that may run GSD: GSD menus reach the person while asking is on. */
+const ASK_RULE = 'Attended: started with --ask-user, so framework menus reach the person while asking is on'
+
 /** The note on every card when the setup scan could not see every MCP server (A4). */
 const PARTIAL_MCP_RULE =
   'MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied'
@@ -607,8 +610,9 @@ describe('scope rules', () => {
       const scope = compileScope(templateRole('pm'), context({ setup: inProject }))
       const quiet = compileScope(templateRole('pm'), context({ setup: elsewhere }))
 
-      expect(scope.card.rules.slice(-4)).toEqual([
+      expect(scope.card.rules.slice(-5)).toEqual([
         { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+        { text: ASK_RULE, enforcement: 'none' },
         {
           text:
             'WARNING: gsd-context-monitor-v2.js is registered in project settings and loads in every role; ' +
@@ -696,6 +700,7 @@ describe('scope rules', () => {
     expect(attended).toEqual([
       { text: ATTENDED_RULE, enforcement: 'none' },
       { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+      { text: ASK_RULE, enforcement: 'none' },
     ])
   })
 
@@ -939,6 +944,7 @@ describe('scope rules', () => {
       },
       { text: ATTENDED_RULE, enforcement: 'none' },
       { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+      { text: ASK_RULE, enforcement: 'none' },
       { text: 'MCP route: strict (--strict-mcp-config)', enforcement: 'none' },
     ])
   })

@@ -83,7 +83,7 @@ Example, a night run:
 
 While it runs:
 
-- Ordinary questions (`AskUserQuestion`) are answered with "decide yourself within your role"; the decision goes into the handoff. Only a question that truly cannot wait is sent to your phone (`PushNotification`). With asking on and you available (you are not away, and no ended away is still waiting for you to write), an `AskUserQuestion` reaches you as a dialog instead, and the session keeps it for critical questions.
+- Ordinary questions (`AskUserQuestion`) are answered with "decide yourself within your role"; the decision goes into the handoff. Only a question that truly cannot wait is sent to your phone (`PushNotification`). With asking on and you available (you are not away, and no ended away is still waiting for you to write), an `AskUserQuestion` reaches you as a dialog instead, the menus of a workflow the session runs (a GSD menu, for example) included, so a session started with `--ask-user` can stop at such a menu until you answer or go `/away`; the session's own questions stay for critical ones.
 - Permissions stay as they are. Run the session in auto mode or with allow rules. An action the permission mode refuses (a push, a commit) is never retried another way: it is logged as deferred and left for you.
 - The session never ends or hands off on its own; autopilot decides. If the work is done it answers `AUTOPILOT_DONE` and autopilot wraps up.
 - Waiting: when the session hands work to someone else and has nothing useful left, it calls the `wait_for` tool and ends its turn. While it waits, autopilot does not nudge it, does not count idle turns and drops the goal's re-prompt. Any new turn (a message from another session, a subagent or workflow finishing, you) wakes it.

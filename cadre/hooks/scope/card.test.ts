@@ -232,6 +232,7 @@ describe('scopeCardLines', () => {
       `    [hard] ${INBOX_RULE}`,
       '    [hard] Permission mode: auto',
       `    [none] ${GSD_NO_BASH_RULE}`,
+      `    [none] ${ARTIFACT.cardAttendedAsk}`,
       `    [none] ${MERGED_ROUTE_RULE}`,
       '  decisions:',
       ...chainLines(['pm', 'tl']).map(line => `    ${line}`),

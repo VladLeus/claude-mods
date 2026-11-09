@@ -151,6 +151,7 @@ export const ARTIFACT = Object.freeze({
   cardPermissionMode: 'Permission mode: {mode}',
   cardAttendedSteps: 'Attended: this role needs a person for framework steps that cannot run unattended',
   cardAttendedGsd: 'Attended: GSD workflows need Bash; this role runs them through a person',
+  cardAttendedAsk: 'Attended: started with --ask-user, so framework menus reach the person while asking is on',
   cardProjectMonitor: `WARNING: {script} is registered in project settings and loads in every role; ${
     ''}it conflicts with the autopilot handoff (D-62)`,
   cardStartDir: '<git root>/{path}',
@@ -216,7 +217,9 @@ export const ARTIFACT = Object.freeze({
   // framework/gsd/adapter.ts
   gsdGateMenusWhere: 'AskUserQuestion menus inside GSD workflows',
   gsdGateMenus:
-    'Autopilot answers GSD menus with "decide yourself": take the recommended option and log it in decisions.md.',
+    `While asking is on and the person is not away, a GSD menu reaches them as an AskUserQuestion dialog; ${
+    ''}while they are away or asking is off, autopilot answers it with "decide yourself": take the recommended ${
+    ''}option and log it in decisions.md.`,
   gsdGateTextModeWhere: '.planning/config.json workflow.text_mode',
   gsdGateTextMode: 'Needs workflow.text_mode false (an autonomy setting); with it true the role is attended.',
   gsdGateUat: 'Do not run /gsd-verify-work. Send human UAT as a QA decision to TL, which queues it for the human.',
@@ -246,20 +249,22 @@ export const ARTIFACT = Object.freeze({
   gsdHumanGates: 'Human gates:',
   gsdGateLine: '- {where}: {kickoff}',
   gsdStepNewProject:
-    `If this checkout has no .planning/ yet, run /gsd-new-project here first, deciding its questions yourself ${
-    ''}under autopilot.`,
+    `If this checkout has no .planning/ yet, run /gsd-new-project here first; its menus go to the person while ${
+    ''}asking is on and they are not away, else decide them yourself.`,
   gsdStepNewProjectNoLead:
-    `If your team has no TL and this checkout has no .planning/ yet, run /gsd-new-project here first, deciding ${
-    ''}its questions yourself under autopilot; a checkout that has .planning/ skips this.`,
+    `If your team has no TL and this checkout has no .planning/ yet, run /gsd-new-project here first (its menus ${
+    ''}go to the person while asking is on and they are not away, else decide them yourself); a checkout that has ${
+    ''}.planning/ skips this.`,
   gsdStepWorkstream:
     `Create your own workstream with GSD's own tool through its resolver: workstream.create "$GSD_WORKSTREAM" ${
     ''}--no-migrate (a re-run reports that it exists).`,
   gsdStepMilestoneLead:
     `If your workstream has no ROADMAP.md, run /gsd-new-milestone in it with the epic as the milestone ${
-    ''}(GSD-epic mode), deciding its questions yourself under autopilot.`,
+    ''}(GSD-epic mode); its menus go to the person while asking is on and they are not away, else decide them ${
+    ''}yourself.`,
   gsdStepMilestoneWorker:
-    `If your workstream has no ROADMAP.md, run /gsd-new-milestone in it with TL's task as the milestone goal, ${
-    ''}deciding its questions yourself under autopilot.`,
+    `If your workstream has no ROADMAP.md, run /gsd-new-milestone in it with TL's task as the milestone goal; ${
+    ''}its menus go to the person while asking is on and they are not away, else decide them yourself.`,
   gsdStepPath:
     `Then take a small ticket through /gsd-quick, and a large one through /gsd-phase add, /gsd-plan-phase and ${
     ''}/gsd-execute-phase.`,

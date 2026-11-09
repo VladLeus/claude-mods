@@ -242,8 +242,19 @@ function isGsdWithoutBash(role: RoleSpec, ctx: ScopeContext): boolean {
 }
 
 /**
- * The rules of an attended role (ROLE-04), in this order: the one for framework steps that cannot run unattended, when
- * the context says so, then the one for GSD workflows that need Bash, for a role without Bash on GSD (A1).
+ * Whether the role is started with --ask-user and may run a framework whose menus autopilot answers only while asking
+ * is off: those menus reach the person as dialogs, so the role is attended.
+ */
+function isAskedInMenus(role: RoleSpec, ctx: ScopeContext): boolean {
+  if (!role.autopilot.askUser) return false
+
+  return runnableFrameworks(ctx).some(id => adapterOf(id).humanGates.some(gate => gate.handling === 'autopilot-denies'))
+}
+
+/**
+ * The rules of an attended role, in this order: the one for framework steps that cannot run unattended, when the
+ * context says so, the one for GSD workflows that need Bash, for a role without Bash on GSD, then the one for framework
+ * menus that reach the person, for a role started with --ask-user.
  */
 function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
   const rules: ScopeRule[] = []
@@ -252,6 +263,9 @@ function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
   }
   if (isGsdWithoutBash(role, ctx)) {
     rules.push(rule(ARTIFACT.cardAttendedGsd, 'none'))
+  }
+  if (isAskedInMenus(role, ctx)) {
+    rules.push(rule(ARTIFACT.cardAttendedAsk, 'none'))
   }
 
   return rules
@@ -357,7 +371,7 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
     effort: role.effort,
     permissionMode: role.permissionMode,
     isBypass: isBypass(role),
-    isAttended: ctx.isAttended || isGsdWithoutBash(role, ctx),
+    isAttended: ctx.isAttended || isGsdWithoutBash(role, ctx) || isAskedInMenus(role, ctx),
     skills: sortedUnique(role.skills),
     mcp: sortedUnique(role.mcp),
     notGiven: { skills: notGivenSkills(role, ctx, plugins), mcp: notGivenMcp(role, ctx) },

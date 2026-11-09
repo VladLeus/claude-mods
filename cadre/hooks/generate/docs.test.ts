@@ -447,13 +447,13 @@ describe('role documents', () => {
     expect(text).not.toContain('Attended: Attended:')
   })
 
-  test('a PM on GSD in an attended context has two Attended card rules and still one banner', () => {
+  test('a PM on GSD in an attended context has three Attended card rules and still one banner', () => {
     const pm = templateRole('pm')
     const scope = scopeOf(pm, 'gsd', TEMPLATE_ROLES, { isAttended: true })
     const text = roleMdText(pm, scope)
 
     expect(bannerLines(text)).toEqual([ATTENDED_LINE])
-    expect(text.split('\n').filter(line => line.startsWith('    [none] Attended:'))).toHaveLength(2)
+    expect(text.split('\n').filter(line => line.startsWith('    [none] Attended:'))).toHaveLength(3)
     expect(text).not.toContain('Attended: Attended:')
   })
 
