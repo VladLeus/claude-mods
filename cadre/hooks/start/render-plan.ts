@@ -23,6 +23,7 @@ import {
   parentOf,
   PRIVATE_INSTRUCTIONS_LINK,
   PROBE_EXPECTATIONS_FILE,
+  runtimeDirOf,
   RUNTIME_KICKOFF_FILE,
   RUNTIME_STAMP_FILE,
 } from '../paths'
@@ -132,7 +133,7 @@ function roleFolder(root: string, id: string): string {
 
 /** The folder of a role's per-launch files: `<root>/.cadre/<id>/.runtime`, the folder its launcher reads. */
 export function runtimeFolder(root: string, id: string): string {
-  return `${roleFolder(root, id)}/.runtime`
+  return runtimeDirOf(root, id)
 }
 
 /**

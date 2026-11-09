@@ -7,7 +7,7 @@
 import type { RoleSpec } from '../../types'
 import { compareText, isChangedByClean, shown, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
-import { memoryFolderOf } from '../paths'
+import { memoryFolderOf, runtimeDirOf } from '../paths'
 
 /**
  * The facts about the launching user that the launch half needs (D-98). renderRole gathers them at launch and passes
@@ -112,7 +112,7 @@ const MAX_NAME_CHARS = 255
 
 /** The folder that holds everything the launch creates for a role: `<root>/.cadre/<id>/.runtime`. */
 export function runtimeDir(user: LaunchUser, id: string): string {
-  return `${user.root}/.cadre/${id}/.runtime`
+  return runtimeDirOf(user.root, id)
 }
 
 /** The links in the order of their paths, as a new array. */

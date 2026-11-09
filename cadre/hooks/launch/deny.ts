@@ -13,6 +13,7 @@ import {
   memoryFolderOf,
   privateInstructionsDir,
   roleMemoryDir,
+  runtimeFileOf,
   SESSION_FILE,
 } from '../paths'
 import { isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
@@ -258,7 +259,7 @@ function inboxFilesDeny(user: LaunchUser, id: string): DenyResult {
   const ids = user.teamIds ?? [id]
   const rules = roots.flatMap(root =>
     ids.flatMap(teamId =>
-      [INBOX_LOG_FILE, SESSION_FILE].map(file => editWriteRules(`${root}/.cadre/${teamId}/.runtime/${file}`, '')),
+      [INBOX_LOG_FILE, SESSION_FILE].map(file => editWriteRules(runtimeFileOf(root, teamId, file), '')),
     ),
   )
 

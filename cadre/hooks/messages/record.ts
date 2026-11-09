@@ -10,7 +10,7 @@ import { isChangedByClean, reportText } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { INBOX_LOG_FILE, SESSION_FILE } from '../paths'
+import { INBOX_LOG_FILE, runtimeFileOf, SESSION_FILE } from '../paths'
 import { ENTRY_ID_PATTERN, markStateOf, MESSAGE_KINDS } from './send'
 
 /** How many hex characters of the content's SHA-256 an entry id keeps. */
@@ -19,16 +19,12 @@ const ENTRY_ID_HASH_CHARS = 8
 /** The longest session id a session record may hold. */
 const SESSION_ID_MAX_CHARS = 128
 
-function runtimeFilePath(root: string, id: string, file: string): string {
-  return `${root}/.cadre/${id}/.runtime/${file}`
-}
-
 export function inboxLogPath(root: string, id: string): string {
-  return runtimeFilePath(root, id, INBOX_LOG_FILE)
+  return runtimeFileOf(root, id, INBOX_LOG_FILE)
 }
 
 export function sessionFilePath(root: string, id: string): string {
-  return runtimeFilePath(root, id, SESSION_FILE)
+  return runtimeFileOf(root, id, SESSION_FILE)
 }
 
 export function sessionRecordText(sessionId: string): string {

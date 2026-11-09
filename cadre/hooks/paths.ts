@@ -297,6 +297,16 @@ export const INBOX_LOG_FILE = 'inbox.jsonl'
 /** The file in `.cadre/<id>/.runtime/` where a role session publishes its session id, so other roles can wake it. */
 export const SESSION_FILE = 'session.json'
 
+/** A role's runtime folder: `<root>/.cadre/<id>/.runtime`. */
+export function runtimeDirOf(root: string, id: string): string {
+  return `${root}/.cadre/${id}/.runtime`
+}
+
+/** A file in a role's runtime folder: `<root>/.cadre/<id>/.runtime/<file>`. */
+export function runtimeFileOf(root: string, id: string, file: string): string {
+  return `${runtimeDirOf(root, id)}/${file}`
+}
+
 /** The runtime env name that holds the role a session runs as. */
 export const ROLE_ENV = 'CADRE_ROLE'
 
