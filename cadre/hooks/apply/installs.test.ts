@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { HostRun } from '../../types'
 import { BIDI_OVERRIDE, emptySetupScan, GUIDANCE_KEY, SECURITY_KEY } from '../testkit'
 import {
+  frameworkFallbackText,
   installedLine,
   installFailureText,
   MARKETPLACE_ADD_ARGV,
@@ -161,5 +162,36 @@ describe('project installs', () => {
     const text = `could not install ${GUIDANCE_KEY}: run it yourself from the repo root: ${command}`
     expect(projectInstallFailureText(projectPluginInstall(GUIDANCE_KEY))).toBe(text)
     expect(projectInstallFailureText(projectPluginInstall(`evil${BIDI_OVERRIDE}@market`))).not.toContain(BIDI_OVERRIDE)
+  })
+})
+
+describe('the fallback line of a framework install', () => {
+  /** GSD's install command, as its install question names it. */
+  const COMMAND = 'npx -y @opengsd/gsd-core@latest --claude --local'
+  /** A GSD install that did not land, with no role and not the repo default on it. */
+  const FALLEN = { name: 'GSD', command: COMMAND, roles: [], isRepoDefault: false, fallback: 'none (built-in)' }
+  /** How every fallback line ends: the command to run, then init again. */
+  const END = `: run ${COMMAND} from the repo root, then /cadre init again`
+
+  test('it names the roles and the repo default that fell back, and to what, then the command to run', () => {
+    expect([
+      frameworkFallbackText({ ...FALLEN, roles: ['be'], isRepoDefault: true }),
+      frameworkFallbackText({ ...FALLEN, roles: ['be', 'fe'] }),
+      frameworkFallbackText({ ...FALLEN, isRepoDefault: true }),
+    ]).toEqual([
+      `GSD did not install, so role be and the repo default fell back to none (built-in)${END}`,
+      `GSD did not install, so roles be, fe fell back to none (built-in)${END}`,
+      `GSD did not install, so the repo default fell back to none (built-in)${END}`,
+    ])
+  })
+
+  test('with nothing on it the line says only that it did not install, then the command to run', () => {
+    expect(frameworkFallbackText(FALLEN)).toBe(`GSD did not install${END}`)
+  })
+
+  test('the command is cleaned as a report cell', () => {
+    const escape = String.fromCharCode(27)
+    const text = frameworkFallbackText({ ...FALLEN, command: `npx -y evil${escape}[2J` })
+    expect([text.includes(escape), text.includes('run npx -y evil[2J from the repo root')]).toEqual([false, true])
   })
 })

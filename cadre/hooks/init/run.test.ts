@@ -5063,9 +5063,10 @@ describe('a consented framework install after Confirm', () => {
   }
   /** An install run that exited 1. */
   const FAILED_INSTALL: HostRun = { exitCode: 1, stdout: '', stderr: 'npm ERR! network' }
-  /** The problem line of a GSD install that failed. */
-  const GSD_INSTALL_FAILURE =
-    `could not install @opengsd/gsd-core: run it yourself from the repo root: ${GSD_PROJECT_INSTALL.join(' ')}`
+  /** What GSD's fallback line ends with: its command, then init again. */
+  const GSD_FALLBACK_END = `: run ${GSD_PROJECT_INSTALL.join(' ')} from the repo root, then /cadre init again`
+  /** The problem line of a GSD install that detection does not show, with be alone on GSD. */
+  const GSD_FALLBACK_BE = `GSD did not install, so role be fell back to none (built-in)${GSD_FALLBACK_END}`
   /** The review line of the superpowers install. */
   const SUPERPOWERS_REVIEW_LINE =
     'Framework install from the repo root after Confirm (a --dry-run installs nothing): ' +
@@ -5136,7 +5137,12 @@ describe('a consented framework install after Confirm', () => {
     draft: Draft,
     runs: readonly HostRunRule[] = [],
     found: readonly FrameworkId[] = [],
-  ): Promise<{ readonly host: MemHost; readonly events: string[]; readonly problems: readonly string[] }> {
+  ): Promise<{
+    readonly host: MemHost
+    readonly events: string[]
+    readonly problems: readonly string[]
+    readonly installed: readonly string[]
+  }> {
     const host = memHost(hostWorld({ runs }))
     const recorded = withHostEvents(host)
     const run = memIo(gitWorld(), {})
@@ -5153,8 +5159,9 @@ describe('a consented framework install after Confirm', () => {
     const answer = await perform(io, { dryRun: false, host: recorded.io }, effect)
     const result = answer.kind === 'io' && answer.result.id === 'apply' ? answer.result.result : null
     const problems = result?.kind === 'accepted' ? result.value.outcome.installProblems : []
+    const installed = result?.kind === 'accepted' ? result.value.outcome.installed : []
 
-    return { host, events: recorded.events, problems }
+    return { host, events: recorded.events, problems, installed }
   }
 
   test('superpowers installs from the repo root before any other run or write, then the facts are read', async () => {
@@ -5199,10 +5206,37 @@ describe('a consented framework install after Confirm', () => {
       const { host, problems } = await applied(gsdDraft(['gsd', 'none']), [{ argv: GSD_PROJECT_INSTALL, result }])
       const runs = host.calls.filter(call => call.argv[0] === 'npx')
       const after = [runs.length, problems, frameworkLineOf(host, 'be')]
-      expect(after).toEqual([1, [GSD_INSTALL_FAILURE], 'Framework: built-in.'])
+      expect(after).toEqual([1, [GSD_FALLBACK_BE], 'Framework: built-in.'])
     }
     const installed = await applied(gsdDraft(['gsd', 'none']), [], ['gsd'])
     expect([installed.problems, frameworkLineOf(installed.host, 'be')]).toEqual([[], 'Framework: GSD.'])
+  })
+
+  test('detection decides, not the exit code: exit 0 unseen falls back, exit 1 shown is installed', async () => {
+    const unseen = await applied(gsdDraft(['gsd', 'none']))
+    const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const shown = await applied(gsdDraft(['gsd', 'none']), failing, ['gsd'])
+
+    expect([unseen.problems, frameworkLineOf(unseen.host, 'be')]).toEqual([[GSD_FALLBACK_BE], 'Framework: built-in.'])
+    expect([shown.problems, frameworkLineOf(shown.host, 'be'), shown.installed[0]]).toEqual([
+      [],
+      'Framework: GSD.',
+      '@opengsd/gsd-core',
+    ])
+  })
+
+  test('the fallback line names the role and the repo default on it, and what they fell back to', async () => {
+    const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const { problems } = await applied(gsdDraft(['gsd', 'superpowers', 'none'], 'gsd'), failing)
+    const line = `GSD did not install, so role be and the repo default fell back to superpowers${GSD_FALLBACK_END}`
+
+    expect(problems).toEqual([line])
+  })
+
+  test('a framework install that detection shows is named among the installed, with no problem line', async () => {
+    const { problems, installed } = await applied(superpowersDraft(['superpowers']), [], ['superpowers'])
+
+    expect([problems, installed]).toEqual([[], ['superpowers@claude-plugins-official']])
   })
 
   test('consentedPluginKeys gives the plugin installs consented, less those that failed', () => {
