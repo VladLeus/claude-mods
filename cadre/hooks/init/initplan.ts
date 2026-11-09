@@ -2,8 +2,9 @@
  * The plan side of init (PLAN-01, PLAN-03, PLAN-04, D-67, D-230, G-02-1f), a layer 10 module, its pure parts: the repo
  * parts each role was given (repoPartsOf), the role.json records regen compares against (withRepoRecords), what each
  * role is owed outside the repo (privatesOf), and PlanStepInput, what the plan of a draft is made from; init/run makes
- * the plan itself (planStep), which reads the disk. Pure: it imports apply, core, launch, records and the types, and
- * never imports init/machine or init/run.
+ * the plan itself (planStep), which reads the disk, and the sizing block both the review and the apply plan with
+ * (initSizing). Pure: it imports apply, core, launch, messages/sizing, records and the types, and never imports
+ * init/machine or init/run.
  */
 import type {
   CompiledScope,
@@ -16,10 +17,12 @@ import type {
   LaunchStart,
   RepoScan,
   RoleSpec,
+  Sizing,
 } from '../../types'
 import type { OwedPrivate } from '../apply/run'
 import { compareText } from '../core/text'
 import { isPartsFlowRole } from '../launch/links'
+import { defaultSizing } from '../messages/sizing'
 import { partRecord, withPartRecords } from '../records'
 
 /**
@@ -109,4 +112,14 @@ export type PlanStepInput = {
   readonly readUserMcp: boolean
   /** The parts each role was given, by role id (repoPartsOf); absent plans no built role file. */
   readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
+  /** The sizing block cadre.json records; absent leaves it out. */
+  readonly sizing?: Sizing
+}
+
+/**
+ * The sizing block init records in cadre.json: the default for the frameworks installed for the repo. The review and
+ * the apply both plan with it, so the plan the person confirms holds the cadre.json apply writes.
+ */
+export function initSizing(installed: readonly FrameworkId[]): Sizing {
+  return defaultSizing(installed.filter(id => id !== 'none'))
 }

@@ -35,7 +35,7 @@ import { UNCUT, wrapLine } from '../../ui/pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
 import type { Draft, PlanResult, Reviewed } from '../draft'
 import { initReplyText } from '../initapply'
-import { privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
+import { initSizing, privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
 import type { PlanStepInput } from '../initplan'
 import { IGNORE_ALL_NOTE } from '../replies'
 import { fullDraft, stageBack, stageCancelled, stageEnded, stageFailed, withEffect } from '../state'
@@ -418,6 +418,7 @@ function reviewPlanOf(draft: Draft): {
     locations: draft.locations,
     readUserMcp: draft.readUserMcp,
     repoParts,
+    sizing: initSizing(draft.installed),
   }
 
   return { scopes, input }

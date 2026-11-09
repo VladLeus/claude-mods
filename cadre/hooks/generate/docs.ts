@@ -209,3 +209,37 @@ export function indexMdText(roles: readonly RoleSpec[], scopes: ReadonlyMap<stri
 export function cadreJsonText(state: CadreState): string {
   return stableJson(state)
 }
+
+/** The lines of the sizing rubric in file order. */
+const RUBRIC_LINES: readonly string[] = [
+  ARTIFACT.rubricTitle,
+  '',
+  ARTIFACT.rubricHow,
+  ARTIFACT.rubricWho,
+  ARTIFACT.rubricEdit,
+  '',
+  ARTIFACT.rubricScope,
+  ARTIFACT.rubricScopeLow,
+  ARTIFACT.rubricScopeMid,
+  ARTIFACT.rubricScopeHigh,
+  '',
+  ARTIFACT.rubricComplexity,
+  ARTIFACT.rubricComplexityLow,
+  ARTIFACT.rubricComplexityMid,
+  ARTIFACT.rubricComplexityHigh,
+  '',
+  ARTIFACT.rubricRisk,
+  ARTIFACT.rubricRiskLow,
+  ARTIFACT.rubricRiskMid,
+  ARTIFACT.rubricRiskHigh,
+  '',
+  ARTIFACT.rubricEffort,
+  ARTIFACT.rubricEffortLow,
+  ARTIFACT.rubricEffortMid,
+  ARTIFACT.rubricEffortHigh,
+]
+
+/** The text of `.cadre/sizing.md`, the default anchors each dimension of a ticket's size is scored against. */
+export function rubricText(): string {
+  return `${RUBRIC_LINES.join('\n')}\n`
+}

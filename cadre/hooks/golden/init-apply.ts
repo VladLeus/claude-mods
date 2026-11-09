@@ -116,7 +116,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         {
           "question": [
             "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-            "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+            "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
             "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
           ],
           "header": "Review",
@@ -154,6 +154,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         "  create    .cadre/security/mcp.json",
         "  create    .cadre/security/role.json",
         "  create    .cadre/security/settings.json",
+        "  create    .cadre/sizing.md",
         "  create    .cadre/tl/CLAUDE.md",
         "  create    .cadre/tl/ROLE.md",
         "  create    .cadre/tl/kickoff.txt",
@@ -167,10 +168,10 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         "            .cadre/**/*.cadre-new",
         "            CLAUDE-SECURITY-*/",
         "            # <<< cadre",
-        "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
+        "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks",
         "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
         "Launchers start in: the git root",
-        "Applied: wrote 25 files (3 executable).",
+        "Applied: wrote 26 files (3 executable).",
         "warning: the private files of pm, security, tl were not written: their role memory folders are unknown (no home folder, or git rev-parse failed or gave no absolute path; git 2.31 or newer is needed)",
         "Next: run /cadre start <id> to launch a role."
       ]
@@ -198,7 +199,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/cadre.json",
-        "sha256": "9e55d5e0233bf45be6146808d100937b1e69de44ec9a85db57cd5f194948947e",
+        "sha256": "c9585323198d2e154d0a575f1f1cf5b938c213b53b5c68205c8e7fc1cc95311e",
         "isWritten": true
       },
       {
@@ -262,6 +263,11 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         "isWritten": true
       },
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.cadre/tl/CLAUDE.md",
         "sha256": "a77e9dd5552ffce1e5b1c4402fa884759db6cf017af7d98bfb88c8ba6fd554e8",
         "isWritten": true
@@ -298,7 +304,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "f97d06c2a76a419515a9c9c33b27a48037977e6be7678343822cc4fdb0a3c6a6",
+        "sha256": "08914686718c7ab04719a4f539f8957db4cdb06fcd7f214d0d1955cb6aedce58",
         "isWritten": true
       }
     ],
@@ -335,7 +341,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/cadre.json\",",
-      "      \"sha256\": \"9e55d5e0233bf45be6146808d100937b1e69de44ec9a85db57cd5f194948947e\"",
+      "      \"sha256\": \"c9585323198d2e154d0a575f1f1cf5b938c213b53b5c68205c8e7fc1cc95311e\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -396,6 +402,11 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/settings.json\",",
       "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "    },",
+      "    {",
+      "      \"mode\": \"file\",",
+      "      \"path\": \".cadre/sizing.md\",",
+      "      \"sha256\": \"9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -575,7 +586,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         {
           "question": [
             "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-            "Summary: 25 create, 0 change, 0 leave, 0 conflict, 1 hunk (1 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+            "Summary: 26 create, 0 change, 0 leave, 0 conflict, 1 hunk (1 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
             "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
           ],
           "header": "Review",
@@ -613,6 +624,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         "  create    .cadre/security/mcp.json",
         "  create    .cadre/security/role.json",
         "  create    .cadre/security/settings.json",
+        "  create    .cadre/sizing.md",
         "  create    .cadre/tl/CLAUDE.md",
         "  create    .cadre/tl/ROLE.md",
         "  create    .cadre/tl/kickoff.txt",
@@ -628,10 +640,10 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         "            # <<< cadre",
         "  hunk      .planning/config.json  mode: not set (GSD default) -> \"yolo\"  (required, accepted)",
         "            run: node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo",
-        "Summary: 25 create, 0 change, 0 leave, 0 conflict, 1 hunk (1 accepted)",
+        "Summary: 26 create, 0 change, 0 leave, 0 conflict, 1 hunk (1 accepted)",
         "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
         "Launchers start in: the git root",
-        "Applied: wrote 25 files (3 executable).",
+        "Applied: wrote 26 files (3 executable).",
         "warning: the private files of pm, security, tl were not written: their role memory folders are unknown (no home folder, or git rev-parse failed or gave no absolute path; git 2.31 or newer is needed)",
         "Next: run /cadre start <id> to launch a role."
       ]
@@ -659,7 +671,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/cadre.json",
-        "sha256": "fde5b6810a0e421fe114b93b000a6a2f5615955813ffe7fb6fa499245f5a689e",
+        "sha256": "04152ef3c94a7601ef36f6d88e0287768e3ac14bc9212cb33da97944fdbde211",
         "isWritten": true
       },
       {
@@ -723,6 +735,11 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         "isWritten": true
       },
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.cadre/tl/CLAUDE.md",
         "sha256": "a77e9dd5552ffce1e5b1c4402fa884759db6cf017af7d98bfb88c8ba6fd554e8",
         "isWritten": true
@@ -759,7 +776,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "45c9d8927df76b5227e697c95aac621ec0e0f502051818bb7ed4f97f26598bcb",
+        "sha256": "a8ffa4bcf565e338d1ee1e760754d011e1b92ec181aa77bf808a07956aa5af69",
         "isWritten": true
       }
     ],
@@ -797,7 +814,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/cadre.json\",",
-      "      \"sha256\": \"fde5b6810a0e421fe114b93b000a6a2f5615955813ffe7fb6fa499245f5a689e\"",
+      "      \"sha256\": \"04152ef3c94a7601ef36f6d88e0287768e3ac14bc9212cb33da97944fdbde211\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -858,6 +875,11 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/settings.json\",",
       "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "    },",
+      "    {",
+      "      \"mode\": \"file\",",
+      "      \"path\": \".cadre/sizing.md\",",
+      "      \"sha256\": \"9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",

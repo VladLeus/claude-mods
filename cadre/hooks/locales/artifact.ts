@@ -49,6 +49,30 @@ export const ARTIFACT = Object.freeze({
   indexBash: 'sandboxed Bash',
   indexNoBash: 'no Bash',
   indexScope: '{bash}; MCP: {servers}; skills: {skills}',
+  // The sizing rubric `.cadre/sizing.md` (generate/docs rubricText): its title, how a size is scored, then the
+  // anchors of each dimension.
+  rubricTitle: '# cadre sizing rubric',
+  rubricHow: `Score each dimension of a ticket from 0.1 to 1.0 against its anchors. The size of a ticket is the ${
+    ''}highest of its four scores; it is large at or over sizing.threshold in .cadre/cadre.json.`,
+  rubricWho:
+    'PM scores scope and risk from the acceptance criteria; the role that plans the ticket adds complexity and effort.',
+  rubricEdit: 'Edit the anchors to fit this repo: cadre writes this file only when it is missing.',
+  rubricScope: '## scope: how much of the codebase the ticket touches',
+  rubricScopeLow: '- 0.2: one module',
+  rubricScopeMid: '- 0.5: several modules on one side (BE or FE)',
+  rubricScopeHigh: '- 0.9: BE, FE and infra together',
+  rubricComplexity: '## complexity: the design unknowns',
+  rubricComplexityLow: '- 0.2: a clear change',
+  rubricComplexityMid: '- 0.5: a change with open design questions',
+  rubricComplexityHigh: '- 0.9: a new data model or a new integration',
+  rubricRisk: '## risk: the blast radius',
+  rubricRiskLow: '- 0.2: isolated and easy to revert',
+  rubricRiskMid: '- 0.5: a path other features share',
+  rubricRiskHigh: '- 0.9: auth, payments or migrations',
+  rubricEffort: '## effort: the work volume',
+  rubricEffortLow: '- 0.2: minutes',
+  rubricEffortMid: '- 0.5: hours',
+  rubricEffortHigh: '- 0.9: days',
   // The scope card rules (scope/card rulesFor), in card order.
   cardBypass: 'WARNING: bypassPermissions is set in role.json: permission prompts are skipped',
   cardPlugins: 'Plugins: only {plugins} load (--setting-sources project whitelist)',

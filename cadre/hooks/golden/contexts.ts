@@ -591,10 +591,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
         ],
         "kind": "review",
-        "summary": "25 files, 3 roles",
+        "summary": "26 files, 3 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n25 files, 3 roles\nReview (page 1 of 8)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n26 files, 3 roles\nReview (page 1 of 8)"
         }
       },
       "acceptsTyped": false
@@ -1263,7 +1263,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 13)",
+        "title": "Review (page 1 of 14)",
         "lines": [
           "Roles:",
           "  PM (pm)",
@@ -1286,10 +1286,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [hard] No Bash tool (denied)"
         ],
         "kind": "review",
-        "summary": "46 files, 6 roles",
+        "summary": "47 files, 6 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 46 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n46 files, 6 roles\nReview (page 1 of 13)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 47 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 14)"
         }
       },
       "acceptsTyped": false
@@ -1887,10 +1887,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [hard] No Bash tool (denied)"
         ],
         "kind": "review",
-        "summary": "46 files, 6 roles",
+        "summary": "47 files, 6 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 46 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n46 files, 6 roles\nReview (page 1 of 13)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 47 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 13)"
         }
       },
       "acceptsTyped": false
@@ -2942,10 +2942,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [best-effort] Denied servers: tools removed and the whole server denied (deniedMcpServers; best-effort)"
         ],
         "kind": "review",
-        "summary": "25 files, 3 roles",
+        "summary": "26 files, 3 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n25 files, 3 roles\nReview (page 1 of 8)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n26 files, 3 roles\nReview (page 1 of 8)"
         }
       },
       "acceptsTyped": false
@@ -3720,10 +3720,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
         ],
         "kind": "review",
-        "summary": "25 files, 3 roles",
+        "summary": "26 files, 3 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n25 files, 3 roles\nReview (page 1 of 8)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n26 files, 3 roles\nReview (page 1 of 8)"
         }
       },
       "acceptsTyped": false

@@ -45,7 +45,7 @@ import { builtClaudeMdPath } from '../generate/launcher'
 import { initGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
 import { t, tn } from '../locales/t'
-import { GITIGNORE_FILE, isRepoFolder, roleJsonPath } from '../paths'
+import { GITIGNORE_FILE, isRepoFolder, roleJsonPath, SIZING_RUBRIC_PATH } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths, planWithManifest, recordedCadreVersion } from '../plan/plan'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
@@ -82,7 +82,7 @@ import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import type { PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
-import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
+import { initSizing, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
@@ -232,8 +232,10 @@ async function keptBuiltEntries(
  * file are as the last apply left them keeps its built file and manifest entry, as regenPlan does, so an accepted
  * improver text is not overwritten or asked again (keptBuiltEntries, 02-GAPS-B3 S1): its path is dropped from the
  * desired files and its entry carried. The repo state also records the consent answer, so regen knows whether it may
- * read ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the manifest) and
- * the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never read.
+ * read ~/.claude.json (A1), and the sizing block when the input has one. A sizing rubric already on disk, in any state
+ * but absent, is dropped from the desired files and its last manifest entry carried, so it is never planned over.
+ * Exactly the paths planReadPaths names (each file, the copy beside it and the manifest) and the root `.gitignore` are
+ * read, through readRepoFile, so a link out of the repo is unknown and never read.
  * planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the ignore
  * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
  * stands for Security, ends with the line for claude-security's report folders, decision #39) and the hunks.
@@ -253,12 +255,16 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
     roles: roles.map(role => role.id),
     launchStart,
     readUserMcp,
+    ...(input.sizing === undefined ? {} : { sizing: input.sizing }),
   }
   const parts = repoParts === undefined ? {} : { repoParts }
   const generated = desiredFiles({ roles, scopes, state, only: null, ...parts })
   const disk = await readPaths(io, locations.root, planReadPaths(generated))
-  const carried = await keptBuiltEntries(roles, generated, disk, repo.cadre.manifest)
-  const keptPaths = new Set(carried.map(entry => entry.path))
+  const isRubricThere = disk.get(SIZING_RUBRIC_PATH)?.state !== 'absent'
+  const rubricEntry = repo.cadre.manifest?.files.find(file => file.path === SIZING_RUBRIC_PATH)
+  const keptRubric = isRubricThere && rubricEntry !== undefined ? [rubricEntry] : []
+  const carried = [...(await keptBuiltEntries(roles, generated, disk, repo.cadre.manifest)), ...keptRubric]
+  const keptPaths = new Set([...carried.map(entry => entry.path), ...(isRubricThere ? [SIZING_RUBRIC_PATH] : [])])
   const desired = generated.filter(file => !keptPaths.has(file.path))
   const ignoreRead = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
   const existing = ignoreRead.state === 'text' ? ignoreRead.text : null
@@ -401,6 +407,7 @@ async function applyConfirmed(
     locations,
     readUserMcp: draft.readUserMcp,
     repoParts: tracked.repoParts,
+    sizing: initSizing(draft.installed),
   })
   const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
   // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).

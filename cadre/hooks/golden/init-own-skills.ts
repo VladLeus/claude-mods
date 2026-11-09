@@ -128,7 +128,7 @@ export const GOLDEN_INIT_OWN_SKILLS: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -168,6 +168,7 @@ export const GOLDEN_INIT_OWN_SKILLS: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -181,7 +182,7 @@ export const GOLDEN_INIT_OWN_SKILLS: Readonly<Record<string, GoldenRun>> = {
       "            .cadre/**/*.cadre-new",
       "            CLAUDE-SECURITY-*/",
       "            # <<< cadre",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",

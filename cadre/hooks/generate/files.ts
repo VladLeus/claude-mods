@@ -5,8 +5,17 @@
  */
 import type { CadreState, CompiledScope, DesiredFile, InstructionPart, LaunchStart, RoleSpec } from '../../types'
 import { compareText } from '../core/text'
-import { cadreStatePath, launcherPath, roleJsonPath } from '../paths'
-import { cadreJsonText, indexMdText, mcpText, roleClaudeMdText, roleJsonText, roleMdText, settingsText } from './docs'
+import { cadreStatePath, launcherPath, roleJsonPath, SIZING_RUBRIC_PATH } from '../paths'
+import {
+  cadreJsonText,
+  indexMdText,
+  mcpText,
+  roleClaudeMdText,
+  roleJsonText,
+  roleMdText,
+  rubricText,
+  settingsText,
+} from './docs'
 import { kickoffText } from './kickoff'
 import { builtClaudeMdPath, launcherText, rolePath } from './launcher'
 
@@ -80,7 +89,8 @@ function roleFiles(
  * Every committed file the plan wants (PLAN-01, D-66), sorted by path: for each role its role.json, ROLE.md,
  * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/`, its built `.cadre/<id>/CLAUDE.md` from the parts
  * `repoParts` gives it that were read from the repo (G-02-1f), and its launcher `.cadre/bin/<id>`, which starts where
- * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. Whenever repoParts is
+ * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json` and the sizing rubric
+ * `.cadre/sizing.md`. Whenever repoParts is
  * passed every role gets its built file, the header alone with no repo part, so a later hand-out always replaces
  * stale content (02-GAPS-B2 S1); with repoParts absent (/cadre start, a regen that keeps the parts) no role gets
  * one. With `only` set (regen, D-68) just that role's files and the index are given, since the index lists every
@@ -94,7 +104,12 @@ export function desiredFiles(input: GenerateInput): DesiredFile[] {
     input.repoParts === undefined ? null : (input.repoParts.get(id) ?? [])
   const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), state.launchStart, partsOf(role.id)))
   files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
-  if (only === null) files.push({ path: cadreStatePath(), content: cadreJsonText(state), mode: 'file' })
+  if (only === null) {
+    files.push(
+      { path: cadreStatePath(), content: cadreJsonText(state), mode: 'file' },
+      { path: SIZING_RUBRIC_PATH, content: rubricText(), mode: 'file' },
+    )
+  }
 
   return files.sort((a, b) => compareText(a.path, b.path))
 }

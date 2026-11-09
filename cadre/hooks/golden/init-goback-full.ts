@@ -271,7 +271,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -322,7 +322,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -368,6 +368,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -387,7 +388,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false",
       "  hunk      .planning/config.json  hooks.context_warnings: not set (GSD default) -> false  (optional, accepted)",
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
@@ -658,7 +659,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -708,7 +709,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -754,6 +755,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -773,7 +775,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false",
       "  hunk      .planning/config.json  hooks.context_warnings: not set (GSD default) -> false  (optional, accepted)",
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
@@ -1044,7 +1046,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -1070,7 +1072,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -1116,6 +1118,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -1135,7 +1138,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false",
       "  hunk      .planning/config.json  hooks.context_warnings: not set (GSD default) -> false  (optional, accepted)",
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
@@ -1406,7 +1409,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -1453,7 +1456,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -1500,6 +1503,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -1519,7 +1523,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false",
       "  hunk      .planning/config.json  hooks.context_warnings: not set (GSD default) -> false  (optional, accepted)",
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
