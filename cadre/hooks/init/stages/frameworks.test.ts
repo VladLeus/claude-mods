@@ -743,6 +743,44 @@ describe('the framework set question', () => {
   })
 })
 
+describe('the set question for a framework consented from Adjust', () => {
+  /** PM, Team Lead and Security, Team Lead set to superpowers by an Adjust whose install was consented. */
+  const team = proposeRoles(repoScan()).roles.map(role =>
+    role.id === 'tl' ? withFramework(role, 'superpowers') : role,
+  )
+  /** The Keep answer of the set question when superpowers alone is found. */
+  const KEEP_SUPERPOWERS = 'Keep superpowers (Recommended)'
+
+  /** The frameworks stage entered for `choice`, superpowers consented and nothing else installed. */
+  function consentedAt(choice: Choice): InitState {
+    const installed: readonly FrameworkId[] = ['superpowers', 'none']
+    const draft = wholeDraft({ choice, roles: team, installed, frameworkInstalls: ['superpowers'] })
+
+    return frameworksStage.enter(stateAt('frameworks', draft))
+  }
+
+  test('with no framework found the set question keeps superpowers, and Keep makes it the repo default', () => {
+    const asked = consentedAt({ kind: 'none' })
+    const kept = frameworksStage.answer(asked, { kind: 'answer', text: KEEP_SUPERPOWERS })
+    expect([asked.sub, asked.openQuestion?.spec.options[0]]).toEqual([{ kind: 'set', tries: 1 }, KEEP_SUPERPOWERS])
+    expect([kept.sub, kept.draft.frameworkSet, kept.draft.repoDefault]).toEqual([
+      { kind: 'done' },
+      ['superpowers'],
+      'superpowers',
+    ])
+  })
+
+  test('an unsupported scan notes what it found, then asks the set question', () => {
+    const unsupported: Choice = { kind: 'unsupported', ids: ['aidlc'] }
+    const asked = consentedAt(unsupported)
+    expect([asked.sub, asked.openQuestion?.spec.options[0], asked.outputs]).toEqual([
+      { kind: 'set', tries: 1 },
+      KEEP_SUPERPOWERS,
+      [{ kind: 'note', line: choiceLine(unsupported) }],
+    ])
+  })
+})
+
 describe('the stored framework answer and the set question', () => {
   /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
   const roles = proposeRoles(repoScan()).roles
@@ -751,11 +789,15 @@ describe('the stored framework answer and the set question', () => {
   /** GSD and superpowers, both in use. */
   const BOTH_IN_USE: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
 
-  /** The frameworks stage entered for `choice` with `installed`, over a cadre.json that stores `stored`, if any. */
+  /**
+   * The frameworks stage entered for `choice` with `installed`, over a cadre.json that stores `stored`, if any; `over`
+   * replaces any draft field.
+   */
   function enteredWith(
     choice: Choice,
     installed: readonly FrameworkId[],
     stored: readonly FrameworkId[] | null = null,
+    over: InitState['draft'] = {},
   ): InitState {
     const state: CadreState = {
       schema: 1,
@@ -770,7 +812,7 @@ describe('the stored framework answer and the set question', () => {
     const repo = repoScan({ cadre: { ...repoScan().cadre, state } })
     const gathered = { facts: { facts: facts({}), gsdUserDir: null }, repo, setup: emptySetupScan() }
 
-    return frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles, installed, gathered })))
+    return frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles, installed, gathered, ...over })))
   }
 
   test('a stored set whose frameworks are all still installed is kept, and nothing is asked', () => {
@@ -781,6 +823,30 @@ describe('the stored framework answer and the set question', () => {
   test('a stored set that names a framework no longer installed asks the set question again', () => {
     const state = enteredWith(GSD_CHOSEN, ['gsd', 'none'], ['superpowers'])
     expect([state.sub, state.draft.frameworkSet]).toEqual([{ kind: 'set', tries: 1 }, undefined])
+  })
+
+  test('a stored set without a framework consented from Adjust asks the set question, its Keep naming both', () => {
+    const team = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
+    const consent: InitState['draft'] = { roles: team, frameworkInstalls: ['superpowers'] }
+    const installed: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+    const asked = enteredWith(GSD_CHOSEN, installed, ['gsd'], consent)
+    const kept = enteredWith(GSD_CHOSEN, installed, ['gsd', 'superpowers'], consent)
+    expect([asked.sub, asked.openQuestion?.spec.options[0], asked.draft.frameworkSet]).toEqual([
+      { kind: 'set', tries: 1 },
+      KEEP_BOTH,
+      undefined,
+    ])
+    expect([kept.sub, kept.draft.frameworkSet]).toEqual([{ kind: 'mode', tries: 1 }, ['gsd', 'superpowers']])
+  })
+
+  test('a set kept on a go-back is asked again when a framework consented since is not in it', () => {
+    const installed: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+    const keptAs = (frameworkSet: readonly FrameworkId[]): InitState =>
+      enteredWith(GSD_CHOSEN, installed, null, { frameworkSet, frameworkInstalls: ['superpowers'] })
+    const again = keptAs(['gsd'])
+    const both = keptAs(['gsd', 'superpowers'])
+    expect([again.sub, again.openQuestion?.spec.options[0]]).toEqual([{ kind: 'set', tries: 1 }, KEEP_BOTH])
+    expect([both.sub, both.draft.frameworkSet]).toEqual([{ kind: 'mode', tries: 1 }, ['gsd', 'superpowers']])
   })
 
   test('both in use: Keep both or None; superpowers typed alone keeps it and frames the roles on it', () => {
