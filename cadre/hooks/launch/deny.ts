@@ -1,13 +1,20 @@
 /**
  * The launch denies, a layer 9 module: a role's runtime deny list at launch with the warnings of what it could not
  * deny, and the Edit and Write rules that keep a role off its private instructions, memory folders, hand-out record,
- * linked memories and launch files (D-80, D-84, D-123, D-157, G-02-1f, 02-GAPS-B3 C2, C3, S3). It imports core, paths,
- * the scope lint, the launch links and the types, so the launch settings and plan, and the improver, read it here.
+ * linked memories, launch files and the team's inbox and session files. It imports core, paths, the scope lint, the
+ * launch links and the types, so the launch settings and plan, and the improver, read it here.
  */
 import type { CompiledScope, RoleSpec } from '../../types'
 import { shown, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
-import { INSTRUCTIONS_RECORD_FILE, memoryFolderOf, privateInstructionsDir, roleMemoryDir } from '../paths'
+import {
+  INBOX_LOG_FILE,
+  INSTRUCTIONS_RECORD_FILE,
+  memoryFolderOf,
+  privateInstructionsDir,
+  roleMemoryDir,
+  SESSION_FILE,
+} from '../paths'
 import { isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
 import { isPartsFlowRole, launchRoots } from './links'
 import type { LaunchUser } from './links'
@@ -223,12 +230,11 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
 }
 
 /**
- * The deny of the files a later launch runs or trusts (03.1-SEC-S1): `Edit` and `Write` of
- * `<root>/.claude/settings.json` and `<root>/.claude/settings.local.json` (their hooks run at the next session start),
- * `<root>/.cadre/bin/**` and `<root>/.cadre/manifest.json`, for the root as resolved and as given and for the main
- * checkout when `mainRoot` is set, once each, so an Edit-only role cannot plant a hook or rewrite a launcher. A path an
- * exact rule cannot hold gets none and no warning: a role without Bash already gets runtimeDeny's root warning, and a
- * Bash role is not held by an Edit deny. Each role's `.runtime/` stays writable.
+ * The deny of the files a later launch runs or trusts: `Edit` and `Write` of `<root>/.claude/settings.json` and
+ * `<root>/.claude/settings.local.json` (their hooks run at the next session start), `<root>/.cadre/bin/**` and
+ * `<root>/.cadre/manifest.json` under every launch root, so an Edit-only role cannot plant a hook or rewrite a
+ * launcher. A path an exact rule cannot hold gets none and no warning: a role without Bash already gets runtimeDeny's
+ * root warning, and a Bash role is not held by an Edit deny.
  */
 function launchFilesDeny(user: LaunchUser): DenyResult {
   const roots = sortedUnique(launchRoots(user))
@@ -238,6 +244,23 @@ function launchFilesDeny(user: LaunchUser): DenyResult {
     editWriteRules(`${root}/.cadre/bin`, '/**'),
     editWriteRules(`${root}/.cadre/manifest.json`, ''),
   ])
+
+  return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
+}
+
+/**
+ * The deny of the inbox and session files of every role of the team, or of the role's own when the team is not known:
+ * `Edit` and `Write` of `<root>/.cadre/<id>/.runtime/inbox.jsonl` and `session.json` under every launch root, so only
+ * cadre's tools write them. A path an exact rule cannot hold gets none and no warning, as in launchFilesDeny.
+ */
+function inboxFilesDeny(user: LaunchUser, id: string): DenyResult {
+  const roots = sortedUnique(launchRoots(user))
+  const ids = user.teamIds ?? [id]
+  const rules = roots.flatMap(root =>
+    ids.flatMap(teamId =>
+      [INBOX_LOG_FILE, SESSION_FILE].map(file => editWriteRules(`${root}/.cadre/${teamId}/.runtime/${file}`, '')),
+    ),
+  )
 
   return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
 }
@@ -255,14 +278,12 @@ function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
 
 /**
  * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
- * for a linked worktree nested in its main checkout (`mainRoot` set, D-157, 03.1-W3 M1), runtimeDeny's denies for the
- * main checkout's root too, so its code dirs get the same exact denies as the worktree's (RESEARCH Pitfall 2), without
- * its warnings, which would repeat the worktree's; the deny of the role's private instructions folder, for every role,
- * as every launcher adds that folder (privateInstructionsDeny, 02-GAPS-B2 S3); for every role, the deny of the repo's
- * memory folders (memoryFolderDeny, 02-GAPS-B3 C2), of the launch files (launchFilesDeny, 03.1-SEC-S1) and of its
- * hand-out record (instructionsRecordDeny, 02-GAPS-B3 C3); and for a parts-flow role the read-only deny of the memories
- * /cadre start linked into its memory folder (linkedMemoryDeny, G-02-1f), never of its MEMORY.md or of its own
- * memories.
+ * for a linked worktree nested in its main checkout (`mainRoot` set), runtimeDeny's denies for the main checkout's root
+ * too, so its code dirs get the same exact denies as the worktree's, without its warnings, which would repeat the
+ * worktree's; for every role, the deny of its private instructions folder (every launcher adds that folder), of the
+ * repo's memory folders, of the launch files, of the team's inbox and session files and of its hand-out record; and
+ * for a parts-flow role the read-only deny of the memories /cadre start linked into its memory folder, never of its
+ * MEMORY.md or of its own memories.
  */
 export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
@@ -273,6 +294,7 @@ export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchU
     privateInstructionsDeny(user, role.id),
     memoryFolderDeny(user),
     launchFilesDeny(user),
+    inboxFilesDeny(user, role.id),
     instructionsRecordDeny(user, role.id),
     isPartsFlowRole(role) ? linkedMemoryDeny(user.linkedMemories) : { deny: [], warnings: [] },
   ]
