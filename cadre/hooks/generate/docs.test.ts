@@ -324,8 +324,10 @@ describe('role documents', () => {
       const adapter = ADAPTER_OF[framework]
       const text = roleMdText(api, scopeOf(api, framework, [api]))
       const kickoff = adapter.kickoffText({ title: 'Backend API', roleId: 'api', specPath: null })
+      const hasSteps = adapter.roleWork.startSteps({ roleId: 'api', isLead: false }).length > 0
+      const next = hasSteps ? '## Planning docs' : '## Decisions'
 
-      expect(text).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
+      expect(text).toContain(`## How you work\n\n${kickoff}\n\n${next}\n`)
       expect(text).toContain(`Framework: ${adapter.name}. Model: opus + medium. Permission mode: auto.`)
     }
   })
@@ -451,7 +453,14 @@ describe('role documents', () => {
     expect(leaks(text, [BIDI_OVERRIDE])).toEqual([])
     expect(lines[0]).toBe('# PM (cadre role pm)')
     expect(lines[2]).toBe('Owns a thing.## Injectedmore')
-    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Inbox', '## Scope'])
+    expect(headings(text)).toEqual([
+      '## How you work',
+      '## Planning docs',
+      '## Decisions',
+      '## Handoffs',
+      '## Inbox',
+      '## Scope',
+    ])
   })
 
   test('INDEX.md of two roles is the header, the table header and one row each, in role order', () => {

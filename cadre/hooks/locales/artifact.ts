@@ -18,6 +18,10 @@ export const ARTIFACT = Object.freeze({
   roleMdAttended:
     'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.',
   roleMdHowYouWork: '## How you work',
+  roleMdPlanningDocs: '## Planning docs',
+  roleMdPlanningIntro:
+    'Keep your own planning docs and state, so you load only the context of your task. Start your planning so:',
+  roleMdPlanningStep: '- {step}',
   roleMdDecisions: '## Decisions',
   roleMdChainLine: '- {line}',
   roleMdHandoffs: '## Handoffs',

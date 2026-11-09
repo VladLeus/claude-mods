@@ -4,7 +4,7 @@
  * value from outside is cleaned. It imports the scope card, records, paths, core, the framework registry, the infra
  * catalog, role validation and the types, so the file set and apply read them here.
  */
-import type { CadreState, CompiledScope, InstructionPart, RoleSpec } from '../../types'
+import type { CadreState, CompiledScope, InstructionPart, RoleSpec, ScopeCard } from '../../types'
 import { stableJson } from '../core/json'
 import { MAX_ROLE_CHARS } from '../core/kickoff-text'
 import { cardList, clean, reportText } from '../core/text'
@@ -14,6 +14,7 @@ import { fill } from '../locales/t'
 import { handoffFolderOf, launcherPath } from '../paths'
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
+import { standsFor } from '../roles/template'
 import { MAX_PURPOSE_CHARS } from '../roles/validate'
 import { CARD_LIST_WORDS, scopeCardLines } from '../scope/card'
 
@@ -39,10 +40,29 @@ export function mcpText(scope: CompiledScope): string {
 const ATTENDED_LINE = ARTIFACT.roleMdAttended
 
 /**
+ * The Planning docs section of ROLE.md: its heading, its intro and one line per start step of each framework the role
+ * may run, in the card's order, worded for the lead when the role stands for TL; none when no framework has a step.
+ */
+function planningDocsLines(role: RoleSpec, card: ScopeCard): string[] {
+  const ctx = { roleId: role.id, isLead: standsFor(role, 'tl') }
+  const steps = [card.framework, ...card.alsoRuns].flatMap(id => adapterOf(id).roleWork.startSteps(ctx))
+  if (steps.length === 0) return []
+
+  return [
+    ARTIFACT.roleMdPlanningDocs,
+    '',
+    ARTIFACT.roleMdPlanningIntro,
+    ...steps.map(step => fill(ARTIFACT.roleMdPlanningStep, { step })),
+    '',
+  ]
+}
+
+/**
  * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session; it is never named
  * CLAUDE.md or AGENTS.md (D-50). It holds, in this order: the title and id, the purpose, the framework with the model,
  * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
- * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
+ * the adapter, named with the title and the id), "Planning docs" (the start steps of every framework the role may run,
+ * when one has a step), "Decisions" (the chain of the card, which follows basedOn),
  * "Handoffs" (the folder autopilot accepts, D-79), "Inbox" (the role's inbox file and how to leave a note in another
  * role's; D-114: text only, no new command) and "Scope" (the lines of the scope card, ROLE-06). The framework is the
  * one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The title and
@@ -65,6 +85,7 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     '',
     kickoff,
     '',
+    ...planningDocsLines(role, card),
     ARTIFACT.roleMdDecisions,
     '',
     ...card.chain.map(line => fill(ARTIFACT.roleMdChainLine, { line })),
