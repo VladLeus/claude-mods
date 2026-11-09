@@ -1608,7 +1608,9 @@ export const register: Register = on => {
         const asked = run?.questions?.find(question => question.id === run?.askingId) ?? null
         const ran = await next(e)
         if (asked === null || !removesDrainedQuestion(mode, ran, e, asked)) return ran
-        await removeAnswered($, asked.id)
+        await removeAnswered($, asked.id).catch(error =>
+          log($, `could not remove the answered question: ${String(error)}`).catch(() => undefined),
+        )
 
         return ran
       }
