@@ -20,7 +20,6 @@ import {
   applyMode,
   askAnswer,
   askQuestionText,
-  asksQueuedQuestion,
   autoAnswersQuestions,
   availMode,
   availStatusLines,
@@ -77,6 +76,7 @@ import {
   questionIdFromNote,
   questionsBlock,
   queuedAcross,
+  queuedQuestionTexts,
   queuedResult,
   removesDrainedQuestion,
   retime,
@@ -869,6 +869,10 @@ describe('questions while the person is in control', () => {
 
 describe('AskUserQuestion while asking is on', () => {
   const MODES = ['plain', 'queueing', 'overdue', 'draining', 'asking'] as const
+  const queued: Question = { id: 3, text: 'Which DB?', kind: 'answer', provisional: null, at: 0 }
+  const call = (...texts: unknown[]) => ({
+    questions: texts.map(question => ({ question, header: 'DB', options: [] })),
+  })
 
   test('a question passes to the person only while asking or draining', async () => {
     expect(MODES.map(mode => [mode, passesQuestion(mode)])).toEqual([
@@ -888,10 +892,11 @@ describe('AskUserQuestion while asking is on', () => {
 
   test('a drained question leaves the queue only on a dialog answer while draining', async () => {
     const answered = { result: { questions: [], answers: { 'Which DB?': 'Postgres' } } }
-    expect(removesDrainedQuestion('draining', answered)).toBe(true)
-    expect(removesDrainedQuestion('draining', { result: { response: 'Use Postgres 16' } })).toBe(true)
+    const asked = call('Which DB?')
+    expect(removesDrainedQuestion('draining', answered, asked, queued)).toBe(true)
+    expect(removesDrainedQuestion('draining', { result: { response: 'Use Postgres 16' } }, asked, queued)).toBe(true)
     for (const mode of ['plain', 'queueing', 'overdue', 'asking'] as const) {
-      expect(removesDrainedQuestion(mode, answered)).toBe(false)
+      expect(removesDrainedQuestion(mode, answered, asked, queued)).toBe(false)
     }
   })
 
@@ -910,22 +915,40 @@ describe('AskUserQuestion while asking is on', () => {
       null,
       'Postgres',
     ]
-    for (const ran of kept) expect(removesDrainedQuestion('draining', ran)).toBe(false)
+    for (const ran of kept) expect(removesDrainedQuestion('draining', ran, call('Which DB?'), queued)).toBe(false)
   })
 
-  test('a dialog asks the queued question when one of its questions holds its text or its #k tag', async () => {
-    const queued: Question = { id: 3, text: 'Which DB?', kind: 'answer', provisional: null, at: 0 }
-    const call = (...texts: unknown[]) => ({
-      questions: texts.map(question => ({ question, header: 'DB', options: [] })),
-    })
-    expect(asksQueuedQuestion(call('Which DB?'), queued)).toBe(true)
-    expect(asksQueuedQuestion(call('#3 Which database should we use?'), queued)).toBe(true)
-    expect(asksQueuedQuestion(call('Unrelated', 'Before we go on: Which DB?'), queued)).toBe(true)
-    expect(asksQueuedQuestion(call('#30 Which cache?'), queued)).toBe(false)
-    expect(asksQueuedQuestion(call('Which cache?'), queued)).toBe(false)
-    expect(asksQueuedQuestion(call(3), queued)).toBe(false)
-    expect(asksQueuedQuestion({ questions: 'Which DB?' }, queued)).toBe(false)
-    expect(asksQueuedQuestion(null, queued)).toBe(false)
+  test('a two-question dialog keeps the queued question unless the answer is under its own question', async () => {
+    const both = call('#3 Which DB?', 'Which cache?')
+    const other = { result: { answers: { 'Which cache?': 'Redis' } } }
+    const own = { result: { answers: { '#3 Which DB?': 'Postgres' } } }
+    expect(removesDrainedQuestion('draining', other, both, queued)).toBe(false)
+    expect(removesDrainedQuestion('draining', own, both, queued)).toBe(true)
+  })
+
+  test('a free-text response counts only for a dialog of one question', async () => {
+    const response = { result: { response: 'Use Postgres 16' } }
+    expect(removesDrainedQuestion('draining', response, call('#3 Which DB?'), queued)).toBe(true)
+    expect(removesDrainedQuestion('draining', response, call('#3 Which DB?', 'Which cache?'), queued)).toBe(false)
+  })
+
+  test('an answer in a dialog that does not name the queued question keeps it queued', async () => {
+    const answered = { result: { answers: { 'Which cache?': 'Redis' } } }
+    expect(removesDrainedQuestion('draining', answered, call('Which cache?'), queued)).toBe(false)
+  })
+
+  test('the questions of a dialog that ask the queued question hold its text or its #k tag', async () => {
+    expect(queuedQuestionTexts(call('Which DB?'), queued)).toEqual(['Which DB?'])
+    const long = '#3 Which database should we use?'
+    expect(queuedQuestionTexts(call(long), queued)).toEqual([long])
+    expect(queuedQuestionTexts(call('Unrelated', 'Before we go on: Which DB?'), queued)).toEqual([
+      'Before we go on: Which DB?',
+    ])
+    expect(queuedQuestionTexts(call('#30 Which cache?'), queued)).toEqual([])
+    expect(queuedQuestionTexts(call('Which cache?'), queued)).toEqual([])
+    expect(queuedQuestionTexts(call(3), queued)).toEqual([])
+    expect(queuedQuestionTexts({ questions: 'Which DB?' }, queued)).toEqual([])
+    expect(queuedQuestionTexts(null, queued)).toEqual([])
   })
 })
 
@@ -1809,6 +1832,14 @@ describe('question queue', () => {
     const after = answeredQuestion(tagged)
     expect(after.questions?.map(question => question.id)).toEqual([1, 3])
     expect(after.askingId).toBe(1)
+    expect(after.drain).toBe(true)
+  })
+
+  test('answeredQuestion removes the question whose id it is given and keeps askingId', async () => {
+    const asking = run({ questions: [queued(1, 'Push?'), queued(2, 'Merge?')], drain: true, askingId: 2 })
+    const after = answeredQuestion(asking, 1)
+    expect(after.questions?.map(question => question.id)).toEqual([2])
+    expect(after.askingId).toBe(2)
     expect(after.drain).toBe(true)
   })
 
