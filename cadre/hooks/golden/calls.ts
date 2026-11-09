@@ -32,6 +32,7 @@ export const GOLDEN_CALLS: Readonly<Record<string, readonly string[]>> = {
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/pm\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/pm/instructions\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/ln\",\"-sfn\",\"/home/u/.claude/cadre/repo-6b4ca2db/pm/instructions\",\"/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions\"],{\"timeoutMs\":10000}]",
+    "[[\"/usr/bin/tee\",\"-a\",\"/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/inbox.jsonl\"],{\"stdin\":\"\",\"timeoutMs\":10000}]",
     "[[\"git\",\"rev-parse\",\"--path-format=absolute\",\"--git-common-dir\"],{\"cwd\":\"/repo/.claude/worktrees/proj-1\",\"timeoutMs\":10000}]",
     "[[\"/bin/mkdir\",\"-p\",\"--\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/mkdir\",\"-p\",\"--\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/overlay\"],{\"timeoutMs\":10000}]",
@@ -41,6 +42,7 @@ export const GOLDEN_CALLS: Readonly<Record<string, readonly string[]>> = {
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/be\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/be/instructions\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/ln\",\"-sfn\",\"/home/u/.claude/cadre/repo-6b4ca2db/be/instructions\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions\"],{\"timeoutMs\":10000}]",
+    "[[\"/usr/bin/tee\",\"-a\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/inbox.jsonl\"],{\"stdin\":\"\",\"timeoutMs\":10000}]",
     "[[\"/usr/bin/uname\",\"-s\"],{\"timeoutMs\":5000}]",
     "[[\"/usr/bin/osascript\",\"-e\",\"on run argv\",\"-e\",\"tell application \\\"iTerm\\\"\",\"-e\",\"activate\",\"-e\",\"if (count of windows) is 0 then\",\"-e\",\"create window with default profile\",\"-e\",\"else\",\"-e\",\"tell current window to create tab with default profile\",\"-e\",\"end if\",\"-e\",\"tell current session of current window to write text (item 1 of argv)\",\"-e\",\"end tell\",\"-e\",\"end run\",\"cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/pm\"],{\"timeoutMs\":15000}]",
     "[[\"/usr/bin/osascript\",\"-e\",\"on run argv\",\"-e\",\"tell application \\\"iTerm\\\"\",\"-e\",\"activate\",\"-e\",\"if (count of windows) is 0 then\",\"-e\",\"create window with default profile\",\"-e\",\"else\",\"-e\",\"tell current window to create tab with default profile\",\"-e\",\"end if\",\"-e\",\"tell current session of current window to write text (item 1 of argv)\",\"-e\",\"end tell\",\"-e\",\"end run\",\"cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/be\"],{\"timeoutMs\":15000}]"
@@ -87,6 +89,7 @@ export const GOLDEN_CALLS: Readonly<Record<string, readonly string[]>> = {
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/pm\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/pm/instructions\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/ln\",\"-sfn\",\"/home/u/.claude/cadre/repo-6b4ca2db/pm/instructions\",\"/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions\"],{\"timeoutMs\":10000}]",
+    "[[\"/usr/bin/tee\",\"-a\",\"/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/inbox.jsonl\"],{\"stdin\":\"\",\"timeoutMs\":10000}]",
     "[[\"git\",\"rev-parse\",\"--path-format=absolute\",\"--git-common-dir\"],{\"cwd\":\"/repo/.claude/worktrees/proj-1\",\"timeoutMs\":10000}]",
     "[[\"/bin/mkdir\",\"-p\",\"--\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/mkdir\",\"-p\",\"--\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/overlay\"],{\"timeoutMs\":10000}]",
@@ -96,6 +99,7 @@ export const GOLDEN_CALLS: Readonly<Record<string, readonly string[]>> = {
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/be\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/be/instructions\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/ln\",\"-sfn\",\"/home/u/.claude/cadre/repo-6b4ca2db/be/instructions\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions\"],{\"timeoutMs\":10000}]",
+    "[[\"/usr/bin/tee\",\"-a\",\"/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/inbox.jsonl\"],{\"stdin\":\"\",\"timeoutMs\":10000}]",
     "[[\"/usr/bin/uname\",\"-s\"],{\"timeoutMs\":5000}]",
     "[[\"/usr/bin/pbcopy\"],{\"stdin\":\"cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/pm\\ncd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/be\",\"env\":{\"LC_CTYPE\":\"UTF-8\"},\"timeoutMs\":5000}]"
   ],
@@ -147,6 +151,7 @@ export const GOLDEN_CALLS: Readonly<Record<string, readonly string[]>> = {
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/be\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/chmod\",\"700\",\"/home/u/.claude/cadre/repo-6b4ca2db/be/instructions\"],{\"timeoutMs\":10000}]",
     "[[\"/bin/ln\",\"-sfn\",\"/home/u/.claude/cadre/repo-6b4ca2db/be/instructions\",\"/repo/.cadre/be/.runtime/private-instructions\"],{\"timeoutMs\":10000}]",
+    "[[\"/usr/bin/tee\",\"-a\",\"/repo/.cadre/be/.runtime/inbox.jsonl\"],{\"stdin\":\"\",\"timeoutMs\":10000}]",
     "[[\"/usr/bin/pbcopy\"],{\"stdin\":\"/repo/.cadre/bin/be\",\"env\":{\"LC_CTYPE\":\"UTF-8\"},\"timeoutMs\":5000}]"
   ],
   "startRefusalRepo": [],

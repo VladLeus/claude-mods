@@ -367,6 +367,11 @@ function writeStep(path: string, text: string): RenderStep {
   return { kind: 'write', path, text }
 }
 
+/** A step that adds a text to the end of a path, creating it when absent and never truncating it. */
+function appendStep(path: string, text: string): RenderStep {
+  return { kind: 'append', path, text }
+}
+
 /** The folders a render makes, sorted and once each: `.runtime`, its overlay (always, D-102) and each link's folder. */
 function mkdirFolders(runtime: string, links: readonly OverlayLink[]): string[] {
   return sortedUnique([runtime, `${runtime}/${OVERLAY_FOLDER}`, ...links.map(link => parentOf(link.path))])
@@ -389,10 +394,11 @@ function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
 }
 
 /**
- * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, an
- * empty inbox.jsonl only when there is none, so an entry another role appended is never lost, and for an epic render
- * the epic kickoff, the step right before the stamp. An inbox that is a link is removed first (linkRemovals), so it
- * counts as none. An inbox.md of an older setup is never written or removed.
+ * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, the
+ * create of inbox.jsonl when there is none, and for an epic render the epic kickoff, the step right before the stamp.
+ * The inbox is created by an append of nothing, which never truncates it, so an entry another role appended after the
+ * stat is kept. An inbox that is a link is removed first (linkRemovals), so it counts as none. An inbox.md of an older
+ * setup is never written or removed.
  */
 function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
   const inbox = `${runtime}/${INBOX_LOG_FILE}`
@@ -400,7 +406,7 @@ function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
     writeStep(`${runtime}/${SETTINGS_FILE}`, stableJson(input.plan.settings)),
     writeStep(`${runtime}/${MCP_FILE}`, input.mcpText),
     writeStep(`${runtime}/${PROBE_EXPECTATIONS_FILE}`, input.expectationsText),
-    ...(isRealEntry(statAt(input, inbox)) ? [] : [writeStep(inbox, '')]),
+    ...(isRealEntry(statAt(input, inbox)) ? [] : [appendStep(inbox, '')]),
   ]
   if (input.kickoff === undefined) return writes
 

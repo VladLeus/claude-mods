@@ -38,11 +38,6 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
         "isWritten": true
       },
       {
-        "path": "/repo/.cadre/be/.runtime/inbox.jsonl",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "isWritten": true
-      },
-      {
         "path": "/repo/.cadre/be/.runtime/stamp",
         "sha256": "66fd6f3ca295efcacea48fe6fbe88df117d8ff931fc92eb6fbb6d2f61495721c",
         "isWritten": true
@@ -59,6 +54,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
       "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.cadre/be/.runtime/private-instructions @ -",
+      "/usr/bin/tee -a /repo/.cadre/be/.runtime/inbox.jsonl @ -",
       "/usr/bin/pbcopy @ -"
     ]
   },
