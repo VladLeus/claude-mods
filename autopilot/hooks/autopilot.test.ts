@@ -71,6 +71,7 @@ import {
   parseQueueInput,
   parseUtcOffset,
   parseWaitInput,
+  passesQuestion,
   pushPending,
   questionIdFromNote,
   questionsBlock,
@@ -861,6 +862,25 @@ describe('questions while the person is in control', () => {
       expect(askAnswer(mode)).not.toContain('wait_for')
       expect(askAnswer(mode)).not.toContain('PushNotification')
     }
+  })
+})
+
+describe('AskUserQuestion while asking is on', () => {
+  const MODES = ['plain', 'queueing', 'overdue', 'draining', 'asking'] as const
+
+  test('a question passes to the person only while asking or draining', async () => {
+    expect(MODES.map(mode => [mode, passesQuestion(mode)])).toEqual([
+      ['plain', false],
+      ['queueing', false],
+      ['overdue', false],
+      ['draining', true],
+      ['asking', true],
+    ])
+  })
+
+  test('it passes in exactly the modes that allow a wait for the person', async () => {
+    const wait: Awaiting = { reason: 'user-answer', from: null, note: '#1 Which DB?', since: 0, timeoutAt: null, pinged: false }
+    for (const mode of MODES) expect(passesQuestion(mode)).toBe(waitRefusal(wait, mode) === null)
   })
 })
 
