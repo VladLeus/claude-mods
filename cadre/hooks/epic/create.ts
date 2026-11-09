@@ -208,9 +208,10 @@ async function pmSeed(
  * `.runtime/` it writes is the worktree's own, never main's. The render names the main checkout as the epic's, so the
  * role keeps the worktree's CLAUDE.md files out and gets main's code-dir denies too (Pitfalls 1 and 2), and it looks a
  * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
- * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/`
- * (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf over the whole team and
- * the team's TL, D-158 to D-160), and PM's starts a new inbox with the epic brief (epicEntryLine). Its lines: one
+ * user's project servers are recorded, and it names the epic record's slug, which names each role's workstream. Each
+ * role's render also writes its epic kickoff into its `.runtime/` (epicKickoffText with the epic key, the worktree's
+ * title, the role's parent from epicParentOf over the whole team and the team's TL, D-158 to D-160), and PM's starts
+ * a new inbox with the epic brief (epicEntryLine). Its lines: one
  * `warning: <id>: <text>` line per render warning, then the lines of the open stage (openedLines). A role whose render
  * refuses keeps that refusal as its line, which does not stop the others, and one whose launcher in the worktree reads
  * as a text without the epic kickoff line (hasRuntimeKickoff) gets epicWorktreeLauncherLine and does not open, and one
@@ -232,7 +233,7 @@ async function renderedLines(
     /** The text of each picked role's launcher in the main checkout, as runEpic checked it (03.1-W4 S1). */
     readonly launchers: ReadonlyMap<string, string>
   },
-  epicWorktree: { readonly path: string; readonly title: string },
+  epicWorktree: { readonly path: string; readonly title: string; readonly record: { readonly slug: string } },
 ): Promise<string[]> {
   const { locations, state, roles, key } = team
   const worktree = epicWorktree.path
@@ -260,7 +261,7 @@ async function renderedLines(
       scope,
       codeDirs: gathered.repo.codeDirs,
       mcpRoots: [worktree, locations.root, locations.givenRoot],
-      epic: { mainRoot: locations.root, kickoff, ...inboxSeed },
+      epic: { mainRoot: locations.root, kickoff, slug: epicWorktree.record.slug, ...inboxSeed },
     })
     if (render.kind === 'refuse') {
       rendered.push({ id, line: render.text })

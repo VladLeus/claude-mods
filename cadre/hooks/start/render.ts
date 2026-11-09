@@ -102,6 +102,8 @@ export type EpicRender = {
   readonly kickoff: string
   /** The record line a new inbox of the role starts with: PM's epic brief. */
   readonly inboxSeed?: string
+  /** The epic's slug, which names the role's workstream in the worktree. */
+  readonly slug?: string
 }
 
 /**
@@ -129,8 +131,8 @@ export function worktreeClaudeMd(paths: readonly string[], worktree: string): st
  * every warning of the launch user, the LaunchPlan, the MCP config and the render, in that order.
  * `epic` is null for /cadre start, which changes nothing. For /cadre epic it names the main checkout and the role's
  * epic kickoff, which the render writes to `.runtime/kickoff.txt` as the step before the stamp, and the user the
- * LaunchPlan is built for also excludes the worktree's own CLAUDE.md files (worktreeClaudeMd) and carries the main
- * checkout as `mainRoot`, whose code dirs get the exact denies the worktree's get.
+ * LaunchPlan is built for also excludes the worktree's own CLAUDE.md files (worktreeClaudeMd), carries the main
+ * checkout as `mainRoot`, whose code dirs get the exact denies the worktree's get, and the epic's slug as `epicSlug`.
  */
 export async function renderRole(
   io: InitIo,
@@ -165,6 +167,7 @@ export async function renderRole(
           ...gathered,
           claudeMd: worktreeClaudeMd(gathered.claudeMd, locations.root),
           mainRoot: input.epic.mainRoot,
+          ...(input.epic.slug === undefined ? {} : { epicSlug: input.epic.slug }),
         }
   const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
   // The roots gatherLaunchUser kept the user folder outside of (WF-S4): ~/.claude.json follows the same rule (SR-1).
