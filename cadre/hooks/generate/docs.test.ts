@@ -705,28 +705,47 @@ describe('the Hierarchy section of ROLE.md', () => {
     expect(text).toContain('take the no-TL step of Planning docs when it has one')
   })
 
-  test('every role is told where a question goes, that only PM asks the user, a rejection and the epic end', () => {
-    for (const role of TEMPLATE_ROLES) {
-      const text = hierarchyOf(role, 'gsd')
+  test(
+    'every role is told where a question goes, that in an epic only PM asks the user, a rejection and the epic end',
+    () => {
+      for (const role of TEMPLATE_ROLES) {
+        const text = hierarchyOf(role, 'gsd')
 
-      expect(text.startsWith('## Hierarchy\n\nA technical question goes to your parent role')).toBe(true)
-      expect(text).toContain('a product or ticket question goes straight to PM')
-      expect(text).toContain('Only PM asks the user')
-      expect(text).toContain('An entry you mark rejected goes back up to the role that sent it')
-      expect(text).toContain('On epic-end, mark your open inbox entries, write your handoff')
-      expect(text).toContain('AUTOPILOT_DONE; PM does this last.')
-    }
-  })
+        expect(text.startsWith('## Hierarchy\n\nA technical question goes to your parent role')).toBe(true)
+        expect(text).toContain('a product or ticket question goes straight to PM')
+        expect(text).toContain('In an epic, only PM asks the user')
+        expect(text).toContain('An entry you mark rejected goes back up to the role that sent it')
+        expect(text).toContain('On epic-end, mark your open inbox entries, write your handoff')
+        expect(text).toContain('AUTOPILOT_DONE; PM does this last.')
+      }
+    },
+  )
 
-  test('no role but PM gets a line telling it to ask the user', () => {
+  test('only a role started with --ask-user gets a line telling it to ask the person', () => {
     for (const framework of FRAMEWORKS) {
       for (const role of TEMPLATE_ROLES) {
         const lines = roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES)).split('\n')
         const asks = lines.filter(line => /\bask the user\b|\bwith AskUserQuestion\b/i.test(line))
 
-        expect([role.id, asks.length > 0]).toEqual([role.id, role.id === 'pm'])
+        expect([role.id, asks.length > 0]).toEqual([role.id, role.autopilot.askUser])
       }
     }
+  })
+
+  test('a role started with --ask-user gets the line to ask the person outside an epic, after the epic line', () => {
+    for (const role of TEMPLATE_ROLES) {
+      const lines = hierarchyOf(role, 'gsd').split('\n')
+      const at = lines.indexOf(ARTIFACT.roleMdHierarchyAskUser)
+      const isAfter = at > lines.indexOf(ARTIFACT.roleMdHierarchyCommonAsk)
+
+      expect([role.id, at >= 0, isAfter]).toEqual([role.id, role.autopilot.askUser, role.autopilot.askUser])
+    }
+  })
+
+  test('a custom role started with --ask-user gets the line to ask the person outside an epic too', () => {
+    const ops = templateRole('be', { id: 'ops', autopilot: { ...templateRole('be').autopilot, askUser: true } })
+
+    expect(hierarchyOf(ops, 'gsd').split('\n')).toContain(ARTIFACT.roleMdHierarchyAskUser)
   })
 })
 
