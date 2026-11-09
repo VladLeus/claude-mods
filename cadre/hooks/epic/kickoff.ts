@@ -44,13 +44,14 @@ function pmEpicSentence(id: string, key: string, title: string, target: string):
 }
 
 /**
- * The role line of a worker's epic kickoff (D-158): who the role is, the epic key and its ROLE.md, then the wait for
- * its parent's session `cadre-<parent>` with wait_for reason session-answer, and to work what it sends. With no parent
- * named it waits with no `from`, so it never names a session that is not its parent.
+ * The role line of every epic role but PM: who the role is, the epic key and its ROLE.md, then the wait for its
+ * parent's session `cadre-<parent>` with wait_for reason session-answer and a timeout, the inbox read, and the work: TL
+ * runs the ticket loop of its ROLE.md, every other role works what its parent sends. With no parent named it waits
+ * with no `from`, so it never names a session that is not its parent.
  */
-function workerEpicSentence(id: string, key: string, title: string, parent: string | null): string {
+function workerEpicSentence(id: string, key: string, title: string, parent: string | null, isTl: boolean): string {
   const from = parent === null ? '' : fill(PROMPTS.epicFrom, { parent })
-  const wait = fill(PROMPTS.epicWait, { from })
+  const wait = fill(isTl ? PROMPTS.epicTlWait : PROMPTS.epicWait, { from })
 
   return fill(PROMPTS.epicWorkerLine, { title, id, key, wait })
 }
@@ -67,12 +68,12 @@ function pmEpicLine(id: string, key: string, title: string, target: string): str
 }
 
 /**
- * A worker's epic kickoff line (D-158), as kickoffRoleLine budgets its title: the role title gets what ROLE_LINE_MAX
- * leaves once the rest of the line is in, a title with no ASCII character left gives way to the role id, and the whole
- * line is then capped.
+ * The epic kickoff line of every role but PM, as kickoffRoleLine budgets its title: the role title gets what
+ * ROLE_LINE_MAX leaves once the rest of the line is in, a title with no ASCII character left gives way to the role id,
+ * and the whole line is then capped.
  */
-function workerEpicLine(role: RoleSpec, key: string, parent: string | null): string {
-  return budgetedRoleLine(role, title => workerEpicSentence(role.id, key, title, parent))
+function workerEpicLine(role: RoleSpec, key: string, parent: string | null, isTl: boolean): string {
+  return budgetedRoleLine(role, title => workerEpicSentence(role.id, key, title, parent, isTl))
 }
 
 /**
@@ -81,9 +82,10 @@ function workerEpicLine(role: RoleSpec, key: string, parent: string | null): str
  * line names the epic key and title, tells PM to grill the user and feed the TL `tlId`, else its roles, ticket by
  * ticket, and ends ` --ask-user` whatever its role.json says, as PM is the one role that asks the user. Every other
  * role's line names the role and the key and says to wait for its parent's session `cadre-<parent>` (epicParentOf) with
- * wait_for reason session-answer, then work what it sends, and never carries ` --ask-user`. Each line is printable
- * ASCII with no quote or backtick (asciiLine), at most ROLE_LINE_MAX long: the epic title (PM) or the role title is cut
- * first, so the key stays whole and the line keeps its end whenever the line with no title fits.
+ * wait_for reason session-answer and a timeout, read its inbox, then run the ticket loop (TL) or work what its parent
+ * sends, and never carries ` --ask-user`. Each line is printable ASCII with no quote or backtick (asciiLine), at most
+ * ROLE_LINE_MAX long: the epic title (PM) or the role title is cut first, so the key stays whole and the line keeps its
+ * end whenever the line with no title fits.
  */
 export function epicKickoffText(input: {
   readonly role: RoleSpec
@@ -95,7 +97,7 @@ export function epicKickoffText(input: {
 }): string {
   const { role, key, title, parent, tlId } = input
   const { duration, threshold } = role.autopilot
-  if (!input.isPm) return autopilotCommand(duration, threshold, workerEpicLine(role, key, parent), '')
+  if (!input.isPm) return autopilotCommand(duration, threshold, workerEpicLine(role, key, parent, role.id === tlId), '')
 
   return autopilotCommand(duration, threshold, pmEpicLine(role.id, key, title, feedTarget(tlId)), ' --ask-user')
 }

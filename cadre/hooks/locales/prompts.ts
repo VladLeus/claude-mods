@@ -98,7 +98,10 @@ export const PROMPTS = Object.freeze({
     ''}(mattpocock-skills:grilling when available, else yourself), then feed {target} ticket by ticket.`,
   epicPmLine: 'You are the PM of epic {epic}. {next}',
   epicFrom: ' from cadre-{parent}',
-  epicWait: 'wait for your parent: wait_for reason session-answer{from}, then work what it sends.',
+  epicWait: `wait for your parent: wait_for reason session-answer{from} timeout 30m, then read your inbox with ${
+    ''}inbox_read and work what it sends.`,
+  epicTlWait: `wait for PM: wait_for reason session-answer{from} timeout 30m, then read your inbox with inbox_read ${
+    ''}and run the ticket loop in ROLE.md.`,
   epicWorkerLine: 'You are {title} (cadre role {id}) on epic {key}. Read .cadre/{id}/ROLE.md, then {wait}',
   // PM's epic brief, the first entry of PM's inbox in an epic (epic/brief epicEntryLine): its subject, then its body,
   // one line per text.

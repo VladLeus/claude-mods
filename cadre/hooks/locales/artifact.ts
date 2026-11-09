@@ -34,6 +34,13 @@ export const ARTIFACT = Object.freeze({
     ''}entry you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done ${
     ''}(a one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.`,
   roleMdHierarchy: '## Hierarchy',
+  roleMdHierarchyCommonQuestions: `A technical question goes to your parent role and TL decides it; a product or ${
+    ''}ticket question goes straight to PM. Send each with inbox_send kind question.`,
+  roleMdHierarchyCommonAsk: 'Only PM asks the user; every other role sends its question up.',
+  roleMdHierarchyCommonRejected:
+    'An entry you mark rejected goes back up to the role that sent it, with your reason.',
+  roleMdHierarchyCommonEpicEnd: `On epic-end, mark your open inbox entries, write your handoff and answer with a line ${
+    ''}that starts with AUTOPILOT_DONE; PM does this last.`,
   roleMdPmGrill: `As PM, grill the user on the epic and on every ticket in one attended run until no question is ${
     ''}open. Use mattpocock-skills:grilling for it when that skill is available.`,
   roleMdPmGrillNoSkill: `When it is not available (its plugin was declined or did not install), run the grill ${
@@ -50,6 +57,21 @@ export const ARTIFACT = Object.freeze({
   roleMdPmGrillFeed: `Send TL the brief, then feed it one ticket at a time (in a team without TL, your roles); when ${
     ''}every ticket is reported, send epic-end.`,
   roleMdPmGrillCritical: 'After the grill, ask the user only critical questions.',
+  roleMdTlLoop: `Your ticket loop as TL: on each ticket PM sends, add complexity and effort to PM's scope and ${
+    ''}risk, compute the size and pick the framework or GSD path; record the vector with a one-line reason.`,
+  roleMdTlPlan: 'Plan the ticket in your own planning docs.',
+  roleMdTlTasks: `Send BE and FE their tasks in parallel (inbox_send kind task), split by area; a file both ${
+    ''}would touch is yours to serialise.`,
+  roleMdTlReport: `Wait for every report, then report to PM in the form PM asked (by default: outcome, changes, ${
+    ''}verification, the vector with its reason, the framework used, the doc paths and the open questions) and ${
+    ''}wait for the next ticket.`,
+  roleMdWorkerTask: 'Plan and execute each task in your own planning docs.',
+  roleMdWorkerCommit: `Commit only your own files on the epic branch: git add <paths>, never git add -A. When git ${
+    ''}reports an index lock, wait and retry; never rebase or reset the shared branch.`,
+  roleMdWorkerReport:
+    'Report each task to TL when it is done (to PM in a team without TL), then wait for the next.',
+  roleMdWorkerNoTl: `In a team without TL, PM sends you the ticket: add complexity and effort to its scope and risk ${
+    ''}yourself, and take the no-TL step of Planning docs when it has one.`,
   roleMdScope: '## Scope',
   // The marker above a part in a built role file (generate/docs partMarker), and the first line of the built and of
   // the private role CLAUDE.md (generate/docs roleClaudeMdText, apply/private privateClaudeMdText).

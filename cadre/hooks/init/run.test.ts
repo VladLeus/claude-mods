@@ -4737,9 +4737,12 @@ describe('init apply conflicts (D-67)', () => {
     await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
     expect(reviewAt).toBeGreaterThan(0)
-    expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_ASKED])
-    expect(run.specs[reviewAt + 1]?.options).toEqual(CONFLICT_OPTIONS)
-    expect(run.specs[reviewAt + 1]?.header).toBe('Conflict')
+    // The diff is over the frame cap, so the question is asked a page at a time, its answers on the last page.
+    const after = run.asked.slice(reviewAt + 1)
+    expect(after.length).toBeGreaterThan(0)
+    expect(after.filter(question => question !== ROLE_ASKED)).toEqual([])
+    expect(run.specs[run.asked.length - 1]?.options).toEqual(['Previous page', ...CONFLICT_OPTIONS])
+    expect(run.specs[run.asked.length - 1]?.header).toBe('Conflict')
   })
 
   test('the conflict question carries the diff of that file from the version on disk to the new (D-236)', async () => {
@@ -4751,14 +4754,18 @@ describe('init apply conflicts (D-67)', () => {
     const at = run.asked.indexOf(ROLE_ASKED)
     // Its summary, which a pane surface asks under the question, is how many lines Take new adds and removes (D-310).
     const [sentence = ''] = ROLE_ASKED.split('\n')
-    expect(run.specs[at]?.context).toEqual({
-      title: 'Conflict: .cadre/be/ROLE.md',
-      lines: [counts, ...diffLines(diff)],
-      kind: 'conflict-diff',
-      summary: counts,
-      pane: { asked: ROLE_ASKED, text: withContext(sentence, counts) },
-      rows: [{ title: null, rows: [counts, ...diffLines(diff)].map(text => ({ role: 'plain', text, indent: 0 })) }],
-    })
+    // The diff is over the frame cap, so each page keeps the whole diff in its lines and its share of the rows.
+    const pages = run.specs.slice(at).flatMap(spec => (spec.context === undefined ? [] : [spec.context]))
+    const lines = [counts, ...diffLines(diff)]
+    expect(pages.map(({ title, kind, summary }) => ({ title, kind, summary }))).toEqual(
+      pages.map(() => ({ title: 'Conflict: .cadre/be/ROLE.md', kind: 'conflict-diff', summary: counts })),
+    )
+    expect(pages.filter(page => page.lines.join('\n') !== lines.join('\n'))).toEqual([])
+    expect(pages.flatMap(page => page.rows ?? []).flatMap(section => section.rows)).toEqual(
+      lines.map(text => ({ role: 'plain', text, indent: 0 })),
+    )
+    expect(pages[0]?.pane?.asked).toBe(ROLE_ASKED)
+    expect(pages[0]?.pane?.text.startsWith(withContext(sentence, counts))).toBe(true)
   })
 
   test('Take new writes the desired ROLE.md and no copy, and the manifest records its new hash', async () => {
