@@ -77,7 +77,7 @@ import { planReadPaths } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { runRegen } from '../regen/run'
 import type { RegenOptions } from '../regen/run'
-import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL } from '../roles/infra'
+import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL, GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { proposeRoles } from '../roles/propose'
 import { recommend } from '../roles/recommend'
 import { parseRoleJson } from '../roles/rolejson'
@@ -5333,6 +5333,50 @@ describe('a consented framework install after Confirm', () => {
     expect(cadreJsonOf(both.host)).toMatchObject({ sizing: stored })
     expect(cadreJsonOf(gsd.host)).toMatchObject({ sizing: { ...stored, mapping: gsdMapping } })
     expect(cadreJsonOf(fresh.host)).toMatchObject({ sizing: { ...stored, threshold: 0.5, mapping: gsdMapping } })
+  })
+
+  /** The run that installs mattpocock-skills at project scope. */
+  const GRILL_INSTALL = ['claude', 'plugin', 'install', MATTPOCOCK_PLUGIN, '--scope', 'project']
+
+  /** A draft of PM given the grill skills and be on superpowers, PM's plugin and these frameworks consented. */
+  function grillDraft(frameworkInstalls: readonly FrameworkId[] = []): Draft {
+    const draft = superpowersDraft(frameworkInstalls)
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS] })
+
+    return { ...draft, roles: [pm, ...draft.roles], projectPluginInstalls: [MATTPOCOCK_PLUGIN] }
+  }
+
+  test('the grill plugin installs from the repo root after Confirm, after the framework installs', async () => {
+    const { host, installed } = await applied(grillDraft(['superpowers']), [], ['superpowers'])
+    const options = { cwd: '/repo', timeoutMs: 180_000 }
+    const settings = host.writes.find(write => write.path === '/repo/.cadre/pm/settings.json')?.text ?? ''
+
+    expect(host.calls.filter(call => call.argv.includes('--scope'))).toEqual([
+      { argv: SUPERPOWERS_PROJECT_INSTALL, options },
+      { argv: GRILL_INSTALL, options },
+    ])
+    expect(installed).toEqual(['superpowers@claude-plugins-official', MATTPOCOCK_PLUGIN])
+    expect(settings).toContain(`"${MATTPOCOCK_PLUGIN}": true`)
+  })
+
+  test('a failed grill plugin install prints its command and leaves PM without the grill skills', async () => {
+    const { host, problems } = await applied(grillDraft(), [{ argv: GRILL_INSTALL, result: FAILED_INSTALL }])
+    const role = host.writes.find(write => write.path === '/repo/.cadre/pm/role.json')?.text ?? ''
+    const command = GRILL_INSTALL.join(' ')
+
+    expect(problems).toEqual([`could not install ${MATTPOCOCK_PLUGIN}: run it yourself from the repo root: ${command}`])
+    expect([role.includes('"pm"'), GRILL_SKILLS.filter(skill => role.includes(skill))]).toEqual([true, []])
+  })
+
+  test('a --dry-run answered Yes to the grill plugin names its install in the review and runs nothing', async () => {
+    const run = memIo(gitWorld(), { ...INIT_ANSWERS, 'Install mattpocock-skills': 'Yes, install it' })
+    const host = memHost(hostWorld({}))
+    await runInit(pagedIo(run), { dryRun: true })
+    const line =
+      'Plugin install from the repo root after Confirm (a --dry-run installs nothing): ' +
+      `${GRILL_INSTALL.join(' ')}; it writes enabledPlugins in .claude/settings.json`
+
+    expect([lastReview(run).includes(line), host.calls, host.writes]).toEqual([true, [], []])
   })
 
   test('a --dry-run review names the install, and its Confirm runs nothing and reads the facts no more', async () => {

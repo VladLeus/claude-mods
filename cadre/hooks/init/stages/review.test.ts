@@ -4,6 +4,7 @@ import type { FrameworkId, InstructionHandout, Plan, RoleChange } from '../../..
 import { REDACTED } from '../../core/redact'
 import { clean } from '../../core/text'
 import { PANE_LIST_WORDS } from '../../locales/t'
+import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../../roles/infra'
 import { proposeRoles } from '../../roles/propose'
 import { recommend } from '../../roles/recommend'
 import type { Gathered } from '../../scan/gather'
@@ -772,5 +773,38 @@ describe('the framework installs in the review', () => {
       return scope?.settings.enabledPlugins['superpowers@claude-plugins-official'] === true
     }
     expect([isEnabled({ frameworkInstalls: ['superpowers'] }), isEnabled({})]).toEqual([true, false])
+  })
+})
+
+describe('the PM plugin install in the review', () => {
+  /** How a project plugin install line starts in the review. */
+  const START = 'Plugin install from the repo root after Confirm (a --dry-run installs nothing): '
+
+  /** The plugin install lines of the review of REVIEW_DRAFT with these project plugin keys consented, page by page. */
+  async function pluginLines(projectPluginInstalls: readonly string[]): Promise<string[]> {
+    const entered = reviewAt({ projectPluginInstalls })
+    const asking = nextStage(entered, planAnswer(await plannedFor(entered)))
+
+    return pagedLines(asking).filter(line => line.startsWith(START))
+  }
+
+  test('one line per consented key names its project command and the setting it writes; none shows none', async () => {
+    const command = 'claude plugin install mattpocock-skills@claude-plugins-official --scope project'
+    const line = `${START}${command}; it writes enabledPlugins in .claude/settings.json`
+
+    expect([await pluginLines([MATTPOCOCK_PLUGIN]), await pluginLines([])]).toEqual([[line], []])
+  })
+
+  test('a consented PM plugin counts as installed in the scopes the review plans', () => {
+    const roles = [templateRole('pm', { skills: [...GRILL_SKILLS] })]
+    const isEnabled = (over: Partial<Draft>): boolean => {
+      const { effect } = reviewAt({ roles, ...over })
+      if (effect.kind !== 'io' || effect.call.id !== 'plan') return false
+      const scope = effect.call.input.scopes.get('pm')
+
+      return scope?.settings.enabledPlugins[MATTPOCOCK_PLUGIN] === true
+    }
+
+    expect([isEnabled({ projectPluginInstalls: [MATTPOCOCK_PLUGIN] }), isEnabled({})]).toEqual([true, false])
   })
 })
