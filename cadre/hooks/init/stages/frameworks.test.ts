@@ -38,12 +38,14 @@ import {
   FRAMEWORK_DISMISSED_REASON,
   FRAMEWORK_LABELS,
   FRAMEWORK_QUESTION_PREFIX,
+  frameworkInstallAsk,
   frameworkReason,
   frameworkRoleQuestion,
   frameworksStage,
   GSD_CHECK_QUESTION,
   installedFrameworks,
   isGsdCheckUseful,
+  parseFrameworkInstall,
 } from './frameworks'
 import { teamContextLine } from './model'
 
@@ -545,5 +547,52 @@ describe('installedFrameworks (A5)', () => {
     ])
     expect(installedFrameworks([detection('aidlc', 'unsupported'), detection('gsd', 'not-found')])).toEqual(['none'])
     expect(installedFrameworks(detectAll(AMBIGUOUS_FACTS))).toEqual(['gsd', 'superpowers', 'none'])
+  })
+})
+
+describe('the framework install question', () => {
+  test('it names the exact command, run from the repo root after Confirm, and its first option declines', () => {
+    const ask = frameworkInstallAsk('superpowers')
+    const command = 'claude plugin install superpowers@claude-plugins-official --scope project'
+    const line = `cadre runs ${command} from the repo root after Confirm.`
+
+    expect(ask.question).toBe(`Install superpowers for this repo?\n${line}`)
+    expect([ask.spec.options, ask.spec.header, ask.accepts]).toEqual([
+      ['No', 'Yes, install it'],
+      'Framework',
+      '"No", "Yes, install it"',
+    ])
+    expect(parseFrameworkInstall(ask.spec.options[0] ?? '')).toBe(false)
+  })
+
+  test("GSD's names its npx install; its context lists what the installer writes, the command its summary", () => {
+    const ask = frameworkInstallAsk('gsd')
+    const lines = [
+      'cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm.',
+      'It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json.',
+    ]
+    const [summary = ''] = lines
+    const rows = lines.map(text => ({ role: 'plain', text, indent: 0 }))
+    const pane = { asked: ask.question, text: ask.question }
+
+    expect(ask.question).toBe(`Install GSD for this repo?\n${summary}`)
+    expect(ask.spec.context).toEqual({
+      title: 'Install GSD',
+      lines,
+      kind: 'consent',
+      summary,
+      pane,
+      rows: [{ title: null, rows }],
+    })
+  })
+
+  test('parseFrameworkInstall reads the No and Yes labels, trimmed and in any case, and nothing else', () => {
+    const read = ['No', ' no ', 'Yes, install it', 'YES, INSTALL IT'].map(parseFrameworkInstall)
+    const unread = ['Install', 'Not now', 'yes', ''].map(parseFrameworkInstall)
+
+    expect([read, unread]).toEqual([
+      [false, false, true, true],
+      [null, null, null, null],
+    ])
   })
 })

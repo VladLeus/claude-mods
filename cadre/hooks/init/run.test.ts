@@ -757,6 +757,7 @@ describe('runInit framework and recommendations', () => {
       'No, skip it',
       'Adjust them',
       'framework security superpowers',
+      'No',
       'Done adjusting',
       'Use these roles',
       'Commit definitions (default)',
@@ -765,7 +766,8 @@ describe('runInit framework and recommendations', () => {
     await runInit(run.io, { dryRun: true })
     const refusal =
       'Cannot set security to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
-      'security keeps its framework.'
+      'security keeps its framework. To install it, run from the repo root: ' +
+      'claude plugin install superpowers@claude-plugins-official --scope project'
     expect(run.asked.some(question => question.startsWith(`${refusal}\n${ADJUST_QUESTION}\n`))).toBe(true)
     expect(run.logged).not.toContain(refusal)
   })
@@ -4173,15 +4175,18 @@ describe('reviewStep', () => {
       ...INIT_ANSWERS,
       'Use these roles?': ['Use these roles', 'Adjust them', 'Use these roles', 'Adjust them', 'Use these roles'],
       'Adjust the roles': 'framework pm gsd',
+      'Install GSD for this repo?': 'No',
       'Cannot set pm to gsd': 'Done adjusting',
       'Review the plan': ['Change roles', 'Change roles', 'Confirm'],
     })
     const reply = await runInit(run.io, { dryRun: true })
     const checks = run.asked.filter(question => question.startsWith("Run GSD's own check"))
+    const installs = run.asked.filter(question => question.startsWith('Install GSD for this repo?'))
     const refusals = run.asked.filter(question => question.startsWith('Cannot set pm to gsd'))
-    const ends = [reply.startsWith(INIT_CANCELLED), checks.length, refusals.length, run.gsdIdentityCalls.length]
+    const asks = [checks.length, installs.length, refusals.length]
+    const ends = [reply.startsWith(INIT_CANCELLED), ...asks, run.gsdIdentityCalls.length]
 
-    expect(ends).toEqual([false, 1, 2, 0])
+    expect(ends).toEqual([false, 1, 2, 2, 0])
   })
 
   test('Change launcher start, or typing launcher start, re-asks where launchers start (A2)', async () => {
@@ -5095,6 +5100,24 @@ describe('a consented framework install after Confirm', () => {
 
     expect(host.calls.filter(call => call.argv.includes('--scope'))).toEqual([])
     expect(events).not.toContain('facts')
+  })
+
+  test('an Adjust to superpowers answered Yes installs it from the repo root, before any write', async () => {
+    const run = queuedIo(fullWorld(), {
+      ...INIT_ANSWERS,
+      'Use these roles?': ['Adjust them', 'Use these roles'],
+      'Adjust the roles': ['framework be superpowers', 'Done adjusting'],
+      'Install superpowers for this repo?': 'Yes, install it',
+    })
+    const host = memHost(hostWorld({}))
+    const recorded = withHostEvents(host)
+    await runInit(run.io, { dryRun: false, host: recorded.io })
+    const installAt = recorded.events.indexOf(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const firstWriteAt = recorded.events.findIndex(event => event.startsWith('write '))
+    const role = host.writes.find(write => write.path === '/repo/.cadre/be/ROLE.md')?.text ?? ''
+
+    expect(host.calls[0]).toEqual({ argv: SUPERPOWERS_PROJECT_INSTALL, options: { cwd: '/repo', timeoutMs: 180_000 } })
+    expect([installAt, installAt < firstWriteAt, role.includes('Framework: superpowers.')]).toEqual([0, true, true])
   })
 })
 
