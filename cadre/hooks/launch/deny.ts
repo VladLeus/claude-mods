@@ -288,8 +288,8 @@ function listedSkillsOf(user: LaunchUser, key: string): readonly string[] | unde
 /**
  * The per-skill deny of the plugins a role's scope enables whose skill list the launch read: `Skill(<plugin
  * name>:<skill>)` for every listed skill the role was not given, so a skill a plugin update adds is denied at the next
- * launch. An enabled MATTPOCOCK_PLUGIN whose list was not read goes to offPlugins with a warning naming it: the role
- * gets none of its skills.
+ * launch. Every enabled key of the mattpocock-skills plugin whose list was not read, a lookalike of another
+ * marketplace included, goes to offPlugins with a warning naming it, so the role gets none of its skills.
  */
 export function pluginSkillDeny(
   role: RoleSpec,
@@ -305,8 +305,10 @@ export function pluginSkillDeny(
 
     return names.filter(name => !given.has(name)).map(name => `Skill(${name})`)
   })
-  const isMattOn = Object.hasOwn(enabled, MATTPOCOCK_PLUGIN) && enabled[MATTPOCOCK_PLUGIN] === true
-  const offPlugins = isMattOn && listedSkillsOf(user, MATTPOCOCK_PLUGIN) === undefined ? [MATTPOCOCK_PLUGIN] : []
+  const offPlugins = Object.entries(enabled)
+    .filter(([key, isOn]) => isOn && pluginName(key) === pluginName(MATTPOCOCK_PLUGIN))
+    .filter(([key]) => listedSkillsOf(user, key) === undefined)
+    .map(([key]) => key)
   const warnings = offPlugins.map(key => t('launch.deny.pluginOffWarning', { plugin: shown(key) }))
 
   return { ...lintedDeny(rules, warnings), offPlugins }
