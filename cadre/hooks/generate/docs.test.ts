@@ -276,6 +276,16 @@ function headings(text: string): string[] {
   return text.split('\n').filter(line => line.startsWith('## '))
 }
 
+/** The lines of a document from `heading` up to the next heading or the end; [] when it has no such heading. */
+function sectionLines(text: string, heading: string): string[] {
+  const lines = text.split('\n')
+  const at = lines.indexOf(heading)
+  if (at < 0) return []
+  const end = lines.findIndex((line, index) => index > at && line.startsWith('## '))
+
+  return lines.slice(at, end < 0 ? lines.length : end)
+}
+
 /** The lines of a document that start with `Attended:` at the left margin: the banner, never an indented card rule. */
 function bannerLines(text: string): string[] {
   return text.split('\n').filter(line => line.startsWith('Attended:'))
@@ -459,6 +469,7 @@ describe('role documents', () => {
       '## Decisions',
       '## Handoffs',
       '## Inbox',
+      '## Hierarchy',
       '## Scope',
     ])
   })
@@ -570,15 +581,7 @@ describe('role documents', () => {
 })
 
 describe('the Planning docs section of ROLE.md', () => {
-  /** The lines of a ROLE.md from its Planning docs heading up to the next heading; [] when it has none. */
-  function planningDocs(text: string): string[] {
-    const lines = text.split('\n')
-    const at = lines.indexOf('## Planning docs')
-    if (at < 0) return []
-    const end = lines.findIndex((line, index) => index > at && line.startsWith('## '))
-
-    return lines.slice(at, end)
-  }
+  const planningDocs = (text: string): string[] => sectionLines(text, '## Planning docs')
 
   test('TL on gsd that may run superpowers lists the GSD lead steps, then the superpowers lead steps', () => {
     const tl = templateRole('tl')
@@ -622,5 +625,42 @@ describe('the Planning docs section of ROLE.md', () => {
         expect(section.filter(line => /\b(write|edit)\b[^.]*\.planning\//i.test(line))).toEqual([])
       }
     }
+  })
+})
+
+describe('the Hierarchy section of ROLE.md', () => {
+  /** The Hierarchy section of the ROLE.md of `role` on `framework` in the template team, as one text. */
+  function hierarchyOf(role: RoleSpec, framework: FrameworkId): string {
+    return sectionLines(roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES)), '## Hierarchy').join('\n')
+  }
+
+  test('PM grills the user through AskUserQuestion rounds until nothing is open, then proposes the mode', () => {
+    const text = hierarchyOf(templateRole('pm'), 'none')
+
+    expect(text).toContain('grill the user on the epic and on every ticket in one attended run')
+    expect(text).toContain('Use mattpocock-skills:grilling for it when that skill is available.')
+    expect(text).toContain('AskUserQuestion: the whole open frontier per round, up to 4 questions per call')
+    expect(text).toContain('2-4 options each, the recommended option first')
+    expect(text).toContain('split a larger round over several calls')
+    expect(text).toContain('The grill is done when no question is open and the user confirms.')
+    expect(text).toContain('write the question as text and call wait_for with reason user-answer')
+    expect(text).toContain('propose a planning mode')
+    expect(text).toContain('do not move on before the user confirms it')
+    expect(text).toContain('send epic-end')
+  })
+
+  test('PM runs the grill itself with the same rules when the grill skill is not available', () => {
+    expect(hierarchyOf(templateRole('pm'), 'none')).toContain(
+      'When it is not available (its plugin was declined or did not install), ' +
+        'run the grill yourself with the same rules.',
+    )
+  })
+
+  test('BE has no PM part', () => {
+    const be = templateRole('be')
+    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
+
+    expect(text).not.toContain('mattpocock-skills:grilling')
+    expect(text).not.toContain('grill the user')
   })
 })

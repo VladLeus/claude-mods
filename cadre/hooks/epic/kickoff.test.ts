@@ -33,4 +33,19 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
     expect(pmLine?.endsWith('ticket by ticket.')).toBe(true)
     expect(tlLine?.endsWith('what it sends.')).toBe(true)
   })
+
+  test('PM is told to grill the user, with the grill skill when available, in one line within ROLE_LINE_MAX', () => {
+    const pm = templateRole('pm')
+    const { duration, threshold } = pm.autopilot
+    const title = 'T'.repeat(300)
+    const kickoff = epicKickoffText({ role: pm, key: 'PROJ-1', title, isPm: true, parent: null, tlId: 'tl' })
+    const line = kickoffLine(kickoff)
+
+    expect(kickoff).toBe(`/autopilot ${duration} ${threshold} "${line}" --ask-user\n`)
+    expect(line.length <= ROLE_LINE_MAX).toBe(true)
+    expect(line).toContain('PROJ-1')
+    expect(line).toContain('inbox_read')
+    expect(line).toContain('grill the user (mattpocock-skills:grilling when available, else yourself)')
+    expect(line.endsWith('then feed cadre-tl ticket by ticket.')).toBe(true)
+  })
 })
