@@ -291,7 +291,7 @@ describe('ignore block', () => {
     test('ignoreLines gives the policy lines alone, as a new array each time', () => {
       expect(ignoreLines('definitions')).toEqual(['.cadre/*/.runtime/', '.cadre/**/*.cadre-new'])
       expect(ignoreLines('ignore')).toEqual(['.cadre/'])
-      expect(ignoreLines('all')).toHaveLength(11)
+      expect(ignoreLines('all')).toHaveLength(12)
 
       const first = ignoreLines('all')
       first.push('changed')

@@ -206,7 +206,7 @@ export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
 }
 
 /** The states inbox_read leaves out unless it is asked for all items. */
-const CLOSED_STATES: readonly InboxState[] = Object.freeze(['done', 'rejected'])
+export const CLOSED_STATES: readonly InboxState[] = Object.freeze(['done', 'rejected'])
 
 /**
  * One item as inbox_read shows it: its head, its body lines whole and indented two spaces, then its note and reply.

@@ -33,6 +33,12 @@ export const INBOX_LINE_MAX_BYTES = 4000
 export const INBOX_READ_MAX_BYTES = 1024 * 1024
 export const INBOX_APPEND_TIMEOUT_MS = 10_000
 
+/** /cadre start moves aside an inbox over this size, below INBOX_READ_MAX_BYTES, so its role can always read it. */
+export const INBOX_ROTATE_BYTES = 768 * 1024
+
+/** The most bytes of a large inbox /cadre start reads to list its open entries. */
+export const INBOX_ROTATE_READ_MAX_BYTES = 8 * 1024 * 1024
+
 export const NOTE_MAX_CHARS = 300
 
 /** The kinds only the team's PM stand-in sends. */

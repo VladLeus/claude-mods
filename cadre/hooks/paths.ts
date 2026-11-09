@@ -294,6 +294,14 @@ export const INBOX_FILE = 'inbox.md'
 /** A role's inbox in `.cadre/<id>/.runtime/`: one JSON line per entry or mark, only ever appended by cadre's tools. */
 export const INBOX_LOG_FILE = 'inbox.jsonl'
 
+/** The names of the inbox archives /cadre start moves aside in `.cadre/<id>/.runtime/` (inboxArchiveFile). */
+export const INBOX_ARCHIVE_GLOB = 'inbox-*.jsonl'
+
+/** An inbox /cadre start moved aside at `at` (epoch ms), matched by INBOX_ARCHIVE_GLOB. */
+export function inboxArchiveFile(at: number): string {
+  return `inbox-${at}.jsonl`
+}
+
 /** The file in `.cadre/<id>/.runtime/` where a role session publishes its session id, so other roles can wake it. */
 export const SESSION_FILE = 'session.json'
 
@@ -332,8 +340,8 @@ export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
 /**
  * The per-user files and folders in `.cadre/<id>/.runtime/`: what /cadre start renders at launch (the final settings,
  * the MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations, the
- * inbox of an older setup and the stamp written last) and the inbox log and the session id a role session keeps there.
- * The `all` git policy ignores exactly these.
+ * inbox of an older setup and the stamp written last), the inbox log and the session id a role session keeps there,
+ * and the inbox archives. The `all` git policy ignores exactly these.
  */
 export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
   'settings.json',
@@ -343,6 +351,7 @@ export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
   PRIVATE_INSTRUCTIONS_LINK,
   INBOX_LOG_FILE,
   SESSION_FILE,
+  INBOX_ARCHIVE_GLOB,
   PROBE_EXPECTATIONS_FILE,
   INBOX_FILE,
   RUNTIME_STAMP_FILE,

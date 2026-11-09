@@ -12,6 +12,7 @@ import type { HostIo, HostRun } from '../../types'
  * - `mkdir`: make a folder and the folders above it (`/bin/mkdir -p`);
  * - `chmod`: make a private folder level mode 700 (`/bin/chmod 700`, 02-GAPS-B3 S7);
  * - `link`: make `path` a symbolic link to `target` (`/bin/ln -sfn`);
+ * - `move`: move `path` to `target` in the same folder (`/bin/mv --`);
  * - `append`: add `text` to the end of `path`, creating it when absent and never truncating it (`/usr/bin/tee -a`);
  * - `write`: write the text to the path; the host writes it, so it has no argv.
  */
@@ -20,6 +21,7 @@ export type RenderStep =
   | { readonly kind: 'mkdir'; readonly path: string }
   | { readonly kind: 'chmod'; readonly path: string }
   | { readonly kind: 'link'; readonly path: string; readonly target: string }
+  | { readonly kind: 'move'; readonly path: string; readonly target: string }
   | { readonly kind: 'append'; readonly path: string; readonly text: string }
   | { readonly kind: 'write'; readonly path: string; readonly text: string }
 
@@ -34,27 +36,28 @@ export function privateModeArgv(path: string): readonly string[] {
 /**
  * The argv that runs a step, absolute and with no shell (RESEARCH 3.2): `/bin/rm -f --` for a removal, never `-r`;
  * `/bin/mkdir -p --` for a folder; `/bin/chmod 700` for a private folder level (privateModeArgv, 02-GAPS-B3 S7);
- * `/bin/ln -sfn <target> <path>` for a link; `/usr/bin/tee -a <path>` for an append. A write has none: the host
- * writes it.
+ * `/bin/ln -sfn <target> <path>` for a link; `/bin/mv -- <path> <target>` for a move; `/usr/bin/tee -a <path>` for an
+ * append. A write has none: the host writes it.
  */
 export function renderArgv(step: RenderStep): readonly string[] | null {
   if (step.kind === 'remove') return ['/bin/rm', '-f', '--', step.path]
   if (step.kind === 'mkdir') return ['/bin/mkdir', '-p', '--', step.path]
   if (step.kind === 'chmod') return privateModeArgv(step.path)
   if (step.kind === 'link') return ['/bin/ln', '-sfn', step.target, step.path]
+  if (step.kind === 'move') return ['/bin/mv', '--', step.path, step.target]
   if (step.kind === 'append') return ['/usr/bin/tee', '-a', step.path]
 
   return null
 }
 
-/** How long one removal, folder, link or append step of a render may run before it is given up. */
+/** How long one removal, folder, link, move or append step of a render may run before it is given up. */
 const RENDER_STEP_TIMEOUT_MS = 10_000
 
 /**
- * Runs one step of a render through the host: a write through host.write; a removal, a folder, a chmod, a link or an
- * append through host.run with its renderArgv, absolute and with no shell, an append with its text as stdin; a run is
- * done only when it exits 0. Apply makes the role memory folders of the private files with it too, as a mkdir step
- * (G-02-1f).
+ * Runs one step of a render through the host: a write through host.write; a removal, a folder, a chmod, a link, a
+ * move or an append through host.run with its renderArgv, absolute and with no shell, an append with its text as
+ * stdin; a run is done only when it exits 0. Apply makes the role memory folders of the private files with it too, as
+ * a mkdir step (G-02-1f).
  */
 export async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
   if (step.kind === 'write') return host.write(step.path, step.text)

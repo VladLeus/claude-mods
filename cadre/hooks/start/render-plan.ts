@@ -8,7 +8,7 @@
  * session (LNCH-03). It imports apply/safety, core and paths, and the host step and launch types; the start modules
  * that gather and render read it.
  */
-import type { PortEntry, PortStat } from '../../types'
+import type { InboxRotation, PortEntry, PortStat } from '../../types'
 import { roleFolderLevels } from '../apply/safety'
 import { stableJson } from '../core/json'
 import { reportText, sortedUnique } from '../core/text'
@@ -117,6 +117,8 @@ export type RenderInput = {
   readonly listings: ReadonlyMap<string, readonly PortEntry[]>
   readonly memories: MemoryLinks
   readonly kickoff?: string
+  /** Set only when the inbox is a real file over the rotation threshold. */
+  readonly rotation?: InboxRotation
 }
 
 /** The steps of a render in order, the warnings to show, and why it was refused: a refused render has no step. */
@@ -372,6 +374,11 @@ function appendStep(path: string, text: string): RenderStep {
   return { kind: 'append', path, text }
 }
 
+/** A step that moves a path to a target in the same folder. */
+function moveStep(path: string, target: string): RenderStep {
+  return { kind: 'move', path, target }
+}
+
 /** The folders a render makes, sorted and once each: `.runtime`, its overlay (always, D-102) and each link's folder. */
 function mkdirFolders(runtime: string, links: readonly OverlayLink[]): string[] {
   return sortedUnique([runtime, `${runtime}/${OVERLAY_FOLDER}`, ...links.map(link => parentOf(link.path))])
@@ -393,12 +400,22 @@ function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
   return [mkdirStep(link.target), ...chmods]
 }
 
+/** The inbox's steps in fileWrites: the move and the fresh entry of a rotation, else the create when there is none. */
+function inboxSteps(input: RenderInput, inbox: string): RenderStep[] {
+  const { rotation } = input
+  if (rotation !== undefined) return [moveStep(inbox, rotation.archive), appendStep(inbox, `\n${rotation.text}`)]
+
+  return isRealEntry(statAt(input, inbox)) ? [] : [appendStep(inbox, '')]
+}
+
 /**
  * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, the
- * create of inbox.jsonl when there is none, and for an epic render the epic kickoff, the step right before the stamp.
- * The inbox is created by an append of nothing, which never truncates it, so an entry another role appended after the
- * stat is kept. An inbox that is a link is removed first (linkRemovals), so it counts as none. An inbox.md of an older
- * setup is never written or removed.
+ * inbox's steps, and for an epic render the epic kickoff, the step right before the stamp. A rotation moves the inbox
+ * to its archive, then appends the fresh entry after a newline, the framing every append uses; with none, inbox.jsonl
+ * is created when there is none. Both are appends, which never truncate, so an entry another role appended after the
+ * stat or the move is kept; an entry appended between the rotation's read and the move stays in the archive, unlisted.
+ * An inbox that is a link is removed first (linkRemovals), so it counts as none. An inbox.md of an older setup is
+ * never written or removed.
  */
 function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
   const inbox = `${runtime}/${INBOX_LOG_FILE}`
@@ -406,7 +423,7 @@ function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
     writeStep(`${runtime}/${SETTINGS_FILE}`, stableJson(input.plan.settings)),
     writeStep(`${runtime}/${MCP_FILE}`, input.mcpText),
     writeStep(`${runtime}/${PROBE_EXPECTATIONS_FILE}`, input.expectationsText),
-    ...(isRealEntry(statAt(input, inbox)) ? [] : [appendStep(inbox, '')]),
+    ...inboxSteps(input, inbox),
   ]
   if (input.kickoff === undefined) return writes
 

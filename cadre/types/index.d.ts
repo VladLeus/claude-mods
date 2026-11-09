@@ -791,6 +791,12 @@ export type InboxMark = {
 /** One line of an inbox.jsonl. */
 export type InboxEvent = InboxEntry | InboxMark
 
+/** Where a large inbox moves at /cadre start, and the fresh cadre entry appended in its place, as one record line. */
+export type InboxRotation = {
+  readonly archive: string
+  readonly text: string
+}
+
 /** An entry with the state its marks give it, as inbox_read shows it. */
 export type InboxItem = {
   readonly entry: InboxEntry

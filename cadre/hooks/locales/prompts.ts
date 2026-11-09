@@ -164,6 +164,17 @@ export const PROMPTS = Object.freeze({
   inboxMarkNoTeam:
     'Not marked: .cadre/cadre.json or a role.json of the team cannot be read, so the rejection cannot be sent up.',
   inboxRejectSubject: 'rejected: {subject}',
+  // The fresh entry from cadre that opens an inbox /cadre start moved aside (messages/rotate inboxRotationOf).
+  inboxRotatedSubject: 'Inbox archived',
+  inboxRotatedBody:
+    `Your inbox grew past {max} KiB, so /cadre start moved it whole to {archive} in the same folder. Its open ${
+    ''}entries (not done or rejected): {ids}. Read that file for their text; inbox_mark marks only entries of this ${
+    ''}inbox, so answer or re-send what still matters.`,
+  inboxRotatedUnlisted:
+    `Your inbox grew past {max} KiB, so /cadre start moved it whole to {archive} in the same folder. Its entries ${
+    ''}could not be read to list the open ones; read that file.`,
+  inboxRotatedMore: '{ids} and {count} more',
+  inboxRotatedNone: 'none',
 }) satisfies Record<string, string>
 
 /**

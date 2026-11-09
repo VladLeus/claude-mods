@@ -3,13 +3,14 @@
  * runtime folder `.runtime/` for the root it is given, the session's for /cadre start and an epic worktree for
  * /cadre epic. It gathers the launching user there, builds the role's LaunchPlan with its private instructions link,
  * renders the MCP config and the probe expectations, and runs the render steps through the HostIo port, each refusal
- * before anything is written. It imports core, host/steps, launch, paths, probe and the start modules below it; the
- * start command and epic read it.
+ * before anything is written. It imports core, host/steps, launch, messages, paths, probe and the start modules below
+ * it; the start command and epic read it.
  */
 import type {
   CadreState,
   CompiledScope,
   HostIo,
+  InboxRotation,
   InitIo,
   InitLocations,
   PortEntry,
@@ -21,7 +22,15 @@ import { isStepDone } from '../host/steps'
 import type { LaunchUser, OverlayLink } from '../launch/links'
 import { launchPlan } from '../launch/plan'
 import type { LaunchPlan } from '../launch/plan'
-import { PRIVATE_INSTRUCTIONS_LINK, privateInstructionsDir, roleMemoryDir } from '../paths'
+import { inboxRotationOf, isInboxOverRotation } from '../messages/rotate'
+import { INBOX_ROTATE_READ_MAX_BYTES } from '../messages/send'
+import {
+  INBOX_LOG_FILE,
+  PRIVATE_INSTRUCTIONS_LINK,
+  privateInstructionsDir,
+  roleMemoryDir,
+  runtimeFileOf,
+} from '../paths'
 import { expectationsFor, probeExpectationsText } from '../probe/probe'
 import { gatherLaunchUser } from './gather-user'
 import { renderFailedReply } from './launcher-check'
@@ -46,6 +55,25 @@ async function renderDiskOf(
   }
 
   return { stats, listings }
+}
+
+/**
+ * The rotation of the role's inbox when its stat shows a regular file over the rotation threshold: the clock names the
+ * archive, and the inbox read lists its open ids. Null with no clock, and for a smaller inbox, which is not read.
+ */
+async function inboxRotation(
+  io: InitIo,
+  root: string,
+  id: string,
+  stats: ReadonlyMap<string, PortStat | null>,
+): Promise<InboxRotation | null> {
+  const inbox = runtimeFileOf(root, id, INBOX_LOG_FILE)
+  if (!isInboxOverRotation(stats.get(inbox) ?? null)) return null
+  const at = await io.now()
+  if (at === null) return null
+  const read = await io.read(inbox, INBOX_ROTATE_READ_MAX_BYTES)
+
+  return inboxRotationOf(root, id, read.state === 'text' ? read.text : null, at)
 }
 
 /**
@@ -146,10 +174,20 @@ export async function renderRole(
   const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
   const disk = await renderDiskOf(io, renderPaths(user.root, id, plan, { kickoff: input.epic !== null }))
+  const rotation = await inboxRotation(io, user.root, id, disk.stats)
   const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
   // Only an epic render names a kickoff, so a /cadre start render never writes or removes one (D-168).
   const kickoff = input.epic === null ? {} : { kickoff: input.epic.kickoff }
-  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk, memories: launch.memories, ...kickoff })
+  const render = renderSteps({
+    root: user.root,
+    id,
+    plan,
+    ...texts,
+    ...disk,
+    memories: launch.memories,
+    ...kickoff,
+    ...(rotation === null ? {} : { rotation }),
+  })
   if (render.refusal !== null) return { kind: 'refuse', text: render.refusal }
 
   for (const step of render.steps) {
