@@ -76,6 +76,10 @@ export type LaunchUser = {
   readonly mainRoot?: string
   /** The role ids of the team from cadre.json; absent when the launch does not know the team. */
   readonly teamIds?: readonly string[]
+  /** The skill names of each installed plugin whose own skill list was read, by plugin key; absent when none was. */
+  readonly pluginSkills?: Readonly<Record<string, readonly string[]>>
+  /** The plugin keys the repo's `.claude/settings.json` enables; absent when it enables none. */
+  readonly projectPlugins?: readonly string[]
 }
 
 /**

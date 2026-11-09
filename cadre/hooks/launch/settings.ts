@@ -9,7 +9,7 @@ import { sortedUnique } from '../core/text'
 import { ROLE_ENV, roleMemoryDir, ROOT_ENV } from '../paths'
 import { mcpToolName } from '../scope/card'
 import { isContextMonitorScript } from '../scope/lint'
-import { settingsDeny } from './deny'
+import { pluginSkillDeny, settingsDeny } from './deny'
 import type { LaunchUser } from './links'
 
 /**
@@ -105,6 +105,19 @@ function deniedServers(scope: CompiledScope, deny: readonly string[]): { readonl
   return scope.card.notGiven.mcp.filter(name => deny.includes(mcpToolName(name))).map(serverName => ({ serverName }))
 }
 
+/**
+ * The plugins of a role session: the scope's record, with `false` for a plugin whose skill list the launch could not
+ * read (pluginSkillDeny) and for every plugin the repo's settings enable that the scope does not, so a project install
+ * reaches no role not given it.
+ */
+function enabledPluginsFor(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, boolean> {
+  const enabled = scope.settings.enabledPlugins
+  const leaked = (user.projectPlugins ?? []).filter(key => !Object.hasOwn(enabled, key) || enabled[key] !== true)
+  const off = [...pluginSkillDeny(role, scope, user).offPlugins, ...leaked]
+
+  return { ...enabled, ...Object.fromEntries(off.map((key): [string, boolean] => [key, false])) }
+}
+
 /** The settings of renderRuntimeSettings with the deny list given, so a caller that has it computes it only once. */
 export function settingsFor(
   role: RoleSpec,
@@ -118,7 +131,7 @@ export function settingsFor(
     ['autoMemoryDirectory', roleMemoryDir(user, role.id)],
     ['claudeMdExcludes', [...claudeMdExcludes]],
     ['deniedMcpServers', deniedServers(scope, deny)],
-    ['enabledPlugins', { ...scope.settings.enabledPlugins }],
+    ['enabledPlugins', enabledPluginsFor(role, scope, user)],
     ['env', sessionEnv(role, user)],
     ...entryIf('hooks', carriedHooks(role, user)),
     ['permissions', { defaultMode: scope.settings.permissions.defaultMode, deny: [...deny] }],

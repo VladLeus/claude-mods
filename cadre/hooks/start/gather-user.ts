@@ -17,7 +17,7 @@ import type {
   SettingsSource,
 } from '../../types'
 import { privateLevelsProblem, roleFolderLevels } from '../apply/safety'
-import { isObject } from '../core/json'
+import { allOrNull, isObject, parseJsonValue } from '../core/json'
 import { sortedUnique } from '../core/text'
 import { gitCommonDirOf, mainCheckoutOf } from '../git/common-dir'
 import { isPartsFlowRole } from '../launch/links'
@@ -32,8 +32,9 @@ import {
   roleMemoryDir,
   userDirOf,
 } from '../paths'
+import { MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
-import { SOURCE_ORDER } from '../scan/facts/settings'
+import { isEntryForRoot, SOURCE_ORDER } from '../scan/facts/settings'
 import { claudeMdImports } from '../scan/instructions/imports'
 import { ruleFiles, RULES_FOLDER } from '../scan/rules'
 import { claudeMdPathsOf } from '../scan/setup/claude-md'
@@ -210,6 +211,77 @@ async function userSkillsOf(io: InitIo, userDir: string): Promise<string[]> {
   return sortedUnique(entries.filter(entry => entry.kind === 'dir' || entry.isLink).map(entry => entry.name))
 }
 
+/** A skill name a plugin's own skill list may hold. */
+const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+/** The JSON value of a file read whole within MAX_READ_BYTES; null when it cannot be read or parsed. */
+async function jsonOf(io: InitIo, path: string): Promise<unknown> {
+  const read = await io.read(path, MAX_READ_BYTES)
+  if (read.state !== 'text') return null
+
+  return parseJsonValue(read.text)?.value ?? null
+}
+
+/**
+ * The install path installed_plugins.json records for MATTPOCOCK_PLUGIN: the first entry for this repo, else the first
+ * user entry. Null when that entry has no absolute path.
+ */
+function installPathOf(value: unknown, roots: readonly string[]): string | null {
+  if (!isObject(value) || !isObject(value.plugins) || !Object.hasOwn(value.plugins, MATTPOCOCK_PLUGIN)) return null
+  const entries = value.plugins[MATTPOCOCK_PLUGIN]
+  if (!Array.isArray(entries)) return null
+  const usable = entries.filter(isObject).filter(entry => isEntryForRoot(entry, roots))
+  const repoEntry = usable.find(entry => entry.scope !== 'user')
+  const path = (repoEntry ?? usable.find(entry => entry.scope === 'user'))?.installPath
+
+  return typeof path === 'string' && path.startsWith('/') ? path : null
+}
+
+/** The skill name of one plugin.json `skills` item: a path's last segment, a bare name, or an object's `name`. */
+function skillNameOf(item: unknown): string | null {
+  if (isObject(item)) return typeof item.name === 'string' && SKILL_NAME.test(item.name) ? item.name : null
+  if (typeof item !== 'string') return null
+  const name = item.slice(item.lastIndexOf('/') + 1)
+
+  return SKILL_NAME.test(name) ? name : null
+}
+
+/** The skill names a plugin.json lists, sorted and once each; null when the list is missing, empty or not whole. */
+function skillListOf(value: unknown): string[] | null {
+  if (!isObject(value) || !Array.isArray(value.skills)) return null
+  const names = allOrNull(value.skills, skillNameOf)
+  if (names === null || names.length === 0) return null
+
+  return sortedUnique(names)
+}
+
+/**
+ * The skill names of the installed MATTPOCOCK_PLUGIN by its key, read from its own plugin.json at the install path
+ * installPathOf gives; {} when any read fails or the list cannot be read whole, so the launch turns the plugin off.
+ */
+async function pluginSkillsOf(
+  io: InitIo,
+  userDir: string,
+  root: string,
+  givenRoot: string,
+): Promise<Record<string, readonly string[]>> {
+  const installed = await jsonOf(io, `${userDir}/plugins/installed_plugins.json`)
+  const installPath = installPathOf(installed, [root, givenRoot])
+  if (installPath === null) return {}
+  const skills = skillListOf(await jsonOf(io, `${installPath}/.claude-plugin/plugin.json`))
+
+  return skills === null ? {} : { [MATTPOCOCK_PLUGIN]: skills }
+}
+
+/** The plugin keys `<root>/.claude/settings.json` turns on, sorted; [] when it cannot be read. */
+async function projectPluginsOf(io: InitIo, root: string): Promise<string[]> {
+  const value = await jsonOf(io, `${root}/.claude/settings.json`)
+  if (!isObject(value) || !isObject(value.enabledPlugins)) return []
+  const enabled = Object.entries(value.enabledPlugins).filter(([, isOn]) => isOn === true)
+
+  return sortedUnique(enabled.map(([key]) => key))
+}
+
 /** The user's agents: the regular `.md` files in `<userDir>/agents`, by name without `.md`, sorted. */
 async function userAgentsOf(io: InitIo, userDir: string): Promise<string[]> {
   const names = await markdownFiles(io, `${userDir}/agents`)
@@ -273,6 +345,8 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
  *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
  *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
  *   skills and agents, and the code dirs given;
+ * - the skill list of the installed mattpocock-skills (pluginSkillsOf) and the plugins the repo's settings file turns
+ *   on (projectPluginsOf), each set only when there is one;
  * - for a parts-flow role (isPartsFlowRole), the memories its hand-out record names, linked into its role memory
  *   folder with cadre's MEMORY.md block (linkedMemoriesOf, G-02-1f, D-140 q3-a): their link paths are the user's
  *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
@@ -319,6 +393,8 @@ export async function gatherLaunchUser(
   }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
+  const pluginSkills = await pluginSkillsOf(io, userDir, locations.root, locations.givenRoot)
+  const projectPlugins = await projectPluginsOf(io, locations.root)
   const user: LaunchUser = {
     root: locations.root,
     givenRoot: locations.givenRoot,
@@ -338,6 +414,8 @@ export async function gatherLaunchUser(
     userAgents: await userAgentsOf(io, userDir),
     codeDirs: input.codeDirs,
     linkedMemories: [],
+    ...(Object.keys(pluginSkills).length === 0 ? {} : { pluginSkills }),
+    ...(projectPlugins.length === 0 ? {} : { projectPlugins }),
   }
   if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS }
   const linked = await linkedMemoriesOf(io, user, input.role.id)

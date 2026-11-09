@@ -131,6 +131,18 @@ export const SECURITY_PLUGINS: readonly string[] = Object.freeze([CLAUDE_SECURIT
  */
 export const CLAUDE_MD_PLUGIN = 'claude-md-management@claude-plugins-official'
 
+/** Matt Pocock's skills plugin, by its exact key in claude-plugins-official: PM gets its grill skills. */
+export const MATTPOCOCK_PLUGIN = 'mattpocock-skills@claude-plugins-official'
+
+/**
+ * The grill skills of MATTPOCOCK_PLUGIN, as `plugin:skill`: `grilling` is the one the model can call, `grill-me` the
+ * one the user types. A role given them is denied every other skill of the plugin at launch.
+ */
+export const GRILL_SKILLS: readonly string[] = Object.freeze([
+  'mattpocock-skills:grilling',
+  'mattpocock-skills:grill-me',
+])
+
 /**
  * The review skill of claude-security, as `plugin:skill`, which every Security role gets when the person answers
  * Install (decision #39). The name is an assumption (the plugin's skill folder is `claude-security`), checked live in

@@ -16,7 +16,8 @@ import {
   runtimeFileOf,
   SESSION_FILE,
 } from '../paths'
-import { isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
+import { MATTPOCOCK_PLUGIN } from '../roles/infra'
+import { isSafeDir, lintDenyPattern, pluginName, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
 import { isPartsFlowRole, launchRoots } from './links'
 import type { LaunchUser } from './links'
 
@@ -277,6 +278,40 @@ function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
   return rules === null ? { deny: [], warnings: [UNDENIED_RECORD_WARNING] } : { deny: rules, warnings: [] }
 }
 
+/** The skill names the launch read for a plugin key; undefined when it read none. */
+function listedSkillsOf(user: LaunchUser, key: string): readonly string[] | undefined {
+  const listed = user.pluginSkills
+
+  return listed !== undefined && Object.hasOwn(listed, key) ? listed[key] : undefined
+}
+
+/**
+ * The per-skill deny of the plugins a role's scope enables whose skill list the launch read: `Skill(<plugin
+ * name>:<skill>)` for every listed skill the role was not given, so a skill a plugin update adds is denied at the next
+ * launch. An enabled MATTPOCOCK_PLUGIN whose list was not read goes to offPlugins with a warning naming it: the role
+ * gets none of its skills.
+ */
+export function pluginSkillDeny(
+  role: RoleSpec,
+  scope: CompiledScope,
+  user: LaunchUser,
+): DenyResult & { offPlugins: string[] } {
+  const given = new Set(role.skills)
+  const enabled = scope.settings.enabledPlugins
+  const rules = Object.entries(enabled).flatMap(([key, isOn]) => {
+    const listed = listedSkillsOf(user, key)
+    if (!isOn || listed === undefined) return []
+    const names = listed.map(skill => `${pluginName(key)}:${skill}`)
+
+    return names.filter(name => !given.has(name)).map(name => `Skill(${name})`)
+  })
+  const isMattOn = Object.hasOwn(enabled, MATTPOCOCK_PLUGIN) && enabled[MATTPOCOCK_PLUGIN] === true
+  const offPlugins = isMattOn && listedSkillsOf(user, MATTPOCOCK_PLUGIN) === undefined ? [MATTPOCOCK_PLUGIN] : []
+  const warnings = offPlugins.map(key => t('launch.deny.pluginOffWarning', { plugin: shown(key) }))
+
+  return { ...lintedDeny(rules, warnings), offPlugins }
+}
+
 /**
  * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
  * for a linked worktree nested in its main checkout (`mainRoot` set), runtimeDeny's denies for the main checkout's root
@@ -284,7 +319,7 @@ function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
  * worktree's; for every role, the deny of its private instructions folder (every launcher adds that folder), of the
  * repo's memory folders, of the launch files, of the team's inbox and session files and of its hand-out record; and
  * for a parts-flow role the read-only deny of the memories /cadre start linked into its memory folder, never of its
- * MEMORY.md or of its own memories.
+ * MEMORY.md or of its own memories; last, the per-skill deny of its plugins (pluginSkillDeny).
  */
 export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
@@ -298,6 +333,7 @@ export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchU
     inboxFilesDeny(user, role.id),
     instructionsRecordDeny(user, role.id),
     isPartsFlowRole(role) ? linkedMemoryDeny(user.linkedMemories) : { deny: [], warnings: [] },
+    pluginSkillDeny(role, scope, user),
   ]
 
   return {
