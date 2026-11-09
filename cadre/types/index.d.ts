@@ -324,6 +324,21 @@ export type ProjectInstall = {
  * Every field is required except `roleFacts`. `autonomyNote` is null unless `autonomy` is empty, and then it
  * states why the framework needs no autonomy settings.
  */
+/** Who a framework's start steps are worded for: the role, and whether it is the team's lead. */
+export type RoleWorkContext = {
+  readonly roleId: string
+  readonly isLead: boolean
+}
+
+/**
+ * How a role keeps its own planning state in a framework: the env name its runtime settings set to the role's
+ * workstream (null when the framework has none), and the steps the role runs to start its planning.
+ */
+export type RoleWork = {
+  readonly workstreamEnv: string | null
+  readonly startSteps: (ctx: RoleWorkContext) => readonly string[]
+}
+
 export type FrameworkAdapter = {
   readonly id: FrameworkId
   readonly name: string
@@ -369,6 +384,8 @@ export type FrameworkAdapter = {
   readonly projectInstall: ProjectInstall | null
   /** The heading of the detect report line that lists the adapter's roleFacts; null when no line is shown. */
   readonly factsHeading: string | null
+  /** How a role on this framework keeps its own planning state. */
+  readonly roleWork: RoleWork
 }
 
 /** A repo-root entry that marks a framework cadre does not drive in v1. */

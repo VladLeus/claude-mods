@@ -80,6 +80,8 @@ export type LaunchUser = {
   readonly pluginSkills?: Readonly<Record<string, readonly string[]>>
   /** The plugin keys the repo's `.claude/settings.json` enables; absent when it enables none. */
   readonly projectPlugins?: readonly string[]
+  /** The slug of the epic whose worktree the role is rendered for; absent for /cadre start. */
+  readonly epicSlug?: string
 }
 
 /**

@@ -135,4 +135,5 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   install: null,
   projectInstall: null,
   factsHeading: null,
+  roleWork: Object.freeze({ workstreamEnv: null, startSteps: () => Object.freeze([]) }),
 })

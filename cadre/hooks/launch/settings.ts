@@ -6,6 +6,8 @@
  */
 import type { CompiledScope, RoleSpec } from '../../types'
 import { sortedUnique } from '../core/text'
+import { adapterOf } from '../framework/registry'
+import { workstreamName } from '../framework/workstream'
 import { ROLE_ENV, roleMemoryDir, ROOT_ENV } from '../paths'
 import { mcpToolName } from '../scope/card'
 import { isContextMonitorScript } from '../scope/lint'
@@ -53,9 +55,20 @@ function carriedEnv(role: RoleSpec, user: LaunchUser): Record<string, string> {
   return Object.fromEntries(entries)
 }
 
-/** The env of a role session: the carried env with cadre's role and root names laid over it, so cadre's names win. */
-function sessionEnv(role: RoleSpec, user: LaunchUser): Record<string, string> {
-  return { ...carriedEnv(role, user), [ROLE_ENV]: role.id, [ROOT_ENV]: user.root }
+/** The workstream env of a role session: its framework's workstream env name set to the role's workstream, if any. */
+function workstreamEnv(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, string> {
+  const name = adapterOf(scope.card.framework).roleWork.workstreamEnv
+  if (name === null) return {}
+
+  return { [name]: workstreamName(role.id, user.epicSlug ?? null) }
+}
+
+/**
+ * The env of a role session: the carried env, then its workstream env, with cadre's role and root names laid over it,
+ * so cadre's names win.
+ */
+function sessionEnv(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, string> {
+  return { ...carriedEnv(role, user), ...workstreamEnv(role, scope, user), [ROLE_ENV]: role.id, [ROOT_ENV]: user.root }
 }
 
 /** One carried hook command as the settings hold it; `timeout` only when the user set one. */
@@ -132,7 +145,7 @@ export function settingsFor(
     ['claudeMdExcludes', [...claudeMdExcludes]],
     ['deniedMcpServers', deniedServers(scope, deny)],
     ['enabledPlugins', enabledPluginsFor(role, scope, user)],
-    ['env', sessionEnv(role, user)],
+    ['env', sessionEnv(role, scope, user)],
     ...entryIf('hooks', carriedHooks(role, user)),
     ['permissions', { defaultMode: scope.settings.permissions.defaultMode, deny: [...deny] }],
     ['sandbox', { enabled: scope.settings.sandbox.enabled }],

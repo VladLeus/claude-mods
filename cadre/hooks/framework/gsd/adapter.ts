@@ -350,6 +350,7 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
     isPlugin: false,
   }),
   factsHeading: t('framework.gsd.adapter.gsdAdapterFactsHeading'),
+  roleWork: Object.freeze({ workstreamEnv: 'GSD_WORKSTREAM', startSteps: () => Object.freeze([]) }),
 })
 
 /** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */

@@ -264,4 +264,5 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
     isPlugin: true,
   }),
   factsHeading: null,
+  roleWork: Object.freeze({ workstreamEnv: null, startSteps: () => Object.freeze([]) }),
 })
