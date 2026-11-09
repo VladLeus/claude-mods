@@ -66,6 +66,7 @@ import {
   parseQueueInput,
   parseUtcOffset,
   parseWaitInput,
+  passesQuestion,
   pushPending,
   questionIdFromNote,
   questionsBlock,
@@ -1600,6 +1601,11 @@ export const register: Register = on => {
     const isAway = autoAnswersQuestions(run.phase)
     if (isAway && e.tool === 'AskUserQuestion') {
       const mode = await refreshMode($)
+      // The person can answer now: the dialog and its result are theirs, never rewritten.
+      if (mode !== null && passesQuestion(mode)) {
+        await log($, `question passed to the person (${mode})`)
+        return await next(e)
+      }
       await log($, `question answered by autopilot (decide yourself): ${JSON.stringify(e).slice(0, 400)}`)
       return { deny: askAnswer(mode ?? 'plain') }
     }
