@@ -72,6 +72,14 @@ export const ARTIFACT = Object.freeze({
     'Report each task to TL when it is done (to PM in a team without TL), then wait for the next.',
   roleMdWorkerNoTl: `In a team without TL, PM sends you the ticket: add complexity and effort to its scope and risk ${
     ''}yourself, and take the no-TL step of Planning docs when it has one.`,
+  roleMdSizing: '## Sizing',
+  roleMdSizeVector: `A ticket's size is a vector of four scores, each from 0.1 to 1.0: scope, complexity, risk and ${
+    ''}effort. PM scores scope and risk; TL adds complexity and effort (in a team without TL, the role PM sends ${
+    ''}the ticket to).`,
+  roleMdSizeRule:
+    'The size is the highest of the four; the ticket is large at or over sizing.threshold in {state}, else small.',
+  roleMdSizeRubric: 'Score each dimension against the anchors in {rubric}.',
+  roleMdSizePin: 'A size the user pins on a ticket overrides the computed class.',
   roleMdScope: '## Scope',
   // The marker above a part in a built role file (generate/docs partMarker), and the first line of the built and of
   // the private role CLAUDE.md (generate/docs roleClaudeMdText, apply/private privateClaudeMdText).
@@ -231,6 +239,8 @@ export const ARTIFACT = Object.freeze({
   gsdKickoffStart:
     `Start: /gsd-autonomous --only N for the phase you own, or step by step /gsd-discuss-phase N --auto, ${
     ''}/gsd-plan-phase N --auto, /gsd-execute-phase N.`,
+  gsdKickoffNewProject: `A checkout with no .planning/ starts with /gsd-new-project (no .planning/ yet); your ${
+    ''}Planning docs steps say whether you run it.`,
   gsdKickoffSpecs: 'Specs and plans live under .planning/phases/<NN-slug>/.',
   gsdKickoffVerify: 'Verify with /gsd-validate-phase N and /gsd-code-review N.',
   gsdHumanGates: 'Human gates:',

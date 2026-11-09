@@ -50,6 +50,7 @@ export const GOLDEN_DETECT: Readonly<Record<string, readonly string[]>> = {
     "  kickoff (example for role BE):",
     "      You are the BE role. This repo uses GSD: drive the work with its own commands.",
     "      Start: /gsd-autonomous --only N for the phase you own, or step by step /gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N.",
+    "      A checkout with no .planning/ starts with /gsd-new-project (no .planning/ yet); your Planning docs steps say whether you run it.",
     "      Specs and plans live under .planning/phases/<NN-slug>/.",
     "      Verify with /gsd-validate-phase N and /gsd-code-review N.",
     "      Human gates:",

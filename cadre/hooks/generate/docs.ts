@@ -11,7 +11,7 @@ import { cardList, clean, reportText } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { fill } from '../locales/t'
-import { handoffFolderOf, launcherPath } from '../paths'
+import { cadreStatePath, handoffFolderOf, launcherPath, SIZING_RUBRIC_PATH } from '../paths'
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
 import { standsFor } from '../roles/template'
@@ -108,15 +108,31 @@ function hierarchyLines(role: RoleSpec): string[] {
 }
 
 /**
+ * The Sizing section of ROLE.md: the four dimensions and who scores them, the size rule with the threshold's file, the
+ * rubric and the user's pin. It names the file the threshold is read from, not a number.
+ */
+function sizingLines(): string[] {
+  return [
+    ARTIFACT.roleMdSizing,
+    '',
+    ARTIFACT.roleMdSizeVector,
+    fill(ARTIFACT.roleMdSizeRule, { state: cadreStatePath() }),
+    fill(ARTIFACT.roleMdSizeRubric, { rubric: SIZING_RUBRIC_PATH }),
+    ARTIFACT.roleMdSizePin,
+    '',
+  ]
+}
+
+/**
  * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session; it is never named
  * CLAUDE.md or AGENTS.md. It holds, in this order: the title and id, the purpose, the framework with the model,
  * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
  * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
  * "Handoffs" (the folder autopilot accepts), "Inbox" (the role's inbox file and the inbox tools), "Planning docs" (the
  * start steps of every framework the role may run, when one has a step), "Hierarchy" (who asks whom, the epic end and
- * the role's own part) and "Scope" (the lines of the scope card). The framework is the one the scope was compiled for
- * (`scope.card.framework`), so the document and the card cannot disagree. The title and the purpose come from outside,
- * so they are cleaned.
+ * the role's own part), "Sizing" (how a ticket is sized) and "Scope" (the lines of the scope card). The framework is
+ * the one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The
+ * title and the purpose come from outside, so they are cleaned.
  */
 export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
   const { card } = scope
@@ -151,6 +167,7 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     '',
     ...planningDocsLines(role, card),
     ...hierarchyLines(role),
+    ...sizingLines(),
     ARTIFACT.roleMdScope,
     '',
     ...scopeCardLines(card),

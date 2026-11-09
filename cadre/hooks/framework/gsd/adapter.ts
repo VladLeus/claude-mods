@@ -265,9 +265,10 @@ function approvedSpecLines(specPath: string | null): string[] {
 }
 
 /**
- * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work, one
- * line per human gate, and the done answer. Lines are joined with newlines and the text has no trailing newline. The
- * title and the spec path come from outside the adapter, so they are cleaned before they can add a line.
+ * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work (the
+ * new project of a checkout with no `.planning/` too), one line per human gate, and the done answer. Lines are joined
+ * with newlines and the text has no trailing newline. The title and the spec path come from outside the adapter, so
+ * they are cleaned before they can add a line.
  */
 export function gsdKickoffText(ctx: KickoffContext): string {
   const title = kickoffTitle(ctx)
@@ -276,6 +277,7 @@ export function gsdKickoffText(ctx: KickoffContext): string {
     fill(ARTIFACT.gsdKickoffIntro, { title }),
     ...approvedSpecLines(ctx.specPath),
     ARTIFACT.gsdKickoffStart,
+    ARTIFACT.gsdKickoffNewProject,
     ARTIFACT.gsdKickoffSpecs,
     ARTIFACT.gsdKickoffVerify,
     ARTIFACT.gsdHumanGates,
