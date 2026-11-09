@@ -32,6 +32,7 @@ import {
   RECORD,
   rule,
   templateRole,
+  withFramework,
 } from '../testkit'
 import type { EpicRun, HostRunRule, HostWrite, MemWorld } from '../testkit'
 import { COPIED_LINE, launcherCommand, TERMINAL_MAC_ONLY, terminalPlan } from '../ui/terminal'
@@ -1194,5 +1195,42 @@ describe('safety net: epic failure paths (A8)', () => {
     const before = [CHECKOUT_ARGV('/repo').join(' '), 'claude --version', list.join(' ')]
     expect([noList.reply, noList.events]).toEqual([reply, before])
     expect([noBranches.reply, noBranches.events]).toEqual([reply, [...before, branches.join(' ')]])
+  })
+})
+
+describe('the epic GSD workstream', () => {
+  /** PM, and BE on GSD. */
+  const GSD_TEAM: readonly RoleSpec[] = [templateRole('pm'), withFramework(templateRole('be'), 'gsd')]
+
+  /** The GSD_WORKSTREAM a render wrote for be under `root`; undefined when it wrote none. */
+  function workstreamOf(writes: readonly HostWrite[], root: string): unknown {
+    const env = settingsAt(writes, root, 'be').env
+
+    return isObject(env) ? env.GSD_WORKSTREAM : undefined
+  }
+
+  test('an epic renders BE on GSD with the epic workstream, while the main checkout keeps cadre-be', async () => {
+    const world = await renderWorld(GSD_TEAM)
+    const host = epicHost([COMMON_DIR])
+    await runStart(memIo(world, {}).io, host.io, { id: 'be', terminal: 'none' })
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const inEpic = String(workstreamOf(run.writes, BARE_WORKTREE))
+
+    expect([workstreamOf(host.writes, '/repo'), inEpic]).toEqual(['cadre-be', 'cadre-proj-1-be'])
+    expect([inEpic.startsWith('cadre-'), inEpic.endsWith('-be'), inEpic !== 'cadre-be']).toEqual([true, true, true])
+  })
+
+  test('two epics with different slugs give BE two different workstreams', async () => {
+    const second = '/repo/.claude/worktrees/proj-2'
+    const base = await renderWorld(GSD_TEAM)
+    const world = { ...base, dirs: { ...base.dirs, [`${second}/.cadre/pm`]: [], [`${second}/.cadre/be`]: [] } }
+    const rules = [rule(GIT_DIR_ARGV(second), 0, '/repo/.git/worktrees/proj-2\n'), COMMON_DIR]
+    const one = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const two = await epic(world, rules, 'PROJ-2', '')
+
+    expect([workstreamOf(one.writes, BARE_WORKTREE), workstreamOf(two.writes, second)]).toEqual([
+      'cadre-proj-1-be',
+      'cadre-proj-2-be',
+    ])
   })
 })
