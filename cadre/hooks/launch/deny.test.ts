@@ -967,6 +967,15 @@ function listing(skills: readonly string[]): LaunchUser {
   return user({ pluginSkills: { [MATTPOCOCK_PLUGIN]: skills } })
 }
 
+/** A mattpocock-skills key of another marketplace. */
+const LOOKALIKE = 'mattpocock-skills@acme'
+
+/** GRILL_PM's scope with the official key and LOOKALIKE in the setup, so the scope enables both. */
+const LOOKALIKE_SCOPE = compileScope(
+  GRILL_PM,
+  context({ framework: 'none', setup: emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN, LOOKALIKE] }) }),
+)
+
 describe('the per-skill deny of a plugin skill list', () => {
   test('a role given the grill skills gets a deny for every other listed skill and none for its own', () => {
     const result = pluginSkillDeny(GRILL_PM, GRILL_SCOPE, listing(MATT_LIST))
@@ -1000,6 +1009,39 @@ describe('the per-skill deny of a plugin skill list', () => {
     expect(result.warnings[0]).toContain(MATTPOCOCK_PLUGIN)
     expect(plugins[MATTPOCOCK_PLUGIN]).toBe(false)
     expect(plan.warnings).toContain(result.warnings[0])
+  })
+
+  test('a lookalike key with no list of its own is turned off; the official key with a list stays on', () => {
+    const result = pluginSkillDeny(GRILL_PM, LOOKALIKE_SCOPE, listing(MATT_LIST))
+    const plan = launchPlan(GRILL_PM, LOOKALIKE_SCOPE, listing(MATT_LIST))
+    const plugins = isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+
+    expect(LOOKALIKE_SCOPE.settings.enabledPlugins).toMatchObject({ [MATTPOCOCK_PLUGIN]: true, [LOOKALIKE]: true })
+    expect(result.offPlugins).toEqual([LOOKALIKE])
+    expect(result.deny).toEqual(['Skill(mattpocock-skills:tdd)', 'Skill(mattpocock-skills:to-spec)'])
+    expect(result.warnings.length).toBe(1)
+    expect(result.warnings[0]).toContain(LOOKALIKE)
+    expect([plugins[MATTPOCOCK_PLUGIN], plugins[LOOKALIKE]]).toEqual([true, false])
+  })
+
+  test('with no list read, the official key and the lookalike are both turned off, each with a warning', () => {
+    const result = pluginSkillDeny(GRILL_PM, LOOKALIKE_SCOPE, user())
+
+    expect([...result.offPlugins].sort()).toEqual([LOOKALIKE, MATTPOCOCK_PLUGIN])
+    expect(result.deny).toEqual([])
+    expect(result.warnings.length).toBe(2)
+    for (const key of [LOOKALIKE, MATTPOCOCK_PLUGIN]) {
+      expect(result.warnings.some(warning => warning.includes(key))).toBe(true)
+    }
+  })
+
+  test('a plugin of another name with no list read is never turned off by the skill list rule', () => {
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS, 'tool:x'] })
+    const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN, 'tool@m'] })
+    const scope = compileScope(pm, context({ framework: 'none', setup }))
+
+    expect(scope.settings.enabledPlugins['tool@m']).toBe(true)
+    expect(pluginSkillDeny(pm, scope, user()).offPlugins).toEqual([MATTPOCOCK_PLUGIN])
   })
 
   test('a role whose scope does not enable the plugin gets no rule, no warning and nothing turned off', () => {
