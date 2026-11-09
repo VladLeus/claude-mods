@@ -112,6 +112,13 @@ function launchFileRules(root: string): string[] {
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
 
+/** The deny of the inbox and session files of the role `id` under the root `root`, as exact `//` rules. */
+function inboxFileRules(root: string, id: string): string[] {
+  const files = [`.cadre/${id}/.runtime/inbox.jsonl`, `.cadre/${id}/.runtime/session.json`]
+
+  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+}
+
 describe('launch render', () => {
   test('RUNTIME_SETTINGS_KEYS lists the ten allowed settings keys and is frozen', () => {
     expect(RUNTIME_SETTINGS_KEYS).toEqual([
@@ -204,7 +211,7 @@ describe('launch render', () => {
       },
       permissions: {
         defaultMode: 'auto',
-        deny: [
+        deny: sortedUnique([
           'Bash',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
@@ -228,7 +235,8 @@ describe('launch render', () => {
           'Write(//repo/.cadre/manifest.json)',
           'Write(//repo/.claude/settings.json)',
           'Write(//repo/.claude/settings.local.json)',
-        ],
+          ...inboxFileRules('/repo', 'pm'),
+        ]),
       },
       sandbox: { enabled: false },
       statusLine: { type: 'command', command: '/home/u/x.js' },
@@ -244,10 +252,11 @@ describe('launch render', () => {
     const plan = launchPlan(role, scope, carrier())
     const folder = roleMemoryDir(carrier(), 'pm')
     const own = [...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]
+    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'pm')]
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
-      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...own, ...launchFileRules('/repo')]),
+      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...own, ...launch]),
     })
   })
 
@@ -339,7 +348,7 @@ describe('launch render', () => {
       env: { CADRE_ROLE: 'be', CADRE_ROOT: '/repo' },
       permissions: {
         defaultMode: 'auto',
-        deny: [
+        deny: sortedUnique([
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
@@ -360,7 +369,8 @@ describe('launch render', () => {
           'Write(//repo/.cadre/manifest.json)',
           'Write(//repo/.claude/settings.json)',
           'Write(//repo/.claude/settings.local.json)',
-        ],
+          ...inboxFileRules('/repo', 'be'),
+        ]),
       },
       sandbox: { enabled: true },
     })
@@ -684,7 +694,8 @@ describe('launch properties', () => {
       const memories = isPartsFlowRole(item.role) ? linkedMemoryDeny(item.launcher.linkedMemories).deny : []
       const folder = roleMemoryDir(item.launcher, item.role.id)
       const own = [...privateDeny(folder), ...memoryAndRecordDeny(item.launcher.userDir, folder)]
-      const launch = [item.launcher.root, item.launcher.givenRoot].flatMap(launchFileRules)
+      const roots = [item.launcher.root, item.launcher.givenRoot]
+      const launch = roots.flatMap(root => [...launchFileRules(root), ...inboxFileRules(root, item.role.id)])
       const expected = sortedUnique([...deny.deny, ...own, ...launch, ...memories])
 
       return {

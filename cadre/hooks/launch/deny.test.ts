@@ -110,6 +110,13 @@ function launchFileRules(root: string): string[] {
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
 
+/** The deny of the inbox and session files of the role `id` under the root `root`, as exact `//` rules. */
+function inboxFileRules(root: string, id: string): string[] {
+  const files = [`.cadre/${id}/.runtime/inbox.jsonl`, `.cadre/${id}/.runtime/session.json`]
+
+  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+}
+
 /** A hook script the user's settings register. */
 function hook(script: string): HookScript {
   return { script, event: 'PostToolUse', source: 'user' }
@@ -513,6 +520,7 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
         ...privateDeny(folder),
         ...memoryAndRecordDeny('/home/u/.claude', folder),
         ...launchFileRules('/repo'),
+        ...inboxFileRules('/repo', 'be'),
       ]),
     })
   })
@@ -593,8 +601,9 @@ describe('linked memory deny (G-02-1f)', () => {
     const base = runtimeDeny(role, scope, launcher).deny
 
     const own = [...privateDeny(BE_MEMORY), ...memoryAndRecordDeny('/home/u/.claude', BE_MEMORY)]
+    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be')]
     expect(isPartsFlowRole(role)).toBe(true)
-    expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launchFileRules('/repo')]))
+    expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launch]))
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
       `Edit(/${BE_MEMORY}/instructions.json)`,
       `Edit(/${BE_MEMORY}/instructions/**)`,
@@ -648,7 +657,8 @@ describe('linked memory deny (G-02-1f)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launchFileRules('/repo')])
+    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be')]
+    const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch])
     expect(denyOf(plan.settings)).toEqual(expected)
     expect(plan.warnings.slice(0, lead.length + 4)).toEqual([
       ...lead,
@@ -742,7 +752,7 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = [...launchFileRules('/link/repo'), ...launchFileRules('/repo')]
+    const launch = ['/link/repo', '/repo'].flatMap(root => [...launchFileRules(root), ...inboxFileRules(root, 'pm')])
     expect(denyOf(plan.settings)).toEqual(sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch]))
     expect(plan.warnings.slice(lead.length)).toEqual([
       UNDENIED_PRIVATE_WARNING,
@@ -757,18 +767,21 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     )
   })
 
-  test('the matrix with both denies keeps no deny over .cadre/<id>/, the handoff folder or .planning/ (B4)', () => {
+  test('the matrix keeps only the inbox and session rules over .cadre/<id>/ and no deny over .planning/ (B4)', () => {
     const results = matrixCases(MATRIX_USER).map(item => {
       const deny = denyOf(item.plan.settings)
       const ownFolder = `//repo/.cadre/${item.role.id}/`
-      const repo = deny.filter(entry => entry.includes(ownFolder) || entry.includes('//repo/.planning/'))
+      const runtime = sortedUnique(inboxFileRules('/repo', item.role.id))
+      const own = deny.filter(entry => entry.includes(ownFolder))
+      const planning = deny.filter(entry => entry.includes('//repo/.planning/'))
       const memory = deny.filter(entry => entry.includes('/projects/-repo/memory/'))
       const record = deny.filter(entry => entry.endsWith(`/${item.role.id}/instructions.json)`))
+      const isKept = JSON.stringify(own) === JSON.stringify(runtime) && planning.length === 0
 
-      return { label: item.label, repo, isDenied: memory.length === 2 && record.length === 2 }
+      return { label: item.label, isKept, isDenied: memory.length === 2 && record.length === 2 }
     })
 
-    expect(results.filter(result => result.repo.length > 0 || !result.isDenied).map(result => result.label)).toEqual([])
+    expect(results.filter(result => !result.isKept || !result.isDenied).map(result => result.label)).toEqual([])
     expect(results).toHaveLength(42)
   })
 })
@@ -786,7 +799,8 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
 
     expect(epicRules.filter(rule => !epicDeny.includes(rule))).toEqual([])
     expect(mainRules.filter(rule => !mainDeny.includes(rule))).toEqual([])
-    expect(epicDeny.filter(entry => entry.includes('/.runtime/'))).toEqual([])
+    const inboxRules = sortedUnique([...inboxFileRules('/repo', 'pm'), ...inboxFileRules(worktree, 'pm')])
+    expect(epicDeny.filter(entry => entry.includes('/.runtime/'))).toEqual(inboxRules)
   })
 
   test('an epic role denies the code dirs of the main checkout as well as of its worktree', () => {
@@ -802,6 +816,41 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
     expect([...main, ...own].filter(entry => !epicDeny.includes(entry))).toEqual([])
     // Without mainRoot the list is the worktree's alone, as before.
     expect([...main, ...own].filter(entry => ownDeny.includes(entry))).toEqual(own)
+  })
+})
+
+describe('the inbox and session files deny', () => {
+  const TEAM_IDS: readonly TemplateRoleId[] = ['pm', 'tl', 'be']
+
+  /** The deny entries under a `.runtime/` folder in the plan of the template role `id` for `launcher`. */
+  function runtimeEntries(id: TemplateRoleId, launcher: LaunchUser): string[] {
+    const role = templateRole(id)
+    const deny = denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
+
+    return deny.filter(entry => entry.includes('/.runtime/'))
+  }
+
+  test("every role denies Edit and Write on each team role's inbox.jsonl and session.json", () => {
+    const launcher = user({ teamIds: TEAM_IDS })
+    const expected = sortedUnique(TEAM_IDS.flatMap(id => inboxFileRules('/repo', id)))
+
+    expect(TEAM_IDS.map(id => runtimeEntries(id, launcher))).toEqual(TEAM_IDS.map(() => expected))
+    expect(runtimeEntries('pm', launcher)).toContain('Edit(//repo/.cadre/tl/.runtime/inbox.jsonl)')
+    expect(runtimeEntries('pm', launcher)).toContain('Write(//repo/.cadre/be/.runtime/session.json)')
+  })
+
+  test('an epic role denies them under its worktree and under the main checkout', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: TEAM_IDS })
+    const roots = ['/repo', worktree]
+
+    expect(runtimeEntries('be', launcher)).toEqual(
+      sortedUnique(roots.flatMap(root => TEAM_IDS.flatMap(id => inboxFileRules(root, id)))),
+    )
+  })
+
+  test('with no team ids a role denies only its own two files', () => {
+    expect(runtimeEntries('tl', user())).toEqual(sortedUnique(inboxFileRules('/repo', 'tl')))
   })
 })
 
@@ -886,5 +935,16 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
       expect(deny).toContain(`Edit(/${root}/.cadre/bin/**)`)
       expect(deny).toContain(`Write(/${root}/.cadre/manifest.json)`)
     }
+  })
+
+  test("an epic role denies editing each team role's inbox and session files in the worktree and main", async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const permissions = settingsAt(run.writes, BARE_WORKTREE, 'be').permissions
+    const deny: readonly unknown[] = isObject(permissions) && Array.isArray(permissions.deny) ? permissions.deny : []
+    const roots = ['/repo', BARE_WORKTREE]
+
+    expect(deny.filter(entry => typeof entry === 'string' && entry.includes('/.runtime/'))).toEqual(
+      sortedUnique(roots.flatMap(root => ['pm', 'be'].flatMap(id => inboxFileRules(root, id)))),
+    )
   })
 })

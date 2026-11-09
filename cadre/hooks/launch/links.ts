@@ -74,6 +74,8 @@ export type LaunchUser = {
    * Pitfall 2, 03.1-W3 M1). Absent for the main checkout.
    */
   readonly mainRoot?: string
+  /** The role ids of the team from cadre.json; absent when the launch does not know the team. */
+  readonly teamIds?: readonly string[]
 }
 
 /**
