@@ -499,9 +499,9 @@ describe('role documents', () => {
         '| Role | Purpose | Framework | Model | Scope | Launcher | Handoffs |',
         '| --- | --- | --- | --- | --- | --- | --- |',
         '| PM (pm) | Owns product decisions: scope, requirements and acceptance. | GSD | opus + medium | ' +
-          'no Bash; MCP: none; skills: 8 | .cadre/bin/pm | thoughts/shared/handoffs/pm/ |',
+          'no Bash; MCP: none; skills: 12 | .cadre/bin/pm | thoughts/shared/handoffs/pm/ |',
         '| BE (be) | Implements the backend and core code. | GSD | opus + medium | ' +
-          'sandboxed Bash; MCP: none; skills: 8 | .cadre/bin/be | thoughts/shared/handoffs/be/ |',
+          'sandboxed Bash; MCP: none; skills: 12 | .cadre/bin/be | thoughts/shared/handoffs/be/ |',
         '',
       ].join('\n'),
     )
@@ -510,7 +510,7 @@ describe('role documents', () => {
   test('the scope cell lists the MCP servers sorted and counts the skills the role can run, by framework', () => {
     const be = templateRole('be', { mcp: ['jira', 'github'], skills: ['codex:rescue', 'my-skill', 'gsd-plan-phase'] })
     const expected: readonly (readonly [FrameworkId, string])[] = [
-      ['gsd', 'sandboxed Bash; MCP: github, jira; skills: 10'],
+      ['gsd', 'sandboxed Bash; MCP: github, jira; skills: 14'],
       ['superpowers', 'sandboxed Bash; MCP: github, jira; skills: 9'],
       ['none', 'sandboxed Bash; MCP: github, jira; skills: 5'],
     ]

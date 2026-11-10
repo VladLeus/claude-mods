@@ -353,6 +353,10 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
     'gsd-execute-phase',
     'gsd-validate-phase',
     'gsd-code-review',
+    'gsd-new-project',
+    'gsd-new-milestone',
+    'gsd-quick',
+    'gsd-phase',
   ]),
   /** A GSD skill is named `gsd-...`. */
   ownsSkill: (skill: SkillRef) => skill.name.startsWith('gsd-'),

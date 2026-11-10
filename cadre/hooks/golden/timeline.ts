@@ -471,7 +471,7 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
     "run [[\"node\",\"/home/u/.claude/gsd-core/bin/gsd-tools.cjs\",\"config-set\",\"mode\",\"yolo\"],{\"cwd\":\"/repo\",\"timeoutMs\":30000}]",
     "run [[\"git\",\"rev-parse\",\"--path-format=absolute\",\"--git-common-dir\"],{\"cwd\":\"/repo\",\"timeoutMs\":10000}]",
-    "write /repo/.cadre/INDEX.md e395d9e6738c8d0bf3f421b6ab3b760337b4589b9d0f1832ee1ab2a5ac6e0af9 true",
+    "write /repo/.cadre/INDEX.md 2a9a2b2db7a16efc8f4079b3d31d3447451e1123b1c6cdbee26c57d6093d2aa1 true",
     "write /repo/.cadre/bin/pm 9fb677b0e2a5984f0efb4cbab6c500f39d83c6add898c2263c7e74ea49737a30 true",
     "run [[\"/bin/chmod\",\"755\",\"/repo/.cadre/bin/pm\"],{\"timeoutMs\":10000}]",
     "write /repo/.cadre/bin/security 90af305a09c5c7c9ef29b5141950f95cdcf96e1359a0c8ad295bba6b7e0b7959 true",
@@ -499,6 +499,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/tl/role.json c738e88f9a512e380cd53a6aeaf748571056e08847b842ed48cd59b503067219 true",
     "write /repo/.cadre/tl/settings.json 8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25 true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json fb67fd1e0b7aec16b766829cb709254ca7d51b42a52169231920cdafb1c07cb8 true"
+    "write /repo/.cadre/manifest.json 4c63b8fcac1d0c0578263de866e83c44b2ecc7b88e607addc9d7ce0c1a3c46ed true"
   ]
 }

@@ -708,6 +708,10 @@ describe('GSD_ADAPTER', () => {
       'gsd-execute-phase',
       'gsd-validate-phase',
       'gsd-code-review',
+      'gsd-new-project',
+      'gsd-new-milestone',
+      'gsd-quick',
+      'gsd-phase',
     ])
     expect(GSD_ADAPTER.ownsSkill({ name: 'gsd-x', plugin: null })).toBe(true)
     expect(GSD_ADAPTER.ownsSkill({ name: 'x', plugin: null })).toBe(false)

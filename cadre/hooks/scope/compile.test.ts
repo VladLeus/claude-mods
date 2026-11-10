@@ -267,7 +267,11 @@ describe('compileScope', () => {
       'gsd-code-review',
       'gsd-discuss-phase',
       'gsd-execute-phase',
+      'gsd-new-milestone',
+      'gsd-new-project',
+      'gsd-phase',
       'gsd-plan-phase',
+      'gsd-quick',
       'gsd-validate-phase',
       'resume-handoff-doc',
     ])

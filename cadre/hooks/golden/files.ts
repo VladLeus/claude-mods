@@ -50,7 +50,7 @@ export const GOLDEN_FILES: Readonly<Record<string, Readonly<Record<string, strin
     ".cadre/tl/settings.json": "8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25"
   },
   "gsd": {
-    ".cadre/INDEX.md": "154ea4dc0976acb39f6baaadd05726e2cb7dbe9c3fb016a498d8baca11a0fb1f",
+    ".cadre/INDEX.md": "587209ffd1ab35a174060981b053b0b39ea7e8a68a0fb81862cae9c6dd12c6dd",
     ".cadre/be/ROLE.md": "d84d39fc3a33297a175be9b2df1599451b8de49fd39cc61f04b7cc4c9c964920",
     ".cadre/be/kickoff.txt": "fd6f6ab04c6447aca43ab7f675adea924454d8959685d268fcd52071ac9df7fa",
     ".cadre/be/mcp.json": "5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf",

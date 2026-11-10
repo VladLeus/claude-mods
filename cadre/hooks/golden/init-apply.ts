@@ -666,7 +666,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
     "writes": [
       {
         "path": "/repo/.cadre/INDEX.md",
-        "sha256": "e395d9e6738c8d0bf3f421b6ab3b760337b4589b9d0f1832ee1ab2a5ac6e0af9",
+        "sha256": "2a9a2b2db7a16efc8f4079b3d31d3447451e1123b1c6cdbee26c57d6093d2aa1",
         "isWritten": true
       },
       {
@@ -791,7 +791,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "fb67fd1e0b7aec16b766829cb709254ca7d51b42a52169231920cdafb1c07cb8",
+        "sha256": "4c63b8fcac1d0c0578263de866e83c44b2ecc7b88e607addc9d7ce0c1a3c46ed",
         "isWritten": true
       }
     ],
@@ -809,7 +809,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/INDEX.md\",",
-      "      \"sha256\": \"e395d9e6738c8d0bf3f421b6ab3b760337b4589b9d0f1832ee1ab2a5ac6e0af9\"",
+      "      \"sha256\": \"2a9a2b2db7a16efc8f4079b3d31d3447451e1123b1c6cdbee26c57d6093d2aa1\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",
