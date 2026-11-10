@@ -324,4 +324,13 @@ describe('init plan', () => {
     expect([cardOf(union, 'tl').isAttended, cardOf(union, 'pm').isAttended]).toEqual([true, false])
     expect(cardOf(alone, 'tl').isAttended).toBe(false)
   })
+
+  test('compiled for a root no rule can hold, the inbox rule of PM is best effort', () => {
+    const team = [templateRole('pm'), templateRole('be')]
+    const start: LaunchStart = { kind: 'git-root' }
+    const scopes = compileAll(team, 'gsd', gathered, new Set(), start, ['gsd'], '/Users/me/My Projects/app')
+    const inbox = cardOf(scopes, 'pm').rules.find(rule => rule.text === ARTIFACT.cardInbox)
+
+    expect(inbox?.enforcement).toBe('best-effort')
+  })
 })

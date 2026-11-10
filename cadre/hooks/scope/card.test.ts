@@ -7,6 +7,7 @@ import type {
   McpRoute,
   ProbeCheck,
   RoleSpec,
+  ScopeContext,
   ScopeRule,
   SetupScan,
 } from '../../types'
@@ -117,6 +118,15 @@ describe('the inbox rules on the card', () => {
       enforcement: 'none',
     })
     expect(others.map(scope => ruleOf(scope, HELD_RULE))).toEqual([undefined, undefined])
+  })
+
+  test('the inbox rule is hard only without Bash and at a root a rule can hold, or with no root given', () => {
+    const enforcementOf = (role: RoleSpec, over: Partial<ScopeContext>): string | undefined =>
+      ruleOf(compileScope(role, context(over)), INBOX_RULE)?.enforcement
+    const roots: readonly Partial<ScopeContext>[] = [{ root: '/Users/me/My Projects/app' }, { root: '/repo' }, {}]
+
+    expect(roots.map(over => enforcementOf(templateRole('pm'), over))).toEqual(['best-effort', 'hard', 'hard'])
+    expect(roots.map(over => enforcementOf(templateRole('be'), over))).toEqual(roots.map(() => 'best-effort'))
   })
 
   test('every card of every role, framework, start and route has the inbox rule exactly once', () => {

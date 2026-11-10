@@ -7,6 +7,7 @@ import { GIT_DIR_ARGV } from '../epic/git'
 import { adapterOf } from '../framework/registry'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
+import { t } from '../locales/t'
 import { INSTRUCTIONS_RECORD_FILE, roleMemoryDir } from '../paths'
 import { GRILL_SKILLS, INFRA_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
@@ -869,6 +870,19 @@ describe('the inbox and session files deny', () => {
 
   test('with no team ids a role denies only its own two files', () => {
     expect(runtimeEntries('tl', user())).toEqual(sortedUnique(inboxFileRules('/repo', 'tl')))
+  })
+
+  test('a root no rule can hold gets no inbox or session rule and warns once; /repo does not warn', () => {
+    const root = '/Users/me/My Projects/app'
+    const role = templateRole('pm')
+    const scope = compileScope(role, context())
+    const unsafe = launchPlan(role, scope, user({ root, givenRoot: root, teamIds: TEAM_IDS }))
+    const safe = launchPlan(role, scope, user({ teamIds: TEAM_IDS }))
+    const warning = t('launch.deny.undeniedInboxWarning')
+
+    expect(denyOf(unsafe.settings).filter(entry => entry.includes('/.runtime/'))).toEqual([])
+    expect(unsafe.warnings.filter(line => line === warning)).toEqual([warning])
+    expect(safe.warnings).not.toContain(warning)
   })
 })
 
