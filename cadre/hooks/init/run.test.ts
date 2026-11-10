@@ -5079,7 +5079,8 @@ describe('a consented framework install after Confirm', () => {
   const GSD_FALLBACK_BE = `GSD did not install, so role be fell back to none (built-in)${GSD_FALLBACK_END}`
   /** The review line of the superpowers install. */
   const SUPERPOWERS_REVIEW_LINE =
-    'Framework install from the repo root after Confirm (a --dry-run installs nothing): ' +
+    "Framework install from the repo root after Confirm (a --dry-run installs nothing; the repo's own settings for " +
+    'the command, such as its .npmrc for npx, decide where it fetches from): ' +
     `${SUPERPOWERS_PROJECT_INSTALL.join(' ')}; it writes enabledPlugins in .claude/settings.json`
   /** The answers of an init that sets be to superpowers through Adjust and answers Yes to its install. */
   const ADJUST_SUPERPOWERS_YES = {

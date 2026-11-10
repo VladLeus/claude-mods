@@ -156,7 +156,9 @@ export const EN = Object.freeze({
   'init.frameworks.gsdCheckLine': '{dir}: found, not proven',
   'init.frameworks.gsdCheckDismissedReason': 'The GSD check question was dismissed or not answered.',
   'init.frameworks.installQuestion': 'Install {name} for this repo?',
-  'init.frameworks.installCommand': 'cadre runs {command} from the repo root after Confirm.',
+  'init.frameworks.installCommand':
+    `cadre runs {command} from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) ${
+    ''}decide where it fetches from.`,
   'init.frameworks.installWrites': 'It writes {writes}.',
   'init.frameworks.installTitle': 'Install {name}',
   'init.frameworks.setQuestion':
@@ -334,7 +336,8 @@ export const EN = Object.freeze({
   'init.review.privateFilesHeading': 'Private files per role (written after Confirm):',
   'init.review.reviewLines': 'Plugins to install after Confirm (a --dry-run installs nothing): {keys}',
   'init.review.frameworkInstall':
-    'Framework install from the repo root after Confirm (a --dry-run installs nothing): {command}; it writes {writes}',
+    `Framework install from the repo root after Confirm (a --dry-run installs nothing; the repo's own settings for ${
+    ''}the command, such as its .npmrc for npx, decide where it fetches from): {command}; it writes {writes}`,
   'init.review.pluginInstall':
     'Plugin install from the repo root after Confirm (a --dry-run installs nothing): {command}; it writes {writes}',
   'init.review.rolesHeading': 'Roles:',

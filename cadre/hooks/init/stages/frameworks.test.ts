@@ -668,7 +668,9 @@ describe('the framework install question', () => {
   test('it names the exact command, run from the repo root after Confirm, and its first option declines', () => {
     const ask = frameworkInstallAsk('superpowers')
     const command = 'claude plugin install superpowers@claude-plugins-official --scope project'
-    const line = `cadre runs ${command} from the repo root after Confirm.`
+    const line =
+      `cadre runs ${command} from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) ` +
+      'decide where it fetches from.'
 
     expect(ask.question).toBe(`Install superpowers for this repo?\n${line}`)
     expect([ask.spec.options, ask.spec.header, ask.accepts]).toEqual([
@@ -682,7 +684,8 @@ describe('the framework install question', () => {
   test("GSD's names its npx install; its context lists what the installer writes, the command its summary", () => {
     const ask = frameworkInstallAsk('gsd')
     const lines = [
-      'cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm.',
+      'cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, ' +
+        "so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
       'It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json.',
     ]
     const [summary = ''] = lines

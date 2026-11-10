@@ -121,12 +121,14 @@ const DESCRIBE_ASKED = withContext(DESCRIBE_QUESTION, DESCRIBE_CONTEXT)
 /** The install question for superpowers as it is asked: the question, then the command it runs. */
 const SUPERPOWERS_INSTALL_ASKED =
   'Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official ' +
-  '--scope project from the repo root after Confirm.'
+  "--scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) " +
+  'decide where it fetches from.'
 
 /** The install question for GSD as it is asked: the question, then the command it runs. */
 const GSD_INSTALL_ASKED =
   'Install GSD for this repo?\ncadre runs npx -y @opengsd/gsd-core@latest --claude --local ' +
-  'from the repo root after Confirm.'
+  "from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it " +
+  'fetches from.'
 
 /** What a refusal to set a role to GSD ends with: the command that installs it. */
 const GSD_COMMAND_END = ' To install it, run from the repo root: npx -y @opengsd/gsd-core@latest --claude --local'

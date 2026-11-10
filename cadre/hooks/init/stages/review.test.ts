@@ -740,7 +740,9 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
 
 describe('the framework installs in the review', () => {
   /** How a framework install line starts in the review. */
-  const START = 'Framework install from the repo root after Confirm (a --dry-run installs nothing): '
+  const START =
+    "Framework install from the repo root after Confirm (a --dry-run installs nothing; the repo's own settings for " +
+    'the command, such as its .npmrc for npx, decide where it fetches from): '
 
   /** The framework install lines of the review of REVIEW_DRAFT with these installs consented, page by page. */
   async function installLines(frameworkInstalls: readonly FrameworkId[]): Promise<string[]> {
