@@ -108,7 +108,8 @@ export const PROMPTS = Object.freeze({
   epicBriefSubject: 'Epic {epic}',
   epicBriefIntro: 'cadre opened epic {epic} for your team in its worktree.',
   epicBriefModes: 'Planning modes this repo offers: {modes}.',
-  epicBriefNoModes: 'This repo offers no planning mode: no supported framework is installed for it.',
+  epicBriefNoModes: `This repo offers no planning mode: ${
+    ''}no supported framework is recorded for it (run /cadre frameworks to choose one).`,
   epicBriefSizing: `A ticket's size is the highest of its scope, complexity, risk and effort scores, each from 0.1 to ${
     ''}1.0; it is large at {threshold} or more. The rubric is {rubric}.`,
   epicBriefTeam: 'The team, each role with its parent: {team}.',
