@@ -151,8 +151,8 @@ export const PROMPTS = Object.freeze({
   inboxUnsafe: 'Not sent: the inbox of {to} is a link or not a regular file, so cadre does not write to it.',
   inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read.',
   // The wake of a task that names its method. Then the kind fields of inbox_send (messages/send): the refusal of a
-  // missing, a foreign or a bad field, and of a brief's mode and tickets; then the size line a send result ends with,
-  // and the pick it names per planning mode (messages/sizing sizeText).
+  // missing, a foreign or a bad field, of a brief's mode and tickets, and of a task framework its receiver may not run;
+  // then the size line a send result ends with, and the pick it names per planning mode (messages/sizing sizeText).
   inboxWakeMethod:
     'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read and execute it with {method}.',
   inboxFieldMissing: 'A {kind} needs {fields}.',
@@ -175,6 +175,7 @@ export const PROMPTS = Object.freeze({
     'openQuestions must list at most {max} questions of one line and {chars} characters each; [] when none is open.',
   inboxModeBad: 'mode must be one of {modes}.',
   inboxModeNotOffered: 'mode {mode} is not offered: the frameworks of this repo offer {modes}.',
+  inboxUseNotRun: '{to} may not run {framework}: use.framework must be one of {frameworks}.',
   inboxTicketsBad: 'tickets must list at most {max} ticket keys.',
   inboxTicketsNotEpic: 'tickets go only in a gsd-epic brief: set mode gsd-epic or leave tickets out.',
   inboxEpicNeedsTickets: 'A gsd-epic brief needs tickets: the key of every ticket of the epic.',

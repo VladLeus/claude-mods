@@ -1,12 +1,14 @@
 /**
  * The team hierarchy a role session sends through, a layer 11 module: the role ids of cadre.json, each role's parent
- * as /cadre epic orders them (epicParentOf), and the repo's frameworks and sizing, read through readTeam.
+ * as /cadre epic orders them (epicParentOf), the repo's frameworks and sizing, and the frameworks each role may run,
+ * read through readTeam.
  */
-import type { InitIo, TeamView } from '../../types'
+import type { FrameworkId, InitIo, TeamView } from '../../types'
 import { repoFrameworks } from '../core/framework-id'
 import { defaultSizing } from '../messages/sizing'
 import { standIn } from '../roles/template'
-import { readTeam } from '../team'
+import { runnableFrameworks } from '../scope/frameworks'
+import { readTeam, resolvedFramework } from '../team'
 import { epicParentOf } from './pick'
 
 /**
@@ -22,6 +24,12 @@ export async function teamViewOf(io: InitIo, root: string): Promise<TeamView | n
     roles.map((role): [string, string | null] => [role.id, pmId === null ? null : epicParentOf(role, roles, pmId)]),
   )
   const frameworks = repoFrameworks(state)
+  const mayRun = Object.fromEntries(
+    roles.map((role): [string, readonly FrameworkId[]] => [
+      role.id,
+      runnableFrameworks({ framework: resolvedFramework(role, state.framework), alsoRuns: frameworks }),
+    ]),
+  )
 
-  return { ids: state.roles, parents, pm: pmId, sizing: state.sizing ?? defaultSizing(frameworks), frameworks }
+  return { ids: state.roles, parents, pm: pmId, sizing: state.sizing ?? defaultSizing(frameworks), frameworks, mayRun }
 }

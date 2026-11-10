@@ -927,6 +927,8 @@ export type TeamView = {
   readonly pm: string | null
   readonly sizing: Sizing
   readonly frameworks: readonly FrameworkId[]
+  /** The frameworks each role may run: its own first, then the others the repo records. */
+  readonly mayRun: Readonly<Record<string, readonly FrameworkId[]>>
 }
 
 /** Sends a live message to a session by its id; true when the host delivered it. */

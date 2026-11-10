@@ -230,10 +230,24 @@ function modeRefusal(fields: InboxEntryFields, team: TeamView): string | null {
   })
 }
 
+/** Why a task's framework is refused: its receiver may not run it; null with no use or one the receiver may run. */
+function useRefusal(fields: InboxEntryFields, to: string, team: TeamView): string | null {
+  const { use } = fields
+  if (use === undefined) return null
+  const mayRun = team.mayRun[to] ?? []
+  if (mayRun.includes(use.framework)) return null
+
+  return fill(PROMPTS.inboxUseNotRun, {
+    to,
+    framework: use.framework,
+    frameworks: mayRun.length === 0 ? PROMPTS.inboxItemNone : mayRun.join(', '),
+  })
+}
+
 /**
  * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A mode
- * the repo's frameworks do not offer is refused before anything runs; a sent vector's result ends with its size and
- * the pick in each mode the repo offers.
+ * the repo's frameworks do not offer, or a task framework its receiver may not run, is refused before anything runs;
+ * a sent vector's result ends with its size and the pick in each mode the repo offers.
  */
 export async function runInboxSend(
   io: InitIo,
@@ -246,7 +260,7 @@ export async function runInboxSend(
   if (team === null) return deny(PROMPTS.inboxNoTeam)
   const input = parseSendInput(event, ctx, team)
   if (input.kind === 'error') return deny(input.message)
-  const refusal = modeRefusal(input.fields, team)
+  const refusal = modeRefusal(input.fields, team) ?? useRefusal(input.fields, input.to, team)
   if (refusal !== null) return deny(refusal)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
