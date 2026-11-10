@@ -225,7 +225,7 @@ describe('hunkStep', () => {
     return { ...run, reads: port.reads }
   }
 
-  test('with no role on GSD nothing is read or asked, no hunk is given and nothing is attended', async () => {
+  test('with no role that may run GSD nothing is read or asked, no hunk is given and nothing is attended', async () => {
     const onSuperpowers = roles.map(role => withFramework(role, 'superpowers'))
     const defaults: readonly (FrameworkId | null)[] = ['superpowers', 'none', null]
     for (const repoDefault of defaults) {
@@ -236,8 +236,28 @@ describe('hunkStep', () => {
         expect([run.asked, run.calls, run.reads, run.outputs]).toEqual([[], [], [], []])
       }
     }
-    const run = await hunkRun(configWorld('{"mode":"interactive"}'), 'gsd', gatheredOf(PROVEN_FACTS), [], onSuperpowers)
-    expect([run.state.draft.hunks, run.asked]).toEqual([[], []])
+  })
+
+  test('every role on superpowers in a repo whose default is GSD asks both GSD hunks: they may run it', async () => {
+    const onSuperpowers = roles.map(role => withFramework(role, 'superpowers'))
+    const world = configWorld('{"mode":"interactive"}')
+    const run = await hunkRun(world, 'gsd', gatheredOf(PROVEN_FACTS), BUTTONS, onSuperpowers)
+
+    expect(run.specs.map(spec => spec.header)).toEqual(['Hunk 1 of 2', 'Hunk 2 of 2'])
+  })
+
+  test('every role on superpowers in a draft whose framework set holds GSD asks both GSD hunks', async () => {
+    const onSuperpowers = roles.map(role => withFramework(role, 'superpowers'))
+    const port = memIo(configWorld('{"mode":"interactive"}'), [])
+    const draft = wholeDraft({
+      roles: onSuperpowers,
+      repoDefault: 'superpowers',
+      gathered: gatheredOf(PROVEN_FACTS),
+      frameworkSet: ['gsd', 'superpowers'],
+    })
+    const run = await drivenWith(hunksStage.enter(stateAt('hunks', draft)), BUTTONS, hunkCalls(port.io))
+
+    expect(run.specs.map(spec => spec.header)).toEqual(['Hunk 1 of 2', 'Hunk 2 of 2'])
   })
 
   test('a GSD role asks each hunk in turn, Hunk 1 of 2 then Hunk 2 of 2, and each op records the answer', async () => {

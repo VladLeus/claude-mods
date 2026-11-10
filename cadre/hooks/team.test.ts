@@ -4,6 +4,7 @@ import type { CadreState, HunkOp, LaunchStart, RoleSpec, ScopeContext } from '..
 import { stableJson } from './core/json'
 import { NOT_SET_TEXT } from './framework/gsd/hunks'
 import { cadreJsonText, roleJsonText } from './generate/docs'
+import { ARTIFACT } from './locales/artifact'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import type { Gathered } from './scan/gather'
 import { scopeCardLines } from './scope/card'
@@ -20,6 +21,7 @@ import {
   regenNoRole,
   resolvedFramework,
   scopesFor,
+  teamFrameworks,
 } from './team'
 import {
   cardOf,
@@ -168,6 +170,31 @@ describe('repoGuard and readTeam', () => {
       const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
       // BE has Bash, so only the config decides; a GSD role without Bash, such as PM, is always attended.
       expect([text, cardOf(scopes, 'be').isAttended]).toEqual([text, isAttended])
+    }
+  })
+
+  test('the team frameworks are every framework a role may run, its own and the recorded ones, in id order', () => {
+    const roles = [withFramework(templateRole('be'), 'superpowers'), withFramework(templateRole('pm'), 'none')]
+
+    expect(teamFrameworks(roles, 'superpowers', ['gsd', 'superpowers'])).toEqual(['gsd', 'superpowers', 'none'])
+    expect(teamFrameworks(roles, 'superpowers', [])).toEqual(['superpowers', 'none'])
+  })
+
+  test('compileTeam judges attended over a framework a role only also runs, from its config on disk', async () => {
+    const config = '/repo/.planning/config.json'
+    const roles = [withFramework(templateRole('be'), 'superpowers')]
+    const state = stateOf(roles, { framework: 'superpowers', frameworks: ['gsd', 'superpowers'] })
+    const cases: readonly (readonly [string, boolean])[] = [
+      ['{"mode":"interactive"}', true],
+      ['{"mode":"yolo","workflow":{"text_mode":false}}', false],
+    ]
+    for (const [text, isAttended] of cases) {
+      const world = gitWorld({ files: { [config]: text } })
+      const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, roles)
+      const card = cardOf(scopes, 'be')
+      const hasRule = card.rules.some(rule => rule.text === ARTIFACT.cardAttendedSteps)
+
+      expect([text, card.isAttended, hasRule]).toEqual([text, isAttended, isAttended])
     }
   })
 })
