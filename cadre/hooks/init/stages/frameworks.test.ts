@@ -17,6 +17,7 @@ import { REDACTED } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { detectAll } from '../../framework/registry'
 import { applyAdjust, parseAdjust } from '../../roles/adjust'
+import { t } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
 import {
@@ -934,6 +935,31 @@ describe('the stored framework answer and the set question', () => {
     const team = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
     const again = enteredWith(GSD_CHOSEN, ['gsd', 'superpowers', 'none'], null, { frameworkSet: ['gsd'], roles: team })
     expect(again.sub).toEqual({ kind: 'set', tries: 1 })
+  })
+
+  test('a stored None kept while GSD is in use gives one note that names /cadre frameworks and asks nothing', () => {
+    const state = enteredWith(GSD_CHOSEN, ['gsd', 'none'], [])
+    const note = { kind: 'note', line: t('init.frameworks.storedNoneNote', { found: 'GSD' }) }
+    expect([state.outputs, state.openQuestion, state.draft.frameworkSet]).toEqual([[note], null, []])
+  })
+
+  test('a stored None kept while GSD and superpowers are found names both in its one note', () => {
+    const state = enteredWith(BOTH_IN_USE, ['gsd', 'superpowers', 'none'], [])
+    const line = t('init.frameworks.storedNoneNote', { found: 'GSD and superpowers' })
+    expect([state.outputs, state.openQuestion, state.draft.frameworkSet]).toEqual([[{ kind: 'note', line }], null, []])
+  })
+
+  test('a stored GSD kept gives no note', () => {
+    const state = enteredWith(GSD_CHOSEN, ['gsd', 'none'], ['gsd'])
+    expect([state.outputs, state.openQuestion, state.draft.frameworkSet]).toEqual([[], null, ['gsd']])
+  })
+
+  test('with nothing found a stored None gives no note, and an unsupported scan only its own note', () => {
+    const unsupported: Choice = { kind: 'unsupported', ids: ['aidlc'] }
+    const none = enteredWith({ kind: 'none' }, ['none'], [])
+    const found = enteredWith(unsupported, ['none'], [])
+    expect([none.outputs, none.openQuestion]).toEqual([[], null])
+    expect([found.outputs, found.openQuestion]).toEqual([[{ kind: 'note', line: choiceLine(unsupported) }], null])
   })
 
   test('both in use: Keep both or None; superpowers typed alone keeps it and frames the roles on it', () => {
