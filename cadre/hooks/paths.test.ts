@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { sha256Hex } from './core/hash'
 import { t } from './locales/t'
 import { inboxLogPath, sessionFilePath } from './messages/record'
 import {
@@ -9,8 +10,14 @@ import {
   handoffFolderOf,
   INBOX_ARCHIVE_GLOB,
   inboxArchiveFile,
+  inboxDirOf,
   INBOX_FILE,
+  inboxFolderLevels,
+  inboxHomeOf,
   INBOX_LOG_FILE,
+  inboxRootKey,
+  INBOX_TREE,
+  inboxTreeOf,
   isFileInsideRoot,
   isSafeConfigDir,
   isSafeRelativePath,
@@ -301,5 +308,48 @@ describe('the runtime path builder', () => {
   test('the inbox tools build the inbox log and the session record with it', () => {
     expect(inboxLogPath('/repo', 'be')).toBe(runtimeFileOf('/repo', 'be', INBOX_LOG_FILE))
     expect(sessionFilePath('/repo', 'be')).toBe(runtimeFileOf('/repo', 'be', SESSION_FILE))
+  })
+})
+
+describe('the private inbox folder', () => {
+  test('the inbox tree lies in the cadre folder of the user folder', () => {
+    expect(INBOX_TREE).toBe('inboxes')
+    expect(inboxTreeOf('/home/u/.claude')).toBe('/home/u/.claude/cadre/inboxes')
+  })
+
+  test('a root key is the root folder name, a dash and the first 8 hex of the root hash, cleaned', async () => {
+    const hash = await sha256Hex('/w/my repo')
+
+    expect(inboxRootKey('/w/my repo', hash)).toBe(`my-repo-${hash.slice(0, 8)}`)
+  })
+
+  test('two roots with the same folder name and different hashes get two keys', async () => {
+    const [first, second] = [await sha256Hex('/w/app'), await sha256Hex('/x/app')]
+
+    expect(inboxRootKey('/w/app', first)).not.toBe(inboxRootKey('/x/app', second))
+  })
+
+  test('a root key holds only letters, digits, dot, underscore and dash', async () => {
+    const roots = ['/w/my repo', `/w/caf${String.fromCharCode(0xe9)} $x`, '/w/a:b*c`d', `/w/x${BACKSLASH}y`]
+    for (const root of roots) {
+      expect(inboxRootKey(root, await sha256Hex(root))).toMatch(/^[A-Za-z0-9._-]+$/)
+    }
+  })
+
+  test('the inbox home of a root lies in the inbox tree, and a role inbox folder in that home', async () => {
+    const hash = await sha256Hex('/w/app')
+    const home = inboxHomeOf('/home/u/.claude', '/w/app', hash)
+
+    expect(home).toBe(`/home/u/.claude/cadre/inboxes/app-${hash.slice(0, 8)}`)
+    expect(inboxDirOf(home, 'be')).toBe(`${home}/be`)
+  })
+
+  test('the folder levels of a role inbox folder run from the cadre folder down to the role folder', () => {
+    expect(inboxFolderLevels('/home/u/.claude/cadre/inboxes/app-12345678/be')).toEqual([
+      '/home/u/.claude/cadre',
+      '/home/u/.claude/cadre/inboxes',
+      '/home/u/.claude/cadre/inboxes/app-12345678',
+      '/home/u/.claude/cadre/inboxes/app-12345678/be',
+    ])
   })
 })
