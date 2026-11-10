@@ -6,7 +6,7 @@ import type { InboxEntry, InboxRotation, PortStat } from '../../types'
 import { CONTRACTS } from '../locales/contracts'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { inboxArchiveFile, runtimeFileOf } from '../paths'
+import { inboxArchiveFile } from '../paths'
 import { CLOSED_STATES, entryIdOf, foldInbox, parseInbox, recordLine } from './record'
 import { INBOX_ROTATE_BYTES } from './send'
 
@@ -35,12 +35,12 @@ function openIdsText(ids: readonly string[]): string {
 }
 
 /**
- * Where the inbox of role `id` moves when /cadre start rotates it at `at`, and the record line of the fresh entry from
- * cadre appended in its place. The entry lists the open entries of `text`, the inbox as read; with `text` null it says
- * they could not be listed.
+ * Where the inbox of role `id` moves in its inbox folder when /cadre start rotates it at `at`, and the record line of
+ * the fresh entry from cadre appended in its place. The entry lists the open entries of `text`, the inbox as read; with
+ * `text` null it says they could not be listed.
  */
 export async function inboxRotationOf(
-  root: string,
+  inboxDir: string,
   id: string,
   text: string | null,
   at: number,
@@ -64,5 +64,5 @@ export async function inboxRotationOf(
     body,
   }
 
-  return { archive: runtimeFileOf(root, id, archive), text: recordLine(entry) }
+  return { archive: `${inboxDir}/${archive}`, text: recordLine(entry) }
 }

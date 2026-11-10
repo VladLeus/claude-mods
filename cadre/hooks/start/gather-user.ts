@@ -17,6 +17,7 @@ import type {
   SettingsSource,
 } from '../../types'
 import { privateLevelsProblem, roleFolderLevels } from '../apply/safety'
+import { sha256Hex } from '../core/hash'
 import { allOrNull, isObject, parseJsonValue } from '../core/json'
 import { sortedUnique } from '../core/text'
 import { gitCommonDirOf, mainCheckoutOf } from '../git/common-dir'
@@ -25,6 +26,9 @@ import type { LaunchUser } from '../launch/links'
 import { t } from '../locales/t'
 import {
   displayPath,
+  inboxDirOf,
+  inboxFolderLevels,
+  inboxHomeOf,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   memoryFolderOf,
@@ -63,8 +67,8 @@ export function privateFolderRefusal(path: string, reason: 'link' | 'not-folder'
 }
 
 /**
- * What gatherLaunchUser gives: the launching user's facts with the warnings to show and what to do in the role memory
- * folder (MemoryLinks, G-02-1f), or the exact refusal.
+ * What gatherLaunchUser gives: the launching user's facts with the warnings to show, what to do in the role memory
+ * folder (MemoryLinks, G-02-1f) and the role's inbox folder in the user config folder, or the exact refusal.
  */
 export type LaunchUserRead =
   | {
@@ -72,6 +76,7 @@ export type LaunchUserRead =
       readonly user: LaunchUser
       readonly warnings: readonly string[]
       readonly memories: MemoryLinks
+      readonly inboxDir: string
     }
   | { readonly kind: 'refuse'; readonly text: string }
 
@@ -330,6 +335,25 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
 }
 
 /**
+ * The privateFolderRefusal for the first level of a private folder, from the top, that privateLevelsProblem finds, its
+ * path as `shown` gives it; null when none: each level is stat'ed, and `<userDir>` and each level but the last listed.
+ */
+async function levelsRefusal(
+  io: InitIo,
+  userDir: string,
+  levels: readonly string[],
+  shown: (path: string) => string,
+): Promise<string | null> {
+  const stats = new Map<string, PortStat | null>()
+  for (const level of levels) stats.set(level, await io.stat(level))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of [userDir, ...levels.slice(0, -1)]) listings.set(folder, await io.list(folder))
+  const problem = privateLevelsProblem(levels, stats, listings)
+
+  return problem === null ? null : privateFolderRefusal(shown(problem.path), problem.reason)
+}
+
+/**
  * The launching user's facts (D-98), gathered in the root session through the ports:
  * - the repo root as resolved and as given, the home folder, and the user folder (CLAUDE_CONFIG_DIR, else
  *   `<home>/.claude`); an ignored CLAUDE_CONFIG_DIR is warned about by the setup scan of the same run, so it is not
@@ -356,10 +380,11 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
  * any run, and with START_NO_GIT_DIR when git gives no absolute path; only then is the user folder taken, with
  * CLAUDE_CONFIG_DIR checked against the root, the root as given and the main checkout (D-238, WF-S4). Then each level
  * of the role memory folder (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its
- * instructions/ subfolder) is stat'ed, and `<userDir>` and each level but the last listed, and it refuses with
- * privateFolderRefusal when privateLevelsProblem finds a level that is a link, is not a folder, or whose parent could
- * not be listed (02-GAPS-B3 C5), before any step runs; `<userDir>` itself is never checked, as a linked config folder
- * is common. No setting value, hook command or file text is ever part of a refusal or a warning.
+ * instructions/ subfolder), then each level of the role's inbox folder (inboxFolderLevels: `<userDir>/cadre`, its
+ * `inboxes`, the inbox home of the root and the role's folder) is checked by levelsRefusal, which refuses with
+ * privateFolderRefusal when a level is a link, is not a folder, or its parent could not be listed (02-GAPS-B3 C5),
+ * before any step runs; `<userDir>` itself is never checked, as a linked config folder is common. The ok result carries
+ * the role's inbox folder. No setting value, hook command or file text is ever part of a refusal or a warning.
  */
 export async function gatherLaunchUser(
   io: InitIo,
@@ -382,17 +407,13 @@ export async function gatherLaunchUser(
   const userDir = userDirOf(locations, roots, [])
   // Fail closed: with a home, userDirOf always gives a folder.
   if (userDir === null) return { kind: 'refuse', text: START_NO_HOME }
-  const levels = roleFolderLevels(roleMemoryDir({ userDir, ...commonDir }, input.role.id))
-  const stats = new Map<string, PortStat | null>()
-  for (const level of levels) stats.set(level, await io.stat(level))
-  const listings = new Map<string, readonly PortEntry[] | null>()
-  for (const folder of [userDir, ...levels.slice(0, -1)]) listings.set(folder, await io.list(folder))
-  const problem = privateLevelsProblem(levels, stats, listings)
-  if (problem !== null) {
-    const shownPath = displayPath(problem.path, home, locations.root)
-
-    return { kind: 'refuse', text: privateFolderRefusal(shownPath, problem.reason) }
-  }
+  const shown = (path: string): string => displayPath(path, home, locations.root)
+  const memoryLevels = roleFolderLevels(roleMemoryDir({ userDir, ...commonDir }, input.role.id))
+  const memoryRefusal = await levelsRefusal(io, userDir, memoryLevels, shown)
+  if (memoryRefusal !== null) return { kind: 'refuse', text: memoryRefusal }
+  const inboxDir = inboxDirOf(inboxHomeOf(userDir, locations.root, await sha256Hex(locations.root)), input.role.id)
+  const inboxRefusal = await levelsRefusal(io, userDir, inboxFolderLevels(inboxDir), shown)
+  if (inboxRefusal !== null) return { kind: 'refuse', text: inboxRefusal }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
   const pluginSkills = await pluginSkillsOf(io, userDir, roots)
@@ -419,10 +440,10 @@ export async function gatherLaunchUser(
     ...(Object.keys(pluginSkills).length === 0 ? {} : { pluginSkills }),
     ...(projectPlugins.length === 0 ? {} : { projectPlugins }),
   }
-  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS }
+  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS, inboxDir }
   const linked = await linkedMemoriesOf(io, user, input.role.id)
   const { memories } = linked
   const linkedMemories = memories.links.map(link => link.path)
 
-  return { kind: 'ok', user: { ...user, linkedMemories }, warnings: linked.warnings, memories }
+  return { kind: 'ok', user: { ...user, linkedMemories }, warnings: linked.warnings, memories, inboxDir }
 }

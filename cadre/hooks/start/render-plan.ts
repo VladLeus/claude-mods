@@ -1,12 +1,12 @@
 /**
  * The render plan of /cadre start (D-102), a layer 10 module: the ordered steps that write a role's per-launch files
- * into `.cadre/<id>/.runtime/`, and the role's private instructions folder under the config folder
- * (privateFolderSteps), from its LaunchPlan (D-98) and the texts of its MCP config and probe expectations. It reads and
- * writes nothing: /cadre start stats and lists the paths renderPaths names, then runs the steps renderSteps gives, in
- * order, through the host. The stamp is always the last step, and the launcher trusts it: it refuses to start when the
- * stamp is missing or older than the role files or a rendered file, so a render that stops part way never starts a
- * session (LNCH-03). It imports apply/safety, core and paths, and the host step and launch types; the start modules
- * that gather and render read it.
+ * into `.cadre/<id>/.runtime/`, and the role's private instructions folder (privateFolderSteps) and inbox folder
+ * (inboxFolderSteps) under the config folder, from its LaunchPlan (D-98) and the texts of its MCP config and probe
+ * expectations. It reads and writes nothing: /cadre start stats and lists the paths renderPaths names, then runs the
+ * steps renderSteps gives, in order, through the host. The stamp is always the last step, and the launcher trusts it:
+ * it refuses to start when the stamp is missing or older than the role files or a rendered file, so a render that stops
+ * part way never starts a session (LNCH-03). It imports apply/safety, core and paths, and the host step and launch
+ * types; the start modules that gather and render read it.
  */
 import type { InboxRotation, PortEntry, PortStat } from '../../types'
 import { roleFolderLevels } from '../apply/safety'
@@ -19,6 +19,7 @@ import { CONTRACTS } from '../locales/contracts'
 import { fill, t } from '../locales/t'
 import {
   INBOX_LOG_FILE,
+  inboxFolderLevels,
   isDirInsideRoot,
   parentOf,
   PRIVATE_INSTRUCTIONS_LINK,
@@ -45,13 +46,12 @@ const OVERLAY_FOLDER = 'overlay'
 
 /**
  * The files a render writes into `.runtime`, in the order it writes them: the settings, the MCP config, the probe
- * expectations, the inbox.jsonl when there is none, and the stamp last.
+ * expectations, and the stamp last.
  */
 const WRITTEN_FILES: readonly string[] = Object.freeze([
   SETTINGS_FILE,
   MCP_FILE,
   PROBE_EXPECTATIONS_FILE,
-  INBOX_LOG_FILE,
   RUNTIME_STAMP_FILE,
 ])
 
@@ -101,10 +101,11 @@ export const NO_MEMORY_LINKS: MemoryLinks = Object.freeze({
 /**
  * What renderSteps plans from: the repo root as a realpath and the role id; the role's LaunchPlan, whose links all lie
  * under the role's `.runtime`, as launchPlan makes them; the texts of `mcp.json`, `probe-expectations.json` and the
- * stamp; the disk; and the memory links of the role (MemoryLinks). `stats` holds the stat of each path renderPaths
- * names, asked with resolve, and `listings` the listing of each folder it names. A path with no stat counts as not
- * there, and a folder with no listing as empty. `kickoff`, the text of `.runtime/kickoff.txt`, is set for an epic
- * render only (D-158); /cadre start leaves it out, so its render never writes or removes that file (D-168).
+ * stamp; the disk; the memory links of the role (MemoryLinks); and the role's inbox folder in the user config folder.
+ * `stats` holds the stat of each path renderPaths names, asked with resolve, and `listings` the listing of each folder
+ * it names. A path with no stat counts as not there, and a folder with no listing as empty. `kickoff`, the text of
+ * `.runtime/kickoff.txt`, is set for an epic render only (D-158); /cadre start leaves it out, so its render never
+ * writes or removes that file (D-168).
  */
 export type RenderInput = {
   readonly root: string
@@ -116,6 +117,7 @@ export type RenderInput = {
   readonly stats: ReadonlyMap<string, PortStat | null>
   readonly listings: ReadonlyMap<string, readonly PortEntry[]>
   readonly memories: MemoryLinks
+  readonly inboxDir: string
   readonly kickoff?: string
   /** Set only when the inbox is a real file over the rotation threshold. */
   readonly rotation?: InboxRotation
@@ -175,16 +177,17 @@ function renderFolders(runtime: string, links: readonly OverlayLink[]): string[]
 /**
  * The paths /cadre start stats and lists before a render, so renderSteps can judge each one. `stats` holds, sorted
  * and once each, the role folder, `.runtime`, its overlay, every folder from `.runtime` down to a STALE_LINK_FOLDERS
- * folder or to a link, every link path, the five files a render writes and the DONE.md marker (#63 A6), and for an
- * epic render (`options.kickoff`) the epic kickoff `.runtime/kickoff.txt` too (D-158); `listings` holds `.runtime`,
- * whose listing shows a file a render writes that is a link whatever its stat says (#72 A2), then the
- * STALE_LINK_FOLDERS under it.
+ * folder or to a link, every link path, the four files a render writes into `.runtime`, the DONE.md marker (#63 A6)
+ * and the inbox in `options.inboxDir`, and for an epic render (`options.kickoff`) the epic kickoff
+ * `.runtime/kickoff.txt` too (D-158); `listings` holds `.runtime`, whose listing shows a file a render writes that is
+ * a link whatever its stat says (#72 A2), then the STALE_LINK_FOLDERS under it, then the inbox folder, whose listing
+ * does the same for the inbox.
  */
 export function renderPaths(
   root: string,
   id: string,
   plan: LaunchPlan,
-  options: { readonly kickoff: boolean } = { kickoff: false },
+  options: { readonly inboxDir: string; readonly kickoff?: boolean },
 ): { readonly stats: readonly string[]; readonly listings: readonly string[] } {
   const runtime = runtimeFolder(root, id)
   const stats = sortedUnique([
@@ -192,11 +195,13 @@ export function renderPaths(
     ...renderFolders(runtime, plan.links),
     ...plan.links.map(link => link.path),
     ...WRITTEN_FILES.map(name => `${runtime}/${name}`),
-    ...(options.kickoff ? [`${runtime}/${RUNTIME_KICKOFF_FILE}`] : []),
+    ...(options.kickoff === true ? [`${runtime}/${RUNTIME_KICKOFF_FILE}`] : []),
     `${runtime}/${DONE_MARKER_FILE}`,
+    `${options.inboxDir}/${INBOX_LOG_FILE}`,
   ])
+  const staleFolders = STALE_LINK_FOLDERS.map(folder => `${runtime}/${folder}`)
 
-  return { stats, listings: [runtime, ...STALE_LINK_FOLDERS.map(folder => `${runtime}/${folder}`)] }
+  return { stats, listings: [runtime, ...staleFolders, options.inboxDir] }
 }
 
 /** The stat of a path; null when it is not there or was not asked, as a path with no stat counts as not there. */
@@ -251,6 +256,11 @@ export function privateLinkRefusal(id: string): string {
   return t('start.renderPlan.privateLinkRefusal2', { what, role })
 }
 
+/** The refusal when the role's inbox is a link or not a regular file; a link there is never removed. */
+function inboxRefusal(id: string, path: string): string {
+  return t('start.renderPlan.inboxRefusal', { role: reportText(id), path: reportText(path) })
+}
+
 /** Whether `.runtime` lists a file a render writes as a link while the stat of that file shows no link (#72 A2). */
 function isUnstatedLink(input: RenderInput, runtime: string, name: string): boolean {
   const entries = input.listings.get(runtime) ?? []
@@ -269,6 +279,15 @@ function isUnsafeFile(stat: PortStat | null): boolean {
   return stat !== null && !stat.isLink && stat.kind !== 'file'
 }
 
+/** Whether the role's inbox is a link, by its stat or by its folder's listing, or is there and not a regular file. */
+function isUnsafeInbox(input: RenderInput, inbox: string): boolean {
+  const stat = statAt(input, inbox)
+  if (stat !== null && (stat.isLink || stat.kind !== 'file')) return true
+  const entries = input.listings.get(input.inboxDir) ?? []
+
+  return entries.some(entry => entry.name === INBOX_LOG_FILE && entry.isLink)
+}
+
 /**
  * Why a render must not run, or null (T-03-20). The role folder must be a real folder inside the repo; `.runtime`,
  * its overlay, every folder down to a STALE_LINK_FOLDERS folder and every folder down to a link must be missing or a
@@ -276,8 +295,10 @@ function isUnsafeFile(stat: PortStat | null): boolean {
  * Anything else would let a step write, link or remove through a link, or write onto a folder. A file a render writes
  * that the listing of `.runtime` shows as a link while its stat does not refuses too (unstatedLinkRefusal, #72 A2),
  * so no write rests on what the host's stat makes of a dangling link; a `.runtime` with no listing is taken as empty,
- * as every folder with none is. A real file or folder at `.runtime/private-instructions` refuses last
- * (privateLinkRefusal, 02-GAPS-B2 N7): the launcher adds that path, so it is never kept.
+ * as every folder with none is. The inbox in the role's inbox folder must be missing or a regular file, by its stat
+ * and by its folder's listing (inboxRefusal): a link there is never removed. A real file or folder at
+ * `.runtime/private-instructions` refuses last (privateLinkRefusal, 02-GAPS-B2 N7): the launcher adds that path, so
+ * it is never kept.
  */
 function refusalOf(input: RenderInput, runtime: string): string | null {
   const role = statAt(input, roleFolder(input.root, input.id))
@@ -287,6 +308,8 @@ function refusalOf(input: RenderInput, runtime: string): string | null {
   if (folders.some(isUnsafeFolder) || files.some(isUnsafeFile)) return runtimeRefusal(input.id)
   const unstated = writtenFiles(input).find(name => isUnstatedLink(input, runtime, name))
   if (unstated !== undefined) return unstatedLinkRefusal(input.id, unstated)
+  const inbox = `${input.inboxDir}/${INBOX_LOG_FILE}`
+  if (isUnsafeInbox(input, inbox)) return inboxRefusal(input.id, inbox)
   if (isRealEntry(statAt(input, `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`))) return privateLinkRefusal(input.id)
 
   return null
@@ -402,6 +425,13 @@ function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
   return [mkdirStep(link.target), ...chmods]
 }
 
+/** The making of the role's inbox folder in the config folder: its mkdir, then a chmod 700 per level from the top. */
+function inboxFolderSteps(inboxDir: string): RenderStep[] {
+  const chmods = inboxFolderLevels(inboxDir).map((path): RenderStep => ({ kind: 'chmod', path }))
+
+  return [mkdirStep(inboxDir), ...chmods]
+}
+
 /**
  * The inbox's steps in fileWrites: the move and the fresh entry of a rotation, else the create when there is none, with
  * the epic's seed after a newline when the render has one.
@@ -416,15 +446,15 @@ function inboxSteps(input: RenderInput, inbox: string): RenderStep[] {
 
 /**
  * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, the
- * inbox's steps, and for an epic render the epic kickoff, the step right before the stamp. A rotation moves the inbox
- * to its archive, then appends the fresh entry after a newline, the framing every append uses; with none, inbox.jsonl
- * is created when there is none. Both are appends, which never truncate, so an entry another role appended after the
- * stat or the move is kept; an entry appended between the rotation's read and the move stays in the archive, unlisted.
- * An inbox that is a link is removed first (linkRemovals), so it counts as none. An inbox.md of an older setup is
- * never written or removed.
+ * steps of the inbox in the role's inbox folder, and for an epic render the epic kickoff, the step right before the
+ * stamp. A rotation moves the inbox to its archive beside it, then appends the fresh entry after a newline, the framing
+ * every append uses; with none, inbox.jsonl is created when there is none. Both are appends, which never truncate, so
+ * an entry another role appended after the stat or the move is kept; an entry appended between the rotation's read and
+ * the move stays in the archive, unlisted. An inbox that is a link refuses the render (refusalOf). An inbox.md of an
+ * older setup is never written or removed.
  */
 function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
-  const inbox = `${runtime}/${INBOX_LOG_FILE}`
+  const inbox = `${input.inboxDir}/${INBOX_LOG_FILE}`
   const writes = [
     writeStep(`${runtime}/${SETTINGS_FILE}`, stableJson(input.plan.settings)),
     writeStep(`${runtime}/${MCP_FILE}`, input.mcpText),
@@ -470,12 +500,12 @@ function doneMarkerRemovals(input: RenderInput, runtime: string): RenderStep[] {
  * (doneMarkerRemovals). Then the links of linkRemovals are removed, an earlier private instructions link included;
  * then `.runtime`, its overlay and each link's folder are made, sorted and once each, and the folder the private
  * instructions link points at, with each level of its role memory folder made mode 700 (privateFolderSteps, D-140
- * q1-b, 02-GAPS-B3 S7); then each link is made, except at a path that holds a real file or folder, which is kept and
- * named in a warning (Pitfall 2: `ln -sfn` would link inside a folder or replace a file); then the steps in the role
- * memory folder (memorySteps, G-02-1f); then the files of fileWrites are written, and the stamp last. A render that
- * stops at any step before the last leaves no stamp, so the launcher refuses to start (LNCH-03). A render that
- * refusalOf refuses has no step at all; a real file or folder at the private instructions link is such a refusal,
- * never a kept path with a warning (02-GAPS-B2 N7).
+ * q1-b, 02-GAPS-B3 S7), then the role's inbox folder, each level made mode 700 (inboxFolderSteps); then each link is
+ * made, except at a path that holds a real file or folder, which is kept and named in a warning (Pitfall 2: `ln -sfn`
+ * would link inside a folder or replace a file); then the steps in the role memory folder (memorySteps, G-02-1f); then
+ * the files of fileWrites are written, and the stamp last. A render that stops at any step before the last leaves no
+ * stamp, so the launcher refuses to start (LNCH-03). A render that refusalOf refuses has no step at all; a real file or
+ * folder at the private instructions link is such a refusal, never a kept path with a warning (02-GAPS-B2 N7).
  */
 export function renderSteps(input: RenderInput): RenderResult {
   const runtime = runtimeFolder(input.root, input.id)
@@ -490,6 +520,7 @@ export function renderSteps(input: RenderInput): RenderResult {
     ...linkRemovals(input, runtime).map(removeStep),
     ...mkdirFolders(runtime, input.plan.links).map(mkdirStep),
     ...privateFolderSteps(input, runtime),
+    ...inboxFolderSteps(input.inboxDir),
     ...links.map(linkStep),
     ...memorySteps(input.memories),
     ...fileWrites(input, runtime),

@@ -337,7 +337,6 @@ describe('instructionPlan', () => {
 
     expect(plan.warnings).toEqual([
       'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth',
-      'the inbox and session files have a path a permission rule cannot hold: they stay editable',
       'memory file ../x.md has an unsafe name: not linked',
     ])
   })

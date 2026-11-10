@@ -40,7 +40,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/settings.json",
-        "sha256": "d16ccde1460846f20407e09626b6b0b55ca4bf0bfae91004e1ebcb22d52e29ab",
+        "sha256": "72cb3cf5c6072b8a779fb0bb76f6c3185d4db44bb5851be3135133fa521952c7",
         "isWritten": true
       },
       {
@@ -65,7 +65,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/settings.json",
-        "sha256": "beb6a2035cc66f5a1f58a199e5f244a47ebcdfe08574d38d9d53c6c6e925806d",
+        "sha256": "1dbc9c87801805c395d7610ba6266b6095b7655552d9cb9c8707c4bb7732d627",
         "isWritten": true
       },
       {
@@ -112,8 +112,13 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
       "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
-      "/usr/bin/tee -a /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/inbox.jsonl @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm/inbox.jsonl @ -",
       "git rev-parse --path-format=absolute --git-common-dir @ /repo/.claude/worktrees/proj-1",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/overlay @ -",
@@ -122,8 +127,13 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
       "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
-      "/usr/bin/tee -a /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/inbox.jsonl @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be/inbox.jsonl @ -",
       "/usr/bin/uname -s @ -",
       "/usr/bin/osascript -e on run argv -e tell application \"iTerm\" -e activate -e if (count of windows) is 0 then -e create window with default profile -e else -e tell current window to create tab with default profile -e end if -e tell current session of current window to write text (item 1 of argv) -e end tell -e end run cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/pm @ -",
       "/usr/bin/osascript -e on run argv -e tell application \"iTerm\" -e activate -e if (count of windows) is 0 then -e create window with default profile -e else -e tell current window to create tab with default profile -e end if -e tell current session of current window to write text (item 1 of argv) -e end tell -e end run cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/be @ -"
@@ -206,7 +216,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/settings.json",
-        "sha256": "d16ccde1460846f20407e09626b6b0b55ca4bf0bfae91004e1ebcb22d52e29ab",
+        "sha256": "72cb3cf5c6072b8a779fb0bb76f6c3185d4db44bb5851be3135133fa521952c7",
         "isWritten": true
       },
       {
@@ -231,7 +241,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/settings.json",
-        "sha256": "beb6a2035cc66f5a1f58a199e5f244a47ebcdfe08574d38d9d53c6c6e925806d",
+        "sha256": "1dbc9c87801805c395d7610ba6266b6095b7655552d9cb9c8707c4bb7732d627",
         "isWritten": true
       },
       {
@@ -278,8 +288,13 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
       "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
-      "/usr/bin/tee -a /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/inbox.jsonl @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm/inbox.jsonl @ -",
       "git rev-parse --path-format=absolute --git-common-dir @ /repo/.claude/worktrees/proj-1",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/overlay @ -",
@@ -288,8 +303,13 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
       "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
-      "/usr/bin/tee -a /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/inbox.jsonl @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be/inbox.jsonl @ -",
       "/usr/bin/uname -s @ -",
       "/usr/bin/pbcopy @ -"
     ]

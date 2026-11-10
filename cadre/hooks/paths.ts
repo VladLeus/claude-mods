@@ -299,18 +299,21 @@ export const RUNTIME_STAMP_FILE = 'stamp'
 /** The inbox of a role in `.cadre/<id>/.runtime/`, where other roles append their notes for it (D-114). */
 export const INBOX_FILE = 'inbox.md'
 
-/** A role's inbox in `.cadre/<id>/.runtime/`: one JSON line per entry or mark, only ever appended by cadre's tools. */
+/** A role's inbox, a file in its inbox folder under the user config dir: one JSON line per entry or mark, appended. */
 export const INBOX_LOG_FILE = 'inbox.jsonl'
 
-/** The names of the inbox archives /cadre start moves aside in `.cadre/<id>/.runtime/` (inboxArchiveFile). */
+/**
+ * The names of the inbox archives /cadre start moves aside in a role's inbox folder (inboxArchiveFile); the `all` git
+ * policy also ignores those an earlier setup left in `.runtime/`.
+ */
 export const INBOX_ARCHIVE_GLOB = 'inbox-*.jsonl'
 
-/** An inbox /cadre start moved aside at `at` (epoch ms), matched by INBOX_ARCHIVE_GLOB. */
+/** An inbox /cadre start moved aside at `at` (epoch ms) in the role's inbox folder, matched by INBOX_ARCHIVE_GLOB. */
 export function inboxArchiveFile(at: number): string {
   return `inbox-${at}.jsonl`
 }
 
-/** The file in `.cadre/<id>/.runtime/` where a role session publishes its session id, so other roles can wake it. */
+/** A role's file in its inbox folder under the user config dir where its session publishes its id, to be woken. */
 export const SESSION_FILE = 'session.json'
 
 /** The inbox homes' folder in `<userDir>/cadre`, beside the memory slugs, which always end in 8 hex, so none clash. */
@@ -351,11 +354,6 @@ export function runtimeDirOf(root: string, id: string): string {
   return `${root}/.cadre/${id}/.runtime`
 }
 
-/** A file in a role's runtime folder: `<root>/.cadre/<id>/.runtime/<file>`. */
-export function runtimeFileOf(root: string, id: string, file: string): string {
-  return `${runtimeDirOf(root, id)}/${file}`
-}
-
 /** The runtime env name that holds the role a session runs as. */
 export const ROLE_ENV = 'CADRE_ROLE'
 
@@ -383,9 +381,9 @@ export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
 
 /**
  * The per-user files and folders in `.cadre/<id>/.runtime/`: what /cadre start renders at launch (the final settings,
- * the MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations, the
- * inbox of an older setup and the stamp written last), the inbox log and the session id a role session keeps there,
- * and the inbox archives. The `all` git policy ignores exactly these.
+ * the MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations and
+ * the stamp written last), and the files an earlier setup left there (its inbox.md, inbox log, session id and inbox
+ * archives). The `all` git policy ignores exactly these.
  */
 export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
   'settings.json',

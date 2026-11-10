@@ -700,7 +700,7 @@ describe('linked memory deny (G-02-1f)', () => {
           const memory = isPartsFlowRole(role) ? [`Edit(/${folder}/squad.md)`, `Write(/${folder}/squad.md)`] : []
           const home = denyOf(plan.settings).filter(entry => entry.includes('//home/'))
           const own = [...privateDeny(folder), ...memoryAndRecordDeny(MATRIX_USER.userDir, folder)]
-          const expected = sortedUnique([...own, ...memory])
+          const expected = sortedUnique([...own, ...memory, ...inboxFileRules(MATRIX_USER.userDir)])
           const problems = [
             ...launchProblems(plan, role, scope, framework),
             ...(JSON.stringify(home) === JSON.stringify(expected) ? [] : [`home denies ${home.join(', ')}`]),

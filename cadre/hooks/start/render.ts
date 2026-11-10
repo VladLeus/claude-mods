@@ -24,13 +24,7 @@ import { launchPlan } from '../launch/plan'
 import type { LaunchPlan } from '../launch/plan'
 import { inboxRotationOf, isInboxOverRotation } from '../messages/rotate'
 import { INBOX_ROTATE_READ_MAX_BYTES } from '../messages/send'
-import {
-  INBOX_LOG_FILE,
-  PRIVATE_INSTRUCTIONS_LINK,
-  privateInstructionsDir,
-  roleMemoryDir,
-  runtimeFileOf,
-} from '../paths'
+import { INBOX_LOG_FILE, PRIVATE_INSTRUCTIONS_LINK, privateInstructionsDir, roleMemoryDir } from '../paths'
 import { expectationsFor, probeExpectationsText } from '../probe/probe'
 import { gatherLaunchUser } from './gather-user'
 import { renderFailedReply } from './launcher-check'
@@ -58,22 +52,23 @@ async function renderDiskOf(
 }
 
 /**
- * The rotation of the role's inbox when its stat shows a regular file over the rotation threshold: the clock names the
- * archive, and the inbox read lists its open ids. Null with no clock, and for a smaller inbox, which is not read.
+ * The rotation of the role's inbox in its inbox folder when its stat shows a regular file over the rotation threshold:
+ * the clock names the archive, and the inbox read lists its open ids. Null with no clock, and for a smaller inbox,
+ * which is not read.
  */
 async function inboxRotation(
   io: InitIo,
-  root: string,
+  inboxDir: string,
   id: string,
   stats: ReadonlyMap<string, PortStat | null>,
 ): Promise<InboxRotation | null> {
-  const inbox = runtimeFileOf(root, id, INBOX_LOG_FILE)
+  const inbox = `${inboxDir}/${INBOX_LOG_FILE}`
   if (!isInboxOverRotation(stats.get(inbox) ?? null)) return null
   const at = await io.now()
   if (at === null) return null
   const read = await io.read(inbox, INBOX_ROTATE_READ_MAX_BYTES)
 
-  return inboxRotationOf(root, id, read.state === 'text' ? read.text : null, at)
+  return inboxRotationOf(inboxDir, id, read.state === 'text' ? read.text : null, at)
 }
 
 /**
@@ -119,16 +114,17 @@ export function worktreeClaudeMd(paths: readonly string[], worktree: string): st
  * The render half of /cadre start for one role, which /cadre epic runs too, once per role, for its epic worktree:
  * `locations` give the root it renders for, and the caller reads and compiles the team (`state`, the role, its compiled
  * scope and the repo's code dirs) in the session's own root. It gathers the launching user for the root
- * (gatherLaunchUser) with the team's role ids, so the settings deny every role's inbox and session files, builds the
- * role's LaunchPlan with its private instructions link (withPrivateInstructions), renders the MCP config from
+ * (gatherLaunchUser) with the team's role ids, so the settings deny every role's role.json, builds the role's
+ * LaunchPlan with its private instructions link (withPrivateInstructions), renders the MCP config from
  * `~/.claude.json` under the stored consent with the project entries of `mcpRoots`, then of the user's `mainRoot` when
- * set, in that order (runtimeMcpText), and the probe expectations, and renders `<root>/.cadre/<id>/.runtime/`:
- * renderPaths names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was built for, and
- * every refusal comes before anything is written. Each step then runs through the host in order, and the first one
- * that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to start.
- * It refuses with the refusals of gatherLaunchUser, a role memory folder level it would write through included
- * (privateFolderRefusal), a render refusal, or that failure. Else it gives the number of links the render made and
- * every warning of the launch user, the LaunchPlan, the MCP config and the render, in that order.
+ * set, in that order (runtimeMcpText), and the probe expectations, and renders `<root>/.cadre/<id>/.runtime/` and the
+ * role's inbox folder that gatherLaunchUser checked: renderPaths names what to stat and list, renderSteps plans the
+ * steps from the root the LaunchPlan was built for, and every refusal comes before anything is written. Each step then
+ * runs through the host in order, and the first one that fails stops the render with renderFailedReply and no stamp
+ * written, so the launcher refuses to start. It refuses with the refusals of gatherLaunchUser, a role memory or inbox
+ * folder level it would write through included (privateFolderRefusal), a render refusal, or that failure. Else it
+ * gives the number of links the render made and every warning of the launch user, the LaunchPlan, the MCP config and
+ * the render, in that order.
  * `epic` is null for /cadre start, which changes nothing. For /cadre epic it names the main checkout and the role's
  * epic kickoff, which the render writes to `.runtime/kickoff.txt` as the step before the stamp, and the user the
  * LaunchPlan is built for also excludes the worktree's own CLAUDE.md files (worktreeClaudeMd), carries the main
@@ -178,8 +174,9 @@ export async function renderRole(
   const mcp = runtimeMcpText(role, claudeJson, mcpRoots, state.readUserMcp)
   const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
-  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan, { kickoff: input.epic !== null }))
-  const rotation = await inboxRotation(io, user.root, id, disk.stats)
+  const { inboxDir } = launch
+  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan, { inboxDir, kickoff: input.epic !== null }))
+  const rotation = await inboxRotation(io, inboxDir, id, disk.stats)
   const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
   // Only an epic render names a kickoff, so a /cadre start render never writes or removes one (D-168).
   const kickoff = input.epic === null ? {} : { kickoff: input.epic.kickoff }
@@ -191,6 +188,7 @@ export async function renderRole(
     ...texts,
     ...disk,
     memories: launch.memories,
+    inboxDir,
     ...kickoff,
     ...seed,
     ...(rotation === null ? {} : { rotation }),

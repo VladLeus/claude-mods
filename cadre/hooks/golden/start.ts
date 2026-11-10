@@ -24,7 +24,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
     "writes": [
       {
         "path": "/repo/.cadre/be/.runtime/settings.json",
-        "sha256": "1c5e33b5d658462ba8359154926379553724e05ba40e6f163035f78ce7af1c94",
+        "sha256": "9e2a7df54c6529e24a772069a350d2442cfd0f811a469046b6181850ad8ede4b",
         "isWritten": true
       },
       {
@@ -53,8 +53,13 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/repo-816fc349/be @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/repo-816fc349 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/repo-816fc349/be @ -",
       "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.cadre/be/.runtime/private-instructions @ -",
-      "/usr/bin/tee -a /repo/.cadre/be/.runtime/inbox.jsonl @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/repo-816fc349/be/inbox.jsonl @ -",
       "/usr/bin/pbcopy @ -"
     ]
   },

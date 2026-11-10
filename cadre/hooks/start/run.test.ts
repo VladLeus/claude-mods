@@ -375,7 +375,13 @@ describe('linked memories (G-02-1f)', () => {
     expect(userOf(parts.read).linkedMemories).toEqual([`${folder}/notes.md`, `${folder}/squad.md`])
     expect(userOf(wholeFiles.read).linkedMemories).toEqual([])
     const wholeUser = userOf(wholeFiles.read)
-    expect(wholeFiles.read).toEqual({ kind: 'ok', user: wholeUser, warnings: [], memories: NO_MEMORY_LINKS })
+    expect(wholeFiles.read).toEqual({
+      kind: 'ok',
+      user: wholeUser,
+      warnings: [],
+      memories: NO_MEMORY_LINKS,
+      inboxDir: INBOX_DIR,
+    })
   })
 
   test('a whole-files role keeps its links under .runtime/instructions/ and reads no hand-out record', async () => {

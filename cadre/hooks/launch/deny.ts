@@ -1,7 +1,7 @@
 /**
  * The launch denies, a layer 9 module: a role's runtime deny list at launch with the warnings of what it could not
  * deny, and the Edit and Write rules that keep a role off its private instructions, memory folders, hand-out record,
- * linked memories, launch and team files and the team's inbox and session files. It imports core, the framework
+ * linked memories, launch and team files and the inbox tree in the user config folder. It imports core, the framework
  * registry, paths, the scope lint, the launch links and the types, so the launch settings and plan, and the improver,
  * read it here.
  */
@@ -11,15 +11,13 @@ import { ADAPTERS } from '../framework/registry'
 import { t } from '../locales/t'
 import {
   cadreStatePath,
-  INBOX_LOG_FILE,
+  inboxTreeOf,
   INSTRUCTIONS_RECORD_FILE,
   isSafeRoot,
   memoryFolderOf,
   privateInstructionsDir,
   roleJsonPath,
   roleMemoryDir,
-  runtimeFileOf,
-  SESSION_FILE,
 } from '../paths'
 import { MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { isSafeDir, lintDenyPattern, pluginName, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
@@ -168,7 +166,7 @@ export const UNDENIED_MEMORY_FOLDER_WARNING = t('launch.deny.undeniedMemoryFolde
  */
 export const UNDENIED_RECORD_WARNING = t('launch.deny.undeniedRecordWarning')
 
-/** The warning when the inbox and session files have a path no rule can hold, so a role could still edit them. */
+/** The warning when the inbox tree has a path no rule can hold, so a role could still edit the inbox files. */
 const UNDENIED_INBOX_WARNING = t('launch.deny.undeniedInboxWarning')
 
 /**
@@ -259,20 +257,14 @@ function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
 }
 
 /**
- * The deny of the inbox and session files of every role of the team, or of the role's own when the team is not known:
- * `Edit` and `Write` of `<root>/.cadre/<id>/.runtime/inbox.jsonl` and `session.json` under every launch root, so only
- * cadre's tools write them. A path an exact rule cannot hold gets none, and UNDENIED_INBOX_WARNING comes once.
+ * The deny of the inbox tree in the user config folder, `Edit` and `Write` of `<userDir>/cadre/inboxes/**`, which holds
+ * the inbox and session files of every role of every launch root, so only cadre's tools write them. A path an exact
+ * rule cannot hold gets none, with UNDENIED_INBOX_WARNING.
  */
-function inboxFilesDeny(user: LaunchUser, id: string): DenyResult {
-  const roots = sortedUnique(launchRoots(user))
-  const ids = user.teamIds ?? [id]
-  const rules = roots.flatMap(root =>
-    ids.flatMap(teamId =>
-      [INBOX_LOG_FILE, SESSION_FILE].map(file => editWriteRules(runtimeFileOf(root, teamId, file), '')),
-    ),
-  )
+function inboxFilesDeny(user: LaunchUser): DenyResult {
+  const rules = editWriteRules(inboxTreeOf(user.userDir), '/**')
 
-  return { deny: rules.flatMap(rule => rule ?? []), warnings: rules.includes(null) ? [UNDENIED_INBOX_WARNING] : [] }
+  return rules === null ? { deny: [], warnings: [UNDENIED_INBOX_WARNING] } : { deny: rules, warnings: [] }
 }
 
 /**
@@ -327,9 +319,9 @@ export function pluginSkillDeny(
  * for a linked worktree nested in its main checkout (`mainRoot` set), runtimeDeny's denies for the main checkout's root
  * too, so its code dirs get the same exact denies as the worktree's, without its warnings, which would repeat the
  * worktree's; for every role, the deny of its private instructions folder (every launcher adds that folder), of the
- * repo's memory folders, of the launch files, of the team's inbox and session files and of its hand-out record; and
- * for a parts-flow role the read-only deny of the memories /cadre start linked into its memory folder, never of its
- * MEMORY.md or of its own memories; last, the per-skill deny of its plugins (pluginSkillDeny).
+ * repo's memory folders, of the launch files, of the inbox tree in the user config folder and of its hand-out record;
+ * and for a parts-flow role the read-only deny of the memories /cadre start linked into its memory folder, never of
+ * its MEMORY.md or of its own memories; last, the per-skill deny of its plugins (pluginSkillDeny).
  */
 export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
@@ -340,7 +332,7 @@ export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchU
     privateInstructionsDeny(user, role.id),
     memoryFolderDeny(user),
     launchFilesDeny(user, role.id),
-    inboxFilesDeny(user, role.id),
+    inboxFilesDeny(user),
     instructionsRecordDeny(user, role.id),
     isPartsFlowRole(role) ? linkedMemoryDeny(user.linkedMemories) : { deny: [], warnings: [] },
     pluginSkillDeny(role, scope, user),

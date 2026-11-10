@@ -839,6 +839,8 @@ export const EN = Object.freeze({
   'start.renderPlan.privateLinkRefusal':
     '.cadre/{role}/.runtime/{privateInstructionsLink} is a real file or folder, not a link',
   'start.renderPlan.privateLinkRefusal2': '{what}: remove it and run /cadre start {role} again',
+  'start.renderPlan.inboxRefusal':
+    'the inbox of {role} at {path} is a link or not a regular file: remove it and run /cadre start {role} again',
   'start.renderPlan.notReplacedWarning': '{repoRelative} is a real file or folder, not a link: not replaced',
 
   'start.gatherUser.startNoHome': 'cadre start needs HOME to render the role files, so it stopped.',

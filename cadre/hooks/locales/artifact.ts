@@ -27,8 +27,8 @@ export const ARTIFACT = Object.freeze({
   roleMdHandoffs: '## Handoffs',
   roleMdHandoffLine: "Write every handoff under thoughts/shared/handoffs/{id}/ (autopilot's handoff path).",
   roleMdInbox: '## Inbox',
-  roleMdInboxLine: `Your inbox is .cadre/{id}/.runtime/inbox.jsonl, a path from the git root. Read it with inbox_read ${
-    ''}when you start, after every restart and when a wait ends.`,
+  roleMdInboxLine: `Your inbox lives in your user config folder, outside the repo, and only the cadre inbox tools ${
+    ''}write it. Read it with inbox_read when you start, after every restart and when a wait ends.`,
   roleMdNoteLine: 'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).',
   roleMdInboxStates: `Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the ${
     ''}entry you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done ${

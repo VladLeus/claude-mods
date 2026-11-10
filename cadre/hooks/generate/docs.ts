@@ -166,7 +166,7 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     '',
     ARTIFACT.roleMdInbox,
     '',
-    fill(ARTIFACT.roleMdInboxLine, { id: role.id }),
+    ARTIFACT.roleMdInboxLine,
     ARTIFACT.roleMdNoteLine,
     ARTIFACT.roleMdInboxStates,
     '',
