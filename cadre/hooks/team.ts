@@ -249,9 +249,9 @@ export type TeamState = {
  * `command`); a cadre.json that lists the reserved role id cadre (REGEN_CADRE_ROLE); a cadre.json that cannot be read
  * or is not valid, its stored launcher folder included (REGEN_BAD_STATE); an `id` it does not list (regenNoRole); the
  * first listed role.json, in cadre.json order, that is missing, not valid or holds another id (regenBadRole); and,
- * when the repo has no default framework, the first listed role with none of its own (regenNeedsFramework, D-73). A
- * null `id` (/cadre epic, which asks for no one role) reads the whole team, so the regenNoRole check is skipped. It
- * asks nothing and writes nothing.
+ * when the repo has no default framework, the first listed role with none of its own (regenNeedsFramework), except
+ * for /cadre frameworks, which decides every role's framework again. A null `id` (/cadre epic, which asks for no one
+ * role) reads the whole team, so the regenNoRole check is skipped. It asks nothing and writes nothing.
  */
 export async function readTeam(
   io: InitIo,
@@ -268,7 +268,7 @@ export async function readTeam(
   if (team.kind === 'refuse') return team
   const { roles, texts } = team.value
   const unframed = state.framework === null ? roles.find(role => role.framework === undefined) : undefined
-  if (unframed !== undefined) return regenRefusal(regenNeedsFramework(unframed.id))
+  if (unframed !== undefined && command !== 'frameworks') return regenRefusal(regenNeedsFramework(unframed.id))
 
   return { kind: 'ok', value: { state, roles, texts } }
 }

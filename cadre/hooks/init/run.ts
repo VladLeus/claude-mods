@@ -65,6 +65,7 @@ import { roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { trackedParts } from '../generate/gittrack'
 import { builtClaudeMdPath } from '../generate/launcher'
+import { epicWorktreeMain } from '../git/checkout'
 import { initGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
 import { t, tn } from '../locales/t'
@@ -88,7 +89,7 @@ import { proposeFromText } from '../suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillsPrompt } from '../suggest/skills'
 import type { SkillsRecommendation } from '../suggest/skills'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from '../suggest/topics'
-import { attendedByConfig, compileAll, teamFrameworks } from '../team'
+import { attendedByConfig, compileAll, readTeam, teamFrameworks } from '../team'
 import {
   accepted,
   ASK_HEADERS,
@@ -108,8 +109,8 @@ import type { Draft, PlanResult, Reframed, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
 import { consentedPluginKeys, initFrameworks, planState, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
-import { initialState, nextStage } from './machine'
-import { INIT_CANCELLED } from './replies'
+import { frameworksState, initialState, nextStage } from './machine'
+import { cancelledText, frameworksInEpicReply } from './replies'
 import { FRAMEWORK_LABELS, gsdCheckAsk, installedFrameworks } from './stages/frameworks'
 import type {
   Answer,
@@ -1047,9 +1048,9 @@ export async function perform(
 }
 
 /**
- * Performs a state's effect, the runner's one way to do so (D-204, D-230, WD-S1): an ask asks `state.openQuestion`,
- * its question and spec, never the effect's copy; an ask with no open question, or the end, gives null, so the run
- * ends with INIT_CANCELLED (fail closed); a host operation or a model call goes through perform.
+ * Performs a state's effect, the runner's one way to do so: an ask asks `state.openQuestion`, its question and spec,
+ * never the effect's copy; an ask with no open question, or the end, gives null, so the run ends with the flow's
+ * cancel text (fail closed); a host operation or a model call goes through perform.
  */
 export async function performState(io: InitIo, options: InitOptions, state: InitState): Promise<Answer | null> {
   const { effect, openQuestion } = state
@@ -1090,6 +1091,31 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
 }
 
 /**
+ * `/cadre frameworks`: the framework step of init again for a team init wrote. Before any question it refuses as
+ * initGuard does for this command (`claude -p`, the repo checks, an active autopilot run), in an epic worktree, found
+ * from its files so a --dry-run checks too, and as readTeam does (no cadre.json, a bad role.json; a team with no
+ * default framework runs). It then scans with the ~/.claude.json consent cadre.json stores and runs the frameworks flow
+ * from the stored team (frameworksState): the set question, each install offer, the mode questions and GSD's hunks,
+ * then the review of the files that change, which a --dry-run ends with the plan and a plain run writes after Confirm.
+ */
+export async function runFrameworks(io: InitIo, options: InitOptions): Promise<string> {
+  const paged = pagedOf(io, options)
+  const guard = await initGuard(paged, 'frameworks')
+  if (guard.kind === 'refuse') return guard.text
+  const { locations } = guard
+  const { root } = locations
+  const main = await epicWorktreeMain(paged, root)
+  if (main !== null) return frameworksInEpicReply(main)
+  const team = await readTeam(paged, root, 'frameworks', null)
+  if (team.kind === 'refuse') return team.text
+  await paged.progress(SCAN_PROGRESS, SCAN_SUMMARY)
+  const gathered = await gatherScans(paged, locations, team.value.state.readUserMcp)
+  const first = frameworksState(options.dryRun, options.surface, { locations, gathered, team: team.value })
+
+  return runStates(paged, options, first)
+}
+
+/**
  * The port every question of a run goes through, the surface module's paged port: on a pane surface a context over
  * the frame cap is asked a page at a time at the width read before each ask, and whole while the pane is seated inline.
  */
@@ -1125,7 +1151,7 @@ async function runStates(paged: InitIo, options: InitOptions, first: InitState):
     const folds = state.surface.foldsOf(bound)
     const open = openQuestion === null ? null : { ...openQuestion, spec: foldedSpec(openQuestion.spec, folds) }
     const answer = await performState(paged, options, { ...state, openQuestion: open })
-    if (answer === null) return INIT_CANCELLED
+    if (answer === null) return cancelledText(state.flow)
     state = nextStage({ ...state, outputs: [], pageColumns: options.pageColumns?.() ?? null }, answer)
   }
 }
