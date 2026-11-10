@@ -669,6 +669,13 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
       TEAM.map(role => [role.id, BARE_WORKTREE]),
     )
   })
+
+  test('each role rendered into the worktree carries the main checkout as CADRE_MAIN_ROOT', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const envs = TEAM.map(role => settingsAt(run.writes, BARE_WORKTREE, role.id).env)
+
+    expect(envs.map(env => (isObject(env) ? env.CADRE_MAIN_ROOT : null))).toEqual(TEAM.map(() => '/repo'))
+  })
 })
 
 describe('the epic kickoff of each role (D-158 to D-160)', () => {

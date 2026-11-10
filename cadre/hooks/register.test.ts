@@ -23,7 +23,8 @@ import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
 import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
-import { t } from './locales/t'
+import { PROMPTS } from './locales/prompts'
+import { fill, t } from './locales/t'
 import { sessionRecordText } from './messages/record'
 import { ROLE_ENV, ROOT_ENV } from './paths'
 import { autopilotReply } from './scan/autopilot'
@@ -4038,6 +4039,46 @@ describe('the inbox tools in a role session', () => {
     expect(registrations(log)).toEqual([])
     expect(log.writes).toEqual([])
   })
+
+  test('a role session whose role.json is absent logs one line naming the role', async ($, on) => {
+    const log = newLog()
+    const world = roleWorld()
+    const files = Object.fromEntries(Object.entries(world.files).filter(([path]) => path !== ROLE_BE_JSON))
+    fakeHost(on, { ...world, files }, log)
+    await startSession($, on)
+
+    expect(log.logs).toEqual([fill(PROMPTS.inboxRoleMissing, { id: 'be' })])
+    expect(registrations(log)).toEqual([])
+  })
+
+  test(
+    'a worktree role session reads its role from the main checkout and keeps its session in the worktree',
+    async ($, on) => {
+      const log = newLog()
+      const base = ambiguousWorld()
+      const world = roleWorld({
+        roleEnv: { role: 'be', root: '/wt' },
+        env: { ...base.env, CADRE_MAIN_ROOT: '/main' },
+        dirs: [...base.dirs, '/main/.cadre'],
+        files: {
+          ...base.files,
+          '/main/.cadre/cadre.json': startStateText(['pm', 'tl', 'be']),
+          '/main/.cadre/pm/role.json': roleJsonText(templateRole('pm')),
+          '/main/.cadre/tl/role.json': roleJsonText(templateRole('tl')),
+          '/main/.cadre/be/role.json': roleJsonText(templateRole('be')),
+        },
+      })
+      fakeHost(on, world, log)
+      await startSession($, on)
+
+      expect(registrations(log)).toEqual([
+        'tool.register inbox_send',
+        'tool.register inbox_read',
+        'tool.register inbox_mark',
+      ])
+      expect(log.writes).toEqual(['/wt/.cadre/be/.runtime/session.json'])
+    },
+  )
 
   test("a turn start writes session.json only when it does not hold this session's id", async ($, on) => {
     const log = newLog()

@@ -309,6 +309,21 @@ describe('launch render', () => {
     expect(plan.settings.env).toEqual({ CADRE_ROLE: 'be', CADRE_ROOT: '/repo', TOKEN: 'v', GSD_WORKSTREAM: 'cadre-be' })
   })
 
+  test('a role rendered into a worktree gets its main checkout as CADRE_MAIN_ROOT after CADRE_ROOT; others not', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+    const worktree = '/repo/.claude/worktrees/x'
+    const epicUser = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo' })
+    const epicEnv = launchPlan(role, scope, epicUser).settings.env
+    const mainEnv = launchPlan(role, scope, user()).settings.env
+
+    expect(isObject(epicEnv) ? Object.entries(epicEnv).slice(-2) : null).toEqual([
+      ['CADRE_ROOT', worktree],
+      ['CADRE_MAIN_ROOT', '/repo'],
+    ])
+    expect(isObject(mainEnv) ? Object.hasOwn(mainEnv, 'CADRE_MAIN_ROOT') : null).toBe(false)
+  })
+
   test('a carried env name the user has no value for is left out, and so is an empty env', () => {
     const role = templateRole('pm', { carry: { ...CARRY_ALL, env: ['JIRA_URL', 'MISSING'] } })
     const scope = compileScope(role, context())

@@ -5,7 +5,15 @@ import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { hostWorld, memHost, memIo, memWorld } from '../testkit'
 import type { HostRunRule, MemHost, MemWorld } from '../testkit'
-import { publishSession, roleContextOf, runInboxMark, runInboxRead, runInboxSend } from './flow'
+import {
+  isRoleSession,
+  publishSession,
+  roleContextOf,
+  runInboxMark,
+  runInboxRead,
+  runInboxSend,
+  teamRootOf,
+} from './flow'
 import { parseInbox, parseInboxLine, recordLine, sessionRecordText } from './record'
 import { INBOX_LINE_MAX_BYTES } from './send'
 
@@ -120,6 +128,33 @@ describe('roleContextOf', () => {
       ['be', '/a/../b'],
     ]
     expect(refused.map(([role, root]) => roleContextOf(role, root))).toEqual(refused.map(() => null))
+  })
+
+  test('a main checkout that is an absolute root is kept; absent or empty gives none; anything else gives null', () => {
+    expect(roleContextOf('be', '/wt', '/main')).toEqual({ id: 'be', root: '/wt', main: '/main' })
+    expect(roleContextOf('be', '/wt', undefined)).toEqual({ id: 'be', root: '/wt' })
+    expect(roleContextOf('be', '/wt', '')).toEqual({ id: 'be', root: '/wt' })
+    const refused: readonly unknown[] = ['rel', '/', '/a/../b', 5]
+    expect(refused.map(main => roleContextOf('be', '/wt', main))).toEqual(refused.map(() => null))
+  })
+
+  test('the team root is the main checkout when the context has one, else the root', () => {
+    expect(teamRootOf({ id: 'be', root: '/wt', main: '/main' })).toBe('/main')
+    expect(teamRootOf({ id: 'be', root: '/wt' })).toBe('/wt')
+  })
+})
+
+describe('isRoleSession', () => {
+  test('a role.json linked into the main checkout names a role only with that main checkout', async () => {
+    const text = '{}'
+    const world = memWorld({
+      files: { '/wt/.cadre/be/role.json': text, '/main/.cadre/be/role.json': text },
+      realPaths: { '/wt/.cadre/be/role.json': '/main/.cadre/be/role.json' },
+    })
+    const { io } = memIo(world, [])
+
+    expect(await isRoleSession(io, { id: 'be', root: '/wt', main: '/main' })).toBe(true)
+    expect(await isRoleSession(io, { id: 'be', root: '/wt' })).toBe(false)
   })
 })
 
