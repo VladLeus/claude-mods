@@ -179,8 +179,15 @@ describe('project installs', () => {
 describe('the fallback line of a framework install', () => {
   /** GSD's install command, as its install question names it. */
   const COMMAND = 'npx -y @opengsd/gsd-core@latest --claude --local'
-  /** A GSD install that did not land, with no role and not the repo default on it. */
-  const FALLEN = { name: 'GSD', command: COMMAND, roles: [], isRepoDefault: false, fallback: 'none (built-in)' }
+  /** A GSD install of init that did not land, with no role and not the repo default on it. */
+  const FALLEN: Parameters<typeof frameworkFallbackText>[0] = {
+    name: 'GSD',
+    command: COMMAND,
+    roles: [],
+    isRepoDefault: false,
+    fallback: 'none (built-in)',
+    rerun: 'init',
+  }
   /** How every fallback line ends: the command to run, then init again. */
   const END = `: run ${COMMAND} from the repo root, then /cadre init again`
 

@@ -19,6 +19,8 @@ import type {
   InitLocations,
   InstructionGroup,
   InstructionPart,
+  LaunchStart,
+  ManifestEntry,
   MemoryItem,
   Plan,
   PluginFlag,
@@ -55,7 +57,7 @@ import {
 import { sha256Hex } from '../core/hash'
 import { compareText } from '../core/text'
 import { attendedNote, NOT_SET_TEXT } from '../framework/gsd/hunks'
-import { roleClaudeMdText, rubricText } from '../generate/docs'
+import { roleClaudeMdText, roleJsonText, rubricText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
@@ -66,6 +68,7 @@ import {
   manyNamesWorld,
   oversizeGroupWorld,
   oversizeWorld,
+  regenWorld,
   tableMatchWorld,
 } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
@@ -149,6 +152,7 @@ import {
   SECURITY_KEY,
   SECURITY_KEYS,
   session,
+  SHA_A,
   skillRef,
   SOURCE_SCAN,
   stageStep,
@@ -184,9 +188,10 @@ import type { SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { PANE_FULLSCREEN } from '../ui/surfaces/pane-fullscreen'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
-import type { Draft, PlanResult } from './draft'
+import type { Draft, PlanResult, ReframeDraft, Reframed } from './draft'
 import { CONFLICT_CONTEXT } from './initapply'
 import { consentedPluginKeys, initFrameworks, initSizing } from './initplan'
+import type { PlanStepInput } from './initplan'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
   APPLY_HUNKS_PROGRESS,
@@ -198,6 +203,8 @@ import {
   perform,
   performState,
   planStep,
+  reframeApplied,
+  reframePlan,
   runInit,
   SCAN_PROGRESS,
   SCAN_SUMMARY,
@@ -270,7 +277,7 @@ import {
   rolesStage,
 } from './stages/roles'
 import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityStage } from './stages/security'
-import type { Answer, Effect, InitState } from './state'
+import type { Answer, Applied, Effect, InitState } from './state'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -7003,5 +7010,221 @@ describe('an oversize plugin group on a pane surface (D-328)', () => {
       const groups = paged.specs.filter((_, at) => (paged.asked[at] ?? '').startsWith(prefix))
       expect(groups.map(spec => spec.options)).toEqual([['Next page', 'Go one by one']])
     }
+  })
+})
+
+describe('the file plan and apply of /cadre frameworks', () => {
+  /** BE with one repo part recorded, as the role.json of a parts-flow role holds it. */
+  const BE = templateRole('be', { instructionParts: [{ file: 'CLAUDE.md', heading: 'Rules', hash: SHA_A }] })
+  /** PM as the template has it. */
+  const PM = templateRole('pm')
+  /** BE and PM, in the order cadre.json lists them. */
+  const TEAM: readonly RoleSpec[] = [BE, PM]
+  /** Where every launcher starts. */
+  const GIT_ROOT: LaunchStart = { kind: 'git-root' }
+  /** BE's role.json on disk. */
+  const BE_ROLE_JSON = '/repo/.cadre/be/role.json'
+
+  /** `world` with these files added or replaced. */
+  function withFiles(world: MemWorld, files: Readonly<Record<string, string>>): MemWorld {
+    return { ...world, files: { ...world.files, ...files } }
+  }
+
+  /** The plan input of `roles` in `world`, its scopes compiled from the scans as the fixtures compile them. */
+  async function inputOf(
+    world: MemWorld,
+    roles: readonly RoleSpec[],
+    over: Partial<PlanStepInput> = {},
+  ): Promise<PlanStepInput> {
+    const readUserMcp = over.readUserMcp ?? false
+    const repoDefault = over.repoDefault ?? 'none'
+    const gathered = await scansOf(world, readUserMcp)
+
+    return {
+      roles,
+      repoDefault,
+      policy: 'definitions',
+      launchStart: GIT_ROOT,
+      scopes: scopesFor(roles, repoDefault, gathered, [], GIT_ROOT),
+      hunks: [],
+      repo: gathered.repo,
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp,
+      ...over,
+    }
+  }
+
+  /** The frameworks plan of `roles` in `world`. */
+  async function planOf(
+    world: MemWorld,
+    roles: readonly RoleSpec[],
+    over: Partial<PlanStepInput> = {},
+  ): Promise<PlanResult> {
+    return reframePlan(memIo(world, {}).io, await inputOf(world, roles, over))
+  }
+
+  /** The kind of the op a plan has for `path`; undefined when it has none. */
+  function kindAt(planned: PlanResult, path: string): string | undefined {
+    return planned.plan.ops.find(op => op.kind !== 'hunk' && op.path === path)?.kind
+  }
+
+  /** The draft the frameworks flow confirms for `roles` in `world`: GSD kept as the default; `over` wins. */
+  async function draftOf(
+    world: MemWorld,
+    roles: readonly RoleSpec[],
+    over: Partial<ReframeDraft> = {},
+  ): Promise<ReframeDraft> {
+    return {
+      locations: DEFAULT_LOCATIONS,
+      gathered: await scansOf(world),
+      readUserMcp: false,
+      installed: ['gsd', 'none'],
+      roles,
+      repoDefault: 'gsd',
+      hunks: [],
+      policy: 'definitions',
+      launchStart: GIT_ROOT,
+      frameworkSet: ['gsd'],
+      ...over,
+    }
+  }
+
+  /** What the review confirmed: the draft and the plan reframePlan made of it. */
+  async function reframedOf(world: MemWorld, draft: ReframeDraft): Promise<Reframed> {
+    const recorded = initFrameworks(draft, [])
+    const input = await inputOf(world, draft.roles, { repoDefault: draft.repoDefault, hunks: draft.hunks, ...recorded })
+
+    return { draft, planned: await reframePlan(memIo(world, {}).io, input) }
+  }
+
+  /** The apply of `reframed` in `world`, with each question's first line, facts read, run and write in one list. */
+  async function appliedIn(
+    world: MemWorld,
+    reframed: Reframed,
+    answers: Readonly<Record<string, string>> = {},
+  ): Promise<{ readonly host: MemHost; readonly events: readonly string[]; readonly result: StepResult<Applied> }> {
+    const host = memHost(hostWorld({}))
+    const recorded = withHostEvents(host)
+    const run = memIo(world, answers)
+    const io: InitIo = {
+      ...run.io,
+      ask: async (question, spec) => {
+        recorded.events.push(`ask ${firstLines([question]).join('')}`)
+
+        return run.io.ask(question, spec)
+      },
+      facts: async locations => {
+        recorded.events.push('facts')
+
+        return run.io.facts(locations)
+      },
+    }
+    const result = await reframeApplied(io, recorded.io, reframed)
+
+    return { host, events: recorded.events, result }
+  }
+
+  test('an unchanged team plans no op and carries the built CLAUDE.md and sizing.md entries', async () => {
+    const world = await regenWorld(TEAM)
+    const planned = await planOf(world, TEAM)
+    const last = (await scansOf(world)).repo.cadre.manifest?.files ?? []
+    const carried = ['.cadre/be/CLAUDE.md', '.cadre/pm/CLAUDE.md', '.cadre/sizing.md']
+    const entriesIn = (files: readonly ManifestEntry[]): (ManifestEntry | undefined)[] =>
+      carried.map(path => files.find(entry => entry.path === path))
+    expect(planned.plan.ops.filter(op => op.kind !== 'leave' || op.note !== null)).toEqual([])
+    expect(entriesIn(planned.manifest.files)).toEqual(entriesIn(last))
+    expect(entriesIn(last).includes(undefined)).toBe(false)
+  })
+
+  test('the plan has no .gitignore op and no file outside .cadre/', async () => {
+    const planned = await planOf(await regenWorld(TEAM), [withFramework(BE, 'gsd'), PM])
+    const outside = planned.desired.filter(file => !file.path.startsWith('.cadre/'))
+    expect([kindAt(planned, '.gitignore'), planned.gitignore, outside]).toEqual([undefined, null, []])
+  })
+
+  test('a role.json that reads differently on disk but holds the same role gets no op, at its disk hash', async () => {
+    const world = await regenWorld(TEAM)
+    const text = `${JSON.stringify(JSON.parse(world.files[BE_ROLE_JSON] ?? '{}'), null, 4)}\n`
+    const planned = await planOf(withFiles(world, { [BE_ROLE_JSON]: text }), TEAM)
+    const entry = planned.manifest.files.find(file => file.path === '.cadre/be/role.json')
+    expect([kindAt(planned, '.cadre/be/role.json'), entry?.sha256]).toEqual([undefined, await sha256Hex(text)])
+  })
+
+  test('a role whose framework changed gets a change op on its role.json, also after a hand edit of it', async () => {
+    const world = await regenWorld(TEAM)
+    const titled = { ...BE, title: 'Backend developer' }
+    const edited = withFiles(world, { [BE_ROLE_JSON]: roleJsonText(titled) })
+    const plain = await planOf(world, [withFramework(BE, 'gsd'), PM])
+    const handEdited = await planOf(edited, [withFramework(titled, 'gsd'), PM])
+    const kinds = [kindAt(plain, '.cadre/be/role.json'), kindAt(handEdited, '.cadre/be/role.json')]
+    expect(kinds).toEqual(['change', 'change'])
+  })
+
+  test('a new user MCP server in the scan shows as a change of every role, with no framework change', async () => {
+    const world = await regenWorld(TEAM, { readUserMcp: true })
+    const later = withFiles(world, { '/home/u/.claude.json': '{"mcpServers":{"linear":{"command":"x"}}}' })
+    const planned = await planOf(later, TEAM, { readUserMcp: true })
+    const settings = ['.cadre/be/settings.json', '.cadre/pm/settings.json'].map(path => kindAt(planned, path))
+    expect(settings).toEqual(['change', 'change'])
+  })
+
+  test('cadre.json holds the new frameworks and sizing and keeps the policy, start, consent and order', async () => {
+    const roles = [PM, BE]
+    const world = await regenWorld(roles, { gitPolicy: 'all', readUserMcp: true })
+    const sizing = initSizing(undefined, ['gsd'])
+    const planned = await planOf(world, roles, {
+      repoDefault: 'gsd',
+      frameworks: ['gsd'],
+      sizing,
+      policy: 'all',
+      readUserMcp: true,
+    })
+    const text = planned.desired.find(file => file.path === '.cadre/cadre.json')?.content ?? ''
+    expect(parseCadreState(text)).toEqual({
+      schema: 1,
+      cadreVersion: '0.2.0',
+      framework: 'gsd',
+      gitPolicy: 'all',
+      roles: ['pm', 'be'],
+      launchStart: GIT_ROOT,
+      readUserMcp: true,
+      sizing,
+      frameworks: ['gsd'],
+    })
+  })
+
+  test('Confirm asks the conflict first, then installs, reads the facts, runs the hunk and writes', async () => {
+    const world = withFiles(await regenWorld(TEAM, {}, modeWorld()), { '/repo/.cadre/be/ROLE.md': EDITED_ROLE })
+    const draft = await draftOf(world, TEAM, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const reframed = await reframedOf(world, draft)
+    const { host, events, result } = await appliedIn(world, reframed, { [ROLE_QUESTION]: 'Take new' })
+    const at = (start: string): number => events.findIndex(event => event.startsWith(start))
+    const order = [`ask ${ROLE_QUESTION}`, `run ${GSD_PROJECT_INSTALL.join(' ')}`, 'facts', `run ${MODE_RUN.join(' ')}`]
+    const writes = events.filter(event => event.startsWith('write '))
+    expect([...order.map(at), at('write ')]).toEqual([0, 1, 2, 3, 4])
+    expect([writes.at(-1), result.kind]).toEqual(['write /repo/.cadre/manifest.json', 'accepted'])
+    expect(host.writes.filter(write => !write.path.startsWith('/repo/.cadre/'))).toEqual([])
+    expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
+  })
+
+  test('a parts-flow role whose role.json is written again keeps its instructionParts', async () => {
+    const world = await regenWorld([withFramework(BE, 'superpowers'), PM], {}, modeWorld())
+    const { host } = await appliedIn(world, await reframedOf(world, await draftOf(world, TEAM)))
+    const written = host.writes.find(write => write.path === BE_ROLE_JSON)?.text ?? ''
+    expect([isPartsFlowRole(BE), parseRoleJson(written)?.instructionParts]).toEqual([true, BE.instructionParts])
+  })
+
+  test('a failed install moves its roles to the fallback, and its line names /cadre frameworks', async () => {
+    const world = await regenWorld(TEAM)
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { repoDefault: 'none', installed: ['none'], frameworkInstalls: ['gsd'] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const problems = result.kind === 'accepted' ? result.value.outcome.installProblems : []
+    const written = host.writes.find(write => write.path === BE_ROLE_JSON)?.text ?? ''
+    expect(problems).toEqual([
+      `GSD did not install, so role be fell back to none (built-in): run ${GSD_PROJECT_INSTALL.join(' ')} ` +
+        'from the repo root, then /cadre frameworks again',
+    ])
+    expect(parseRoleJson(written)?.framework).toBe('none')
   })
 })
