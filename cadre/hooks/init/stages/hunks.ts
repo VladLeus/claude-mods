@@ -2,9 +2,10 @@
  * The hunk stage of init (ROLE-04, D-70, D-71, D-72, D-230), a layer 10 module: the dialog for one hunk, a config
  * change an adapter proposes (hunkQuestion: the file and key, the before and after values, why, and whether autonomy
  * requires it, with the buttons Accept and Decline), parseHunkAnswer, which reads the answer, and hunksStage, the pure
- * stage that has the config of each framework the roles run on read, asks each hunk its adapter offers and records
+ * stage that has the config of each framework the roles may run read, asks each hunk its adapter offers and records
  * each answer as an op; the proposals and their ops are framework/gsd/hunks'. Pure: it gives states and never performs
- * an effect, imports core, framework, scan, team, ui/ask and init/state, and never imports init/machine or init/run.
+ * an effect, imports core, framework, scan, team, ui/ask, init/initplan and init/state, and never imports init/machine
+ * or init/run.
  */
 import type {
   AskContext,
@@ -17,6 +18,7 @@ import type {
   RoleSpec,
   SetupScan,
 } from '../../../types'
+import { repoFrameworks } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText } from '../../core/text'
@@ -28,9 +30,10 @@ import type { GsdToolContext } from '../../framework/gsd/tools'
 import { ADAPTERS } from '../../framework/registry'
 import { keyLabel, t } from '../../locales/t'
 import { MAX_READ_BYTES } from '../../scan/facts/normalize'
-import { resolvedFramework } from '../../team'
+import { teamFrameworks } from '../../team'
 import { choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { initFrameworks } from '../initplan'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 
@@ -105,11 +108,16 @@ export const HUNK_DISMISSED_REASON = t('init.hunks.hunkDismissedReason')
 
 /**
  * The config file and the proposals each framework adapter offers for the team (A5): for each adapter in ADAPTERS
- * order whose framework a role runs on (resolvedFramework), autonomyHunks(setup), skipped when the framework has no
- * config file to change.
+ * order whose framework a role may run (teamFrameworks: its own and the recorded ones), autonomyHunks(setup), skipped
+ * when the framework has no config file to change.
  */
-function offersOf(roles: readonly RoleSpec[], repoDefault: FrameworkId | null, setup: SetupScan): AutonomyHunks[] {
-  const inUse = roles.map(role => resolvedFramework(role, repoDefault))
+function offersOf(
+  roles: readonly RoleSpec[],
+  repoDefault: FrameworkId | null,
+  setup: SetupScan,
+  recorded: readonly FrameworkId[],
+): AutonomyHunks[] {
+  const inUse = teamFrameworks(roles, repoDefault, recorded)
 
   return ADAPTERS.flatMap(adapter => {
     if (!inUse.includes(adapter.id)) return []
@@ -127,17 +135,20 @@ type HunkInput = {
 }
 
 /**
- * The HunkInput of a state: the offers of the frameworks its roles run on, and the GSD tools of a proven user-level
- * GSD only (provenUserDir, D-71, D-72); null while a draft field it needs is not set.
+ * The HunkInput of a state: the offers of the frameworks its roles may run, their own and those the draft records,
+ * and the GSD tools of a proven user-level GSD only (provenUserDir, D-71, D-72); null while a draft field it needs is
+ * not set.
  */
 function hunkInput(state: InitState): HunkInput | null {
-  const { roles, repoDefault, gathered, locations } = state.draft
+  const { roles, repoDefault, gathered, locations, installed = [] } = state.draft
   const isReady = roles !== undefined && repoDefault !== undefined && gathered !== undefined
   if (!isReady || locations === undefined) return null
   const { home, root, configDir } = locations
+  const chosen = initFrameworks({ ...state.draft, installed, gathered }, [])
+  const recorded = repoFrameworks({ framework: repoDefault, ...chosen })
 
   return {
-    offers: offersOf(roles, repoDefault, gathered.setup),
+    offers: offersOf(roles, repoDefault, gathered.setup, recorded),
     root,
     gsd: { userDir: provenUserDir(gathered.facts), home, root, configDir },
   }

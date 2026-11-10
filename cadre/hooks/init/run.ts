@@ -75,7 +75,7 @@ import { proposeFromText } from '../suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillsPrompt } from '../suggest/skills'
 import type { SkillsRecommendation } from '../suggest/skills'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from '../suggest/topics'
-import { attendedByConfig, compileAll, resolvedFramework } from '../team'
+import { attendedByConfig, compileAll, teamFrameworks } from '../team'
 import {
   accepted,
   ASK_HEADERS,
@@ -490,10 +490,9 @@ async function applyConfirmed(
     ...consentedPluginKeys(draft, failed),
     ...landedKeys,
   ])
-  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
-  const attended = await attendedByConfig(io, locations.root, frameworks, setup)
   const recorded = initFrameworks(draft, failed)
   const frameworksRun = repoFrameworks({ framework: repoDefault, ...recorded })
+  const attended = await attendedByConfig(io, locations.root, teamFrameworks(roles, repoDefault, frameworksRun), setup)
   const scopes = compileAll(roles, repoDefault, { ...scanned, setup }, attended, launchStart, frameworksRun)
   const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
   const owed = privatesOf(draft.instructions, roles)

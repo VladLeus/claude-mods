@@ -16,7 +16,7 @@ import type {
   ScopeContext,
   SetupScan,
 } from '../types'
-import { repoFrameworks } from './core/framework-id'
+import { FRAMEWORK_IDS, repoFrameworks } from './core/framework-id'
 import { idsOrNone } from './core/text'
 import { isAttendedFromConfig, isUnmetHunk } from './framework/gsd/hunks'
 import { ADAPTERS } from './framework/registry'
@@ -35,6 +35,19 @@ import { listsCadreRole, parseCadreState } from './state/cadre-files'
 /** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */
 export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | null): FrameworkId {
   return role.framework ?? repoDefault ?? 'none'
+}
+
+/** The frameworks any role of the team may run, its own and the recorded ones, in FRAMEWORK_IDS order. */
+export function teamFrameworks(
+  roles: readonly RoleSpec[],
+  repoDefault: FrameworkId | null,
+  recorded: readonly FrameworkId[],
+): FrameworkId[] {
+  const runs = roles.flatMap(role =>
+    runnableFrameworks({ framework: resolvedFramework(role, repoDefault), alsoRuns: recorded }),
+  )
+
+  return FRAMEWORK_IDS.filter(id => runs.includes(id))
 }
 
 /**
@@ -292,7 +305,7 @@ export async function compileTeam(
   roles: readonly RoleSpec[],
 ): Promise<{ readonly gathered: Gathered; readonly scopes: ReadonlyMap<string, CompiledScope> }> {
   const gathered = await gatherScans(io, locations, state.readUserMcp)
-  const frameworks = roles.map(role => resolvedFramework(role, state.framework))
+  const frameworks = teamFrameworks(roles, state.framework, repoFrameworks(state))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
 
   const scopes = compileAll(roles, state.framework, gathered, attended, state.launchStart, repoFrameworks(state))
