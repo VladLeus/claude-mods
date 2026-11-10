@@ -11,6 +11,7 @@ import type {
   PaneState,
   PortRead,
   RoleContext,
+  RoleSession,
   SessionLink,
   ToolOutcome,
 } from '../types'
@@ -33,6 +34,7 @@ import {
   isRoleSession,
   publishSession,
   roleContextOf,
+  roleSessionOf,
   runInboxMark,
   runInboxRead,
   runInboxSend,
@@ -101,7 +103,7 @@ let paneBodyRows: number | null = null
  */
 let runSurface: SurfaceModule = PANE_DESKTOP
 /** The role this session runs as: set at session start when the runtime env names a role of the repo, else null. */
-let role: RoleContext | null = null
+let role: RoleSession | null = null
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -698,21 +700,28 @@ function toolReplyOf(outcome: ToolOutcome): ToolReply {
 }
 
 /** Writes this session's id to session.json unless the file already holds it. */
-async function republish($: EngineInterface, ctx: RoleContext): Promise<void> {
+async function republish($: EngineInterface, session: RoleSession): Promise<void> {
   const io = toolIoOf($)
   const sessionId = await io.sessionId()
   if (sessionId === null) return
-  await publishSession(io, hostIoOf($), ctx, sessionId)
+  await publishSession(io, hostIoOf($), session, sessionId)
 }
 
 /**
  * Registers the inbox tools when the context names a role of the repo, then publishes this session's id; a session
- * whose role.json is not found logs one line naming the role, and a registration that throws leaves it with no role.
+ * whose role.json is not found, or with no user folder outside its repo for the inbox, logs one line naming the role,
+ * and a registration that throws leaves it with no role.
  */
 async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
   const io = toolIoOf($)
   if (!(await isRoleSession(io, ctx))) {
     safeLog($, fill(PROMPTS.inboxRoleMissing, { id: ctx.id }))
+
+    return
+  }
+  const session = await roleSessionOf(ctx, await locationsOf(factsPortOf($), ctx.root))
+  if (session === null) {
+    safeLog($, fill(PROMPTS.inboxNoHome, { id: ctx.id }))
 
     return
   }
@@ -735,29 +744,29 @@ async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
   } catch {
     return
   }
-  role = ctx
-  await republish($, ctx)
+  role = session
+  await republish($, session)
 }
 
 /** inbox_send as the role this session runs as, over the team as it reads now. */
-async function inboxSendReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
+async function inboxSendReply($: EngineInterface, session: RoleSession, e: unknown): Promise<ToolReply> {
   const io = toolIoOf($)
-  const team = await teamViewOf(io, teamRootOf(ctx))
+  const team = await teamViewOf(io, teamRootOf(session))
 
-  return toolReplyOf(await runInboxSend(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
+  return toolReplyOf(await runInboxSend(io, hostIoOf($), sessionLinkOf($), session, team, e))
 }
 
 /** inbox_mark as the role this session runs as, over the team as it reads now. */
-async function inboxMarkReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
+async function inboxMarkReply($: EngineInterface, session: RoleSession, e: unknown): Promise<ToolReply> {
   const io = toolIoOf($)
-  const team = await teamViewOf(io, teamRootOf(ctx))
+  const team = await teamViewOf(io, teamRootOf(session))
 
-  return toolReplyOf(await runInboxMark(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
+  return toolReplyOf(await runInboxMark(io, hostIoOf($), sessionLinkOf($), session, team, e))
 }
 
 /** inbox_read of the role this session runs as. */
-async function inboxReadReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
-  return toolReplyOf(await runInboxRead(toolIoOf($), ctx, e))
+async function inboxReadReply($: EngineInterface, session: RoleSession, e: unknown): Promise<ToolReply> {
+  return toolReplyOf(await runInboxRead(toolIoOf($), session, e))
 }
 
 export const register: Register = on => {
@@ -785,30 +794,30 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: `${CADRE_TOOL_PREFIX}${INBOX_SEND_TOOL}` }, async ($, e) => {
-    const ctx = role
-    if (ctx === null) return { deny: PROMPTS.inboxNoRole }
+    const session = role
+    if (session === null) return { deny: PROMPTS.inboxNoRole }
 
-    return inboxSendReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
+    return inboxSendReply($, session, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
   })
 
   on('tool.call', { tool: `${CADRE_TOOL_PREFIX}${INBOX_READ_TOOL}` }, async ($, e) => {
-    const ctx = role
-    if (ctx === null) return { deny: PROMPTS.inboxNoRole }
+    const session = role
+    if (session === null) return { deny: PROMPTS.inboxNoRole }
 
-    return inboxReadReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
+    return inboxReadReply($, session, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
   })
 
   on('tool.call', { tool: `${CADRE_TOOL_PREFIX}${INBOX_MARK_TOOL}` }, async ($, e) => {
-    const ctx = role
-    if (ctx === null) return { deny: PROMPTS.inboxNoRole }
+    const session = role
+    if (session === null) return { deny: PROMPTS.inboxNoRole }
 
-    return inboxMarkReply($, ctx, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
+    return inboxMarkReply($, session, e).catch(() => ({ deny: PROMPTS.inboxFailed }))
   })
 
   // Every turn start checks session.json, so this session's id is written back after another claude overwrote it.
   on('turn.start', async ($, e, next) => {
-    const ctx = role
-    if (ctx !== null) await republish($, ctx).catch(() => undefined)
+    const session = role
+    if (session !== null) await republish($, session).catch(() => undefined)
 
     return next(e)
   })

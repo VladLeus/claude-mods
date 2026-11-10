@@ -1,7 +1,8 @@
 /**
- * The inbox flows of a role session, a layer 7 module: the role context read from the runtime env, the session id a
- * role publishes, inbox_send and inbox_read, all through the InitIo and HostIo ports. An inbox is only ever appended,
- * and the durable entry is always written before the live wake.
+ * The inbox flows of a role session, a layer 7 module: the role context read from the runtime env, the inbox home the
+ * session works out in the user config folder, the session id a role publishes, inbox_send, inbox_read and
+ * inbox_mark, all through the InitIo and HostIo ports. An inbox is only ever appended, and the durable entry is always
+ * written before the live wake.
  */
 import type {
   HostIo,
@@ -10,19 +11,29 @@ import type {
   InboxEvent,
   InboxMark,
   InitIo,
+  InitLocations,
   MessageKind,
-  PortStat,
   RoleContext,
+  RoleSession,
   SessionLink,
   TeamView,
   ToolOutcome,
 } from '../../types'
+import { sha256Hex } from '../core/hash'
 import { isRoleId } from '../core/role-id'
 import { clean, utf8Bytes } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { isDirInsideRoot, isFileInsideRoot, parentOf, resolveSegments, roleJsonPath } from '../paths'
+import {
+  inboxHomeOf,
+  isFileInsideRoot,
+  parentOf,
+  relativeTo,
+  resolveSegments,
+  roleJsonPath,
+  userDirOf,
+} from '../paths'
 import {
   entryIdOf,
   foldInbox,
@@ -86,53 +97,68 @@ export async function isRoleSession(io: InitIo, ctx: RoleContext): Promise<boole
   return isFileInsideRoot(await io.stat(`${teamRoot}/${roleJsonPath(ctx.id)}`), teamRoot)
 }
 
+/** A user folder inside the repo is never used, since a role may write there. */
+export async function roleSessionOf(
+  ctx: RoleContext,
+  locations: Pick<InitLocations, 'home' | 'configDir'>,
+): Promise<RoleSession | null> {
+  const roots = [ctx.root, ...(ctx.main === undefined ? [] : [ctx.main])]
+  const userDir = userDirOf(locations, roots, [])
+  if (userDir === null) return null
+  if (roots.some(root => relativeTo(userDir, root) !== null)) return null
+
+  return { ...ctx, inboxHome: inboxHomeOf(userDir, ctx.root, await sha256Hex(ctx.root)) }
+}
+
 async function publishedId(io: InitIo, path: string): Promise<string | null> {
   const read = await io.read(path, SESSION_READ_MAX_BYTES)
 
   return read.state === 'text' ? parseSessionRecord(read.text) : null
 }
 
-/** Whether a stat shows a file or folder inside the root that is no link and lands on its own path. */
-function isInPlace(stat: PortStat | null, path: string, root: string, kind: 'file' | 'dir'): boolean {
-  if (stat === null || stat.isLink || stat.realPath !== path) return false
-
-  return kind === 'dir' ? isDirInsideRoot(stat, root) : isFileInsideRoot(stat, root)
-}
-
 /**
- * Whether a write to a runtime file stays where it is: 'unsafe' when its folder or the file is there but out of place,
- * else 'no-folder' when the folder is absent, else 'ok'.
+ * Whether a file of a role's inbox folder may be written: 'no-folder' when the folder is absent, 'unsafe' when the
+ * folder or the file is a link or of another kind, else 'ok'.
  */
-async function runtimeFileCheck(io: InitIo, root: string, path: string): Promise<'ok' | 'no-folder' | 'unsafe'> {
-  const folder = parentOf(path)
-  const folderStat = await io.stat(folder)
-  if (folderStat !== null && !isInPlace(folderStat, folder, root, 'dir')) return 'unsafe'
-  const fileStat = await io.stat(path)
-  if (fileStat !== null && !isInPlace(fileStat, path, root, 'file')) return 'unsafe'
+async function inboxFileCheck(io: InitIo, path: string): Promise<'ok' | 'no-folder' | 'unsafe'> {
+  const folder = await io.stat(parentOf(path))
+  if (folder === null) return 'no-folder'
+  if (folder.isLink || folder.kind !== 'dir') return 'unsafe'
+  const file = await io.stat(path)
+  if (file !== null && (file.isLink || file.kind !== 'file')) return 'unsafe'
 
-  return folderStat === null ? 'no-folder' : 'ok'
+  return 'ok'
 }
 
-/** Writes the role's session.json with this session id, unless it already holds it or is not in place. */
+/** Writes the role's session.json with this session id, unless it already holds it or its inbox folder is not safe. */
 export async function publishSession(
   io: InitIo,
   host: HostIo,
-  ctx: RoleContext,
+  session: RoleSession,
   sessionId: string,
 ): Promise<'written' | 'kept' | 'refused'> {
-  const path = sessionFilePath(ctx.root, ctx.id)
-  if ((await runtimeFileCheck(io, ctx.root, path)) === 'unsafe') return 'refused'
+  const path = sessionFilePath(session.inboxHome, session.id)
+  if ((await inboxFileCheck(io, path)) !== 'ok') return 'refused'
   if ((await publishedId(io, path)) === sessionId) return 'kept'
 
   return (await host.write(path, sessionRecordText(sessionId))) ? 'written' : 'refused'
 }
 
+/** Why the session's own inbox may not be read or appended to, or null when its folder and file are safe. */
+async function ownInboxRefusal(io: InitIo, session: RoleSession): Promise<string | null> {
+  const check = await inboxFileCheck(io, inboxLogPath(session.inboxHome, session.id))
+  if (check === 'no-folder') return fill(PROMPTS.inboxOwnMissing, { id: session.id })
+  if (check === 'unsafe') return fill(PROMPTS.inboxOwnUnsafe, { id: session.id })
+
+  return null
+}
+
 /**
- * Why the receiver's inbox may not be appended to, or null: its runtime folder must be there, as a folder in place,
- * which /cadre start renders, and the inbox in it absent or a file in place.
+ * Why the receiver's inbox may not be appended to, or null: its inbox folder must be there, which /cadre start
+ * renders, and the inbox in it absent or a file.
  */
-async function receiverRefusal(io: InitIo, root: string, to: string): Promise<string | null> {
-  const check = await runtimeFileCheck(io, root, inboxLogPath(root, to))
+async function receiverRefusal(io: InitIo, home: string, to: string): Promise<string | null> {
+  const check = await inboxFileCheck(io, inboxLogPath(home, to))
   if (check === 'no-folder') return fill(PROMPTS.inboxNotStarted, { to })
   if (check === 'unsafe') return fill(PROMPTS.inboxUnsafe, { to })
 
@@ -140,8 +166,8 @@ async function receiverRefusal(io: InitIo, root: string, to: string): Promise<st
 }
 
 /** The events of the session's own inbox, none when it is absent; null when it cannot be read as text. */
-async function readOwnInbox(io: InitIo, ctx: RoleContext): Promise<InboxEvent[] | null> {
-  const read = await io.read(inboxLogPath(ctx.root, ctx.id), INBOX_READ_MAX_BYTES)
+async function readOwnInbox(io: InitIo, session: RoleSession): Promise<InboxEvent[] | null> {
+  const read = await io.read(inboxLogPath(session.inboxHome, session.id), INBOX_READ_MAX_BYTES)
   if (read.state === 'absent') return []
 
   return read.state === 'text' ? parseInbox(read.text) : null
@@ -172,18 +198,18 @@ async function deliver(
   io: InitIo,
   host: HostIo,
   link: SessionLink,
-  ctx: RoleContext,
+  session: RoleSession,
   at: number,
   message: Message,
 ): Promise<ToolOutcome> {
   const { to, kindName, subject, body, replyTo, fields } = message
-  const id = await entryIdOf(ctx.id, at, [to, kindName, subject, body].join('\n'))
+  const id = await entryIdOf(session.id, at, [to, kindName, subject, body].join('\n'))
   const entry: InboxEntry = {
     v: 1,
     type: CONTRACTS.inboxEntryType,
     id,
     at,
-    from: ctx.id,
+    from: session.id,
     to,
     kind: kindName,
     subject,
@@ -195,10 +221,11 @@ async function deliver(
   if (utf8Bytes(line) > INBOX_LINE_MAX_BYTES) {
     return deny(fill(PROMPTS.inboxLineTooLarge, { max: INBOX_LINE_MAX_BYTES }))
   }
-  const refusal = await receiverRefusal(io, ctx.root, to)
+  const refusal = await receiverRefusal(io, session.inboxHome, to)
   if (refusal !== null) return deny(refusal)
-  if (!(await appendLine(host, inboxLogPath(ctx.root, to), line))) return deny(fill(PROMPTS.inboxAppendFailed, { to }))
-  const sessionId = await publishedId(io, sessionFilePath(ctx.root, to))
+  const appended = await appendLine(host, inboxLogPath(session.inboxHome, to), line)
+  if (!appended) return deny(fill(PROMPTS.inboxAppendFailed, { to }))
+  const sessionId = await publishedId(io, sessionFilePath(session.inboxHome, to))
   const isDelivered = sessionId !== null && (await link.send(sessionId, wakeText(entry)))
 
   return { kind: 'result', text: fill(isDelivered ? PROMPTS.inboxSent : PROMPTS.inboxSentUndelivered, { id, to }) }
@@ -245,39 +272,44 @@ function useRefusal(fields: InboxEntryFields, to: string, team: TeamView): strin
 }
 
 /**
- * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A mode
- * the repo's frameworks do not offer, or a task framework its receiver may not run, is refused before anything runs;
- * a sent vector's result ends with its size and the pick in each mode the repo offers.
+ * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A
+ * session whose own inbox folder is absent or unsafe, a mode the repo's frameworks do not offer, or a task framework
+ * its receiver may not run, is refused before anything runs; a sent vector's result ends with its size and the pick in
+ * each mode the repo offers.
  */
 export async function runInboxSend(
   io: InitIo,
   host: HostIo,
   link: SessionLink,
-  ctx: RoleContext,
+  session: RoleSession,
   team: TeamView | null,
   event: unknown,
 ): Promise<ToolOutcome> {
   if (team === null) return deny(PROMPTS.inboxNoTeam)
-  const input = parseSendInput(event, ctx, team)
+  const input = parseSendInput(event, session, team)
   if (input.kind === 'error') return deny(input.message)
+  const own = await ownInboxRefusal(io, session)
+  if (own !== null) return deny(own)
   const refusal = modeRefusal(input.fields, team) ?? useRefusal(input.fields, input.to, team)
   if (refusal !== null) return deny(refusal)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
   const fields = stampedFields(input.fields, input.to, team)
-  const outcome = await deliver(io, host, link, ctx, at, { ...input, fields })
+  const outcome = await deliver(io, host, link, session, at, { ...input, fields })
   const { vector } = fields
   if (outcome.kind === 'deny' || vector === undefined) return outcome
 
   return { kind: 'result', text: `${outcome.text} ${sizeText(vector, team.sizing, modesOffered(team.frameworks))}` }
 }
 
-/** inbox_read: the session's own inbox, folded; an absent inbox reads as empty. */
-export async function runInboxRead(io: InitIo, ctx: RoleContext, event: unknown): Promise<ToolOutcome> {
+/** inbox_read: the session's own inbox, folded; an absent inbox in its present, safe folder reads as empty. */
+export async function runInboxRead(io: InitIo, session: RoleSession, event: unknown): Promise<ToolOutcome> {
   const input = parseReadInput(event)
   if (input.kind === 'error') return deny(input.message)
-  const events = await readOwnInbox(io, ctx)
-  if (events === null) return deny(fill(PROMPTS.inboxUnreadable, { id: ctx.id }))
+  const own = await ownInboxRefusal(io, session)
+  if (own !== null) return deny(own)
+  const events = await readOwnInbox(io, session)
+  if (events === null) return deny(PROMPTS.inboxUnreadable)
 
   return { kind: 'result', text: inboxReadText(foldInbox(events), input.all) }
 }
@@ -297,16 +329,19 @@ export async function runInboxMark(
   io: InitIo,
   host: HostIo,
   link: SessionLink,
-  ctx: RoleContext,
+  session: RoleSession,
   team: TeamView | null,
   event: unknown,
 ): Promise<ToolOutcome> {
   const input = parseMarkInput(event)
   if (input.kind === 'error') return deny(input.message)
-  const events = await readOwnInbox(io, ctx)
-  if (events === null) return deny(fill(PROMPTS.inboxUnreadable, { id: ctx.id }))
+  const own = await ownInboxRefusal(io, session)
+  if (own !== null) return deny(own)
+  const events = await readOwnInbox(io, session)
+  if (events === null) return deny(PROMPTS.inboxUnreadable)
   const entry = events.find(
-    (held): held is InboxEntry => held.type === CONTRACTS.inboxEntryType && held.id === input.id && held.to === ctx.id,
+    (held): held is InboxEntry =>
+      held.type === CONTRACTS.inboxEntryType && held.id === input.id && held.to === session.id,
   )
   if (entry === undefined) return deny(PROMPTS.inboxMarkUnknownId)
   const { id, state, note, waitsFor } = input
@@ -319,18 +354,19 @@ export async function runInboxMark(
     type: CONTRACTS.inboxMarkType,
     id,
     at,
-    by: ctx.id,
+    by: session.id,
     state,
     ...(note === null ? {} : { note }),
     ...(waitsFor === null ? {} : { waitsFor }),
   }
-  const refusal = await receiverRefusal(io, ctx.root, ctx.id)
+  const refusal = await receiverRefusal(io, session.inboxHome, session.id)
   if (refusal !== null) return deny(refusal)
-  if (!(await appendLine(host, inboxLogPath(ctx.root, ctx.id), recordLine(mark)))) return deny(PROMPTS.inboxMarkFailed)
+  const marked = await appendLine(host, inboxLogPath(session.inboxHome, session.id), recordLine(mark))
+  if (!marked) return deny(PROMPTS.inboxMarkFailed)
   if (reason === null || team === null) return { kind: 'result', text: fill(PROMPTS.inboxMarked, { id, state }) }
-  const to = rejectionTarget(team, entry.from, ctx.id)
+  const to = rejectionTarget(team, entry.from, session.id)
   const subject = clean(fill(PROMPTS.inboxRejectSubject, { subject: entry.subject }), SUBJECT_MAX_CHARS)
-  const forward = await deliver(io, host, link, ctx, at, {
+  const forward = await deliver(io, host, link, session, at, {
     to,
     kindName: 'note',
     subject,

@@ -1,6 +1,7 @@
 /**
- * The inbox record, a layer 7 module: where a role's inbox.jsonl and session.json lie, the one-line JSON of an entry
- * or a mark, its fail-closed parse, and the session record a role publishes so other roles can wake it.
+ * The inbox record, a layer 7 module: where a role's inbox.jsonl and session.json lie in its inbox folder under the
+ * user config dir, the one-line JSON of an entry or a mark, its fail-closed parse, and the session record a role
+ * publishes so other roles can wake it.
  */
 import type {
   InboxEntry,
@@ -19,7 +20,7 @@ import { clean, isChangedByClean, reportText } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { INBOX_LOG_FILE, isSafeRelativePath, runtimeFileOf, SESSION_FILE } from '../paths'
+import { INBOX_LOG_FILE, inboxDirOf, isSafeRelativePath, SESSION_FILE } from '../paths'
 import {
   bodyShown,
   CHANGES_MAX_CHARS,
@@ -39,12 +40,12 @@ const ENTRY_ID_HASH_CHARS = 8
 /** The longest session id a session record may hold. */
 const SESSION_ID_MAX_CHARS = 128
 
-export function inboxLogPath(root: string, id: string): string {
-  return runtimeFileOf(root, id, INBOX_LOG_FILE)
+export function inboxLogPath(home: string, id: string): string {
+  return `${inboxDirOf(home, id)}/${INBOX_LOG_FILE}`
 }
 
-export function sessionFilePath(root: string, id: string): string {
-  return runtimeFileOf(root, id, SESSION_FILE)
+export function sessionFilePath(home: string, id: string): string {
+  return `${inboxDirOf(home, id)}/${SESSION_FILE}`
 }
 
 export function sessionRecordText(sessionId: string): string {

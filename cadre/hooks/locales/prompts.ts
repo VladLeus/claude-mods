@@ -130,8 +130,7 @@ export const PROMPTS = Object.freeze({
   improverPrompt: 'Use the claude-md-management:claude-md-improver skill to improve the file {path} only.',
   // The inbox tools of a role session (messages/): the send results, the refusals and the live wake line.
   inboxSent: 'Sent {id} to {to}; the live message was delivered.',
-  inboxSentUndelivered:
-    'Sent {id} to {to}. The live message was not delivered; the entry waits in .cadre/{to}/.runtime/inbox.jsonl.',
+  inboxSentUndelivered: 'Sent {id} to {to}. The live message was not delivered; the entry waits in the inbox of {to}.',
   inboxNoTeam: 'Not sent: .cadre/cadre.json or a role.json of the team cannot be read.',
   inboxNoClock: 'Not sent: the clock could not be read. Try again.',
   inboxAppendFailed: 'Not sent: the entry could not be added to the inbox of {to}. Try again.',
@@ -199,6 +198,14 @@ export const PROMPTS = Object.freeze({
   inboxRoleMissing:
     `cadre: this session runs as role {id}, but .cadre/{id}/role.json is not a file of the repo, so the inbox ${
     ''}tools are off.`,
+  inboxNoHome:
+    `cadre: this session runs as role {id}, but neither HOME nor CLAUDE_CONFIG_DIR gives a user folder outside the ${
+    ''}repo for its inbox, so the inbox tools are off.`,
+  inboxOwnMissing:
+    `Your inbox is not there. Start this role from a terminal with the same HOME and CLAUDE_CONFIG_DIR as the ${
+    ''}session that ran /cadre start {id}, or run /cadre start {id} first.`,
+  inboxOwnUnsafe:
+    'Your inbox is a link or not a regular file, so cadre does not read or write it. Run /cadre start {id} again.',
   // The inbox_read view (messages/record inboxReadText): an entry's head, note and reply lines, a line per kind field
   // and its value forms, the empty inbox, the last line that counts the entries left out, and the inbox_read refusals.
   inboxItemHead: '{id} [{state}] {kind} from {from}: {subject}',
@@ -216,7 +223,7 @@ export const PROMPTS = Object.freeze({
   'inboxHidden.other':
     '{count} entries marked done or rejected are not shown; call inbox_read with all: true to list them.',
   inboxAllNotBoolean: 'all must be true or false.',
-  inboxUnreadable: 'Your inbox could not be read: .cadre/{id}/.runtime/inbox.jsonl is too large or not a file.',
+  inboxUnreadable: 'Your inbox could not be read: it is too large or not a file.',
   // inbox_mark (messages/flow runInboxMark): its description, its results, its refusals and the subject of the note a
   // rejection sends up.
   inboxMarkDescription:

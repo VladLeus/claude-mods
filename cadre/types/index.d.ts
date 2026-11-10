@@ -918,6 +918,9 @@ export type RoleContext = {
   readonly main?: string
 }
 
+/** A role session with its inbox home in the user config folder, worked out by the session itself. */
+export type RoleSession = RoleContext & { readonly inboxHome: string }
+
 /**
  * The roles of the team, each role's parent (null for the top of the hierarchy), pm, the PM stand-in, null when the
  * team has none, and the repo's sizing and frameworks.
