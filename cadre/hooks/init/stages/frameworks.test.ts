@@ -902,6 +902,29 @@ describe('the stored framework answer and the set question', () => {
     expect([both.sub, both.draft.frameworkSet]).toEqual([{ kind: 'mode', tries: 1 }, ['gsd', 'superpowers']])
   })
 
+  test('a stored set is asked again when a role is set to a framework outside it, and kept with no such role', () => {
+    const installed: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+    const team = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
+    const asked = enteredWith(GSD_CHOSEN, installed, ['gsd'], { roles: team })
+    const kept = enteredWith(GSD_CHOSEN, installed, ['gsd'])
+    expect([asked.sub, asked.draft.frameworkSet]).toEqual([{ kind: 'set', tries: 1 }, undefined])
+    expect([kept.openQuestion, kept.draft.frameworkSet]).toEqual([null, ['gsd']])
+  })
+
+  test('a stored None is asked again once a role is set to GSD, and kept while no role is set to a framework', () => {
+    const team = roles.map(role => (role.id === 'tl' ? withFramework(role, 'gsd') : role))
+    const asked = enteredWith(GSD_CHOSEN, ['gsd', 'none'], [], { roles: team })
+    const kept = enteredWith(GSD_CHOSEN, ['gsd', 'none'], [])
+    expect([asked.sub, asked.draft.frameworkSet]).toEqual([{ kind: 'set', tries: 1 }, undefined])
+    expect([kept.openQuestion, kept.draft.frameworkSet]).toEqual([null, []])
+  })
+
+  test('a set kept on a go-back is asked again when a role is set to a framework outside it', () => {
+    const team = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
+    const again = enteredWith(GSD_CHOSEN, ['gsd', 'superpowers', 'none'], null, { frameworkSet: ['gsd'], roles: team })
+    expect(again.sub).toEqual({ kind: 'set', tries: 1 })
+  })
+
   test('both in use: Keep both or None; superpowers typed alone keeps it and frames the roles on it', () => {
     const state = enteredWith(BOTH_IN_USE, ['gsd', 'superpowers', 'none'])
     const typed = driven(state, ['superpowers']).state.draft
