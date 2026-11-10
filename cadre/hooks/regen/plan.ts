@@ -27,7 +27,7 @@ import { desiredFiles } from '../generate/files'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { t } from '../locales/t'
 import { launcherPath, roleJsonPath } from '../paths'
-import { planReadPaths, planWithManifest, recordedCadreVersion } from '../plan/plan'
+import { planReadPaths, planWithManifest, recordedCadreVersion, withRecordedHash } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
 import { scanWarnings } from '../scan/gather'
@@ -76,12 +76,6 @@ export type RegenPlanned = {
   readonly manifest: Manifest
 }
 
-/** The manifest with this path recorded at this hash in place of any entry it had for it (A5, AUTO-PICK #19 Q2). */
-function withRecordedHash(manifest: Manifest, path: string, sha256: string): Manifest {
-  const others = manifest.files.filter(entry => entry.path !== path)
-
-  return { ...manifest, files: [...others, { path, sha256, mode: 'file' }] }
-}
 
 /**
  * The file plan of regen for one role (D-68, PLAN-04), from its scans (regenScans) and its hand-out (regenHandout).

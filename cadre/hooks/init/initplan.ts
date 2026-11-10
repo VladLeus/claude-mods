@@ -1,12 +1,14 @@
 /**
- * The plan side of init (PLAN-01, PLAN-03, PLAN-04, D-67, D-230, G-02-1f), a layer 10 module, its pure parts: the repo
- * parts each role was given (repoPartsOf), the role.json records regen compares against (withRepoRecords), what each
- * role is owed outside the repo (privatesOf), and PlanStepInput, what the plan of a draft is made from; init/run makes
- * the plan itself (planStep), which reads the disk, and the frameworks and sizing block both the review and the apply
- * plan with (initFrameworks, initSizing). Pure: it imports apply/installs, the apply/run types, core, launch,
- * messages/sizing, records, the draft type and the types, and never imports init/machine or init/run.
+ * The plan side of init, a layer 10 module, its pure parts: the repo parts each role was given (repoPartsOf), the
+ * role.json records regen compares against (withRepoRecords), what each role is owed outside the repo (privatesOf),
+ * PlanStepInput, what the plan of a draft is made from, the repo state a plan records (planState) and the scopes a
+ * draft compiles to (draftScopes); init/run makes the plan itself (planStep), which reads the disk, and the frameworks
+ * and sizing block both the review and the apply plan with (initFrameworks, initSizing). Pure: it imports
+ * apply/installs, the apply/run types, core, launch, messages/sizing, records, team, the draft type and the types, and
+ * never imports init/machine or init/run.
  */
 import type {
+  CadreState,
   CompiledScope,
   FrameworkId,
   GitPolicy,
@@ -19,12 +21,14 @@ import type {
   RoleSpec,
   Sizing,
 } from '../../types'
-import { projectInstallOf } from '../apply/installs'
+import { projectInstallOf, setupAfterInstalls } from '../apply/installs'
 import type { OwedPrivate } from '../apply/run'
+import { repoFrameworks } from '../core/framework-id'
 import { compareText } from '../core/text'
 import { isPartsFlowRole } from '../launch/links'
 import { defaultSizing } from '../messages/sizing'
 import { partRecord, withPartRecords } from '../records'
+import { scopesFor } from '../team'
 import type { Draft } from './draft'
 
 /**
@@ -120,6 +124,21 @@ export type PlanStepInput = {
   readonly frameworks?: readonly FrameworkId[]
 }
 
+/** The repo state a plan records in cadre.json: this cadre version and the team's answers, roles in their order. */
+export function planState(input: PlanStepInput, cadreVersion: string): CadreState {
+  return {
+    schema: 1,
+    cadreVersion,
+    framework: input.repoDefault,
+    gitPolicy: input.policy,
+    roles: input.roles.map(role => role.id),
+    launchStart: input.launchStart,
+    readUserMcp: input.readUserMcp,
+    ...(input.sizing === undefined ? {} : { sizing: input.sizing }),
+    ...(input.frameworks === undefined ? {} : { frameworks: input.frameworks }),
+  }
+}
+
 /**
  * The sizing block init records in cadre.json for the frameworks a run ends with: a stored block keeps its threshold
  * and rubric, and its mapping while both of its frameworks are in the set, else takes the mapping of the default; with
@@ -148,6 +167,37 @@ export function initFrameworks(
   const sizing = initSizing(draft.gathered.repo.cadre.state?.sizing, frameworks)
 
   return draft.frameworkSet === undefined ? { sizing } : { frameworks, sizing }
+}
+
+/**
+ * The scopes a draft compiles to with these plugin keys counted as installed, and the frameworks and sizing block it
+ * records (initFrameworks), so a review shows what Confirm writes when every install works.
+ */
+export function draftScopes(
+  draft: Pick<
+    Draft,
+    'gathered' | 'roles' | 'repoDefault' | 'hunks' | 'launchStart' | 'locations' | 'frameworkSet' | 'installed'
+  >,
+  pluginKeys: readonly string[],
+): {
+  readonly scopes: ReadonlyMap<string, CompiledScope>
+  readonly recorded: { readonly frameworks?: readonly FrameworkId[]; readonly sizing: Sizing }
+} {
+  const setup = setupAfterInstalls(draft.gathered.setup, pluginKeys)
+  const gathered = { ...draft.gathered, setup }
+  const recorded = initFrameworks(draft, [])
+  const frameworks = repoFrameworks({ framework: draft.repoDefault, ...recorded })
+  const scopes = scopesFor(
+    draft.roles,
+    draft.repoDefault,
+    gathered,
+    draft.hunks,
+    draft.launchStart,
+    frameworks,
+    draft.locations.root,
+  )
+
+  return { scopes, recorded }
 }
 
 /** The plugin keys the consented framework installs add, so the review and the apply compile the same scopes. */

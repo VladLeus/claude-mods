@@ -7,21 +7,25 @@
  * import it, and no init module does.
  */
 import type {
-  CadreState,
+  CompiledScope,
   DesiredFile,
   FrameworkId,
   HostIo,
+  HunkOp,
   InitFacts,
   InitIo,
   InitLocations,
   InstructionPartRecord,
   InstructionScan,
   InstructionTopic,
+  LaunchStart,
   Manifest,
   ManifestEntry,
   PortRead,
   ProjectInstall,
   RoleSpec,
+  SetupScan,
+  Sizing,
 } from '../../types'
 import {
   CONFLICT_OPTIONS,
@@ -64,6 +68,7 @@ import { parseRoleJson } from '../roles/rolejson'
 import { standsFor } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { gatherScans } from '../scan/gather'
+import type { Gathered } from '../scan/gather'
 import { listSessions, scanHistory } from '../scan/history'
 import { readInstructionFiles, repoInstructionNames } from '../scan/instructions/read'
 import { readPaths, readRepoFile } from '../scan/port-read'
@@ -93,7 +98,7 @@ import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import type { Draft, PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
-import { consentedPluginKeys, initFrameworks, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
+import { consentedPluginKeys, initFrameworks, planState, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
@@ -260,19 +265,9 @@ async function keptBuiltEntries(
  * (applyConfirmed).
  */
 export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanResult> {
-  const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations, readUserMcp, repoParts } = input
+  const { roles, policy, scopes, hunks, repo, locations, repoParts } = input
   const cadreVersion = recordedCadreVersion(await io.cadreVersion())
-  const state: CadreState = {
-    schema: 1,
-    cadreVersion,
-    framework: repoDefault,
-    gitPolicy: policy,
-    roles: roles.map(role => role.id),
-    launchStart,
-    readUserMcp,
-    ...(input.sizing === undefined ? {} : { sizing: input.sizing }),
-    ...(input.frameworks === undefined ? {} : { frameworks: input.frameworks }),
-  }
+  const state = planState(input, cadreVersion)
   const parts = repoParts === undefined ? {} : { repoParts }
   const generated = desiredFiles({ roles, scopes, state, only: null, ...parts })
   const disk = await readPaths(io, locations.root, planReadPaths(generated))
@@ -305,12 +300,15 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  * What a role or repo default on a framework whose install `failed` falls back to: the first framework of the set
  * chosen, else of the installed ones, that did not fail, else none.
  */
-function fallbackOf(draft: Draft, failed: readonly FrameworkId[]): FrameworkId {
+function fallbackOf(draft: Pick<Draft, 'frameworkSet' | 'installed'>, failed: readonly FrameworkId[]): FrameworkId {
   return (draft.frameworkSet ?? draft.installed).find(id => !failed.includes(id)) ?? 'none'
 }
 
 /** The roles and repo default once the consented framework installs ran, those on a failed one moved to fallbackOf. */
-function withoutFailedInstalls(draft: Draft, failed: readonly FrameworkId[]): Pick<Draft, 'roles' | 'repoDefault'> {
+function withoutFailedInstalls(
+  draft: Pick<Draft, 'roles' | 'repoDefault' | 'frameworkSet' | 'installed'>,
+  failed: readonly FrameworkId[],
+): Pick<Draft, 'roles' | 'repoDefault'> {
   if (failed.length === 0) return { roles: draft.roles, repoDefault: draft.repoDefault }
   const fallback = fallbackOf(draft, failed)
   const kept = (framework: FrameworkId): FrameworkId => (failed.includes(framework) ? fallback : framework)
@@ -334,7 +332,10 @@ function withoutFailedGrill(roles: readonly RoleSpec[], failed: readonly Project
  * One problem line per consented framework install that detection does not show, in `failed` order: the roles and
  * the repo default on it, what they fell back to (fallbackOf), and the command to run before init runs again.
  */
-function fallbackProblems(draft: Draft, failed: readonly FrameworkId[]): string[] {
+function fallbackProblems(
+  draft: Pick<Draft, 'roles' | 'repoDefault' | 'frameworkSet' | 'installed'>,
+  failed: readonly FrameworkId[],
+): string[] {
   const fallback = FRAMEWORK_LABELS[fallbackOf(draft, failed)]
 
   return failed.flatMap(id => {
@@ -350,6 +351,140 @@ function fallbackProblems(draft: Draft, failed: readonly FrameworkId[]): string[
 
     return [frameworkFallbackText(fallen)]
   })
+}
+
+/**
+ * The Keep mine or Take new answer of each conflicted file of the confirmed plan, in plan order, each asked with the
+ * file's diff from the disk as its context; a dismissal or no usable answer cancels.
+ */
+async function askedConflicts(
+  io: InitIo,
+  root: string,
+  planned: Pick<PlanResult, 'plan' | 'desired'>,
+): Promise<StepResult<ReadonlyMap<string, ConflictChoice>>> {
+  const choices = new Map<string, ConflictChoice>()
+  for (const path of conflictPaths(planned.plan)) {
+    const disk = await readRepoFile(io, root, path, MAX_READ_BYTES)
+    const desired = planned.desired.find(file => file.path === path)
+    const diff = disk.state === 'text' && desired !== undefined ? lineDiff(disk.text, desired.content) : null
+    const context = conflictContext(path, diff)
+    const pane = paneQuestionOf(conflictQuestion(path), CONFLICT_CONTEXT, context.summary)
+    const ask = {
+      question: pane.asked,
+      spec: { options: CONFLICT_OPTIONS, header: ASK_HEADERS.conflict, context: { ...context, pane } },
+      parse: parseConflictAnswer,
+      accepts: quotedLabels(CONFLICT_OPTIONS),
+    }
+    const choice = choiceResult(await askChoice(io, ask), CONFLICT_DISMISSED_REASON)
+    if (choice.kind === 'cancelled') return choice
+    choices.set(path, choice.value)
+  }
+
+  return accepted(choices)
+}
+
+/**
+ * Runs the consented framework installs, then the consented project plugin installs, in one project-scope call, and
+ * reads the facts again when a framework install ran, since only they tell whether it worked.
+ */
+async function projectInstalled(
+  io: InitIo,
+  host: HostIo,
+  draft: Pick<
+    Draft,
+    | 'locations'
+    | 'gathered'
+    | 'roles'
+    | 'repoDefault'
+    | 'frameworkSet'
+    | 'installed'
+    | 'frameworkInstalls'
+    | 'projectPluginInstalls'
+  >,
+): Promise<{
+  readonly scanned: Gathered
+  readonly failed: readonly FrameworkId[]
+  readonly roles: readonly RoleSpec[]
+  readonly repoDefault: FrameworkId | null
+  readonly landedPlugins: readonly ProjectInstall[]
+  readonly failedPlugins: readonly ProjectInstall[]
+}> {
+  const { locations, gathered } = draft
+  const frameworkInstalls = (draft.frameworkInstalls ?? []).flatMap(id => projectInstallOf(id) ?? [])
+  const pluginInstalls = (draft.projectPluginInstalls ?? []).map(projectPluginInstall)
+  if (frameworkInstalls.length > 0) {
+    await io.progress(FRAMEWORK_INSTALL_PROGRESS, countsText([['frameworks', frameworkInstalls.length]]))
+  }
+  if (frameworkInstalls.length === 0 && pluginInstalls.length > 0) {
+    await io.progress(INSTALL_PROGRESS, countsText([['plugins', pluginInstalls.length]]))
+  }
+  const projectInstalls = [...frameworkInstalls, ...pluginInstalls]
+  const projected = await installProject(host, locations.root, locations.home, projectInstalls)
+  const scanned = frameworkInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
+  const found = installedFrameworks(detectAll(scanned.facts.facts))
+  const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
+  const landedPlugins = pluginInstalls.filter(install => projected.installed.includes(install.id))
+  const failedPlugins = pluginInstalls.filter(install => !projected.installed.includes(install.id))
+  const fallen = withoutFailedInstalls(draft, failed)
+  const roles = withoutFailedGrill(fallen.roles, failedPlugins)
+
+  return { scanned, failed, roles, repoDefault: fallen.repoDefault, landedPlugins, failedPlugins }
+}
+
+/**
+ * Runs each accepted hunk cadre can run, in hunk order from the repo root, through a proven user-level GSD only, and
+ * gives the failed runs and the hunks after them, a failed one no longer runnable.
+ */
+async function hunksRan(
+  io: InitIo,
+  host: HostIo,
+  draft: Pick<Draft, 'locations' | 'gathered' | 'hunks'>,
+): Promise<{ readonly failures: readonly HunkRun[]; readonly hunks: readonly HunkOp[] }> {
+  const { locations, gathered } = draft
+  const gsd = {
+    userDir: provenUserDir(gathered.facts),
+    home: locations.home,
+    root: locations.root,
+    configDir: locations.configDir,
+  }
+  const failures: HunkRun[] = []
+  const runs = hunkRuns(draft.hunks, gathered.setup, gsd)
+  if (runs.length > 0) await io.progress(APPLY_HUNKS_PROGRESS, countsText([['hunks', runs.length]]))
+  for (const run of runs) {
+    const result = await host.run(run.argv, { cwd: locations.root, timeoutMs: HUNK_TIMEOUT_MS })
+    if (hasRunFailed(result)) failures.push(run)
+  }
+  const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
+
+  return { failures, hunks }
+}
+
+/** The scopes compiled again from the setup after the installs, with attended judged again from the config on disk. */
+async function compiledAfter(
+  io: InitIo,
+  after: {
+    readonly locations: InitLocations
+    readonly scanned: Gathered
+    readonly setup: SetupScan
+    readonly roles: readonly RoleSpec[]
+    readonly repoDefault: FrameworkId | null
+    readonly launchStart: LaunchStart
+    readonly recorded: { readonly frameworks?: readonly FrameworkId[]; readonly sizing: Sizing }
+  },
+): Promise<ReadonlyMap<string, CompiledScope>> {
+  const { locations, scanned, setup, roles, repoDefault, launchStart, recorded } = after
+  const frameworksRun = repoFrameworks({ framework: repoDefault, ...recorded })
+  const attended = await attendedByConfig(io, locations.root, teamFrameworks(roles, repoDefault, frameworksRun), setup)
+
+  return compileAll(
+    roles,
+    repoDefault,
+    { ...scanned, setup },
+    attended,
+    launchStart,
+    frameworksRun,
+    locations.root,
+  )
 }
 
 /**
@@ -429,55 +564,11 @@ async function applyConfirmed(
 ): Promise<StepResult<{ readonly planned: PlanResult; readonly outcome: ApplyOutcome }>> {
   const { draft } = reviewed
   const { locations, gathered, launchStart } = draft
-  const choices = new Map<string, ConflictChoice>()
-  for (const path of conflictPaths(reviewed.planned.plan)) {
-    const disk = await readRepoFile(io, locations.root, path, MAX_READ_BYTES)
-    const desired = reviewed.planned.desired.find(file => file.path === path)
-    const diff = disk.state === 'text' && desired !== undefined ? lineDiff(disk.text, desired.content) : null
-    const context = conflictContext(path, diff)
-    const pane = paneQuestionOf(conflictQuestion(path), CONFLICT_CONTEXT, context.summary)
-    const ask = {
-      question: pane.asked,
-      spec: { options: CONFLICT_OPTIONS, header: ASK_HEADERS.conflict, context: { ...context, pane } },
-      parse: parseConflictAnswer,
-      accepts: quotedLabels(CONFLICT_OPTIONS),
-    }
-    const choice = choiceResult(await askChoice(io, ask), CONFLICT_DISMISSED_REASON)
-    if (choice.kind === 'cancelled') return choice
-    choices.set(path, choice.value)
-  }
-  const frameworkInstalls = (draft.frameworkInstalls ?? []).flatMap(id => projectInstallOf(id) ?? [])
-  const pluginInstalls = (draft.projectPluginInstalls ?? []).map(projectPluginInstall)
-  if (frameworkInstalls.length > 0) {
-    await io.progress(FRAMEWORK_INSTALL_PROGRESS, countsText([['frameworks', frameworkInstalls.length]]))
-  }
-  if (frameworkInstalls.length === 0 && pluginInstalls.length > 0) {
-    await io.progress(INSTALL_PROGRESS, countsText([['plugins', pluginInstalls.length]]))
-  }
-  const projectInstalls = [...frameworkInstalls, ...pluginInstalls]
-  const projected = await installProject(host, locations.root, locations.home, projectInstalls)
-  const scanned = frameworkInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
-  const found = installedFrameworks(detectAll(scanned.facts.facts))
-  const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
-  const landedPlugins = pluginInstalls.filter(install => projected.installed.includes(install.id))
-  const failedPlugins = pluginInstalls.filter(install => !projected.installed.includes(install.id))
-  const fallen = withoutFailedInstalls(draft, failed)
-  const roles = withoutFailedGrill(fallen.roles, failedPlugins)
-  const { repoDefault } = fallen
-  const gsd = {
-    userDir: provenUserDir(gathered.facts),
-    home: locations.home,
-    root: locations.root,
-    configDir: locations.configDir,
-  }
-  const failures: HunkRun[] = []
-  const runs = hunkRuns(draft.hunks, gathered.setup, gsd)
-  if (runs.length > 0) await io.progress(APPLY_HUNKS_PROGRESS, countsText([['hunks', runs.length]]))
-  for (const run of runs) {
-    const result = await host.run(run.argv, { cwd: locations.root, timeoutMs: HUNK_TIMEOUT_MS })
-    if (hasRunFailed(result)) failures.push(run)
-  }
-  const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
+  const asked = await askedConflicts(io, locations.root, reviewed.planned)
+  if (asked.kind === 'cancelled') return asked
+  const choices = asked.value
+  const { scanned, failed, roles, repoDefault, landedPlugins, failedPlugins } = await projectInstalled(io, host, draft)
+  const { failures, hunks } = await hunksRan(io, host, draft)
   const installCount = countsText([['plugins', draft.pluginInstalls.length]])
   if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
   const installs =
@@ -491,17 +582,7 @@ async function applyConfirmed(
     ...landedKeys,
   ])
   const recorded = initFrameworks(draft, failed)
-  const frameworksRun = repoFrameworks({ framework: repoDefault, ...recorded })
-  const attended = await attendedByConfig(io, locations.root, teamFrameworks(roles, repoDefault, frameworksRun), setup)
-  const scopes = compileAll(
-    roles,
-    repoDefault,
-    { ...scanned, setup },
-    attended,
-    launchStart,
-    frameworksRun,
-    locations.root,
-  )
+  const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
   const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
   const owed = privatesOf(draft.instructions, roles)
   const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })
@@ -862,15 +943,24 @@ export async function performState(io: InitIo, options: InitOptions, state: Init
  * effect and feeds the answer back.
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
-  // Every question goes through the surface module's paged port: on a pane surface a context over the frame cap is
-  // asked a page at a time, at the width the run reads before each ask, and whole while the pane is seated inline
-  // (pagedPort, D-306, N-02, D-353).
-  const paged = (options.surface ?? PANE_DESKTOP).pagedPort(io, {
+  return runStates(pagedOf(io, options), options, initialState(options.dryRun, options.surface))
+}
+
+/**
+ * The port every question of a run goes through, the surface module's paged port: on a pane surface a context over
+ * the frame cap is asked a page at a time at the width read before each ask, and whole while the pane is seated inline.
+ */
+function pagedOf(io: InitIo, options: InitOptions): InitIo {
+  return (options.surface ?? PANE_DESKTOP).pagedPort(io, {
     columns: () => options.pageColumns?.() ?? null,
     seat: () => options.paneSeat?.() ?? null,
     rows: () => options.pageRows?.() ?? null,
   })
-  let state = initialState(options.dryRun, options.surface)
+}
+
+/** Runs the stage machine from `first` until an end effect gives the reply. */
+async function runStates(paged: InitIo, options: InitOptions, first: InitState): Promise<string> {
+  let state = first
   // The folds the stages gave since the last ask, and those bound to the stage that asked first after them (D-302).
   let held: readonly Extract<Output, { readonly kind: 'fold' }>[] = []
   let boundStage: InitStage | null = null

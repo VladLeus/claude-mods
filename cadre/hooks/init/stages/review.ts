@@ -11,7 +11,6 @@
  */
 import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
 import { projectInstallOf, projectPluginInstall, setupAfterInstalls } from '../../apply/installs'
-import { repoFrameworks } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
@@ -25,7 +24,7 @@ import { recommend } from '../../roles/recommend'
 import { scanWarnings } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { MEMORY_PATTERN } from '../../scope/lint'
-import { resolvedFramework, scopesFor } from '../../team'
+import { resolvedFramework } from '../../team'
 import { ASK_HEADERS, choiceAnswer, contextText, orList, quotedLabels, refusalLine, withContext } from '../../ui/ask'
 import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { reviewContext } from '../../ui/blocks/context'
@@ -36,7 +35,7 @@ import { UNCUT, wrapLine } from '../../ui/pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
 import type { Draft, PlanResult, Reviewed } from '../draft'
 import { initReplyText } from '../initapply'
-import { consentedPluginKeys, initFrameworks, privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
+import { consentedPluginKeys, draftScopes, privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
 import type { PlanStepInput } from '../initplan'
 import { IGNORE_ALL_NOTE } from '../replies'
 import { fullDraft, stageBack, stageCancelled, stageEnded, stageFailed, withEffect } from '../state'
@@ -411,7 +410,7 @@ function reviewLines(
 
 /**
  * What the review plans a draft with: the scopes compiled with the plugins answered Install, the plugin installs of
- * the consented frameworks and the consented project plugins counted as installed (setupAfterInstalls,
+ * the consented frameworks and the consented project plugins counted as installed (draftScopes,
  * consentedPluginKeys), so the cards and the plan show what Confirm writes when every install works, and planStep's
  * input, with each role's repo parts (repoPartsOf) recorded in each parts-flow role's role.json (withRepoRecords).
  */
@@ -419,23 +418,11 @@ function reviewPlanOf(draft: Draft): {
   readonly scopes: ReadonlyMap<string, CompiledScope>
   readonly input: PlanStepInput
 } {
-  const setup = setupAfterInstalls(draft.gathered.setup, [
+  const { scopes, recorded } = draftScopes(draft, [
     ...draft.pluginInstalls,
     ...consentedPluginKeys(draft, []),
     ...(draft.projectPluginInstalls ?? []),
   ])
-  const gathered = { ...draft.gathered, setup }
-  const recorded = initFrameworks(draft, [])
-  const frameworks = repoFrameworks({ framework: draft.repoDefault, ...recorded })
-  const scopes = scopesFor(
-    draft.roles,
-    draft.repoDefault,
-    gathered,
-    draft.hunks,
-    draft.launchStart,
-    frameworks,
-    draft.locations.root,
-  )
   const repoParts = repoPartsOf(draft.instructions)
   const input = {
     roles: withRepoRecords(draft.roles, draft.instructions, repoParts),
