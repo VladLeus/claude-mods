@@ -67,8 +67,8 @@ const EXEC_CLAUDE = `exec env -u ${SCRUBBED_ENV.join(' -u ')} CLAUDE_CODE_ADDITI
 
 /**
  * The flag words a launcher that starts in a sub-folder (here or dir) adds after the scope flags: the git root it
- * found, as an added directory, so the role reads its inbox, other roles' inboxes and the root `.planning/` without a
- * prompt (D-127). It is not a scope flag: only the launcher knows the root it resolved.
+ * found, as an added directory, so the role reads the root `.planning/` without a prompt. It is not a scope flag: only
+ * the launcher knows the root it resolved.
  */
 const ROOT_DIR_FLAG = '--add-dir "$root"'
 
@@ -248,8 +248,7 @@ export function hasRuntimeKickoff(text: string): boolean {
  * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing; or `.cadre/cadre.json` or the
  *   role's role.json, settings.json or mcp.json is newer than it, so a render the role files changed after never
  *   starts; or the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render
- *   did not finish (D-102). The stamp is checked first, since `-nt` against a missing file is true; inbox.jsonl is
- *   never compared, cadre's inbox tools append to it;
+ *   did not finish (D-102). The stamp is checked first, since `-nt` against a missing file is true;
  * - the rendered settings.json or mcp.json is missing, empty or not valid JSON, since the engine drops an invalid
  *   settings file in silence with every deny in it (D-107). jq checks them when it is on PATH, else node, else one
  *   line says they were not checked again: `/cadre start` checked them when it rendered them (D-129).
