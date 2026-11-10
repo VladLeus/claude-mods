@@ -8,7 +8,7 @@ import type { CompiledScope, RoleSpec } from '../../types'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { workstreamName } from '../framework/workstream'
-import { ROLE_ENV, roleMemoryDir, ROOT_ENV } from '../paths'
+import { MAIN_ENV, ROLE_ENV, roleMemoryDir, ROOT_ENV } from '../paths'
 import { mcpToolName } from '../scope/card'
 import { isContextMonitorScript } from '../scope/lint'
 import { pluginSkillDeny, settingsDeny } from './deny'
@@ -68,10 +68,18 @@ function workstreamEnv(role: RoleSpec, scope: CompiledScope, user: LaunchUser): 
 
 /**
  * The env of a role session: the carried env, then its workstream env, with cadre's role and root names laid over it,
- * so cadre's names win.
+ * then the main checkout's name when the launch has one, so cadre's names win.
  */
 function sessionEnv(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, string> {
-  return { ...carriedEnv(role, user), ...workstreamEnv(role, scope, user), [ROLE_ENV]: role.id, [ROOT_ENV]: user.root }
+  const main = user.mainRoot === undefined ? {} : { [MAIN_ENV]: user.mainRoot }
+
+  return {
+    ...carriedEnv(role, user),
+    ...workstreamEnv(role, scope, user),
+    [ROLE_ENV]: role.id,
+    [ROOT_ENV]: user.root,
+    ...main,
+  }
 }
 
 /** One carried hook command as the settings hold it; `timeout` only when the user set one. */

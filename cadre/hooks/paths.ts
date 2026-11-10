@@ -321,6 +321,9 @@ export const ROLE_ENV = 'CADRE_ROLE'
 /** The runtime env name that holds the root a role session runs in. */
 export const ROOT_ENV = 'CADRE_ROOT'
 
+/** The runtime env name that holds the main checkout of a role session in a linked worktree. */
+export const MAIN_ENV = 'CADRE_MAIN_ROOT'
+
 /**
  * An epic's kickoff of a role in `.cadre/<id>/.runtime/` (D-158): /cadre epic writes it for each role it renders into
  * the epic worktree, and the launcher starts with it in place of the role's own `.cadre/<id>/kickoff.txt`.

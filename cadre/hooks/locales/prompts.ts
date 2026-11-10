@@ -181,8 +181,8 @@ export const PROMPTS = Object.freeze({
   inboxSize: 'Size {size}, so {sizeClass} (the threshold is {threshold}).',
   inboxSizePick: 'In {mode} mode: {framework}.',
   inboxSizePickGsd: 'In {mode} mode: gsd, GSD path {gsdPath}.',
-  // The descriptions of the inbox tools (register.tsx), and the refusals of a call outside a role session or a call
-  // that failed.
+  // The descriptions of the inbox tools (register.tsx), the refusals of a call outside a role session or a call that
+  // failed, and the line of a role session whose role.json is not found.
   inboxSendDescription:
     `cadre: send a message to another role of your team. It is added to that role's inbox, stamped with your role ${
     ''}and the time, and the role is woken to read it. to: the role id. kind: ticket, task, report, question, ${
@@ -192,6 +192,9 @@ export const PROMPTS = Object.freeze({
     ''}also lists the entries marked done or rejected.`,
   inboxNoRole: 'The cadre inbox tools work only in a cadre role session.',
   inboxFailed: 'The cadre inbox tool failed. Try again.',
+  inboxRoleMissing:
+    `cadre: this session runs as role {id}, but .cadre/{id}/role.json is not a file of the repo, so the inbox ${
+    ''}tools are off.`,
   // The inbox_read view (messages/record inboxReadText): an entry's head, note and reply lines, a line per kind field
   // and its value forms, the empty inbox, the last line that counts the entries left out, and the inbox_read refusals.
   inboxItemHead: '{id} [{state}] {kind} from {from}: {subject}',

@@ -907,10 +907,14 @@ export type InboxItem = {
   readonly markedAt: number | null
 }
 
-/** The role a session runs as and the root it runs in, read from its runtime env. */
+/**
+ * The role a session runs as and the root it runs in, read from its runtime env; `main` is the main checkout of a
+ * session in a linked worktree, where its role and team are read.
+ */
 export type RoleContext = {
   readonly id: string
   readonly root: string
+  readonly main?: string
 }
 
 /**

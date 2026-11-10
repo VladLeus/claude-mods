@@ -28,11 +28,19 @@ import { detectRefusal } from './guards/refusals'
 import { consentedGsdCheck, runInit } from './init/run'
 import type { InitOptions } from './init/run'
 import { PROMPTS } from './locales/prompts'
-import { setMissingSlotSink, t } from './locales/t'
-import { isRoleSession, publishSession, roleContextOf, runInboxMark, runInboxRead, runInboxSend } from './messages/flow'
+import { fill, setMissingSlotSink, t } from './locales/t'
+import {
+  isRoleSession,
+  publishSession,
+  roleContextOf,
+  runInboxMark,
+  runInboxRead,
+  runInboxSend,
+  teamRootOf,
+} from './messages/flow'
 import { INBOX_STATES, MESSAGE_KINDS, REPORT_OUTCOMES, SIZE_PINS } from './messages/send'
 import { GSD_PATHS, PLANNING_MODES } from './messages/sizing'
-import type { ROLE_ENV, ROOT_ENV } from './paths'
+import type { MAIN_ENV, ROLE_ENV, ROOT_ENV } from './paths'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
 import { CADRE_TOOL_PREFIX, INBOX_MARK_TOOL, INBOX_READ_TOOL, INBOX_SEND_TOOL } from './roles/infra'
@@ -698,12 +706,16 @@ async function republish($: EngineInterface, ctx: RoleContext): Promise<void> {
 }
 
 /**
- * Registers the inbox tools when the context names a role of the repo, then publishes this session's id; a
- * registration that throws leaves the session with no role.
+ * Registers the inbox tools when the context names a role of the repo, then publishes this session's id; a session
+ * whose role.json is not found logs one line naming the role, and a registration that throws leaves it with no role.
  */
 async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
   const io = toolIoOf($)
-  if (!(await isRoleSession(io, ctx))) return
+  if (!(await isRoleSession(io, ctx))) {
+    safeLog($, fill(PROMPTS.inboxRoleMissing, { id: ctx.id }))
+
+    return
+  }
   try {
     await $.tool.register({
       name: INBOX_SEND_TOOL,
@@ -730,7 +742,7 @@ async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
 /** inbox_send as the role this session runs as, over the team as it reads now. */
 async function inboxSendReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
   const io = toolIoOf($)
-  const team = await teamViewOf(io, ctx.root)
+  const team = await teamViewOf(io, teamRootOf(ctx))
 
   return toolReplyOf(await runInboxSend(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
 }
@@ -738,7 +750,7 @@ async function inboxSendReply($: EngineInterface, ctx: RoleContext, e: unknown):
 /** inbox_mark as the role this session runs as, over the team as it reads now. */
 async function inboxMarkReply($: EngineInterface, ctx: RoleContext, e: unknown): Promise<ToolReply> {
   const io = toolIoOf($)
-  const team = await teamViewOf(io, ctx.root)
+  const team = await teamViewOf(io, teamRootOf(ctx))
 
   return toolReplyOf(await runInboxMark(io, hostIoOf($), sessionLinkOf($), ctx, team, e))
 }
@@ -765,6 +777,7 @@ export const register: Register = on => {
     const ctx = roleContextOf(
       await $.env.get('CADRE_ROLE' satisfies typeof ROLE_ENV).catch(() => undefined),
       await $.env.get('CADRE_ROOT' satisfies typeof ROOT_ENV).catch(() => undefined),
+      await $.env.get('CADRE_MAIN_ROOT' satisfies typeof MAIN_ENV).catch(() => undefined),
     )
     if (ctx !== null) await startRole($, ctx).catch(() => undefined)
 

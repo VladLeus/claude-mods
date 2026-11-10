@@ -53,18 +53,37 @@ function deny(text: string): ToolOutcome {
   return { kind: 'deny', text }
 }
 
-/** The role and the root a session runs as: a role id and an absolute, normalised root; null for anything else. */
-export function roleContextOf(role: unknown, root: unknown): RoleContext | null {
-  if (typeof role !== 'string' || !isRoleId(role)) return null
-  if (typeof root !== 'string' || root === '/' || !root.startsWith('/')) return null
-  if (resolveSegments(root) !== root) return null
-
-  return { id: role, root }
+/** Whether a value is an absolute, normalised path other than `/`. */
+function isRootPath(value: unknown): value is string {
+  return typeof value === 'string' && value !== '/' && value.startsWith('/') && resolveSegments(value) === value
 }
 
-/** Whether the context names a role of the repo: its role.json is a regular file inside the root. */
+/**
+ * The role, the root and the main checkout a session runs as: a role id, an absolute, normalised root and, when the
+ * env names one, a main checkout checked the same way; null for anything else, a malformed main checkout included.
+ */
+export function roleContextOf(role: unknown, root: unknown, main?: unknown): RoleContext | null {
+  if (typeof role !== 'string' || !isRoleId(role)) return null
+  if (!isRootPath(root)) return null
+  if (main === undefined || main === null || main === '') return { id: role, root }
+  if (!isRootPath(main)) return null
+
+  return { id: role, root, main }
+}
+
+/** The root a session reads its role and team from: the main checkout of a linked worktree, else its own root. */
+export function teamRootOf(ctx: RoleContext): string {
+  return ctx.main ?? ctx.root
+}
+
+/**
+ * Whether the context names a role of the repo: its role.json is a regular file inside the team root, so a session in
+ * a linked worktree reads it from the main checkout while its own files stay under its root.
+ */
 export async function isRoleSession(io: InitIo, ctx: RoleContext): Promise<boolean> {
-  return isFileInsideRoot(await io.stat(`${ctx.root}/${roleJsonPath(ctx.id)}`), ctx.root)
+  const teamRoot = teamRootOf(ctx)
+
+  return isFileInsideRoot(await io.stat(`${teamRoot}/${roleJsonPath(ctx.id)}`), teamRoot)
 }
 
 async function publishedId(io: InitIo, path: string): Promise<string | null> {
