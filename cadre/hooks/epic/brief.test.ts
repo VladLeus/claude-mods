@@ -62,6 +62,17 @@ describe('epicEntryLine', () => {
     expect(none).toContain(PROMPTS.epicBriefNoModes)
   })
 
+  test('with no framework the no-mode line says none is recorded and names /cadre frameworks', async () => {
+    const none = (await seedOf(teamWith([])))?.body ?? ''
+    const line = none.split('\n').find(text => text.includes('no planning mode')) ?? ''
+
+    expect(PROMPTS.epicBriefNoModes).toBe(
+      'This repo offers no planning mode: no supported framework is recorded for it ' +
+        '(run /cadre frameworks to choose one).',
+    )
+    expect([line.includes(PROMPTS.epicBriefNoModes), line.includes('installed')]).toEqual([true, false])
+  })
+
   test('the title is cleaned and cut first, so the body stays within its cap and keeps its steps', async () => {
     const body = (await seedOf(teamWith(BOTH), `T\u202E${'x'.repeat(5000)}`))?.body ?? ''
 
