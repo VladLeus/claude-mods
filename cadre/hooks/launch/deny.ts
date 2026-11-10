@@ -234,10 +234,10 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
  * `.claude/settings.json` and `.claude/settings.local.json` (their hooks run at the next session start),
  * `.cadre/bin/**`, `.cadre/manifest.json`, `.cadre/cadre.json` and the role.json of each team role, or of the role's
  * own when the team is not known (init and regen write them from the root session, and the inbox tools trust them),
- * and `<dir>/**` for each folder a framework's project install runs code from (a later session runs its hooks). So an
- * Edit-only role cannot plant a hook, rewrite a launcher or change the team. A path an exact rule cannot hold gets none
- * and no warning: a role without Bash already gets runtimeDeny's root warning, and a Bash role is not held by an Edit
- * deny.
+ * and `<dir>/**` for each folder a framework's project install runs code from (a later session runs its hooks and
+ * scripts). So an Edit-only role cannot plant a hook, rewrite a launcher or change the team. A path an exact rule
+ * cannot hold gets none and no warning: a role without Bash already gets runtimeDeny's root warning, and a Bash role is
+ * not held by an Edit deny.
  */
 function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
   const roots = sortedUnique(launchRoots(user))
