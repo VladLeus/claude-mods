@@ -8,10 +8,10 @@ import { cadreJsonText, roleJsonText, rubricText } from '../generate/docs'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { parseInbox } from '../messages/record'
-import { inboxDirOf, inboxHomeOf } from '../paths'
+import { inboxDirOf, inboxHomeOf, parentOf } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeTooOldReply } from '../start/claude-version'
-import { START_NO_GIT_DIR } from '../start/gather-user'
+import { privateFolderRefusal, START_NO_GIT_DIR } from '../start/gather-user'
 import { launcherChangedReply } from '../start/launcher-check'
 import { MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END } from '../start/memory-links'
 import { runStart } from '../start/run'
@@ -125,6 +125,41 @@ function worktreeRuns(run: EpicRun): (readonly string[])[] {
   return run.calls.map(call => call.argv).filter(argv => argv[3] === 'worktree')
 }
 
+/** The inbox home of `worktree` in the user config folder of the fixture user. */
+async function inboxHomeAt(worktree: string): Promise<string> {
+  return inboxHomeOf('/home/u/.claude', worktree, await sha256Hex(worktree))
+}
+
+/**
+ * `world` with the inbox home `home` and each folder above it up to the user folder there, each listed in the one
+ * above, and the home listing the role folders `ids`, as an earlier epic of the same key left them.
+ */
+function withInboxHome(world: MemWorld, home: string, ids: readonly string[]): MemWorld {
+  const tree = parentOf(home)
+  const cadre = parentOf(tree)
+
+  return {
+    ...world,
+    dirs: {
+      ...world.dirs,
+      [parentOf(cadre)]: [entry('cadre', 'dir')],
+      [cadre]: [entry('inboxes', 'dir')],
+      [tree]: [entry(home.slice(tree.length + 1), 'dir')],
+      [home]: ids.map(id => entry(id, 'dir')),
+    },
+  }
+}
+
+/** The removals an epic run made in the inbox home `home`, each as its argv joined by spaces, in order. */
+function inboxRemovals(run: EpicRun, home: string): string[] {
+  return run.events.filter(event => event.startsWith(`/bin/rm -f -- ${home}/`))
+}
+
+/** The removals of the inbox and the session record of each role of `ids` in `home`, as joined argv, in order. */
+function clearedOf(home: string, ids: readonly string[]): string[] {
+  return ids.flatMap(id => [`/bin/rm -f -- ${home}/${id}/inbox.jsonl`, `/bin/rm -f -- ${home}/${id}/session.json`])
+}
+
 describe('runEpic', () => {
   test('PROJ-1 Add retry adds the worktree on a new epic branch from HEAD and names both (D-145, D-146)', async () => {
     const run = await epic(await teamWorld(), [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)])
@@ -132,6 +167,60 @@ describe('runEpic', () => {
     expect(addRuns(run)).toEqual([ADD_ARGV])
     expect(run.reply).toContain(WORKTREE)
     expect(run.reply).toContain(BRANCH)
+  })
+
+  test('a new worktree has the inbox and session files of its role folders removed right after the add', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const run = await epic(world, [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)])
+    const addAt = run.events.indexOf(ADD_ARGV.join(' '))
+
+    expect(addAt).toBeGreaterThanOrEqual(0)
+    expect(run.events.slice(addAt + 1, addAt + 5)).toEqual(clearedOf(home, ['pm', 'be']))
+    expect(inboxRemovals(run, home)).toEqual(clearedOf(home, ['pm', 'be']))
+  })
+
+  test('a failed add removes nothing in the inbox home', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const run = await epic(withInboxHome(await teamWorld(), home, ['pm', 'be']), [rule(ADD_ARGV, 128)])
+
+    expect(inboxRemovals(run, home)).toEqual([])
+  })
+
+  test('a removal that fails leaves the reply as it is, and the other removals still run', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const rules = [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)]
+    const cleared = await epic(world, rules)
+    const failed = await epic(world, [rule(['/bin/rm', '-f', '--', `${home}/pm/inbox.jsonl`], 1), ...rules])
+
+    expect(failed.reply).toBe(cleared.reply)
+    expect(inboxRemovals(failed, home)).toEqual(clearedOf(home, ['pm', 'be']))
+  })
+
+  test('a link at the inbox home or at the inbox tree removes nothing, and each render refuses it', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const tree = parentOf(home)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const rules = [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`), COMMON_DIR]
+    const atHome = await epic({ ...world, realPaths: { [home]: '/elsewhere/home' } }, rules)
+    const atTree = await epic({ ...world, realPaths: { [tree]: '/elsewhere/inboxes' } }, rules)
+
+    expect([addRuns(atHome), addRuns(atTree)]).toEqual([[ADD_ARGV], [ADD_ARGV]])
+    expect([inboxRemovals(atHome, home), inboxRemovals(atTree, home)]).toEqual([[], []])
+    expect(atHome.reply).toContain(privateFolderRefusal(`~${home.slice('/home/u'.length)}`, 'link'))
+    expect(atTree.reply).toContain(privateFolderRefusal('~/.claude/cadre/inboxes', 'link'))
+  })
+
+  test('with no HOME the worktree is added and nothing is removed in an inbox home', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const locations = { ...DEFAULT_LOCATIONS, home: null, givenHome: null }
+    const rules = [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)]
+    const run = await epic({ ...world, locations }, rules)
+
+    expect(addRuns(run)).toEqual([ADD_ARGV])
+    expect(run.events.filter(event => event.startsWith('/bin/rm '))).toEqual([])
   })
 
   test('a key that is not 1-32 letters, digits, - or _ refuses before anything runs (D-162)', async () => {
@@ -226,6 +315,19 @@ describe('finding an epic by its key (D-163)', () => {
     expect(run.reply).toContain(kept)
   })
 
+  test('a kept branch added back has the inbox and session files of its role folders removed, too', async () => {
+    const kept = '/repo/.claude/worktrees/proj-1-old'
+    const readd = ['git', '-C', '/repo', 'worktree', 'add', kept, 'epic/proj-1-old']
+    const branches = rule(EPIC_BRANCHES_ARGV('/repo'), 0, 'epic/proj-1-old\n')
+    const gitDir = rule(GIT_DIR_ARGV(kept), 0, '/repo/.git/worktrees/proj-1-old\n')
+    const home = await inboxHomeAt(kept)
+    const run = await epic(withInboxHome(await teamWorld(), home, ['pm', 'be']), [branches, rule(readd, 0), gitDir])
+    const addAt = run.events.indexOf(readd.join(' '))
+
+    expect(addAt).toBeGreaterThanOrEqual(0)
+    expect(run.events.slice(addAt + 1, addAt + 5)).toEqual(clearedOf(home, ['pm', 'be']))
+  })
+
   test('a registered worktree of the key is reused: nothing is added, and its record names the title', async () => {
     const path = '/repo/.claude/worktrees/proj-1-x'
     const gitDir = '/repo/.git/worktrees/proj-1-x'
@@ -245,6 +347,21 @@ describe('finding an epic by its key (D-163)', () => {
     expect(addRuns(run)).toEqual([])
     // The role lines of the render stage follow it (D-157).
     expect(run.reply.slice(0, created.length)).toBe(created)
+  })
+
+  test('a reused worktree keeps its inboxes: nothing is removed in its inbox home', async () => {
+    const path = '/repo/.claude/worktrees/proj-1-x'
+    const porcelain =
+      'worktree /repo\nHEAD a\nbranch refs/heads/main\n\n' +
+      `worktree ${path}\nHEAD b\nbranch refs/heads/epic/proj-1-x\n`
+    const home = await inboxHomeAt(path)
+    const run = await epic(withInboxHome(await teamWorld(), home, ['pm', 'be']), [
+      rule(WORKTREE_LIST_ARGV('/repo'), 0, porcelain),
+      rule(GIT_DIR_ARGV(path), 0, '/repo/.git/worktrees/proj-1-x\n'),
+    ])
+
+    expect(addRuns(run)).toEqual([])
+    expect(inboxRemovals(run, home)).toEqual([])
   })
 
   test('a folder at the worktree path that git does not list refuses before anything is added (D-147)', async () => {
@@ -747,6 +864,20 @@ describe("PM's epic brief and the sizing rubric of an epic", () => {
     expect(seed).toHaveLength(1)
     expect(seed[0]).toMatchObject({ type: 'entry', from: 'cadre', to: 'pm', kind: 'note', at: 1_000_000 })
     expect(seed[0]?.type === 'entry' ? seed[0].body : '').toContain('PROJ-1')
+  })
+
+  test("an old PM inbox in a new worktree's inbox home is removed first, so PM's render seeds a new one", async () => {
+    const world = withInboxHome(await renderWorld(TRIO), WORKTREE_INBOX_HOME, ['pm'])
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const inbox = `${inboxDirOf(WORKTREE_INBOX_HOME, 'pm')}/inbox.jsonl`
+    const removedAt = run.events.indexOf(`/bin/rm -f -- ${inbox}`)
+    const [pm = ''] = inboxStdins(run, ['pm'])
+    const seed = parseInbox(pm)
+
+    expect(removedAt).toBeGreaterThanOrEqual(0)
+    expect(run.events.indexOf(`/usr/bin/tee -a ${inbox}`)).toBeGreaterThan(removedAt)
+    expect(seed).toHaveLength(1)
+    expect(seed[0]).toMatchObject({ type: 'entry', from: 'cadre', to: 'pm', kind: 'note' })
   })
 
   test("main's rubric is written where absent, before the excludes; the worktree's is never written", async () => {

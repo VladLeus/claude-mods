@@ -14,6 +14,7 @@ import { ignoreLines } from '../plan/gitignore'
 import { compileScope } from '../scope/compile'
 import { BIDI_OVERRIDE, emptySetupScan, entry, hostWorld, link, memHost, ROOT, templateRole } from '../testkit'
 import {
+  inboxClearSteps,
   NO_MEMORY_LINKS,
   notReplacedText,
   notReplacedWarning,
@@ -32,8 +33,11 @@ const ROLE_DIR = '/repo/.cadre/be'
 /** The per-launch folder of the BE role (D-102). */
 const RUNTIME = '/repo/.cadre/be/.runtime'
 
-/** BE's inbox folder in the user config folder of the fixture user, keyed on the repo root. */
-const INBOX_DIR = inboxDirOf(inboxHomeOf('/home/u/.claude', ROOT, await sha256Hex(ROOT)), 'be')
+/** The inbox home of the repo root in the user config folder of the fixture user. */
+const INBOX_HOME = inboxHomeOf('/home/u/.claude', ROOT, await sha256Hex(ROOT))
+
+/** BE's inbox folder in that inbox home. */
+const INBOX_DIR = inboxDirOf(INBOX_HOME, 'be')
 
 /** BE's inbox in its inbox folder. */
 const INBOX = `${INBOX_DIR}/inbox.jsonl`
@@ -725,6 +729,42 @@ describe('the inbox in its private folder', () => {
     ]
 
     expect(results.map(result => result.refusal)).toEqual([null, null])
+  })
+})
+
+describe('inboxClearSteps', () => {
+  test('each listed role folder gets the removal of its inbox, then of its session record, in listing order', () => {
+    expect(inboxClearSteps(INBOX_HOME, [entry('pm', 'dir'), entry('be', 'dir')])).toEqual([
+      { kind: 'remove', path: `${INBOX_HOME}/pm/inbox.jsonl` },
+      { kind: 'remove', path: `${INBOX_HOME}/pm/session.json` },
+      { kind: 'remove', path: `${INBOX_HOME}/be/inbox.jsonl` },
+      { kind: 'remove', path: `${INBOX_HOME}/be/session.json` },
+    ])
+  })
+
+  test('a link, a file, a name that is no plain entry or no role id, and an empty listing clear nothing', () => {
+    const entries = [
+      link('pm'),
+      entry('tl', 'dir', true),
+      entry('be'),
+      entry('.', 'dir'),
+      entry('..', 'dir'),
+      entry('qa/x', 'dir'),
+      entry('BE!', 'dir'),
+      entry('cadre', 'dir'),
+    ]
+
+    expect(inboxClearSteps(INBOX_HOME, entries)).toEqual([])
+    expect(inboxClearSteps(INBOX_HOME, [])).toEqual([])
+  })
+
+  test('a removal is rm -f of one file, never -r', () => {
+    const argv = inboxClearSteps(INBOX_HOME, [entry('pm', 'dir')]).map(renderArgv)
+
+    expect(argv).toEqual([
+      ['/bin/rm', '-f', '--', `${INBOX_HOME}/pm/inbox.jsonl`],
+      ['/bin/rm', '-f', '--', `${INBOX_HOME}/pm/session.json`],
+    ])
   })
 })
 
