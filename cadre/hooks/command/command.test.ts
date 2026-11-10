@@ -85,6 +85,20 @@ describe('parseCommand', () => {
     expect(parseCommand('regen-be')).toEqual({ kind: 'help', unknown: 'regen-be' })
   })
 
+  test('frameworks alone asks the framework step again and writes after Confirm', () => {
+    expect(parseCommand('frameworks')).toEqual({ kind: 'frameworks', dryRun: false })
+  })
+
+  test('--dry-run after frameworks, in any case, is the frameworks dry run', () => {
+    expect(parseCommand('frameworks --dry-run')).toEqual({ kind: 'frameworks', dryRun: true })
+    expect(parseCommand('FRAMEWORKS --DRY-RUN')).toEqual({ kind: 'frameworks', dryRun: true })
+  })
+
+  test('frameworks followed by another word, or a word that only starts with frameworks, is unknown input', () => {
+    expect(parseCommand('frameworks x')).toEqual({ kind: 'help', unknown: 'frameworks x' })
+    expect(parseCommand('frameworksx')).toEqual({ kind: 'help', unknown: 'frameworksx' })
+  })
+
   test('an unknown subcommand is echoed back as unknown input', () => {
     expect(parseCommand('launch')).toEqual({ kind: 'help', unknown: 'launch' })
   })

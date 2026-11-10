@@ -28,7 +28,7 @@ import { fill, t } from './locales/t'
 import { sessionRecordText } from './messages/record'
 import { inboxDirOf, inboxFolderLevels, inboxHomeOf, ROLE_ENV, ROOT_ENV } from './paths'
 import { autopilotReply } from './scan/autopilot'
-import { REGEN_NO_STATE, regenNoRole } from './team'
+import { noStateReply, REGEN_NO_STATE, regenNoRole } from './team'
 import {
   ABSOLUTE_PATH_MARKERS,
   answerFor,
@@ -3309,6 +3309,44 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const docked = await refusal()
     // Seated inline the fullscreen pane previews, so the item goes in its notes; docked, under Type something. (D-354).
     expect([inline.includes(NOTE_WORDING), docked.includes(PANE_TYPED_WORDING)]).toEqual([true, true])
+  })
+})
+
+describe('cadre frameworks with a faked host', () => {
+  test('in claude -p frameworks answers its own refusal before any op or question', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, regenHostWorld({ surfaces: [] }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'frameworks' })
+    expect([out.text, log.ops, log.asks]).toEqual([t('frameworks.notInteractive'), [], []])
+  })
+
+  test('with a running autopilot frameworks refuses with the autopilot reply and asks nothing', async ($, on) => {
+    const log = newLog()
+    const world = regenHostWorld()
+    fakeHost(on, { ...world, files: { ...world.files, '/home/u/.claude/autopilot/s1.json': AUTOPILOT_RUNNING } }, log)
+    const out = await $.command.run({ command: 'cadre', args: 'frameworks --dry-run' })
+    expect([out.text, log.asks]).toEqual([autopilotReply('active', 'frameworks'), []])
+  })
+
+  test('with no cadre.json frameworks says there is nothing to work from and asks nothing', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    const out = await $.command.run({ command: 'cadre', args: 'frameworks --dry-run' })
+    expect([out.text, log.asks]).toEqual([noStateReply('frameworks'), []])
+  })
+
+  test('frameworks --dry-run over an applied team, answered to Confirm, writes and runs nothing', async ($, on) => {
+    const log = newLog()
+    const answers = { ...INIT_ANSWERS, [t('frameworks.review.question')]: 'Confirm' }
+    fakeHost(on, regenHostWorld({ answers }), log)
+    const lines = (await $.command.run({ command: 'cadre', args: 'frameworks --dry-run' })).text.split('\n')
+    const asked = askHeads(log)
+    expect([lines[0], lines.at(-1)]).toEqual([t('frameworks.reply.headDry'), 'Dry run: nothing was written.'])
+    expect([asked.some(ask => ask.includes('Which frameworks does this team use?')), asked.at(-1)]).toEqual([
+      true,
+      `ask ${t('frameworks.review.question')}`,
+    ])
+    expect([log.writes, log.runs, log.ops.filter(op => op.startsWith('forbidden '))]).toEqual([[], [], []])
   })
 })
 
