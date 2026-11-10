@@ -165,6 +165,11 @@ describe('autopilot guard', () => {
     expect(autopilotReply('unknown', 'init')).toContain("cadre init can't tell whether autopilot is running")
   })
 
+  test('the frameworks command is named in its replies', () => {
+    expect(autopilotReply('unknown', 'frameworks')).toContain("cadre frameworks can't tell whether autopilot")
+    expect(autopilotReply('active', 'frameworks')).toContain('or run /cadre frameworks in another session.')
+  })
+
   test('no run gives no reply', () => {
     expect(autopilotReply('none', 'init')).toBeNull()
     expect(autopilotReply('none', 'regen')).toBeNull()
