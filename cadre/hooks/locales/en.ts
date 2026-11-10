@@ -163,9 +163,12 @@ export const EN = Object.freeze({
   'init.frameworks.installTitle': 'Install {name}',
   'init.frameworks.setQuestion':
     'Which frameworks does this team use? Found: {found}. Adding one installs it at project scope after Confirm.',
+  'init.frameworks.setQuestionNoneFound':
+    'Which frameworks does this team use? None was found. Adding one installs it at project scope after Confirm.',
   'init.frameworks.setNamesJoin': ' and ',
   'init.frameworks.setKeep': 'Keep {names} (Recommended)',
   'init.frameworks.setAdd': 'Add {name} too',
+  'init.frameworks.setAddOnly': 'Add {name}',
   'init.frameworks.setNone': 'None (built-in)',
   'init.frameworks.setAccepts': '{labels}, or the frameworks by name: {words}',
   'init.frameworks.storedNoneNote':

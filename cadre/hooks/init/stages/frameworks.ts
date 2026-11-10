@@ -240,24 +240,27 @@ function typedFrameworks(answer: string): FrameworkId[] | null {
  * The set question: which frameworks the team keeps, naming those found and that adding one installs it at project
  * scope after Confirm, with the team's role ids on its second line. Keep the found ones (recommended) comes first,
  * then Add for each missing one, then None; the frameworks may also be typed by name (typedFrameworks), and an answer
- * it cannot read is refused with the answers and the names it takes.
+ * it cannot read is refused with the answers and the names it takes. With none found, which only the frameworks flow
+ * asks, the question says so and offers each Add and None, with no Keep.
  */
 function frameworkSetAsk(
   found: readonly FrameworkId[],
   missing: readonly FrameworkId[],
   roles: readonly RoleSpec[],
 ): FrameworkAsk<readonly FrameworkId[]> {
+  const isNoneFound = found.length === 0
+  const keep = isNoneFound ? [] : [{ label: t('init.frameworks.setKeep', { names: namesOf(found) }), value: found }]
+  const addLabel = (name: string): string =>
+    isNoneFound ? t('init.frameworks.setAddOnly', { name }) : t('init.frameworks.setAdd', { name })
   const choices: readonly Labelled<readonly FrameworkId[]>[] = [
-    { label: t('init.frameworks.setKeep', { names: namesOf(found) }), value: found },
-    ...missing.map(id => {
-      const label = t('init.frameworks.setAdd', { name: FRAMEWORK_LABELS[id] })
-
-      return { label, value: [...found, id] }
-    }),
+    ...keep,
+    ...missing.map(id => ({ label: addLabel(FRAMEWORK_LABELS[id]), value: [...found, id] })),
     { label: t('init.frameworks.setNone'), value: [] },
   ]
   const options = choices.map(choice => choice.label)
-  const sentence = t('init.frameworks.setQuestion', { found: namesOf(found) })
+  const sentence = isNoneFound
+    ? t('init.frameworks.setQuestionNoneFound')
+    : t('init.frameworks.setQuestion', { found: namesOf(found) })
   const contextLine = teamContextLine(roles)
   const words = FRAMEWORK_IDS.map(id => FRAMEWORK_WORDS[id]).join(', ')
 
@@ -604,7 +607,8 @@ function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: 
  * installed and it holds those same frameworks (storedSet), a kept None with one note that names /cadre frameworks,
  * else the set question is asked (frameworkAnswer): one framework kept is the repo default and the roles keep
  * `framework` absent (an Adjust override stays); two ask whether one framework serves all roles or each picks its own.
- * None found gives the built-in default; an unsupported scan notes what it found.
+ * None found gives the built-in default; an unsupported scan notes what it found. The frameworks flow asks the set
+ * question whatever cadre.json stores, also with none found.
  */
 function frameworkStep(state: InitState): InitState {
   const { choice, roles, frameworkSet, installed = [] } = state.draft
@@ -612,9 +616,10 @@ function frameworkStep(state: InitState): InitState {
   if (frameworkSet !== undefined && keepsNeeded(state.draft, frameworkSet)) return framedSet(state, frameworkSet)
   const noted =
     choice.kind === 'unsupported' ? withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]) : state
+  const isReframe = state.flow === 'frameworks'
   const { found } = foundOf(choice, installed)
-  if (found.length === 0) return framedDone(noted, roles, 'none')
-  const stored = storedSet(noted)
+  if (found.length === 0 && !isReframe) return framedDone(noted, roles, 'none')
+  const stored = isReframe ? null : storedSet(noted)
   if (stored === null) return setAsked(noted, 1, null)
   if (stored.length > 0) return setChosen(noted, stored)
   const line = t('init.frameworks.storedNoneNote', { found: namesOf(found) })
