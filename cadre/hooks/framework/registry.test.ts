@@ -87,6 +87,17 @@ describe('adapter contract (DET-04)', () => {
     expect(ADAPTERS.filter(adapter => adapter.projectInstall === null).map(adapter => adapter.id)).toEqual(['none'])
   })
 
+  test('a project install names the folders a later session runs code from: frozen, each one it writes', () => {
+    const installs = ADAPTERS.flatMap(adapter => (adapter.projectInstall === null ? [] : [adapter.projectInstall]))
+
+    expect(installs.map(install => Object.isFrozen(install.runs))).toEqual(installs.map(() => true))
+    expect(installs.flatMap(install => install.runs.filter(dir => !install.writes.includes(dir)))).toEqual([])
+    expect([GSD_ADAPTER.projectInstall?.runs, SUPERPOWERS_ADAPTER.projectInstall?.runs]).toEqual([
+      ['.claude/hooks', '.claude/gsd-core'],
+      [],
+    ])
+  })
+
   test('every gate table passes the gate contract', () => {
     for (const adapter of ADAPTERS) {
       const ids = adapter.humanGates.map(gate => gate.id)

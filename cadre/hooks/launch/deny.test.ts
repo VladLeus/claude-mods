@@ -118,6 +118,17 @@ function inboxFileRules(root: string, id: string): string[] {
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
 
+/**
+ * The deny of cadre.json, the role.json of each role in `ids` and the folders GSD's project install runs code from,
+ * under the root `root`, as exact `//` rules.
+ */
+function teamFileRules(root: string, ids: readonly string[]): string[] {
+  const roleFiles = ids.map(id => `.cadre/${id}/role.json`)
+  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**']
+
+  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+}
+
 /** A hook script the user's settings register. */
 function hook(script: string): HookScript {
   return { script, event: 'PostToolUse', source: 'user' }
@@ -852,6 +863,47 @@ describe('the inbox and session files deny', () => {
 
   test('with no team ids a role denies only its own two files', () => {
     expect(runtimeEntries('tl', user())).toEqual(sortedUnique(inboxFileRules('/repo', 'tl')))
+  })
+})
+
+describe('the team and project install files deny', () => {
+  const TEAM_IDS: readonly TemplateRoleId[] = ['pm', 'tl', 'be']
+
+  /** The deny list in the plan of the template role `id` for `launcher`. */
+  function planDeny(id: TemplateRoleId, launcher: LaunchUser): string[] {
+    const role = templateRole(id)
+
+    return denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
+  }
+
+  test('every role denies Edit and Write of cadre.json, each team role.json and the GSD hook folders', () => {
+    const launcher = user({ teamIds: TEAM_IDS })
+    const expected = teamFileRules('/repo', TEAM_IDS)
+    const ids = ROLE_TEMPLATE.map(row => row.id)
+    const missing = ids.map(id => {
+      const deny = planDeny(id, launcher)
+
+      return expected.filter(rule => !deny.includes(rule))
+    })
+
+    expect(missing).toEqual(ids.map(() => []))
+    expect(planDeny('be', launcher)).toContain('Write(//repo/.cadre/pm/role.json)')
+    expect(planDeny('pm', launcher)).toContain('Edit(//repo/.claude/hooks/**)')
+  })
+
+  test('an epic role denies them under its worktree and under the main checkout', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: TEAM_IDS })
+    const deny = planDeny('be', launcher)
+    const expected = [...teamFileRules('/repo', TEAM_IDS), ...teamFileRules(worktree, TEAM_IDS)]
+
+    expect(expected.filter(rule => !deny.includes(rule))).toEqual([])
+  })
+
+  test('with no team ids a role denies only its own role.json', () => {
+    const roleJson = planDeny('tl', user()).filter(entry => entry.endsWith('/role.json)'))
+
+    expect(roleJson).toEqual(['Edit(//repo/.cadre/tl/role.json)', 'Write(//repo/.cadre/tl/role.json)'])
   })
 })
 
