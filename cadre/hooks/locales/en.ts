@@ -168,6 +168,8 @@ export const EN = Object.freeze({
   'init.frameworks.setAdd': 'Add {name} too',
   'init.frameworks.setNone': 'None (built-in)',
   'init.frameworks.setAccepts': '{labels}, or the frameworks by name: {words}',
+  'init.frameworks.storedNoneNote':
+    'Frameworks: None is recorded for this repo, and the scan found {found}. Run /cadre frameworks to choose again.',
   'init.frameworks.installNo': 'No',
   'init.frameworks.installYes': 'Yes, install it',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',

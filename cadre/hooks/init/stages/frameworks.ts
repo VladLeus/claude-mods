@@ -601,10 +601,10 @@ function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: 
  * The framework step once the GSD check, if any, is behind it. A set kept in the draft is framed again (framedSet)
  * while it holds every framework consented to install and every supported framework a role is set to (keepsNeeded).
  * With any framework found, in use, installed or consented, the set cadre.json stores is kept while all of it is still
- * installed and it holds those same frameworks (storedSet), else the set question is asked (frameworkAnswer): one
- * framework kept is the repo default and the roles keep `framework` absent (an Adjust override stays); two ask whether
- * one framework serves all roles or each picks its own. None found gives the built-in default; an unsupported scan
- * notes what it found.
+ * installed and it holds those same frameworks (storedSet), a kept None with one note that names /cadre frameworks,
+ * else the set question is asked (frameworkAnswer): one framework kept is the repo default and the roles keep
+ * `framework` absent (an Adjust override stays); two ask whether one framework serves all roles or each picks its own.
+ * None found gives the built-in default; an unsupported scan notes what it found.
  */
 function frameworkStep(state: InitState): InitState {
   const { choice, roles, frameworkSet, installed = [] } = state.draft
@@ -612,10 +612,14 @@ function frameworkStep(state: InitState): InitState {
   if (frameworkSet !== undefined && keepsNeeded(state.draft, frameworkSet)) return framedSet(state, frameworkSet)
   const noted =
     choice.kind === 'unsupported' ? withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]) : state
-  if (foundOf(choice, installed).found.length === 0) return framedDone(noted, roles, 'none')
+  const { found } = foundOf(choice, installed)
+  if (found.length === 0) return framedDone(noted, roles, 'none')
   const stored = storedSet(noted)
+  if (stored === null) return setAsked(noted, 1, null)
+  if (stored.length > 0) return setChosen(noted, stored)
+  const line = t('init.frameworks.storedNoneNote', { found: namesOf(found) })
 
-  return stored === null ? setAsked(noted, 1, null) : setChosen(noted, stored)
+  return setChosen(withOutputs(noted, [{ kind: 'note', line }]), stored)
 }
 
 /**
