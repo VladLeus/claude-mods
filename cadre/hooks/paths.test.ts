@@ -304,11 +304,6 @@ describe('the runtime path builder', () => {
     expect(runtimeDirOf('/repo', 'be')).toBe('/repo/.cadre/be/.runtime')
     expect(runtimeFileOf('/repo', 'be', 'inbox.jsonl')).toBe('/repo/.cadre/be/.runtime/inbox.jsonl')
   })
-
-  test('the inbox tools build the inbox log and the session record with it', () => {
-    expect(inboxLogPath('/repo', 'be')).toBe(runtimeFileOf('/repo', 'be', INBOX_LOG_FILE))
-    expect(sessionFilePath('/repo', 'be')).toBe(runtimeFileOf('/repo', 'be', SESSION_FILE))
-  })
 })
 
 describe('the private inbox folder', () => {
@@ -342,6 +337,13 @@ describe('the private inbox folder', () => {
 
     expect(home).toBe(`/home/u/.claude/cadre/inboxes/app-${hash.slice(0, 8)}`)
     expect(inboxDirOf(home, 'be')).toBe(`${home}/be`)
+  })
+
+  test('the inbox tools build the inbox log and the session record in the inbox folder of a role', async () => {
+    const home = inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo'))
+
+    expect(inboxLogPath(home, 'be')).toBe(`${home}/be/inbox.jsonl`)
+    expect(sessionFilePath(home, 'be')).toBe(`${home}/be/session.json`)
   })
 
   test('the folder levels of a role inbox folder run from the cadre folder down to the role folder', () => {

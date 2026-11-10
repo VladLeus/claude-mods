@@ -1,14 +1,17 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InboxEntry, RoleContext, SessionLink, TeamView, ToolOutcome } from '../../types'
+import type { InboxEntry, RoleSession, SessionLink, TeamView, ToolOutcome } from '../../types'
+import { sha256Hex } from '../core/hash'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
+import { inboxDirOf, inboxHomeOf } from '../paths'
 import { hostWorld, memHost, memIo, memWorld } from '../testkit'
 import type { HostRunRule, MemHost, MemWorld } from '../testkit'
 import {
   isRoleSession,
   publishSession,
   roleContextOf,
+  roleSessionOf,
   runInboxMark,
   runInboxRead,
   runInboxSend,
@@ -17,7 +20,9 @@ import {
 import { parseInbox, parseInboxLine, recordLine, sessionRecordText } from './record'
 import { INBOX_LINE_MAX_BYTES } from './send'
 
-const BE: RoleContext = { id: 'be', root: '/repo' }
+/** The inbox home of the root /repo in the user folder of HOME /home/u. */
+const HOME = inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo'))
+const BE: RoleSession = { id: 'be', root: '/repo', inboxHome: HOME }
 const TEAM: TeamView = {
   ids: ['pm', 'tl', 'be'],
   parents: { pm: null, tl: 'pm', be: 'tl' },
@@ -26,15 +31,17 @@ const TEAM: TeamView = {
   frameworks: ['gsd', 'superpowers'],
   mayRun: { pm: ['none'], tl: ['gsd', 'superpowers'], be: ['gsd', 'superpowers'] },
 }
-const TL_RUNTIME = '/repo/.cadre/tl/.runtime'
-const TL_INBOX = `${TL_RUNTIME}/inbox.jsonl`
-const TL_SESSION = `${TL_RUNTIME}/session.json`
+const TL_FOLDER = inboxDirOf(HOME, 'tl')
+const TL_INBOX = `${TL_FOLDER}/inbox.jsonl`
+const TL_SESSION = `${TL_FOLDER}/session.json`
 const TL_FILES: Readonly<Record<string, string>> = { [TL_SESSION]: sessionRecordText('s-tl') }
-const BE_RUNTIME = '/repo/.cadre/be/.runtime'
-const BE_SESSION = `${BE_RUNTIME}/session.json`
-const BE_INBOX = `${BE_RUNTIME}/inbox.jsonl`
-const PM_RUNTIME = '/repo/.cadre/pm/.runtime'
-const PM_INBOX = `${PM_RUNTIME}/inbox.jsonl`
+const BE_FOLDER = inboxDirOf(HOME, 'be')
+const BE_SESSION = `${BE_FOLDER}/session.json`
+const BE_INBOX = `${BE_FOLDER}/inbox.jsonl`
+const PM_FOLDER = inboxDirOf(HOME, 'pm')
+const PM_INBOX = `${PM_FOLDER}/inbox.jsonl`
+/** The inbox folders of pm, tl and be, as /cadre start renders them. */
+const STARTED = { [PM_FOLDER]: [], [TL_FOLDER]: [], [BE_FOLDER]: [] }
 const NOTE = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
 const TEE = ['/usr/bin/tee', '-a', TL_INBOX]
 const BE_TEE = ['/usr/bin/tee', '-a', BE_INBOX]
@@ -50,16 +57,17 @@ type Sent = {
   readonly runsBefore: number
 }
 
-/** A send's outcome, its host and the live sends it made. */
+/** A send's outcome, its host, the live sends it made and the paths it read. */
 type SendRun = {
   readonly outcome: ToolOutcome
   readonly host: MemHost
   readonly sends: Sent[]
+  readonly reads: readonly string[]
 }
 
 /** What a send runs with besides its world and its event: the sender, the team view, the live answer, the runs. */
 type SendOver = {
-  readonly ctx?: RoleContext
+  readonly ctx?: RoleSession
   readonly team?: TeamView | null
   readonly isDelivered?: boolean
   readonly runs?: readonly HostRunRule[]
@@ -67,15 +75,15 @@ type SendOver = {
 
 /** What a mark runs with besides its event: the marking role, its world, the team view and the host's runs. */
 type MarkOver = {
-  readonly ctx?: RoleContext
+  readonly ctx?: RoleSession
   readonly world?: MemWorld
   readonly team?: TeamView | null
   readonly runs?: readonly HostRunRule[]
 }
 
-/** A world where tl was started and published its session id, with the clock at 1000. */
+/** A world where pm, tl and be were started and tl published its session id, with the clock at 1000. */
 function tlWorld(over: Partial<MemWorld> = {}): MemWorld {
-  return memWorld({ now: 1000, dirs: { [TL_RUNTIME]: [] }, files: TL_FILES, ...over })
+  return memWorld({ now: 1000, dirs: STARTED, files: TL_FILES, ...over })
 }
 
 /** runInboxSend over `world`, from be unless `over` says else, with a link that answers `isDelivered`. */
@@ -90,9 +98,10 @@ async function sendFrom(world: MemWorld, event: unknown, over: SendOver = {}): P
       return isDelivered
     },
   }
-  const outcome = await runInboxSend(memIo(world, {}).io, host.io, link, ctx, team, event)
+  const run = memIo(world, {})
+  const outcome = await runInboxSend(run.io, host.io, link, ctx, team, event)
 
-  return { outcome, host, sends }
+  return { outcome, host, sends, reads: run.reads }
 }
 
 /** The stdin of the first host run, '' when there was none. */
@@ -159,14 +168,54 @@ describe('isRoleSession', () => {
   })
 })
 
+describe('roleSessionOf', () => {
+  test('the inbox home is keyed on the root, in HOME/.claude or a safe CLAUDE_CONFIG_DIR outside it', async () => {
+    const hash = await sha256Hex('/repo')
+    const ctx = { id: 'be', root: '/repo' }
+
+    expect(await roleSessionOf(ctx, { home: '/home/u', configDir: null })).toEqual({
+      ...ctx,
+      inboxHome: inboxHomeOf('/home/u/.claude', '/repo', hash),
+    })
+    expect(await roleSessionOf(ctx, { home: '/home/u', configDir: '/cfg' })).toEqual({
+      ...ctx,
+      inboxHome: inboxHomeOf('/cfg', '/repo', hash),
+    })
+  })
+
+  test('a CLAUDE_CONFIG_DIR inside the root is not used: the inbox home falls back to HOME/.claude', async () => {
+    const session = await roleSessionOf({ id: 'be', root: '/repo' }, { home: '/home/u', configDir: '/repo/cfg' })
+
+    expect(session?.inboxHome).toBe(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')))
+  })
+
+  test('no user folder, or a user folder inside the root or the main checkout, gives no session', async () => {
+    const sessions = [
+      await roleSessionOf({ id: 'be', root: '/repo' }, { home: null, configDir: null }),
+      await roleSessionOf({ id: 'be', root: '/repo' }, { home: '/repo/u', configDir: null }),
+      await roleSessionOf({ id: 'be', root: '/wt', main: '/m' }, { home: '/m/h', configDir: null }),
+    ]
+
+    expect(sessions).toEqual([null, null, null])
+  })
+
+  test('a worktree session is keyed on its own root, never on the main checkout', async () => {
+    const session = await roleSessionOf({ id: 'be', root: '/wt', main: '/repo' }, { home: '/home/u', configDir: null })
+
+    expect(session?.inboxHome).toBe(inboxHomeOf('/home/u/.claude', '/wt', await sha256Hex('/wt')))
+    expect(session?.inboxHome).not.toBe(HOME)
+  })
+})
+
 describe('runInboxSend', () => {
   test('be sends tl a note: one stamped line appended with tee, then one live wake by session id', async () => {
-    const { outcome, host, sends } = await sendFrom(tlWorld(), NOTE)
+    const { outcome, host, sends, reads } = await sendFrom(tlWorld(), NOTE)
     const stdin = firstStdin(host)
     const entry = parseInboxLine(stdin)
     const id = entry?.id ?? ''
 
     expect(host.calls.map(call => call.argv)).toEqual([TEE])
+    expect(reads).toEqual([TL_SESSION])
     expect([stdin.startsWith('\n'), stdin.endsWith('\n'), stdin.split('\n').length - 1]).toEqual([true, true, 2])
     expect(entry).toMatchObject({ type: 'entry', from: 'be', to: 'tl', at: 1000, kind: 'note', subject: 'Hi' })
     expect(id).toMatch(/^be-1000-[0-9a-f]{8}$/)
@@ -218,21 +267,32 @@ describe('runInboxSend', () => {
     expect(teeRuns(host)).toEqual([])
   })
 
-  test('a receiver whose runtime folder is not there is refused, naming /cadre start for it', async () => {
-    const { outcome, host, sends } = await sendFrom(tlWorld({ dirs: {} }), NOTE)
+  test('a worktree session appends under the inbox home of its own root, never that of the main checkout', async () => {
+    const wtHome = inboxHomeOf('/home/u/.claude', '/wt', await sha256Hex('/wt'))
+    const session = await roleSessionOf({ id: 'be', root: '/wt', main: '/repo' }, { home: '/home/u', configDir: null })
+    const world = memWorld({ now: 1000, dirs: { [inboxDirOf(wtHome, 'be')]: [], [inboxDirOf(wtHome, 'tl')]: [] } })
+    const { outcome, host } = await sendFrom(world, NOTE, { ctx: session ?? BE })
+
+    expect(outcome.kind).toBe('result')
+    expect(teeRuns(host)).toEqual([['/usr/bin/tee', '-a', `${inboxDirOf(wtHome, 'tl')}/inbox.jsonl`]])
+    expect(teeRuns(host).flat().filter(word => word.startsWith(HOME))).toEqual([])
+  })
+
+  test('a receiver whose inbox folder is not there is refused, naming /cadre start for it', async () => {
+    const { outcome, host, sends } = await sendFrom(tlWorld({ dirs: { [BE_FOLDER]: [] } }), NOTE)
 
     expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxNotStarted, { to: 'tl' }) })
     expect(outcome.text).toContain('/cadre start tl')
-    expect(teeRuns(host)).toEqual([])
+    expect(host.calls).toEqual([])
     expect(sends).toEqual([])
   })
 
-  test('a runtime folder that is a link or a file, or an inbox that is a link or a folder, is refused', async () => {
+  test('an inbox folder that is a link or a file, or an inbox that is a link or a folder, is refused', async () => {
     const worlds = [
-      tlWorld({ realPaths: { [TL_RUNTIME]: '/elsewhere/.runtime' } }),
-      tlWorld({ dirs: {}, files: { ...TL_FILES, [TL_RUNTIME]: 'a file' } }),
+      tlWorld({ realPaths: { [TL_FOLDER]: '/elsewhere/tl' } }),
+      tlWorld({ dirs: { [BE_FOLDER]: [] }, files: { ...TL_FILES, [TL_FOLDER]: 'a file' } }),
       tlWorld({ files: { ...TL_FILES, [TL_INBOX]: '' }, realPaths: { [TL_INBOX]: '/elsewhere/inbox.jsonl' } }),
-      tlWorld({ dirs: { [TL_RUNTIME]: [], [TL_INBOX]: [] } }),
+      tlWorld({ dirs: { ...STARTED, [TL_INBOX]: [] } }),
     ]
     for (const world of worlds) {
       const { outcome, host } = await sendFrom(world, NOTE)
@@ -253,7 +313,7 @@ describe('runInboxSend', () => {
 
       expect(teeRuns(host)).toEqual([TEE])
       expect(outcome).toEqual({ kind: 'result', text: fill(PROMPTS.inboxSentUndelivered, { id, to: 'tl' }) })
-      expect(outcome.text).toContain('.cadre/tl/.runtime/inbox.jsonl')
+      expect(outcome.text).not.toContain('.cadre')
     }
     expect(runs.map(run => run.sends.map(send => send.runsBefore))).toEqual([[], [], [1]])
   })
@@ -266,10 +326,29 @@ describe('runInboxSend', () => {
       expect(sends).toEqual([])
     }
   })
+
+  test('a user config folder that is a link still takes the append and the wake', async () => {
+    const { outcome, host, sends } = await sendFrom(tlWorld({ realPaths: { '/home/u/.claude': '/data/claude' } }), NOTE)
+
+    expect(outcome.kind).toBe('result')
+    expect(teeRuns(host)).toEqual([TEE])
+    expect(sends.map(send => send.sessionId)).toEqual(['s-tl'])
+  })
+
+  test('a sender whose own inbox folder is absent or a link is refused, with no run and no wake', async () => {
+    const absent = await sendFrom(tlWorld({ dirs: { [TL_FOLDER]: [] } }), NOTE)
+    const linked = await sendFrom(tlWorld({ realPaths: { [BE_FOLDER]: '/elsewhere/be' } }), NOTE)
+
+    expect([absent.outcome, linked.outcome]).toEqual([
+      { kind: 'deny', text: fill(PROMPTS.inboxOwnMissing, { id: 'be' }) },
+      { kind: 'deny', text: fill(PROMPTS.inboxOwnUnsafe, { id: 'be' }) },
+    ])
+    expect([absent.host.calls, linked.host.calls, absent.sends, linked.sends]).toEqual([[], [], [], []])
+  })
 })
 
 describe('runInboxSend of a task', () => {
-  const TL: RoleContext = { id: 'tl', root: '/repo' }
+  const TL: RoleSession = { id: 'tl', root: '/repo', inboxHome: HOME }
   const VECTOR = { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 }
   const TASK = {
     to: 'be',
@@ -281,9 +360,9 @@ describe('runInboxSend of a task', () => {
     use: { framework: 'gsd', gsdPath: 'phase' },
   }
 
-  /** A world where be was started and published its session id, with the clock at 1000. */
+  /** A world where pm, tl and be were started and be published its session id, with the clock at 1000. */
   function beWorld(): MemWorld {
-    return memWorld({ now: 1000, dirs: { [BE_RUNTIME]: [] }, files: { [BE_SESSION]: sessionRecordText('s-be') } })
+    return memWorld({ now: 1000, dirs: STARTED, files: { [BE_SESSION]: sessionRecordText('s-be') } })
   }
 
   test('tl sends be a task: the entry carries its vector with the size stamp; the result names the picks', async () => {
@@ -334,8 +413,8 @@ describe('runInboxSend of a task', () => {
 })
 
 describe('runInboxSend of the ticket loop', () => {
-  const PM: RoleContext = { id: 'pm', root: '/repo' }
-  const TL: RoleContext = { id: 'tl', root: '/repo' }
+  const PM: RoleSession = { id: 'pm', root: '/repo', inboxHome: HOME }
+  const TL: RoleSession = { id: 'tl', root: '/repo', inboxHome: HOME }
   const VECTOR = { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 }
   const TICKET = {
     to: 'tl',
@@ -379,9 +458,9 @@ describe('runInboxSend of the ticket loop', () => {
     tickets: ['PROJ-2', 'PROJ-3'],
   }
 
-  /** A world where be was started and published its session id, with the clock at 1000. */
+  /** A world where pm, tl and be were started and be published its session id, with the clock at 1000. */
   function beWorld(): MemWorld {
-    return memWorld({ now: 1000, dirs: { [BE_RUNTIME]: [] }, files: { [BE_SESSION]: sessionRecordText('s-be') } })
+    return memWorld({ now: 1000, dirs: STARTED, files: { [BE_SESSION]: sessionRecordText('s-be') } })
   }
 
   /** The team view with the repo frameworks given. */
@@ -507,21 +586,24 @@ describe('runInboxSend of the ticket loop', () => {
 })
 
 describe('publishSession', () => {
-  test('it writes the session id, and writes nothing when the file already holds it', async () => {
+  test('it writes the session id into its inbox folder, and nothing when the file already holds it', async () => {
     const fresh = memHost(hostWorld({}))
     const kept = memHost(hostWorld({}))
-    const published = memWorld({ files: { [BE_SESSION]: sessionRecordText('s-be') } })
+    const started = memWorld({ dirs: { [BE_FOLDER]: [] } })
+    const published = memWorld({ dirs: { [BE_FOLDER]: [] }, files: { [BE_SESSION]: sessionRecordText('s-be') } })
 
-    expect(await publishSession(memIo(memWorld({}), {}).io, fresh.io, BE, 's-be')).toBe('written')
+    expect(await publishSession(memIo(started, {}).io, fresh.io, BE, 's-be')).toBe('written')
     expect(fresh.writes).toEqual([{ path: BE_SESSION, text: sessionRecordText('s-be'), isWritten: true }])
     expect(await publishSession(memIo(published, {}).io, kept.io, BE, 's-be')).toBe('kept')
     expect(kept.writes).toEqual([])
   })
 
-  test('it refuses with no write when the runtime folder or session.json is a link out of its place', async () => {
+  test('it refuses with no write when the inbox folder is absent or a link, or session.json is a link', async () => {
+    const published = { [BE_SESSION]: sessionRecordText('s-be') }
     const worlds = [
-      memWorld({ dirs: { [BE_RUNTIME]: [] }, realPaths: { [BE_RUNTIME]: '/elsewhere/.runtime' } }),
-      memWorld({ files: { [BE_SESSION]: sessionRecordText('s-be') }, realPaths: { [BE_SESSION]: '/x/session.json' } }),
+      memWorld({}),
+      memWorld({ dirs: { [BE_FOLDER]: [] }, realPaths: { [BE_FOLDER]: '/elsewhere/be' } }),
+      memWorld({ dirs: { [BE_FOLDER]: [] }, files: published, realPaths: { [BE_SESSION]: '/x/session.json' } }),
     ]
     for (const world of worlds) {
       const host = memHost(hostWorld({}))
@@ -546,29 +628,30 @@ describe('runInboxRead', () => {
   }
 
   test('it reads only the inbox of its own role and shows it folded', async () => {
-    const run = memIo(memWorld({ files: { [BE_INBOX]: recordLine(ticket), [TL_INBOX]: recordLine(ticket) } }), {})
+    const files = { [BE_INBOX]: recordLine(ticket), [TL_INBOX]: recordLine(ticket) }
+    const run = memIo(memWorld({ dirs: STARTED, files }), {})
     const outcome = await runInboxRead(run.io, BE, {})
 
     expect(run.reads).toEqual([BE_INBOX])
     expect(outcome).toEqual({ kind: 'result', text: 'tl-1000-0123abcd [unread] ticket from tl: Do it\n  Now' })
   })
 
-  test('an absent inbox reads as empty; an all that is not true or false is refused', async () => {
-    const io = memIo(memWorld({}), {}).io
+  test('an absent inbox in a present folder reads as empty; an all that is not true or false is refused', async () => {
+    const io = memIo(memWorld({ dirs: { [BE_FOLDER]: [] } }), {}).io
 
     expect(await runInboxRead(io, BE, {})).toEqual({ kind: 'result', text: PROMPTS.inboxEmpty })
     expect(await runInboxRead(io, BE, { all: 'yes' })).toEqual({ kind: 'deny', text: PROMPTS.inboxAllNotBoolean })
   })
 
-  test('an inbox that cannot be read as text is refused', async () => {
-    const io = memIo(memWorld({ unknownPaths: [BE_INBOX] }), {}).io
+  test('an inbox that cannot be read as text is refused, naming no path', async () => {
+    const io = memIo(memWorld({ dirs: { [BE_FOLDER]: [] }, unknownPaths: [BE_INBOX] }), {}).io
 
-    expect(await runInboxRead(io, BE, {})).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxUnreadable, { id: 'be' }) })
+    expect(await runInboxRead(io, BE, {})).toEqual({ kind: 'deny', text: PROMPTS.inboxUnreadable })
   })
 })
 
 describe('runInboxMark', () => {
-  const TL: RoleContext = { id: 'tl', root: '/repo' }
+  const TL: RoleSession = { id: 'tl', root: '/repo', inboxHome: HOME }
   const fromBe: InboxEntry = {
     v: 1,
     type: 'entry',
@@ -586,7 +669,7 @@ describe('runInboxMark', () => {
   /** tl's inbox holding the entry from be, with be started and its session id published, the clock at 2000. */
   const beStarted = memWorld({
     now: 2000,
-    dirs: { [TL_RUNTIME]: [], [BE_RUNTIME]: [] },
+    dirs: { [TL_FOLDER]: [], [BE_FOLDER]: [] },
     files: { ...inbox, [BE_SESSION]: sessionRecordText('s-be') },
   })
 
@@ -596,7 +679,7 @@ describe('runInboxMark', () => {
    */
   async function markAs(event: unknown, over: MarkOver = {}): Promise<SendRun> {
     const { ctx = TL, team = TEAM, runs = [] } = over
-    const world = over.world ?? memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [] }, files: inbox })
+    const world = over.world ?? memWorld({ now: 2000, dirs: { [TL_FOLDER]: [] }, files: inbox })
     const host = memHost(hostWorld({ runs }))
     const sends: Sent[] = []
     const link: SessionLink = {
@@ -606,15 +689,17 @@ describe('runInboxMark', () => {
         return true
       },
     }
-    const outcome = await runInboxMark(memIo(world, {}).io, host.io, link, ctx, team, event)
+    const run = memIo(world, {})
+    const outcome = await runInboxMark(run.io, host.io, link, ctx, team, event)
 
-    return { outcome, host, sends }
+    return { outcome, host, sends, reads: run.reads }
   }
 
   test('tl marks the entry done: one mark stamped by tl appended to its own inbox, which then reads done', async () => {
     const { outcome, host } = await markAs({ id: fromBe.id, state: 'done', note: 'merged', by: 'pm' })
     const stdin = firstStdin(host)
-    const after = memIo(memWorld({ files: { [TL_INBOX]: `${recordLine(fromBe)}${stdin}` } }), {})
+    const marked = { [TL_INBOX]: `${recordLine(fromBe)}${stdin}` }
+    const after = memIo(memWorld({ dirs: { [TL_FOLDER]: [] }, files: marked }), {})
 
     expect(host.calls.map(call => call.argv)).toEqual([TEE])
     expect(parseInboxLine(stdin)).toEqual({
@@ -676,11 +761,11 @@ describe('runInboxMark', () => {
   })
 
   test("pm rejects an entry from be: the note goes to be's parent tl", async () => {
-    const PM: RoleContext = { id: 'pm', root: '/repo' }
+    const PM: RoleSession = { id: 'pm', root: '/repo', inboxHome: HOME }
     const toPm: InboxEntry = { ...fromBe, to: 'pm' }
     const world = memWorld({
       now: 2000,
-      dirs: { [PM_RUNTIME]: [], [TL_RUNTIME]: [] },
+      dirs: { [PM_FOLDER]: [], [TL_FOLDER]: [] },
       files: { [PM_INBOX]: recordLine(toPm), ...TL_FILES },
     })
     const { host, sends } = await markAs({ ...REJECT, id: toPm.id }, { ctx: PM, world })
@@ -692,19 +777,19 @@ describe('runInboxMark', () => {
 
   test('a sender with no parent, or one the team does not know, gets the note itself', async () => {
     for (const from of ['pm', 'constructor']) {
-      const runtime = `/repo/.cadre/${from}/.runtime`
+      const folder = inboxDirOf(HOME, from)
       const entry: InboxEntry = { ...fromBe, id: `${from}-1000-0123abcd`, from }
       const files = { [TL_INBOX]: recordLine(entry) }
-      const world = memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [], [runtime]: [] }, files })
+      const world = memWorld({ now: 2000, dirs: { [TL_FOLDER]: [], [folder]: [] }, files })
       const { host } = await markAs({ ...REJECT, id: entry.id }, { world })
 
-      expect(teeRuns(host)).toEqual([TEE, ['/usr/bin/tee', '-a', `${runtime}/inbox.jsonl`]])
+      expect(teeRuns(host)).toEqual([TEE, ['/usr/bin/tee', '-a', `${folder}/inbox.jsonl`]])
     }
   })
 
   test('a rejected entry from cadre is only marked: one append, no note and no wake', async () => {
     const fromCadre: InboxEntry = { ...fromBe, id: 'cadre-1000-0123abcd', from: 'cadre' }
-    const world = memWorld({ now: 2000, dirs: { [TL_RUNTIME]: [] }, files: { [TL_INBOX]: recordLine(fromCadre) } })
+    const world = memWorld({ now: 2000, dirs: { [TL_FOLDER]: [] }, files: { [TL_INBOX]: recordLine(fromCadre) } })
     const { outcome, host, sends } = await markAs({ ...REJECT, id: fromCadre.id }, { world })
 
     expect(teeRuns(host)).toEqual([TEE])
@@ -736,25 +821,61 @@ describe('runInboxMark', () => {
     expect(host.calls).toEqual([])
   })
 
-  test('a mark whose own runtime folder or own inbox is a link is refused as unsafe, with no run', async () => {
-    const started = { now: 2000, dirs: { [TL_RUNTIME]: [] }, files: inbox }
-    const worlds = [
-      memWorld({ ...started, realPaths: { [TL_RUNTIME]: '/elsewhere/.runtime' } }),
-      memWorld({ ...started, realPaths: { [TL_INBOX]: '/elsewhere/inbox.jsonl' } }),
-    ]
-    for (const world of worlds) {
-      const { outcome, host } = await markAs({ id: fromBe.id, state: 'read' }, { world })
+})
 
-      expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxUnsafe, { to: 'tl' }) })
-      expect(host.calls).toEqual([])
-    }
+describe('a role session whose own inbox folder is absent or unsafe', () => {
+  const toBe: InboxEntry = {
+    v: 1,
+    type: 'entry',
+    id: 'tl-1000-0123abcd',
+    at: 1000,
+    from: 'tl',
+    to: 'be',
+    kind: 'note',
+    subject: 'Hi',
+    body: 'Hello',
+  }
+
+  /** What inbox_read and then inbox_mark of be gave over one world: their outcomes, the paths read and the host. */
+  type OwnRun = {
+    readonly outcomes: readonly ToolOutcome[]
+    readonly reads: readonly string[]
+    readonly host: MemHost
+  }
+
+  /** inbox_read, then inbox_mark of toBe as read, both as be over `world` with the clock at 2000. */
+  async function readAndMark(world: MemWorld): Promise<OwnRun> {
+    const run = memIo(world, {})
+    const host = memHost(hostWorld({}))
+    const link: SessionLink = { send: async () => true }
+    const read = await runInboxRead(run.io, BE, {})
+    const mark = await runInboxMark(run.io, host.io, link, BE, TEAM, { id: toBe.id, state: 'read' })
+
+    return { outcomes: [read, mark], reads: run.reads, host }
+  }
+
+  test('with no own folder, inbox_read and inbox_mark refuse naming /cadre start, with no run or write', async () => {
+    const { outcomes, host } = await readAndMark(memWorld({ now: 2000 }))
+    const missing = { kind: 'deny', text: fill(PROMPTS.inboxOwnMissing, { id: 'be' }) }
+
+    expect(outcomes).toEqual([missing, missing])
+    expect(outcomes[0]?.text).toContain('/cadre start be')
+    expect([host.calls, host.writes]).toEqual([[], []])
   })
 
-  test('a mark whose own runtime folder is not there is refused as not started, with no run', async () => {
-    const world = memWorld({ now: 2000, files: inbox })
-    const { outcome, host } = await markAs({ id: fromBe.id, state: 'read' }, { world })
+  test('with its folder a link, or its inbox a link or a folder, both refuse as unsafe and read nothing', async () => {
+    const own = { [BE_INBOX]: recordLine(toBe) }
+    const worlds = [
+      memWorld({ now: 2000, dirs: { [BE_FOLDER]: [] }, files: own, realPaths: { [BE_FOLDER]: '/elsewhere/be' } }),
+      memWorld({ now: 2000, dirs: { [BE_FOLDER]: [] }, files: own, realPaths: { [BE_INBOX]: '/elsewhere/inbox' } }),
+      memWorld({ now: 2000, dirs: { [BE_FOLDER]: [], [BE_INBOX]: [] } }),
+    ]
+    for (const world of worlds) {
+      const { outcomes, reads, host } = await readAndMark(world)
+      const unsafe = { kind: 'deny', text: fill(PROMPTS.inboxOwnUnsafe, { id: 'be' }) }
 
-    expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxNotStarted, { to: 'tl' }) })
-    expect(host.calls).toEqual([])
+      expect(outcomes).toEqual([unsafe, unsafe])
+      expect([reads, host.calls, host.writes]).toEqual([[], [], []])
+    }
   })
 })

@@ -26,7 +26,7 @@ import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
 import { PROMPTS } from './locales/prompts'
 import { fill, t } from './locales/t'
 import { sessionRecordText } from './messages/record'
-import { ROLE_ENV, ROOT_ENV } from './paths'
+import { inboxDirOf, inboxHomeOf, ROLE_ENV, ROOT_ENV } from './paths'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
@@ -3944,17 +3944,23 @@ describe('Phase 2 faked-host matrix', () => {
 /** BE's role.json in roleWorld. */
 const ROLE_BE_JSON = '/repo/.cadre/be/role.json'
 
-/** TL's runtime folder in roleWorld, where its inbox and the session id it published lie. */
-const ROLE_TL_RUNTIME = '/repo/.cadre/tl/.runtime'
+/** The inbox home of the root /repo in the user folder of roleWorld's HOME, /home/u. */
+const ROLE_HOME = inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo'))
 
-/** BE's runtime folder and the session.json in it, in place only in beStartedWorld. */
-const ROLE_BE_RUNTIME = '/repo/.cadre/be/.runtime'
-const ROLE_BE_SESSION = `${ROLE_BE_RUNTIME}/session.json`
+/** TL's inbox folder in roleWorld, where its inbox and the session id it published lie. */
+const ROLE_TL_FOLDER = inboxDirOf(ROLE_HOME, 'tl')
+
+/** BE's inbox folder and the session.json in it, there only in the worlds that add it. */
+const ROLE_BE_FOLDER = inboxDirOf(ROLE_HOME, 'be')
+const ROLE_BE_SESSION = `${ROLE_BE_FOLDER}/session.json`
+
+/** The inbox_send call of a note from BE to TL. */
+const ROLE_NOTE = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
 
 /**
- * A role session of BE: the runtime env names BE and /repo, cadre.json lists pm, tl and be with their role.json files,
- * TL's runtime folder holds the session id it published, an append to TL's inbox exits 0 and writes are allowed. Pass
- * `over` to change one part of it.
+ * A role session of BE: the runtime env names BE and /repo with HOME /home/u, cadre.json lists pm, tl and be with
+ * their role.json files, TL's inbox folder holds the session id it published, an append to TL's inbox exits 0 and
+ * writes are allowed; BE's own inbox folder is not there. Pass `over` to change one part of it.
  */
 function roleWorld(over: Partial<World> = {}): World {
   const base = ambiguousWorld()
@@ -3962,32 +3968,41 @@ function roleWorld(over: Partial<World> = {}): World {
   return {
     ...base,
     roleEnv: { role: 'be', root: '/repo' },
-    dirs: [...base.dirs, '/repo/.cadre', ROLE_TL_RUNTIME],
+    dirs: [...base.dirs, '/repo/.cadre', ROLE_TL_FOLDER],
     files: {
       ...base.files,
       '/repo/.cadre/cadre.json': startStateText(['pm', 'tl', 'be']),
       '/repo/.cadre/pm/role.json': roleJsonText(templateRole('pm')),
       '/repo/.cadre/tl/role.json': roleJsonText(templateRole('tl')),
       [ROLE_BE_JSON]: roleJsonText(templateRole('be')),
-      [`${ROLE_TL_RUNTIME}/session.json`]: sessionRecordText('s-tl'),
+      [`${ROLE_TL_FOLDER}/session.json`]: sessionRecordText('s-tl'),
     },
-    realPaths: { ...base.realPaths, [ROLE_TL_RUNTIME]: ROLE_TL_RUNTIME },
-    runResults: { [`/usr/bin/tee -a ${ROLE_TL_RUNTIME}/inbox.jsonl`]: { exitCode: 0, stdout: '' } },
+    realPaths: { ...base.realPaths, [ROLE_TL_FOLDER]: ROLE_TL_FOLDER },
+    runResults: { [`/usr/bin/tee -a ${ROLE_TL_FOLDER}/inbox.jsonl`]: { exitCode: 0, stdout: '' } },
     isWriteAllowed: true,
     ...over,
   }
 }
 
-/** roleWorld with BE's runtime folder in place and its session.json holding s1, the session id of the world. */
-function beStartedWorld(): World {
+/** roleWorld with BE's inbox folder there, as /cadre start renders it. */
+function beFolderWorld(): World {
   const base = roleWorld()
 
   return {
     ...base,
+    dirs: [...base.dirs, ROLE_BE_FOLDER],
+    realPaths: { ...base.realPaths, [ROLE_BE_FOLDER]: ROLE_BE_FOLDER },
+  }
+}
+
+/** beFolderWorld with BE's session.json holding s1, the session id of the world. */
+function beStartedWorld(): World {
+  const base = beFolderWorld()
+
+  return {
+    ...base,
     sessionId: 's1',
-    dirs: [...base.dirs, ROLE_BE_RUNTIME],
     files: { ...base.files, [ROLE_BE_SESSION]: sessionRecordText('s1') },
-    realPaths: { ...base.realPaths, [ROLE_BE_RUNTIME]: ROLE_BE_RUNTIME },
   }
 }
 
@@ -4016,9 +4031,9 @@ describe('the inbox tools in a role session', () => {
     expect(log.writes).toEqual([])
   })
 
-  test('a role session registers inbox_send and inbox_read and publishes its session id', async ($, on) => {
+  test('a role session registers the inbox tools and publishes its session id in its inbox folder', async ($, on) => {
     const log = newLog()
-    fakeHost(on, roleWorld(), log)
+    fakeHost(on, beFolderWorld(), log)
     await startSession($, on)
 
     expect(registrations(log)).toEqual([
@@ -4026,7 +4041,45 @@ describe('the inbox tools in a role session', () => {
       'tool.register inbox_read',
       'tool.register inbox_mark',
     ])
-    expect(log.writes).toEqual(['/repo/.cadre/be/.runtime/session.json'])
+    expect(log.writes).toEqual([ROLE_BE_SESSION])
+  })
+
+  test('a role session with no inbox folder writes nothing, and inbox_read and inbox_send refuse', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld(), log)
+    await startSession($, on)
+    const read = await $.tool.call({ tool: 'mcp__cadre__inbox_read' }).catch(() => null)
+    const send = await $.tool.call(ROLE_NOTE).catch(() => null)
+    const missing = fill(PROMPTS.inboxOwnMissing, { id: 'be' })
+
+    expect(registrations(log)).toEqual([
+      'tool.register inbox_send',
+      'tool.register inbox_read',
+      'tool.register inbox_mark',
+    ])
+    expect(log.writes).toEqual([])
+    expect([read?.deny, send?.deny]).toEqual([missing, missing])
+    expect([log.runs, log.sends]).toEqual([[], []])
+  })
+
+  test('a role session with neither HOME nor CLAUDE_CONFIG_DIR logs one line and registers no tool', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld({ env: {} }), log)
+    await startSession($, on)
+
+    expect(log.logs).toEqual([fill(PROMPTS.inboxNoHome, { id: 'be' })])
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
+  })
+
+  test('a role session whose HOME lies inside its repo logs one line and registers no tool', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld({ env: { HOME: '/repo/u' } }), log)
+    await startSession($, on)
+
+    expect(log.logs).toEqual([fill(PROMPTS.inboxNoHome, { id: 'be' })])
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
   })
 
   test('a role session whose role.json is absent registers nothing and writes nothing', async ($, on) => {
@@ -4056,10 +4109,11 @@ describe('the inbox tools in a role session', () => {
     async ($, on) => {
       const log = newLog()
       const base = ambiguousWorld()
+      const wtFolder = inboxDirOf(inboxHomeOf('/home/u/.claude', '/wt', await sha256Hex('/wt')), 'be')
       const world = roleWorld({
         roleEnv: { role: 'be', root: '/wt' },
         env: { ...base.env, CADRE_MAIN_ROOT: '/main' },
-        dirs: [...base.dirs, '/main/.cadre'],
+        dirs: [...base.dirs, '/main/.cadre', wtFolder],
         files: {
           ...base.files,
           '/main/.cadre/cadre.json': startStateText(['pm', 'tl', 'be']),
@@ -4076,7 +4130,7 @@ describe('the inbox tools in a role session', () => {
         'tool.register inbox_read',
         'tool.register inbox_mark',
       ])
-      expect(log.writes).toEqual(['/wt/.cadre/be/.runtime/session.json'])
+      expect(log.writes).toEqual([`${wtFolder}/session.json`])
     },
   )
 
@@ -4125,12 +4179,11 @@ describe('the inbox tools in a role session', () => {
 
   test('inbox_send in a role session appends to the inbox of the receiver, then sends one live wake', async ($, on) => {
     const log = newLog()
-    fakeHost(on, roleWorld(), log)
-    const note = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
+    fakeHost(on, beFolderWorld(), log)
     await startSession($, on)
-    await $.tool.call(note).catch(() => null)
+    await $.tool.call(ROLE_NOTE).catch(() => null)
 
-    expect(log.runs).toEqual([['/usr/bin/tee', '-a', `${ROLE_TL_RUNTIME}/inbox.jsonl`]])
+    expect(log.runs).toEqual([['/usr/bin/tee', '-a', `${ROLE_TL_FOLDER}/inbox.jsonl`]])
     expect(log.sends).toHaveLength(1)
     expect(log.sends[0] ?? '').toContain('s-tl')
   })
