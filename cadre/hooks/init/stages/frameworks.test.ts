@@ -985,3 +985,47 @@ describe('the stored framework answer and the set question', () => {
     expect([draft.frameworkSet, draft.frameworkInstalls, run.outputs]).toEqual([undefined, undefined, []])
   })
 })
+
+describe('the framework step of /cadre frameworks', () => {
+  /** PM, Team Lead and Security as the frameworks flow seeds them: PM on none, the others with no framework. */
+  const roles = proposeRoles(repoScan()).roles
+  /** GSD, the one framework in use. */
+  const GSD_CHOSEN: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
+
+  /** The frameworks stage entered for `choice` with `installed`, in the frameworks flow unless `flow` is init. */
+  function enteredIn(
+    choice: Choice,
+    installed: readonly FrameworkId[],
+    flow: 'init' | 'frameworks' = 'frameworks',
+  ): InitState {
+    const over: Partial<InitState> = flow === 'frameworks' ? { flow } : {}
+
+    return frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles, installed }), over))
+  }
+
+  test('with nothing found it asks Add GSD, Add superpowers or None, no Keep; init still asks nothing', () => {
+    const state = enteredIn({ kind: 'none' }, ['none'])
+    const init = enteredIn({ kind: 'none' }, ['none'], 'init')
+    expect(firstLines([state.openQuestion?.question ?? ''])).toEqual([t('init.frameworks.setQuestionNoneFound')])
+    expect(state.openQuestion?.spec.options).toEqual(['Add GSD', 'Add superpowers', 'None (built-in)'])
+    expect([init.openQuestion, init.draft.repoDefault]).toEqual([null, 'none'])
+  })
+
+  test('Add GSD with nothing found asks the install question of GSD, No first', () => {
+    const asked = nextStage(enteredIn({ kind: 'none' }, ['none']), { kind: 'answer', text: 'Add GSD' })
+    expect([asked.sub.kind, asked.openQuestion?.spec.options[0]]).toEqual(['set-install', 'No'])
+  })
+
+  test('one framework kept is the repo default, and no role gains a framework of its own', () => {
+    const kept = nextStage(enteredIn(GSD_CHOSEN, ['gsd', 'none']), { kind: 'answer', text: KEEP_GSD })
+    const frameworks = (kept.draft.roles ?? []).map(role => role.framework)
+    expect([kept.draft.repoDefault, kept.draft.frameworkSet]).toEqual(['gsd', ['gsd']])
+    expect(frameworks).toEqual(roles.map(role => (role.framework === 'none' ? 'none' : undefined)))
+  })
+
+  test('two frameworks kept ask whether one serves all roles or each picks its own', () => {
+    const both: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
+    const asked = nextStage(enteredIn(both, ['gsd', 'superpowers', 'none']), { kind: 'answer', text: KEEP_BOTH })
+    expect([asked.sub, asked.draft.frameworkSet]).toEqual([{ kind: 'mode', tries: 1 }, ['gsd', 'superpowers']])
+  })
+})

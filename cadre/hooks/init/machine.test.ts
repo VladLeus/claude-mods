@@ -1,27 +1,40 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionPart } from '../../types'
+import type { FrameworkId, InitFacts, InstructionPart, RoleSpec } from '../../types'
+import { chooseFramework } from '../framework/contract'
+import { detectAll } from '../framework/registry'
 import type { GuardResult } from '../guards/repo'
+import type { Gathered } from '../scan/gather'
+import type { TeamState } from '../team'
 import {
   DEFAULT_LOCATIONS,
+  emptySetupScan,
   gitWorld,
+  PROVEN_FACTS,
   RECOMMENDED,
+  repoScan,
   scansOf,
   stateAt,
+  stateOf,
+  templateRole,
   TEMPLATE_ROLES,
   TOPICS,
   wholeDraft,
+  withFramework,
 } from '../testkit'
 import { NO_SURFACE } from '../ui/surfaces/none'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
-import { initialState, nextStage, STAGES } from './machine'
-import { INIT_CANCELLED } from './replies'
-import { STAGE_ORDER } from './state'
+import type { PlanResult } from './draft'
+import { frameworksState, initialState, nextStage, STAGES } from './machine'
+import { cancelledReply, INIT_CANCELLED } from './replies'
+import { FLOW_ORDER, STAGE_ORDER } from './state'
 import type { Answer, InitState } from './state'
 import { assignStage } from './stages/assign'
+import { FRAMEWORK_DISMISSED_REASON, installedFrameworks } from './stages/frameworks'
 import { instructionsStage } from './stages/instructions'
 import { pmPluginStage } from './stages/pm-plugin'
 import { policyStage } from './stages/policy'
+import { REVIEW_DISMISSED_REASON } from './stages/review'
 
 /** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
 const POLICY_DRAFT = { locations: DEFAULT_LOCATIONS, roles: TEMPLATE_ROLES }
@@ -153,5 +166,128 @@ describe('kept model results (D-235)', () => {
     const grouped = nextStage(grouping, { kind: 'model', result: { id: 'topics', result: TOPICS } })
     const parted = nextStage(grouped, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
     expect(parted.kept).toEqual({ mcp: null, skills, mcpAssigned, topics: TOPICS, parts: RECOMMENDED })
+  })
+})
+
+describe('the frameworks flow', () => {
+  /** BE on GSD, Team Lead on superpowers, PM on none and QA on no framework of its own, as role.json stores them. */
+  const STORED: readonly RoleSpec[] = [
+    withFramework(templateRole('be'), 'gsd'),
+    withFramework(templateRole('tl'), 'superpowers'),
+    withFramework(templateRole('pm'), 'none'),
+    templateRole('qa'),
+  ]
+  /** The facts of a repo whose GSD is proven and in use. */
+  const GSD_IN_USE: InitFacts = {
+    ...PROVEN_FACTS,
+    facts: { ...PROVEN_FACTS.facts, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] },
+  }
+
+  /** The scans of a repo whose cadre.json stores the frameworks `stored`, GSD in use. */
+  function gatheredWith(stored: readonly FrameworkId[]): Gathered {
+    const state = stateOf(STORED, { frameworks: stored })
+
+    return { facts: GSD_IN_USE, repo: repoScan({ cadre: { ...repoScan().cadre, state } }), setup: emptySetupScan() }
+  }
+
+  /** The stored team: STORED with a cadre.json that commits all, starts at the git root and may read ~/.claude.json. */
+  const TEAM: TeamState = {
+    state: stateOf(STORED, { gitPolicy: 'all', readUserMcp: true, framework: 'gsd' }),
+    roles: STORED,
+    texts: new Map(),
+  }
+
+  /** The first state of a frameworks run over the scans of `stored`. */
+  function started(stored: readonly FrameworkId[] = ['gsd']): InitState {
+    const seed = { locations: DEFAULT_LOCATIONS, gathered: gatheredWith(stored), team: TEAM }
+
+    return frameworksState(true, undefined, seed)
+  }
+
+  /** A plan result that changes BE's ROLE.md. */
+  const CHANGED: PlanResult = {
+    plan: { ops: [{ kind: 'change', path: '.cadre/be/ROLE.md', mode: 'file', note: null }], warnings: [] },
+    state: stateOf(STORED),
+    desired: [],
+    manifest: { schema: 1, cadreVersion: '0.2.0', files: [] },
+    gitignore: null,
+  }
+
+  /** The run at its review with CHANGED planned: None kept, so no hunk is asked on the way. */
+  function reviewing(): InitState {
+    const framed = nextStage(started(), { kind: 'answer', text: 'None (built-in)' })
+
+    return nextStage(framed, { kind: 'io', result: { id: 'reframe-plan', result: CHANGED } })
+  }
+
+  test('frameworksState seeds the draft from the stored team and the fresh scans, with no framework answer', () => {
+    const gathered = gatheredWith(['gsd'])
+    const { draft } = started()
+    const detections = detectAll(gathered.facts.facts)
+    expect([draft.locations, draft.gathered, draft.readUserMcp, draft.policy, draft.launchStart]).toEqual([
+      DEFAULT_LOCATIONS,
+      gathered,
+      true,
+      'all',
+      { kind: 'git-root' },
+    ])
+    const detected = [installedFrameworks(detections), chooseFramework(detections, null)]
+    expect([draft.installed, draft.choice]).toEqual(detected)
+    expect([draft.frameworkSet, draft.repoDefault, draft.hunks, draft.gsdCheck]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ])
+  })
+
+  test('the seed clears every GSD or superpowers role value and keeps an explicit none', () => {
+    const frameworks = (started().draft.roles ?? []).map(role => [role.id, role.framework])
+    expect(frameworks).toEqual([['be', undefined], ['tl', undefined], ['pm', 'none'], ['qa', undefined]])
+  })
+
+  test('it asks the set question over a stored GSD and over a stored None, in the frameworks flow', () => {
+    const storedSets: readonly (readonly FrameworkId[])[] = [['gsd'], []]
+    for (const stored of storedSets) {
+      const state = started(stored)
+      expect([state.stage, state.flow, state.sub, state.outputs]).toEqual([
+        'frameworks',
+        'frameworks',
+        { kind: 'set', tries: 1 },
+        [],
+      ])
+    }
+  })
+
+  test('the run goes frameworks, hunks, reframe-review; init keeps its own order', () => {
+    const kept = nextStage(started(), { kind: 'answer', text: 'Keep GSD (Recommended)' })
+    const none = nextStage(started(), { kind: 'answer', text: 'None (built-in)' })
+    expect(FLOW_ORDER.frameworks).toEqual(['frameworks', 'hunks', 'reframe-review'])
+    expect([kept.stage, none.stage, none.effect.kind]).toEqual(['hunks', 'reframe-review', 'io'])
+    expect(FLOW_ORDER.init).toBe(STAGE_ORDER)
+  })
+
+  test('a dismissed set question ends with the frameworks cancel reply', () => {
+    const dismissed = nextStage(started(), { kind: 'answer', text: null })
+    expect(dismissed.effect).toEqual({ kind: 'end', reply: cancelledReply(FRAMEWORK_DISMISSED_REASON, 'frameworks') })
+  })
+
+  test('Cancel at the review and a dismissed review end with the frameworks cancel reply', () => {
+    const cancelled = nextStage(reviewing(), { kind: 'answer', text: 'Cancel' })
+    const dismissed = nextStage(reviewing(), { kind: 'answer', text: null })
+    expect([cancelled.effect, dismissed.effect]).toEqual([
+      { kind: 'end', reply: 'frameworks cancelled, nothing written: Cancel was chosen at the review.' },
+      { kind: 'end', reply: cancelledReply(REVIEW_DISMISSED_REASON, 'frameworks') },
+    ])
+  })
+
+  test('an init run keeps its cancel reply and its fail-closed text', () => {
+    const dismissed = nextStage(policyStage.enter(stateAt('policy', POLICY_DRAFT)), { kind: 'answer', text: null })
+    const failed = nextStage(initialState(true), { kind: 'answer', text: 'Commit all' })
+    const reply = dismissed.effect.kind === 'end' ? dismissed.effect.reply : ''
+    expect([reply.startsWith(`${INIT_CANCELLED}: `), failed.effect]).toEqual([
+      true,
+      { kind: 'end', reply: INIT_CANCELLED },
+    ])
   })
 })
