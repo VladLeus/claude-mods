@@ -817,6 +817,8 @@ export const EN = Object.freeze({
     'the memory folder of this repo has a path a permission rule cannot hold: its memories stay editable',
   'launch.deny.undeniedRecordWarning':
     'the hand-out record instructions.json has a path a permission rule cannot hold: it stays editable',
+  'launch.deny.undeniedInboxWarning':
+    'the inbox and session files have a path a permission rule cannot hold: they stay editable',
   'launch.deny.pluginOffWarning':
     'plugin {plugin} is turned off for this role: cadre could not read its skill list from the installed plugin.json',
 

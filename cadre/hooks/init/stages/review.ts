@@ -427,7 +427,15 @@ function reviewPlanOf(draft: Draft): {
   const gathered = { ...draft.gathered, setup }
   const recorded = initFrameworks(draft, [])
   const frameworks = repoFrameworks({ framework: draft.repoDefault, ...recorded })
-  const scopes = scopesFor(draft.roles, draft.repoDefault, gathered, draft.hunks, draft.launchStart, frameworks)
+  const scopes = scopesFor(
+    draft.roles,
+    draft.repoDefault,
+    gathered,
+    draft.hunks,
+    draft.launchStart,
+    frameworks,
+    draft.locations.root,
+  )
   const repoParts = repoPartsOf(draft.instructions)
   const input = {
     roles: withRepoRecords(draft.roles, draft.instructions, repoParts),

@@ -22,7 +22,7 @@ import type { ListWords } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { fill } from '../locales/t'
-import { handoffFolderOf } from '../paths'
+import { handoffFolderOf, isSafeRoot } from '../paths'
 import { INFRA_MCP_SERVERS, INFRA_SKILLS } from '../roles/infra'
 import { chainLines } from '../roles/template'
 import { runnableFrameworks } from './frameworks'
@@ -119,11 +119,13 @@ function bypassRules(role: RoleSpec): ScopeRule[] {
 }
 
 /**
- * The inbox rule of every card, hard for a role without Bash and best effort for one with Bash, which can still write
- * the files; for a bypass role the note that live messages may be held follows it.
+ * The inbox rule of every card: hard for a role without Bash whose repo root an exact rule can hold, or whose root is
+ * not known; best effort for a role with Bash, which can still write the files, and at a root no rule can hold, where
+ * the launch denies nothing. For a bypass role the note that live messages may be held follows it.
  */
-function inboxRules(role: RoleSpec): ScopeRule[] {
-  const inbox = rule(ARTIFACT.cardInbox, role.hasBash ? 'best-effort' : 'hard')
+function inboxRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
+  const isHard = !role.hasBash && (ctx.root === undefined || isSafeRoot(ctx.root))
+  const inbox = rule(ARTIFACT.cardInbox, isHard ? 'hard' : 'best-effort')
 
   return isBypass(role) ? [inbox, rule(ARTIFACT.cardHeldMessages, 'none')] : [inbox]
 }
@@ -337,7 +339,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     rule(ARTIFACT.cardSkills, 'best-effort'),
     rule(fill(ARTIFACT.cardLoads, { id: role.id }), 'none'),
     checkedRule(ARTIFACT.cardInfra, 'hard', INFRA_CHECKS),
-    ...inboxRules(role),
+    ...inboxRules(role, ctx),
     checkedRule(fill(ARTIFACT.cardPermissionMode, { mode: role.permissionMode }), 'hard', [
       { kind: 'permission-mode', token: mode },
     ]),

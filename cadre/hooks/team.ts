@@ -75,8 +75,9 @@ function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySe
 /**
  * One compiled scope per role, by role id: each role is compiled for the framework it runs on (resolvedFramework),
  * with the setup and the code dirs of the scans, the MCP route of every role (MCP_ROUTE), where the launchers start, so
- * the card tells what loads there, the whole team for the decision chain, and with the repo's `frameworks`, when
- * given, as what it may also run. A role is attended when any framework it may run is in `attended`.
+ * the card tells what loads there, the whole team for the decision chain, with the repo's `frameworks`, when given, as
+ * what it may also run, and with the repo `root`, when given, so the card labels the inbox rule as the launch can deny
+ * it. A role is attended when any framework it may run is in `attended`.
  */
 export function compileAll(
   roles: readonly RoleSpec[],
@@ -85,8 +86,10 @@ export function compileAll(
   attended: ReadonlySet<FrameworkId>,
   launchStart: LaunchStart,
   frameworks?: readonly FrameworkId[],
+  root?: string,
 ): ReadonlyMap<string, CompiledScope> {
   const alsoRuns = frameworks === undefined ? {} : { alsoRuns: frameworks }
+  const rootOf = root === undefined ? {} : { root }
 
   return new Map(
     roles.map((role): [string, CompiledScope] => {
@@ -100,6 +103,7 @@ export function compileAll(
         launchStart,
         roles,
         ...alsoRuns,
+        ...rootOf,
       }
 
       return [role.id, compileScope(role, context)]
@@ -108,10 +112,10 @@ export function compileAll(
 }
 
 /**
- * The scope of every role, which init shows and plans from (ROLE-06, D-78, D-104): compileScope with the role's own
- * framework or the repo default, the setup and the code dirs of the scans, MCP_ROUTE, where the launchers start (D-122)
- * and the whole team. A role is attended when an unmet hunk is on the config file of any framework it may run. Keyed
- * by role id, in role order.
+ * The scope of every role, which init shows and plans from: compileScope with the role's own framework or the repo
+ * default, the setup and the code dirs of the scans, MCP_ROUTE, where the launchers start, the whole team and, when
+ * given, the repo root (compileAll). A role is attended when an unmet hunk is on the config file of any framework it
+ * may run. Keyed by role id, in role order.
  */
 export function scopesFor(
   roles: readonly RoleSpec[],
@@ -120,8 +124,11 @@ export function scopesFor(
   hunks: readonly HunkOp[],
   launchStart: LaunchStart,
   frameworks?: readonly FrameworkId[],
+  root?: string,
 ): ReadonlyMap<string, CompiledScope> {
-  return compileAll(roles, repoDefault, gathered, attendedByHunks(gathered.setup, hunks), launchStart, frameworks)
+  const attended = attendedByHunks(gathered.setup, hunks)
+
+  return compileAll(roles, repoDefault, gathered, attended, launchStart, frameworks, root)
 }
 
 /** The cadre commands that work from an applied team, so they need `.cadre/cadre.json`. */
@@ -308,7 +315,8 @@ export async function compileTeam(
   const frameworks = teamFrameworks(roles, state.framework, repoFrameworks(state))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
 
-  const scopes = compileAll(roles, state.framework, gathered, attended, state.launchStart, repoFrameworks(state))
+  const recorded = repoFrameworks(state)
+  const scopes = compileAll(roles, state.framework, gathered, attended, state.launchStart, recorded, locations.root)
 
   return { gathered, scopes }
 }

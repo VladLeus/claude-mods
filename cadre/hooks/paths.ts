@@ -280,6 +280,14 @@ export function isSafeRelativePath(path: string): boolean {
   return path.split('/').every(segment => segment !== '.' && segment !== '..' && SAFE_SEGMENT.test(segment))
 }
 
+/** A repo root a permission rule can hold: a canonical absolute path of safe characters (`/a/b`), nothing else. */
+const SAFE_ROOT = /^(?:\/[A-Za-z0-9._-]+)+$/
+
+/** Whether a repo root can be written into an exact `//` pattern: a canonical path with no `.` or `..` segment. */
+export function isSafeRoot(root: string): boolean {
+  return SAFE_ROOT.test(root) && !root.split('/').some(part => part === '.' || part === '..')
+}
+
 /**
  * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`, after it removed the old one first. The launcher
  * refuses to start when it is missing, when the role files are newer than it (they changed after the render), or

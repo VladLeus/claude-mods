@@ -493,7 +493,15 @@ async function applyConfirmed(
   const recorded = initFrameworks(draft, failed)
   const frameworksRun = repoFrameworks({ framework: repoDefault, ...recorded })
   const attended = await attendedByConfig(io, locations.root, teamFrameworks(roles, repoDefault, frameworksRun), setup)
-  const scopes = compileAll(roles, repoDefault, { ...scanned, setup }, attended, launchStart, frameworksRun)
+  const scopes = compileAll(
+    roles,
+    repoDefault,
+    { ...scanned, setup },
+    attended,
+    launchStart,
+    frameworksRun,
+    locations.root,
+  )
   const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
   const owed = privatesOf(draft.instructions, roles)
   const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })

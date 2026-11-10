@@ -1382,6 +1382,8 @@ export type ScopeContext = {
   readonly roles: readonly (string | Pick<RoleSpec, 'id' | 'basedOn'>)[]
   /** Every framework the repo records, which a role not on none may also run; absent when none is passed. */
   readonly alsoRuns?: readonly FrameworkId[]
+  /** The repo root the launch denies are written under; absent when not known. */
+  readonly root?: string
 }
 
 /** The committed settings template: portable keys only (D-84). Per-user values are rendered at launch. */

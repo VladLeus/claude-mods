@@ -13,6 +13,7 @@ import {
   cadreStatePath,
   INBOX_LOG_FILE,
   INSTRUCTIONS_RECORD_FILE,
+  isSafeRoot,
   memoryFolderOf,
   privateInstructionsDir,
   roleJsonPath,
@@ -30,9 +31,6 @@ export type DenyResult = {
   readonly deny: readonly string[]
   readonly warnings: readonly string[]
 }
-
-/** A repo root a permission rule can hold: a canonical absolute path of safe characters (`/a/b`), nothing else. */
-const SAFE_ROOT = /^(?:\/[A-Za-z0-9._-]+)+$/
 
 /**
  * The template's code-dir denies are exactly `Read(./<dir>/**)` and `Edit(./<dir>/**)`, and the group holds the dir;
@@ -72,11 +70,6 @@ export function lintRuntimeDenyPattern(pattern: string): string | null {
   if (argument.split('/').includes('..')) return DOTDOT_MESSAGE
 
   return null
-}
-
-/** Whether a repo root can be written into an exact `//` pattern: a canonical path with no `.` or `..` segment. */
-function isSafeRoot(root: string): boolean {
-  return SAFE_ROOT.test(root) && !root.split('/').some(part => part === '.' || part === '..')
 }
 
 /** The entries sorted and once each, those the runtime lint refuses dropped and named after the given warnings. */
@@ -175,6 +168,9 @@ export const UNDENIED_MEMORY_FOLDER_WARNING = t('launch.deny.undeniedMemoryFolde
  */
 export const UNDENIED_RECORD_WARNING = t('launch.deny.undeniedRecordWarning')
 
+/** The warning when the inbox and session files have a path no rule can hold, so a role could still edit them. */
+const UNDENIED_INBOX_WARNING = t('launch.deny.undeniedInboxWarning')
+
 /**
  * The exact Edit and Write rules of an absolute path, with `suffix` after it (`/**` for a whole folder); null when an
  * exact `//` rule cannot hold the path as it is (isSafeRoot) or the runtime lint refuses either rule. Exported for the
@@ -265,7 +261,7 @@ function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
 /**
  * The deny of the inbox and session files of every role of the team, or of the role's own when the team is not known:
  * `Edit` and `Write` of `<root>/.cadre/<id>/.runtime/inbox.jsonl` and `session.json` under every launch root, so only
- * cadre's tools write them. A path an exact rule cannot hold gets none and no warning, as in launchFilesDeny.
+ * cadre's tools write them. A path an exact rule cannot hold gets none, and UNDENIED_INBOX_WARNING comes once.
  */
 function inboxFilesDeny(user: LaunchUser, id: string): DenyResult {
   const roots = sortedUnique(launchRoots(user))
@@ -276,7 +272,7 @@ function inboxFilesDeny(user: LaunchUser, id: string): DenyResult {
     ),
   )
 
-  return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
+  return { deny: rules.flatMap(rule => rule ?? []), warnings: rules.includes(null) ? [UNDENIED_INBOX_WARNING] : [] }
 }
 
 /**
