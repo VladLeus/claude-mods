@@ -141,6 +141,7 @@ describe('project installs', () => {
         '.claude/hooks',
         '.claude/settings.local.json',
       ],
+      runs: ['.claude/hooks', '.claude/gsd-core'],
       isPlugin: false,
     })
     expect(projectInstallOf('superpowers')).toEqual(projectPluginInstall('superpowers@claude-plugins-official'))
@@ -154,9 +155,10 @@ describe('project installs', () => {
       argv: ['claude', 'plugin', 'install', SECURITY_KEY, '--scope', 'project'],
       timeoutMs: 180_000,
       writes: ['enabledPlugins in .claude/settings.json'],
+      runs: [],
       isPlugin: true,
     })
-    expect([install, install.argv, install.writes].every(part => Object.isFrozen(part))).toBe(true)
+    expect([install, install.argv, install.writes, install.runs].every(part => Object.isFrozen(part))).toBe(true)
   })
 
   test('the printed mattpocock-skills command is the argv the project install runs', () => {

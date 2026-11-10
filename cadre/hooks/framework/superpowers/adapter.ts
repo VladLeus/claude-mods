@@ -272,6 +272,7 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
     argv: Object.freeze(['claude', 'plugin', 'install', 'superpowers@claude-plugins-official', '--scope', 'project']),
     timeoutMs: 180_000,
     writes: Object.freeze(['enabledPlugins in .claude/settings.json']),
+    runs: Object.freeze([]),
     isPlugin: true,
   }),
   factsHeading: null,

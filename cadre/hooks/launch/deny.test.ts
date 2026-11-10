@@ -533,6 +533,7 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
         ...memoryAndRecordDeny('/home/u/.claude', folder),
         ...launchFileRules('/repo'),
         ...inboxFileRules('/repo', 'be'),
+        ...teamFileRules('/repo', ['be']),
       ]),
     })
   })
@@ -613,7 +614,7 @@ describe('linked memory deny (G-02-1f)', () => {
     const base = runtimeDeny(role, scope, launcher).deny
 
     const own = [...privateDeny(BE_MEMORY), ...memoryAndRecordDeny('/home/u/.claude', BE_MEMORY)]
-    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be')]
+    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be'), ...teamFileRules('/repo', ['be'])]
     expect(isPartsFlowRole(role)).toBe(true)
     expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launch]))
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
@@ -669,7 +670,7 @@ describe('linked memory deny (G-02-1f)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be')]
+    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be'), ...teamFileRules('/repo', ['be'])]
     const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch])
     expect(denyOf(plan.settings)).toEqual(expected)
     expect(plan.warnings.slice(0, lead.length + 4)).toEqual([
@@ -764,7 +765,11 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = ['/link/repo', '/repo'].flatMap(root => [...launchFileRules(root), ...inboxFileRules(root, 'pm')])
+    const launch = ['/link/repo', '/repo'].flatMap(root => [
+      ...launchFileRules(root),
+      ...inboxFileRules(root, 'pm'),
+      ...teamFileRules(root, ['pm']),
+    ])
     expect(denyOf(plan.settings)).toEqual(sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch]))
     expect(plan.warnings.slice(lead.length)).toEqual([
       UNDENIED_PRIVATE_WARNING,
@@ -779,16 +784,17 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     )
   })
 
-  test('the matrix keeps only the inbox and session rules over .cadre/<id>/ and no deny over .planning/ (B4)', () => {
+  test('the matrix keeps only the inbox, session and role.json rules over .cadre/<id>/, none over .planning/', () => {
     const results = matrixCases(MATRIX_USER).map(item => {
       const deny = denyOf(item.plan.settings)
       const ownFolder = `//repo/.cadre/${item.role.id}/`
-      const runtime = sortedUnique(inboxFileRules('/repo', item.role.id))
+      const roleJson = [`Edit(${ownFolder}role.json)`, `Write(${ownFolder}role.json)`]
+      const kept = sortedUnique([...inboxFileRules('/repo', item.role.id), ...roleJson])
       const own = deny.filter(entry => entry.includes(ownFolder))
       const planning = deny.filter(entry => entry.includes('//repo/.planning/'))
       const memory = deny.filter(entry => entry.includes('/projects/-repo/memory/'))
       const record = deny.filter(entry => entry.endsWith(`/${item.role.id}/instructions.json)`))
-      const isKept = JSON.stringify(own) === JSON.stringify(runtime) && planning.length === 0
+      const isKept = JSON.stringify(own) === JSON.stringify(kept) && planning.length === 0
 
       return { label: item.label, isKept, isDenied: memory.length === 2 && record.length === 2 }
     })

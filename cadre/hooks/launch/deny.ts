@@ -1,17 +1,21 @@
 /**
  * The launch denies, a layer 9 module: a role's runtime deny list at launch with the warnings of what it could not
  * deny, and the Edit and Write rules that keep a role off its private instructions, memory folders, hand-out record,
- * linked memories, launch files and the team's inbox and session files. It imports core, paths, the scope lint, the
- * launch links and the types, so the launch settings and plan, and the improver, read it here.
+ * linked memories, launch and team files and the team's inbox and session files. It imports core, the framework
+ * registry, paths, the scope lint, the launch links and the types, so the launch settings and plan, and the improver,
+ * read it here.
  */
 import type { CompiledScope, RoleSpec } from '../../types'
 import { shown, sortedUnique } from '../core/text'
+import { ADAPTERS } from '../framework/registry'
 import { t } from '../locales/t'
 import {
+  cadreStatePath,
   INBOX_LOG_FILE,
   INSTRUCTIONS_RECORD_FILE,
   memoryFolderOf,
   privateInstructionsDir,
+  roleJsonPath,
   roleMemoryDir,
   runtimeFileOf,
   SESSION_FILE,
@@ -232,19 +236,27 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
 }
 
 /**
- * The deny of the files a later launch runs or trusts: `Edit` and `Write` of `<root>/.claude/settings.json` and
- * `<root>/.claude/settings.local.json` (their hooks run at the next session start), `<root>/.cadre/bin/**` and
- * `<root>/.cadre/manifest.json` under every launch root, so an Edit-only role cannot plant a hook or rewrite a
- * launcher. A path an exact rule cannot hold gets none and no warning: a role without Bash already gets runtimeDeny's
- * root warning, and a Bash role is not held by an Edit deny.
+ * The deny of the files a later launch or session runs or trusts, under every launch root: `Edit` and `Write` of
+ * `.claude/settings.json` and `.claude/settings.local.json` (their hooks run at the next session start),
+ * `.cadre/bin/**`, `.cadre/manifest.json`, `.cadre/cadre.json` and the role.json of each team role, or of the role's
+ * own when the team is not known (init and regen write them from the root session, and the inbox tools trust them),
+ * and `<dir>/**` for each folder a framework's project install runs code from (a later session runs its hooks). So an
+ * Edit-only role cannot plant a hook, rewrite a launcher or change the team. A path an exact rule cannot hold gets none
+ * and no warning: a role without Bash already gets runtimeDeny's root warning, and a Bash role is not held by an Edit
+ * deny.
  */
-function launchFilesDeny(user: LaunchUser): DenyResult {
+function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
   const roots = sortedUnique(launchRoots(user))
+  const ids = user.teamIds ?? [id]
+  const runs = ADAPTERS.flatMap(adapter => adapter.projectInstall?.runs ?? [])
   const rules = roots.flatMap(root => [
     editWriteRules(`${root}/.claude/settings.json`, ''),
     editWriteRules(`${root}/.claude/settings.local.json`, ''),
     editWriteRules(`${root}/.cadre/bin`, '/**'),
     editWriteRules(`${root}/.cadre/manifest.json`, ''),
+    editWriteRules(`${root}/${cadreStatePath()}`, ''),
+    ...ids.map(teamId => editWriteRules(`${root}/${roleJsonPath(teamId)}`, '')),
+    ...runs.map(dir => editWriteRules(`${root}/${dir}`, '/**')),
   ])
 
   return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
@@ -331,7 +343,7 @@ export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchU
       : [{ deny: runtimeDeny(role, scope, { ...user, root: user.mainRoot }).deny, warnings: [] }]),
     privateInstructionsDeny(user, role.id),
     memoryFolderDeny(user),
-    launchFilesDeny(user),
+    launchFilesDeny(user, role.id),
     inboxFilesDeny(user, role.id),
     instructionsRecordDeny(user, role.id),
     isPartsFlowRole(role) ? linkedMemoryDeny(user.linkedMemories) : { deny: [], warnings: [] },

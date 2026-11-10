@@ -309,13 +309,14 @@ export type KickoffContext = {
 
 /**
  * A framework's install at project scope, run from the repo root once the person consented and confirmed. `writes`
- * names what the installer writes, for the review.
+ * names what the installer writes, for the review; `runs` names the folders of `writes` a later session runs code from.
  */
 export type ProjectInstall = {
   readonly id: string
   readonly argv: readonly string[]
   readonly timeoutMs: number
   readonly writes: readonly string[]
+  readonly runs: readonly string[]
   readonly isPlugin: boolean
 }
 

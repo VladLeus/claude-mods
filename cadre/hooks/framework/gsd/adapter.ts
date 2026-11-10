@@ -376,6 +376,7 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
       '.claude/hooks',
       '.claude/settings.local.json',
     ]),
+    runs: Object.freeze(['.claude/hooks', '.claude/gsd-core']),
     isPlugin: false,
   }),
   factsHeading: t('framework.gsd.adapter.gsdAdapterFactsHeading'),

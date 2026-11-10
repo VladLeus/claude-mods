@@ -119,6 +119,17 @@ function inboxFileRules(root: string, id: string): string[] {
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
 
+/**
+ * The deny of cadre.json, the role.json of each role in `ids` and the folders GSD's project install runs code from,
+ * under the root `root`, as exact `//` rules.
+ */
+function teamFileRules(root: string, ids: readonly string[]): string[] {
+  const roleFiles = ids.map(id => `.cadre/${id}/role.json`)
+  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**']
+
+  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+}
+
 describe('launch render', () => {
   test('RUNTIME_SETTINGS_KEYS lists the ten allowed settings keys and is frozen', () => {
     expect(RUNTIME_SETTINGS_KEYS).toEqual([
@@ -236,6 +247,7 @@ describe('launch render', () => {
           'Write(//repo/.claude/settings.json)',
           'Write(//repo/.claude/settings.local.json)',
           ...inboxFileRules('/repo', 'pm'),
+          ...teamFileRules('/repo', ['pm']),
         ]),
       },
       sandbox: { enabled: false },
@@ -252,7 +264,7 @@ describe('launch render', () => {
     const plan = launchPlan(role, scope, carrier())
     const folder = roleMemoryDir(carrier(), 'pm')
     const own = [...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]
-    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'pm')]
+    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'pm'), ...teamFileRules('/repo', ['pm'])]
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
@@ -410,6 +422,7 @@ describe('launch render', () => {
           'Write(//repo/.claude/settings.json)',
           'Write(//repo/.claude/settings.local.json)',
           ...inboxFileRules('/repo', 'be'),
+          ...teamFileRules('/repo', ['be']),
         ]),
       },
       sandbox: { enabled: true },
@@ -746,7 +759,11 @@ describe('launch properties', () => {
       const folder = roleMemoryDir(item.launcher, item.role.id)
       const own = [...privateDeny(folder), ...memoryAndRecordDeny(item.launcher.userDir, folder)]
       const roots = [item.launcher.root, item.launcher.givenRoot]
-      const launch = roots.flatMap(root => [...launchFileRules(root), ...inboxFileRules(root, item.role.id)])
+      const launch = roots.flatMap(root => [
+        ...launchFileRules(root),
+        ...inboxFileRules(root, item.role.id),
+        ...teamFileRules(root, [item.role.id]),
+      ])
       const expected = sortedUnique([...deny.deny, ...own, ...launch, ...memories])
 
       return {

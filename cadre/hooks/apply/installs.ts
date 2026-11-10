@@ -118,6 +118,7 @@ export function projectPluginInstall(key: string): ProjectInstall {
     argv: Object.freeze(['claude', 'plugin', 'install', key, '--scope', 'project']),
     timeoutMs: 180_000,
     writes: Object.freeze(['enabledPlugins in .claude/settings.json']),
+    runs: Object.freeze([]),
     isPlugin: true,
   })
 }
