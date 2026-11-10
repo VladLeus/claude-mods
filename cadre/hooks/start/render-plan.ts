@@ -11,6 +11,7 @@
 import type { InboxRotation, PortEntry, PortStat } from '../../types'
 import { roleFolderLevels } from '../apply/safety'
 import { stableJson } from '../core/json'
+import { isRoleId } from '../core/role-id'
 import { reportText, sortedUnique } from '../core/text'
 import type { RenderStep } from '../host/steps'
 import type { OverlayLink } from '../launch/links'
@@ -27,6 +28,7 @@ import {
   runtimeDirOf,
   RUNTIME_KICKOFF_FILE,
   RUNTIME_STAMP_FILE,
+  SESSION_FILE,
 } from '../paths'
 
 /** The name of the rendered runtime settings in `.runtime` (D-84). */
@@ -430,6 +432,13 @@ function inboxFolderSteps(inboxDir: string): RenderStep[] {
   const chmods = inboxFolderLevels(inboxDir).map((path): RenderStep => ({ kind: 'chmod', path }))
 
   return [mkdirStep(inboxDir), ...chmods]
+}
+
+/** The removals of the inbox and session record of each real role folder an inbox home lists, in listing order. */
+export function inboxClearSteps(home: string, entries: readonly PortEntry[]): RenderStep[] {
+  return entries
+    .filter(entry => entry.kind === 'dir' && !entry.isLink && isPlainName(entry.name) && isRoleId(entry.name))
+    .flatMap(entry => [INBOX_LOG_FILE, SESSION_FILE].map(file => removeStep(`${home}/${entry.name}/${file}`)))
 }
 
 /**

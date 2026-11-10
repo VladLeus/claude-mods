@@ -9,22 +9,35 @@
  * (D-150). It imports core, generate/launcher, git, guards/repo, host/steps, paths, roles/template, scan, start, team,
  * ui and the epic modules; register and the goldens run it.
  */
-import type { CadreState, EpicRecord, HostIo, InitIo, InitLocations, RoleSpec, TerminalChoice } from '../../types'
+import type {
+  CadreState,
+  EpicRecord,
+  HostIo,
+  InitIo,
+  InitLocations,
+  PortEntry,
+  PortStat,
+  RoleSpec,
+  TerminalChoice,
+} from '../../types'
 import { isNewRepoFileWritable } from '../apply/run'
+import { privateLevelsProblem } from '../apply/safety'
+import { sha256Hex } from '../core/hash'
 import { reportText, sortedUnique } from '../core/text'
 import { rubricText } from '../generate/docs'
 import { hasRuntimeKickoff, shQuote } from '../generate/launcher'
 import { GIT_TIMEOUT_MS } from '../git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
 import { repoGuard } from '../guards/repo'
-import { hasRunFailed } from '../host/steps'
+import { hasRunFailed, isStepDone } from '../host/steps'
 import { t } from '../locales/t'
-import { launcherPath, SIZING_RUBRIC_PATH } from '../paths'
+import { inboxHomeOf, inboxTreeOf, launcherPath, parentOf, SIZING_RUBRIC_PATH, userDirOf } from '../paths'
 import { standIn } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeRefusal } from '../start/claude-version'
 import { launcherRead } from '../start/launcher-check'
 import { renderRole } from '../start/render'
+import { inboxClearSteps } from '../start/render-plan'
 import { compileTeam, readTeam, regenBadRole } from '../team'
 import { terminalHostOf } from '../ui/open'
 import {
@@ -344,6 +357,27 @@ async function mirroredReply(
 }
 
 /**
+ * Removes the inbox and session record of each role folder in the inbox home of a worktree runEpic has just added,
+ * where an earlier epic of the same key left them. A link or a non-folder on the way to the home removes nothing, and
+ * a removal that fails changes nothing else.
+ */
+async function clearedInboxes(io: InitIo, host: HostIo, locations: InitLocations, worktree: string): Promise<void> {
+  const userDir = userDirOf(locations, [worktree, locations.root], [])
+  if (userDir === null) return
+  const home = inboxHomeOf(userDir, worktree, await sha256Hex(worktree))
+  const tree = inboxTreeOf(userDir)
+  const levels = [parentOf(tree), tree, home]
+  const stats = new Map<string, PortStat | null>()
+  for (const level of levels) stats.set(level, await io.stat(level))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of [userDir, parentOf(tree), tree]) listings.set(folder, await io.list(folder))
+  if (privateLevelsProblem(levels, stats, listings) !== null) return
+  const entries = await io.list(home)
+  if (entries === null) return
+  for (const step of inboxClearSteps(home, entries)) await isStepDone(host, step)
+}
+
+/**
  * `/cadre epic <KEY> [title]` in the main checkout's root session (D-145, D-146, D-147, D-163, D-164). Before anything
  * is created it refuses, in this order (D-165): a key epicKeyOf refuses (epicBadKeyReply), before anything runs; the
  * repo refusals of repoGuard, in the epic wording; a root that CHECKOUT_ARGV and checkoutOf do not show as the main
@@ -359,8 +393,9 @@ async function mirroredReply(
  * `<root>/.claude/worktrees/<name>` is added back on the kept branch, named for it, or made on the new branch
  * `epic/<slug>` from the current HEAD: a name isEpicSlug refuses, or a path that already exists (epicPathExistsReply),
  * stops it before the one `git worktree add` through the host; an add that fails or cannot start gives
- * epicAddFailedReply, and the branch is never deleted. Its epic record (D-164) holds the key, its name as the slug, the
- * title typed, the branch, the base (the branch checked out at the root, else its commit, else null) and the time.
+ * epicAddFailedReply, and the branch is never deleted. A worktree it has just added starts with empty inboxes
+ * (clearedInboxes). Its epic record (D-164) holds the key, its name as the slug, the title typed, the branch, the base
+ * (the branch checked out at the root, else its commit, else null) and the time.
  * Either way the main checkout is then mirrored into the worktree (mirroredReply, D-147, D-148): what git does not
  * track or ignores there and the worktree lacks is linked in or copied, hidden from git by the worktree's own excludes
  * file, which keeps the user's global excludes and is set up before the first link; a worktree whose git dir git does
@@ -478,6 +513,7 @@ export async function runEpic(
   const base = headBranch === '' ? headCommit : headBranch
   const added = await host.run(worktreeAddArgv(root, path, branch, isNew), { timeoutMs: GIT_ADD_TIMEOUT_MS })
   if (hasRunFailed(added)) return epicAddFailedReply(branch, isNew)
+  await clearedInboxes(io, host, guard.locations, path)
 
   const named = await host.run(GIT_DIR_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
   const gitDir = named !== null && named.exitCode === 0 ? named.stdout.trim() : ''
