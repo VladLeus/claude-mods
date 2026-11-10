@@ -36,3 +36,8 @@ export function cancelledReply(reason: string): string {
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
 export const IGNORE_ALL_NOTE = t('init.replies.ignoreAllNote')
+
+/** The refusal of `/cadre frameworks` in an epic worktree, naming the main checkout to run it in. */
+export function frameworksInEpicReply(main: string): string {
+  return t('frameworks.epicWorktree', { main: reportText(main) })
+}

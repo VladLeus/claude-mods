@@ -765,6 +765,12 @@ export const EN = Object.freeze({
   'regen.sideRead.regenTotalWarning':
     'regen stopped reading at {value} KiB for {id}: its instruction parts were not compared',
 
+  'frameworks.notInteractive':
+    `cadre frameworks needs an interactive session to ask its questions. Run /cadre frameworks in a terminal ${
+    ''}session, not with claude -p.`,
+  'frameworks.epicWorktree':
+    'run /cadre frameworks in the root session of the main checkout, not in an epic worktree: {main}',
+
   'status.report.donePresent': 'DONE.md: present',
   'status.report.doneAbsent': 'DONE.md: not written yet',
   'status.report.sessionNone': 'session: none found for {sessionName}',

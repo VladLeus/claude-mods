@@ -3,20 +3,20 @@
  * files, which names the epic's key, slug, title, branch `epic/<slug>`, base and the links and copies its mirror made
  * (epicRecordText), and parseEpicRecord, which reads one back and gives null for any shape or path it cannot trust
  * (fail closed); readEpicRecord reads it back from the git dir git names for a worktree, through the HostIo and
- * InitIo ports; with EPIC_BRANCH_PREFIX, the start of every epic branch name (D-146). It imports core, git/argv, scan
- * and epic/git; the other epic modules read it.
+ * InitIo ports; with EPIC_BRANCH_PREFIX, the start of every epic branch name (D-146). It imports core, git/argv, paths
+ * (whose EPIC_RECORD_FILE it passes on), scan and epic/git; the other epic modules read it.
  */
 import type { EpicRecord, HostIo, InitIo } from '../../types'
 import { allOrNull, isObject, parseJsonValue, stableJson } from '../core/json'
 import { GIT_TIMEOUT_MS } from '../git/argv'
+import { EPIC_RECORD_FILE } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { GIT_DIR_ARGV } from './git'
 
+export { EPIC_RECORD_FILE } from '../paths'
+
 /** The start of every epic branch name (D-146): `epic/<slug>`. */
 export const EPIC_BRANCH_PREFIX = 'epic/'
-
-/** The file name of the epic record in its worktree's git dir (D-164): per worktree, outside the tree, never shared. */
-export const EPIC_RECORD_FILE = 'cadre-epic.json'
 
 /**
  * Whether a recorded link or copy path is safe to act on inside the worktree (D-164, T-03.1-03): relative, so not

@@ -68,10 +68,10 @@ export function autopilotRunState(read: PortRead, now: number): RunState {
 }
 
 /**
- * The text that stops `/cadre init` or `/cadre regen` for a run state, or null when it may go on. An active run is
- * told how to stop it; an unknown state says the status file could not be read (D-42).
+ * The text that stops `/cadre init`, `/cadre regen` or `/cadre frameworks` for a run state, or null when it may go on.
+ * An active run is told how to stop it; an unknown state says the status file could not be read.
  */
-export function autopilotReply(state: RunState, command: 'init' | 'regen'): string | null {
+export function autopilotReply(state: RunState, command: 'init' | 'regen' | 'frameworks'): string | null {
   if (state === 'none') return null
   if (state === 'active') {
     return t('scan.autopilot.autopilotReply', { command })

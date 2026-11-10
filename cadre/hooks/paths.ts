@@ -565,6 +565,9 @@ export const BESIDE_SUFFIX = '.cadre-new'
 /** The repo-relative path of the root `.gitignore`, which holds the cadre block (D-64). */
 export const GITIGNORE_FILE = '.gitignore'
 
+/** The file name of the epic record in its worktree's git dir: per worktree, outside the tree, never shared. */
+export const EPIC_RECORD_FILE = 'cadre-epic.json'
+
 /**
  * The repo-relative path of a role's launcher, `.cadre/bin/<id>`: generate writes it, and init, start and epic compare
  * or read it; a caller that needs it absolute joins the root to it.

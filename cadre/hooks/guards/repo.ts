@@ -1,8 +1,9 @@
 /**
- * The repo checks /cadre init, regen, start, status and epic run before they read anything, a layer 3 module: a
- * readable session root that is not the home folder or the file system root, a git repo above it whose top level it
- * is, and for init and regen no autopilot run live in the session, each refusal worded for its command. It imports
- * core, facts, git, paths, scan's autopilot readers and the types, so start, status and epic guard here, not in init.
+ * The repo checks /cadre init, regen, frameworks, start, status and epic run before they read anything, a layer 3
+ * module: a readable session root that is not the home folder or the file system root, a git repo above it whose top
+ * level it is, and for init, regen and frameworks no autopilot run live in the session, each refusal worded for its
+ * command. It imports core, facts, git, paths, scan's autopilot readers and the types, so start, status and epic guard
+ * here, not in init.
  */
 import type { InitIo, InitLocations } from '../../types'
 import { clean } from '../core/text'
@@ -17,7 +18,7 @@ import { detectRefusal } from './refusals'
 const MAX_TOP_CHARS = 240
 
 /** The cadre commands a refusal is worded for. */
-export type CommandWord = 'init' | 'regen' | 'start' | 'status' | 'epic'
+export type CommandWord = 'init' | 'regen' | 'start' | 'status' | 'epic' | 'frameworks'
 
 /**
  * The refusal when the session root is not the git top level, naming the top level, else null (D-56). Trailing
@@ -71,7 +72,7 @@ async function gitTopRefusal(io: InitIo, root: string, command: CommandWord): Pr
 async function autopilotRefusal(
   io: InitIo,
   givenHome: string | null,
-  command: 'init' | 'regen',
+  command: 'init' | 'regen' | 'frameworks',
 ): Promise<string | null> {
   const unknown = autopilotReply('unknown', command)
   const sessionId = await io.sessionId()
@@ -90,7 +91,7 @@ async function autopilotRefusal(
  * The repo checks a cadre command runs before it reads anything (D-36, D-56, D-97b). It refuses, in this order: an
  * unreadable session root, the home folder or the file system root, a root with no git repo above it, and a root that
  * is not the git top level. Each refusal is worded for `command`, and no check after a refusal runs. It asks no
- * question and does not look for an autopilot run: initGuard adds those checks for init and regen.
+ * question and does not look for an autopilot run: initGuard adds those checks for init, regen and frameworks.
  */
 export async function repoGuard(io: InitIo, command: CommandWord): Promise<GuardResult> {
   const locations = await io.locations()
@@ -107,15 +108,16 @@ export async function repoGuard(io: InitIo, command: CommandWord): Promise<Guard
 }
 
 /**
- * The guard `/cadre init` and `/cadre regen` run before they scan anything (SCAN-04, D-42, D-56). It refuses, in this
- * order: (init only) a session nobody can be asked in; the repo checks of repoGuard (an unreadable session root, the
- * home folder or the file system root, a root with no git repo above it, a root that is not the git top level); an
- * active autopilot run in this session, and an autopilot state that cannot be read. Regen runs in `claude -p` (D-99),
- * so its guard never asks whether anyone is there. Each refusal is worded for its command, and no check after a
- * refusal runs.
+ * The guard `/cadre init`, `/cadre regen` and `/cadre frameworks` run before they scan anything. It refuses, in this
+ * order: (init and frameworks) a session nobody can be asked in, each in its own words; the repo checks of repoGuard
+ * (an unreadable session root, the home folder or the file system root, a root with no git repo above it, a root that
+ * is not the git top level); an active autopilot run in this session, and an autopilot state that cannot be read.
+ * Regen runs in `claude -p`, so its guard never asks whether anyone is there. Each refusal is worded for its command,
+ * and no check after a refusal runs.
  */
-export async function initGuard(io: InitIo, command: 'init' | 'regen'): Promise<GuardResult> {
-  if (command === 'init' && (await io.isInteractive()) !== true) return refuse(NOT_INTERACTIVE_REPLY)
+export async function initGuard(io: InitIo, command: 'init' | 'regen' | 'frameworks'): Promise<GuardResult> {
+  const notInteractive = command === 'frameworks' ? t('frameworks.notInteractive') : NOT_INTERACTIVE_REPLY
+  if (command !== 'regen' && (await io.isInteractive()) !== true) return refuse(notInteractive)
 
   const guard = await repoGuard(io, command)
   if (guard.kind === 'refuse') return guard
