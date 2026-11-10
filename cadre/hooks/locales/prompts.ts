@@ -155,7 +155,7 @@ export const PROMPTS = Object.freeze({
   // and the pick it names per planning mode (messages/sizing sizeText).
   inboxWakeMethod:
     'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read and execute it with {method}.',
-  inboxFieldMissing: 'A {kind} needs {field}.',
+  inboxFieldMissing: 'A {kind} needs {fields}.',
   inboxTicketKeyBad:
     'ticketKey must be a ticket key of at most {max} characters: a letter or digit, then letters, digits, . - or _.',
   inboxVectorBad: 'vector must hold scope, complexity, risk and effort, each a number from 0.1 to 1.0.',
@@ -186,7 +186,10 @@ export const PROMPTS = Object.freeze({
   inboxSendDescription:
     `cadre: send a message to another role of your team. It is added to that role's inbox, stamped with your role ${
     ''}and the time, and the role is woken to read it. to: the role id. kind: ticket, task, report, question, ${
-    ''}answer, epic-end or note. replyTo: the id of the entry you answer, if any.`,
+    ''}answer, epic-end or note. replyTo: the id of the entry you answer, if any. A ticket needs ticketKey and ${
+    ''}scores (pin and reportForm optional); a task needs ticketKey, vector and use (specPath optional); a report ${
+    ''}needs outcome, changes, verification, vector, reason, frameworkUsed, docPaths and openQuestions; a note may ${
+    ''}carry mode and tickets (a brief); question, answer and epic-end take no kind fields.`,
   inboxReadDescription:
     `cadre: read your own inbox. Each entry shows its id, state, kind, sender and subject, then its body. all: true ${
     ''}also lists the entries marked done or rejected.`,

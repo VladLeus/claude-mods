@@ -212,10 +212,10 @@ describe('parseSendInput of a ticket', () => {
   test('no ticketKey or scores, a key ../x or a b, a complexity in scores or pin medium is refused', () => {
     const keyBad = fill(PROMPTS.inboxTicketKeyBad, { max: TICKET_KEY_MAX_CHARS })
     const cases: readonly (readonly [unknown, string])[] = [
-      [{ ...TICKET, ticketKey: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', field: 'ticketKey' })],
+      [{ ...TICKET, ticketKey: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', fields: 'ticketKey' })],
       [{ ...TICKET, ticketKey: '../x' }, keyBad],
       [{ ...TICKET, ticketKey: 'a b' }, keyBad],
-      [{ ...TICKET, scores: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', field: 'scores' })],
+      [{ ...TICKET, scores: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', fields: 'scores' })],
       [{ ...TICKET, scores: { scope: 0.3, risk: 0.9, complexity: 0.5 } }, PROMPTS.inboxScoresBad],
       [{ ...TICKET, pin: 'medium' }, fill(PROMPTS.inboxPinBad, { pins: 'small, large' })],
     ]
@@ -253,7 +253,7 @@ describe('parseSendInput of a report', () => {
         { ...REPORT, openQuestions: questions },
         fill(PROMPTS.inboxOpenQuestionsBad, { max: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS }),
       ],
-      [{ ...REPORT, reason: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'report', field: 'reason' })],
+      [{ ...REPORT, reason: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'report', fields: 'reason' })],
     ]
 
     expect(cases.map(([event]) => refusalOf(event))).toEqual(cases.map(([, message]) => message))
@@ -279,7 +279,7 @@ describe('parseSendInput of an epic brief', () => {
       fields: { mode: 'gsd-epic', tickets },
     })
     expect(refusalAs(PM, { ...TICKET, ticketKey: undefined })).toBe(
-      fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', field: 'ticketKey' }),
+      fill(PROMPTS.inboxFieldMissing, { kind: 'ticket', fields: 'ticketKey' }),
     )
   })
 

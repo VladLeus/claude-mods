@@ -358,8 +358,8 @@ function sendFields(kind: MessageKind, fields: Readonly<Record<string, unknown>>
   const takes = KIND_FIELDS[kind]
   const foreign = INBOX_ENTRY_FIELDS.find(field => fields[field] !== undefined && !takes.includes(field))
   if (foreign !== undefined) return fieldsError(fill(PROMPTS.inboxFieldNotForKind, { field: foreign, kind }))
-  const missing = REQUIRED_FIELDS[kind].find(field => fields[field] === undefined)
-  if (missing !== undefined) return fieldsError(fill(PROMPTS.inboxFieldMissing, { kind, field: missing }))
+  const missing = REQUIRED_FIELDS[kind].filter(field => fields[field] === undefined)
+  if (missing.length > 0) return fieldsError(fill(PROMPTS.inboxFieldMissing, { kind, fields: missing.join(', ') }))
   const read = kindFieldsOf(kind, fields)
   if (read.kind === 'error' || kind !== 'note') return read
 

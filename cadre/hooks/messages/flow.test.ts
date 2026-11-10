@@ -326,7 +326,7 @@ describe('runInboxSend of a task', () => {
     for (const field of fields) {
       const { outcome, host, sends } = await sendFrom(beWorld(), { ...TASK, [field]: undefined }, { ctx: TL })
 
-      expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxFieldMissing, { kind: 'task', field }) })
+      expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxFieldMissing, { kind: 'task', fields: field }) })
       expect([host.calls, sends]).toEqual([[], []])
     }
   })
