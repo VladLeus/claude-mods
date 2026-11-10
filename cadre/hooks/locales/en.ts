@@ -817,6 +817,10 @@ export const EN = Object.freeze({
   'command.usage.usageRows10': 're-render one role from its role.json and write its files',
   'command.usage.usageRows11': '/cadre regen <id> --dry-run',
   'command.usage.usageRows12': "print that role's plan and write nothing",
+  'command.usage.usageRowsFrameworks': '/cadre frameworks',
+  'command.usage.usageRowsFrameworksText': "choose the team's frameworks again: the questions, a review, then write",
+  'command.usage.usageRowsFrameworksDry': '/cadre frameworks --dry-run',
+  'command.usage.usageRowsFrameworksDryText': 'the same questions; prints the changes and writes nothing',
   'command.usage.usageRows13': '/cadre start <id>',
   'command.usage.usageRows14': "render a role's runtime files, then print and copy its launcher command",
   'command.usage.usageRowsCommand': '/cadre start <id> --terminal',
@@ -1438,7 +1442,7 @@ export const EN = Object.freeze({
 
   'register.paneTitle': 'cadre init',
   'register.commandDescription':
-    'Split this repo into scope-limited role sessions: detect, init, regen, start, status, epic',
+    'Split this repo into scope-limited role sessions: detect, init, regen, frameworks, start, status, epic',
   'register.paneEmpty': 'cadre init has not shown anything yet.',
 }) satisfies Record<string, string>
 

@@ -26,7 +26,7 @@ import { runEpicDone } from './epic/done'
 import { teamViewOf } from './epic/hierarchy'
 import { isRuntimeIdentityArgv } from './framework/gsd/identity'
 import { detectRefusal } from './guards/refusals'
-import { consentedGsdCheck, runInit } from './init/run'
+import { consentedGsdCheck, runFrameworks, runInit } from './init/run'
 import type { InitOptions } from './init/run'
 import { PROMPTS } from './locales/prompts'
 import { fill, setMissingSlotSink, t } from './locales/t'
@@ -544,11 +544,25 @@ function pageColumnsNow(surface: SurfaceModule): number | null {
 }
 
 /**
- * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo over `pane`. An init or regen
- * run starts as the run's selected module says (runStartEffects, D-353): on a pane surface it opens the cadre-init
- * pane (openPane, D-324). Both read the page width before each step (pageColumnsNow, D-292) and, at each ask, where the
- * pane is seated, which the module's paged port reads, as no question is paged where the dialog previews it (paneSeat,
- * N-02); no other command opens the pane.
+ * The options of an init-style run on the pane's surface: the page width read before each step, where the pane is
+ * seated and the rows it shows, read at each ask, and the host to write through unless it is a dry run.
+ */
+function initOptionsOf($: EngineInterface, pane: PaneRun, dryRun: boolean): InitOptions {
+  const { surface } = pane
+  const pageColumns = (): number | null => pageColumnsNow(surface)
+  const pageRows = (): number | null => paneBodyRows
+
+  return dryRun
+    ? { dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
+    : { dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
+}
+
+/**
+ * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo over `pane`. An init,
+ * frameworks or regen run starts as the run's selected module says (runStartEffects, D-353): on a pane surface it
+ * opens the cadre-init pane (openPane, D-324). Each reads the page width before each step (pageColumnsNow, D-292) and,
+ * at each ask, where the pane is seated, which the module's paged port reads, as no question is paged where the dialog
+ * previews it (paneSeat, N-02); no other command opens the pane.
  */
 async function commandReply($: EngineInterface, args: string, pane: PaneRun): Promise<{ text: string }> {
   const command = parseCommand(args)
@@ -559,14 +573,17 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       return { text: await detectReply($, command.adapters, initIoOf($, pane)) }
     case 'init': {
       const { surface } = pane
-      const pageColumns = (): number | null => pageColumnsNow(surface)
-      const pageRows = (): number | null => paneBodyRows
-      const options: InitOptions = command.dryRun
-        ? { dryRun: true, surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
-        : { dryRun: false, host: hostIoOf($), surface, pageColumns, paneSeat: () => lastPlacement, pageRows }
+      const options = initOptionsOf($, pane, command.dryRun)
       await runEffects($, pane, surface.runStartEffects(), null)
 
       return { text: await runInit(initIoOf($, pane), options) }
+    }
+    case 'frameworks': {
+      const { surface } = pane
+      const options = initOptionsOf($, pane, command.dryRun)
+      await runEffects($, pane, surface.runStartEffects(), null)
+
+      return { text: await runFrameworks(initIoOf($, pane), options) }
     }
     case 'regen': {
       const { id } = command
@@ -778,6 +795,7 @@ export const register: Register = on => {
       description: t('register.commandDescription'),
       argumentHint:
         'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run] | ' +
+        'frameworks [--dry-run] | ' +
         'start <id> [--terminal[=terminal|iterm|tmux]] | status <id> | ' +
         'epic <KEY> [title] [--terminal[=terminal|iterm|tmux]] | epic done <KEY> [--force]',
     })

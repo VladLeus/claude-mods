@@ -13,6 +13,7 @@ export type TerminalChoice = 'none' | 'auto' | 'terminal' | 'iterm' | 'tmux' | '
 /**
  * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
  * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json;
+ * `frameworks [--dry-run]` asks the framework step of init again for the stored team and re-renders its role files;
  * `start <id> [--terminal[=terminal|iterm|tmux]]` renders a role's per-launch files and prints its launcher command;
  * `status <id>` reads from disk whether a role's autopilot run is done, running, stopped, not started or unknown, and
  * writes nothing; `epic <KEY> [title] [--terminal[=terminal|iterm|tmux]]` creates or reuses the epic's worktree in the
@@ -43,6 +44,11 @@ export type CadreCommand =
       readonly kind: 'regen'
       /** The role id, already matched against the role-id slug (D-48). */
       readonly id: string
+      readonly dryRun: boolean
+    }
+  | {
+      readonly kind: 'frameworks'
+      /** Whether --dry-run was given: the changes are printed and nothing is installed or written. */
       readonly dryRun: boolean
     }
   | {
