@@ -6,6 +6,7 @@ import { isObject } from '../core/json'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import type { LaunchUser } from '../launch/links'
 import { launchPlan } from '../launch/plan'
+import { inboxDirOf, inboxHomeOf } from '../paths'
 import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { compileScope } from '../scope/compile'
@@ -31,6 +32,7 @@ import {
   hookSourcesFor,
   launchHooksOf,
   launchSettingsOf,
+  privateFolderRefusal,
   START_NO_GIT_DIR,
   START_NO_HOME,
 } from './gather-user'
@@ -150,6 +152,7 @@ describe('gatherLaunchUser (D-98)', () => {
       user: user({ commonDirHash, codeDirs: ['src'] }),
       warnings: [],
       memories: NO_MEMORY_LINKS,
+      inboxDir: inboxDirOf(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')), 'be'),
     })
     expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
   })
@@ -169,6 +172,7 @@ describe('gatherLaunchUser (D-98)', () => {
       }),
       warnings: [],
       memories: NO_MEMORY_LINKS,
+      inboxDir: inboxDirOf(inboxHomeOf('/cfg', '/repo', await sha256Hex('/repo')), 'be'),
     })
     const unresolved = userOf((await gather(memWorld({}), [GIT_OK])).read)
     expect([unresolved.gitCommonDir, unresolved.commonDirHash]).toEqual(['/repo/.git', await sha256Hex('/repo/.git')])
@@ -208,6 +212,22 @@ describe('gatherLaunchUser (D-98)', () => {
     expect(beDir).toBe(`/home/u/.claude/cadre/${slug}/be`)
     expect(pmDir).toBe(`/home/u/.claude/cadre/${slug}/pm`)
     expect(beDir).not.toBe(pmDir)
+  })
+
+  test('a link at the inbox tree in the user folder refuses with the private folder refusal naming it', async () => {
+    const tree = '/home/u/.claude/cadre/inboxes'
+    const dirs = {
+      '/repo/.git': [],
+      '/home/u/.claude': [entry('cadre', 'dir')],
+      '/home/u/.claude/cadre': [entry('inboxes', 'dir')],
+      [tree]: [],
+    }
+    const linkedTree = { ...dirs, '/home/u/.claude/cadre': [link('inboxes')] }
+    const byStat = await gather(repoWorld({ dirs, realPaths: { [tree]: '/elsewhere/inboxes' } }), [GIT_OK])
+    const byListing = await gather(repoWorld({ dirs: linkedTree }), [GIT_OK])
+    const refusal = { kind: 'refuse', text: privateFolderRefusal('~/.claude/cadre/inboxes', 'link') }
+
+    expect([byStat.read, byListing.read]).toEqual([refusal, refusal])
   })
 
   test('no HOME refuses before any run, even with CLAUDE_CONFIG_DIR set', async () => {

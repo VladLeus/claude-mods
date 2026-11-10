@@ -390,15 +390,15 @@ describe('role documents', () => {
     )
   })
 
-  test('Inbox names the inbox of the role id, the three inbox tools and the six states, in three lines', () => {
+  test('Inbox names the inbox in the user config folder, the three inbox tools and the states, in three lines', () => {
     const be = templateRole('be')
     const api = templateRole('be', { id: 'api', title: 'Backend API' })
     const text = roleMdText(be, scopeOf(be, 'gsd', [be]))
 
     expect(text).toContain(
       '## Inbox\n\n' +
-        'Your inbox is .cadre/be/.runtime/inbox.jsonl, a path from the git root. Read it with inbox_read ' +
-        'when you start, after every restart and when a wait ends.\n' +
+        'Your inbox lives in your user config folder, outside the repo, and only the cadre inbox tools write it. ' +
+        'Read it with inbox_read when you start, after every restart and when a wait ends.\n' +
         'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).\n' +
         'Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the entry ' +
         'you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done (a ' +
@@ -406,9 +406,8 @@ describe('role documents', () => {
         '## Planning docs\n',
     )
     expect(text).not.toContain('inbox.md')
-    expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(
-      '\n\nYour inbox is .cadre/api/.runtime/inbox.jsonl, a path from the git root. ',
-    )
+    expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(`\n\n${ARTIFACT.roleMdInboxLine}\n`)
+    expect(ARTIFACT.roleMdInboxLine).not.toContain('.cadre')
   })
 
   test('Scope holds the lines of the scope card', () => {

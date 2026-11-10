@@ -8,6 +8,7 @@ import { cadreJsonText, roleJsonText, rubricText } from '../generate/docs'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { parseInbox } from '../messages/record'
+import { inboxDirOf, inboxHomeOf } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeTooOldReply } from '../start/claude-version'
 import { START_NO_GIT_DIR } from '../start/gather-user'
@@ -724,10 +725,13 @@ const TRIO: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templ
 const MAIN_RUBRIC = '/repo/.cadre/sizing.md'
 const WORKTREE_RUBRIC = `${BARE_WORKTREE}/.cadre/sizing.md`
 
+/** The inbox home of BARE_WORKTREE in the user config folder of the fixture user. */
+const WORKTREE_INBOX_HOME = inboxHomeOf('/home/u/.claude', BARE_WORKTREE, await sha256Hex(BARE_WORKTREE))
+
 /** The stdin of the inbox append of each role an epic run rendered, by role id. */
 function inboxStdins(run: EpicRun, ids: readonly string[]): (string | undefined)[] {
   return ids.map(id => {
-    const path = `${BARE_WORKTREE}/.cadre/${id}/.runtime/inbox.jsonl`
+    const path = `${inboxDirOf(WORKTREE_INBOX_HOME, id)}/inbox.jsonl`
 
     return run.calls.find(call => call.argv[0] === '/usr/bin/tee' && call.argv[2] === path)?.options.stdin
   })

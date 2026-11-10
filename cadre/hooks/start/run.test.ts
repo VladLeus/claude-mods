@@ -33,6 +33,7 @@ import { unsafeMemoryNameWarning } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
 import { t } from '../locales/t'
 import { parseInbox, recordLine } from '../messages/record'
+import { inboxDirOf, inboxFolderLevels, inboxHomeOf } from '../paths'
 import { compileTeam, readTeam } from '../team'
 import {
   BIDI_OVERRIDE,
@@ -81,6 +82,15 @@ import { runStart } from './run'
 /** The per-launch folder of the BE role (D-102). */
 const RUNTIME = '/repo/.cadre/be/.runtime'
 
+/** BE's inbox folder in the user config folder of the start worlds, keyed on the repo root. */
+const INBOX_DIR = inboxDirOf(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')), 'be')
+
+/** The argv of the making of BE's inbox folder: its mkdir, then one chmod 700 per level from the top. */
+const INBOX_FOLDER_ARGV: readonly (readonly string[])[] = [
+  ['/bin/mkdir', '-p', '--', INBOX_DIR],
+  ...inboxFolderLevels(INBOX_DIR).map(level => ['/bin/chmod', '700', level]),
+]
+
 /** The BE role of the template. */
 const BE = templateRole('be')
 
@@ -115,8 +125,9 @@ describe('built files reach the session (G-02-1f)', () => {
       ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`],
       ['/bin/mkdir', '-p', '--', privateFolder],
       ...(await startLevels()).map(level => ['/bin/chmod', '700', level]),
+      ...INBOX_FOLDER_ARGV,
       ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
-      ['/usr/bin/tee', '-a', `${RUNTIME}/inbox.jsonl`],
+      ['/usr/bin/tee', '-a', `${INBOX_DIR}/inbox.jsonl`],
     ])
     expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
   })
@@ -691,8 +702,9 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
       { argv: ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`], options: STEP_OPTIONS },
       { argv: ['/bin/mkdir', '-p', '--', privateFolder], options: STEP_OPTIONS },
       ...chmods,
+      ...INBOX_FOLDER_ARGV.map(argv => ({ argv, options: STEP_OPTIONS })),
       { argv: ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`], options: STEP_OPTIONS },
-      { argv: ['/usr/bin/tee', '-a', `${RUNTIME}/inbox.jsonl`], options: { ...STEP_OPTIONS, stdin: '' } },
+      { argv: ['/usr/bin/tee', '-a', `${INBOX_DIR}/inbox.jsonl`], options: { ...STEP_OPTIONS, stdin: '' } },
     ])
     expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
     expect(runAt).toBeGreaterThan(1)
@@ -1310,10 +1322,11 @@ function shownHome(path: string): string {
 describe('private folder levels at start (02-GAPS-B3 C5, S7)', () => {
   test('real folders on every level render as before, and each level is made mode 700 after the mkdir', async () => {
     const start = await startBe(await levelsWorld())
+    const levels = [...(await startLevels()), ...inboxFolderLevels(INBOX_DIR)]
 
     expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
     expect(renderRuns(start).filter(call => call.argv[0] === '/bin/chmod')).toEqual(
-      (await startLevels()).map(level => ({ argv: ['/bin/chmod', '700', level], options: STEP_OPTIONS })),
+      levels.map(level => ({ argv: ['/bin/chmod', '700', level], options: STEP_OPTIONS })),
     )
   })
 
@@ -1409,7 +1422,7 @@ describe('the hand-out record at start (02-GAPS-B3 S6, N2, N8)', () => {
 
 describe('the rotation of a large inbox at /cadre start', () => {
   test('an inbox over 768 KiB moves to inbox-<at>.jsonl and a fresh entry from cadre lists its open ids', async () => {
-    const inbox = `${RUNTIME}/inbox.jsonl`
+    const inbox = `${INBOX_DIR}/inbox.jsonl`
     const open: InboxEntry = {
       v: 1,
       type: 'entry',
@@ -1431,7 +1444,7 @@ describe('the rotation of a large inbox at /cadre start', () => {
     const body = fresh[0]?.type === 'entry' ? fresh[0].body : ''
 
     expect(moves.map(call => call.argv)).toEqual([
-      ['/bin/mv', '--', inbox, `${RUNTIME}/inbox-1000000.jsonl`],
+      ['/bin/mv', '--', inbox, `${INBOX_DIR}/inbox-1000000.jsonl`],
       ['/usr/bin/tee', '-a', inbox],
     ])
     expect(fresh).toHaveLength(1)

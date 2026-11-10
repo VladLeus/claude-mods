@@ -112,11 +112,9 @@ function launchFileRules(root: string): string[] {
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
 
-/** The deny of the inbox and session files of the role `id` under the root `root`, as exact `//` rules. */
-function inboxFileRules(root: string, id: string): string[] {
-  const files = [`.cadre/${id}/.runtime/inbox.jsonl`, `.cadre/${id}/.runtime/session.json`]
-
-  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+/** The deny of the inbox tree in the user folder `userDir`, every role's inbox and session files, as `//` rules. */
+function inboxFileRules(userDir: string): string[] {
+  return ['Edit', 'Write'].map(tool => `${tool}(/${userDir}/cadre/inboxes/**)`)
 }
 
 /**
@@ -246,7 +244,7 @@ describe('launch render', () => {
           'Write(//repo/.cadre/manifest.json)',
           'Write(//repo/.claude/settings.json)',
           'Write(//repo/.claude/settings.local.json)',
-          ...inboxFileRules('/repo', 'pm'),
+          ...inboxFileRules('/home/u/.claude'),
           ...teamFileRules('/repo', ['pm']),
         ]),
       },
@@ -264,7 +262,8 @@ describe('launch render', () => {
     const plan = launchPlan(role, scope, carrier())
     const folder = roleMemoryDir(carrier(), 'pm')
     const own = [...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]
-    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'pm'), ...teamFileRules('/repo', ['pm'])]
+    const inbox = inboxFileRules('/home/u/.claude')
+    const launch = [...launchFileRules('/repo'), ...inbox, ...teamFileRules('/repo', ['pm'])]
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
@@ -421,7 +420,7 @@ describe('launch render', () => {
           'Write(//repo/.cadre/manifest.json)',
           'Write(//repo/.claude/settings.json)',
           'Write(//repo/.claude/settings.local.json)',
-          ...inboxFileRules('/repo', 'be'),
+          ...inboxFileRules('/home/u/.claude'),
           ...teamFileRules('/repo', ['be']),
         ]),
       },
@@ -759,11 +758,10 @@ describe('launch properties', () => {
       const folder = roleMemoryDir(item.launcher, item.role.id)
       const own = [...privateDeny(folder), ...memoryAndRecordDeny(item.launcher.userDir, folder)]
       const roots = [item.launcher.root, item.launcher.givenRoot]
-      const launch = roots.flatMap(root => [
-        ...launchFileRules(root),
-        ...inboxFileRules(root, item.role.id),
-        ...teamFileRules(root, [item.role.id]),
-      ])
+      const launch = [
+        ...roots.flatMap(root => [...launchFileRules(root), ...teamFileRules(root, [item.role.id])]),
+        ...inboxFileRules(item.launcher.userDir),
+      ]
       const expected = sortedUnique([...deny.deny, ...own, ...launch, ...memories])
 
       return {

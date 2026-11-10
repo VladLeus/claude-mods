@@ -26,7 +26,7 @@ import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
 import { PROMPTS } from './locales/prompts'
 import { fill, t } from './locales/t'
 import { sessionRecordText } from './messages/record'
-import { inboxDirOf, inboxHomeOf, ROLE_ENV, ROOT_ENV } from './paths'
+import { inboxDirOf, inboxFolderLevels, inboxHomeOf, ROLE_ENV, ROOT_ENV } from './paths'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
@@ -485,8 +485,8 @@ function startStateText(roles: readonly string[]): string {
  * The repo of regenHostWorld after a plain init of BE (D-102, LNCH-04): its cadre.json and role.json, the folder
  * `.cadre/be` resolving inside the repo, the launcher `.cadre/bin/be` and a manifest whose `.cadre/bin/be` entry holds
  * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the mkdirs, the link
- * and the inbox append of a render and the chmod 700 of each level of BE's role memory folder (02-GAPS-B3 S7) exit 0,
- * and writes are allowed. Pass `over` to change one part of it.
+ * and the inbox append of a render and the chmod 700 of each level of BE's role memory folder (02-GAPS-B3 S7) and of
+ * its inbox folder exit 0, and writes are allowed. Pass `over` to change one part of it.
  */
 async function startHostWorld(over: Partial<World> = {}): Promise<World> {
   const base = regenHostWorld()
@@ -495,7 +495,8 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
   const slug = `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
   // BE's private instructions folder, which the render makes and links from .runtime (D-140 q1-b).
   const privateFolder = `${slug}/be/instructions`
-  const levels = ['/home/u/.claude/cadre', slug, `${slug}/be`, privateFolder]
+  const inboxDir = inboxDirOf(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')), 'be')
+  const levels = ['/home/u/.claude/cadre', slug, `${slug}/be`, privateFolder, ...inboxFolderLevels(inboxDir)]
 
   return {
     ...base,
@@ -513,9 +514,10 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
       [`/bin/mkdir -p -- ${START_RUNTIME}`]: done,
       [`/bin/mkdir -p -- ${START_RUNTIME}/overlay`]: done,
       [`/bin/mkdir -p -- ${privateFolder}`]: done,
+      [`/bin/mkdir -p -- ${inboxDir}`]: done,
       ...Object.fromEntries(levels.map(level => [`/bin/chmod 700 ${level}`, done])),
       [`/bin/ln -sfn ${privateFolder} ${START_RUNTIME}/private-instructions`]: done,
-      [`/usr/bin/tee -a ${START_RUNTIME}/inbox.jsonl`]: done,
+      [`/usr/bin/tee -a ${inboxDir}/inbox.jsonl`]: done,
     },
     isWriteAllowed: true,
     ...over,

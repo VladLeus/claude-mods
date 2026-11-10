@@ -31,7 +31,6 @@ import {
   resolvedPath,
   RUNTIME_RENDERED,
   runtimeDirOf,
-  runtimeFileOf,
   screenPath,
   SESSION_FILE,
   trimSlash,
@@ -300,9 +299,8 @@ describe('the runtime inbox files', () => {
 })
 
 describe('the runtime path builder', () => {
-  test('runtimeDirOf is the runtime folder of a role and runtimeFileOf a file in it', () => {
+  test('runtimeDirOf is the runtime folder of a role', () => {
     expect(runtimeDirOf('/repo', 'be')).toBe('/repo/.cadre/be/.runtime')
-    expect(runtimeFileOf('/repo', 'be', 'inbox.jsonl')).toBe('/repo/.cadre/be/.runtime/inbox.jsonl')
   })
 })
 

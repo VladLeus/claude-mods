@@ -112,12 +112,13 @@ function launchFileRules(root: string): string[] {
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
 
-/** The deny of the inbox and session files of the role `id` under the root `root`, as exact `//` rules. */
-function inboxFileRules(root: string, id: string): string[] {
-  const files = [`.cadre/${id}/.runtime/inbox.jsonl`, `.cadre/${id}/.runtime/session.json`]
-
-  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+/** The deny of the inbox tree in the user folder `userDir`, every role's inbox and session files, as `//` rules. */
+function inboxFileRules(userDir: string): string[] {
+  return ['Edit', 'Write'].map(tool => `${tool}(/${userDir}/cadre/inboxes/**)`)
 }
+
+/** A deny entry that names the inbox tree, or an inbox or session file anywhere. */
+const INBOX_ENTRY = /\/cadre\/inboxes\/|inbox\.jsonl|session\.json/
 
 /**
  * The deny of cadre.json, the role.json of each role in `ids` and the folders GSD's project install runs code from,
@@ -533,7 +534,7 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
         ...privateDeny(folder),
         ...memoryAndRecordDeny('/home/u/.claude', folder),
         ...launchFileRules('/repo'),
-        ...inboxFileRules('/repo', 'be'),
+        ...inboxFileRules('/home/u/.claude'),
         ...teamFileRules('/repo', ['be']),
       ]),
     })
@@ -615,7 +616,8 @@ describe('linked memory deny (G-02-1f)', () => {
     const base = runtimeDeny(role, scope, launcher).deny
 
     const own = [...privateDeny(BE_MEMORY), ...memoryAndRecordDeny('/home/u/.claude', BE_MEMORY)]
-    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be'), ...teamFileRules('/repo', ['be'])]
+    const inbox = inboxFileRules('/home/u/.claude')
+    const launch = [...launchFileRules('/repo'), ...inbox, ...teamFileRules('/repo', ['be'])]
     expect(isPartsFlowRole(role)).toBe(true)
     expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launch]))
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
@@ -671,13 +673,14 @@ describe('linked memory deny (G-02-1f)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = [...launchFileRules('/repo'), ...inboxFileRules('/repo', 'be'), ...teamFileRules('/repo', ['be'])]
+    const launch = [...launchFileRules('/repo'), ...teamFileRules('/repo', ['be'])]
     const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch])
     expect(denyOf(plan.settings)).toEqual(expected)
-    expect(plan.warnings.slice(0, lead.length + 4)).toEqual([
+    expect(plan.warnings.slice(0, lead.length + 5)).toEqual([
       ...lead,
       UNDENIED_PRIVATE_WARNING,
       UNDENIED_MEMORY_FOLDER_WARNING,
+      t('launch.deny.undeniedInboxWarning'),
       UNDENIED_RECORD_WARNING,
       undeniedMemoryWarning('a.md'),
     ])
@@ -766,15 +769,12 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = ['/link/repo', '/repo'].flatMap(root => [
-      ...launchFileRules(root),
-      ...inboxFileRules(root, 'pm'),
-      ...teamFileRules(root, ['pm']),
-    ])
+    const launch = ['/link/repo', '/repo'].flatMap(root => [...launchFileRules(root), ...teamFileRules(root, ['pm'])])
     expect(denyOf(plan.settings)).toEqual(sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch]))
     expect(plan.warnings.slice(lead.length)).toEqual([
       UNDENIED_PRIVATE_WARNING,
       UNDENIED_MEMORY_FOLDER_WARNING,
+      t('launch.deny.undeniedInboxWarning'),
       UNDENIED_RECORD_WARNING,
     ])
     expect(UNDENIED_MEMORY_FOLDER_WARNING).toBe(
@@ -785,12 +785,11 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     )
   })
 
-  test('the matrix keeps only the inbox, session and role.json rules over .cadre/<id>/, none over .planning/', () => {
+  test('the matrix keeps only the role.json rules over .cadre/<id>/, none over .planning/', () => {
     const results = matrixCases(MATRIX_USER).map(item => {
       const deny = denyOf(item.plan.settings)
       const ownFolder = `//repo/.cadre/${item.role.id}/`
-      const roleJson = [`Edit(${ownFolder}role.json)`, `Write(${ownFolder}role.json)`]
-      const kept = sortedUnique([...inboxFileRules('/repo', item.role.id), ...roleJson])
+      const kept = [`Edit(${ownFolder}role.json)`, `Write(${ownFolder}role.json)`]
       const own = deny.filter(entry => entry.includes(ownFolder))
       const planning = deny.filter(entry => entry.includes('//repo/.planning/'))
       const memory = deny.filter(entry => entry.includes('/projects/-repo/memory/'))
@@ -818,8 +817,7 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
 
     expect(epicRules.filter(rule => !epicDeny.includes(rule))).toEqual([])
     expect(mainRules.filter(rule => !mainDeny.includes(rule))).toEqual([])
-    const inboxRules = sortedUnique([...inboxFileRules('/repo', 'pm'), ...inboxFileRules(worktree, 'pm')])
-    expect(epicDeny.filter(entry => entry.includes('/.runtime/'))).toEqual(inboxRules)
+    expect(epicDeny.filter(entry => INBOX_ENTRY.test(entry))).toEqual(inboxFileRules('/home/u/.claude'))
   })
 
   test('an epic role denies the code dirs of the main checkout as well as of its worktree', () => {
@@ -838,49 +836,40 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
   })
 })
 
-describe('the inbox and session files deny', () => {
+describe('the inbox tree deny', () => {
   const TEAM_IDS: readonly TemplateRoleId[] = ['pm', 'tl', 'be']
 
-  /** The deny entries under a `.runtime/` folder in the plan of the template role `id` for `launcher`. */
-  function runtimeEntries(id: TemplateRoleId, launcher: LaunchUser): string[] {
+  /** The deny entries of the template role `id` for `launcher` that name an inbox or session file. */
+  function inboxEntries(id: TemplateRoleId, launcher: LaunchUser): string[] {
     const role = templateRole(id)
     const deny = denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
 
-    return deny.filter(entry => entry.includes('/.runtime/'))
+    return deny.filter(entry => INBOX_ENTRY.test(entry))
   }
 
-  test("every role denies Edit and Write on each team role's inbox.jsonl and session.json", () => {
-    const launcher = user({ teamIds: TEAM_IDS })
-    const expected = sortedUnique(TEAM_IDS.flatMap(id => inboxFileRules('/repo', id)))
+  test('every role, with or without the team ids, denies Edit and Write of the inbox tree in one pair', () => {
+    const expected = inboxFileRules('/home/u/.claude')
 
-    expect(TEAM_IDS.map(id => runtimeEntries(id, launcher))).toEqual(TEAM_IDS.map(() => expected))
-    expect(runtimeEntries('pm', launcher)).toContain('Edit(//repo/.cadre/tl/.runtime/inbox.jsonl)')
-    expect(runtimeEntries('pm', launcher)).toContain('Write(//repo/.cadre/be/.runtime/session.json)')
+    expect(TEAM_IDS.map(id => inboxEntries(id, user({ teamIds: TEAM_IDS })))).toEqual(TEAM_IDS.map(() => expected))
+    expect(inboxEntries('tl', user())).toEqual(expected)
+    expect(expected).toEqual(['Edit(//home/u/.claude/cadre/inboxes/**)', 'Write(//home/u/.claude/cadre/inboxes/**)'])
   })
 
-  test('an epic role denies them under its worktree and under the main checkout', () => {
+  test('an epic role denies the same one pair, never one per root', () => {
     const worktree = '/repo/.claude/worktrees/x'
     const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: TEAM_IDS })
-    const roots = ['/repo', worktree]
 
-    expect(runtimeEntries('be', launcher)).toEqual(
-      sortedUnique(roots.flatMap(root => TEAM_IDS.flatMap(id => inboxFileRules(root, id)))),
-    )
+    expect(inboxEntries('be', launcher)).toEqual(inboxFileRules('/home/u/.claude'))
   })
 
-  test('with no team ids a role denies only its own two files', () => {
-    expect(runtimeEntries('tl', user())).toEqual(sortedUnique(inboxFileRules('/repo', 'tl')))
-  })
-
-  test('a root no rule can hold gets no inbox or session rule and warns once; /repo does not warn', () => {
-    const root = '/Users/me/My Projects/app'
+  test('a user folder no rule can hold gets no inbox rule and warns once; ~/.claude does not warn', () => {
     const role = templateRole('pm')
     const scope = compileScope(role, context())
-    const unsafe = launchPlan(role, scope, user({ root, givenRoot: root, teamIds: TEAM_IDS }))
+    const unsafe = launchPlan(role, scope, user({ userDir: '/home/u s/.claude', teamIds: TEAM_IDS }))
     const safe = launchPlan(role, scope, user({ teamIds: TEAM_IDS }))
     const warning = t('launch.deny.undeniedInboxWarning')
 
-    expect(denyOf(unsafe.settings).filter(entry => entry.includes('/.runtime/'))).toEqual([])
+    expect(denyOf(unsafe.settings).filter(entry => INBOX_ENTRY.test(entry))).toEqual([])
     expect(unsafe.warnings.filter(line => line === warning)).toEqual([warning])
     expect(safe.warnings).not.toContain(warning)
   })
@@ -1010,15 +999,13 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     }
   })
 
-  test("an epic role denies editing each team role's inbox and session files in the worktree and main", async () => {
+  test('an epic role denies editing the inbox tree in the user config folder, one pair', async () => {
     const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
     const permissions = settingsAt(run.writes, BARE_WORKTREE, 'be').permissions
     const deny: readonly unknown[] = isObject(permissions) && Array.isArray(permissions.deny) ? permissions.deny : []
-    const roots = ['/repo', BARE_WORKTREE]
+    const inboxRules = deny.filter(entry => typeof entry === 'string' && INBOX_ENTRY.test(entry))
 
-    expect(deny.filter(entry => typeof entry === 'string' && entry.includes('/.runtime/'))).toEqual(
-      sortedUnique(roots.flatMap(root => ['pm', 'be'].flatMap(id => inboxFileRules(root, id)))),
-    )
+    expect(inboxRules).toEqual(inboxFileRules('/home/u/.claude'))
   })
 })
 

@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry, PortStat, ScopeContext } from '../../types'
+import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { isStepDone, renderArgv } from '../host/steps'
 import type { RenderStep } from '../host/steps'
 import type { LaunchUser, OverlayLink } from '../launch/links'
 import { launchPlan } from '../launch/plan'
 import type { LaunchPlan } from '../launch/plan'
-import { RUNTIME_KICKOFF_FILE } from '../paths'
+import { t } from '../locales/t'
+import { inboxDirOf, inboxFolderLevels, inboxHomeOf, RUNTIME_KICKOFF_FILE } from '../paths'
 import { ignoreLines } from '../plan/gitignore'
 import { compileScope } from '../scope/compile'
 import { BIDI_OVERRIDE, emptySetupScan, entry, hostWorld, link, memHost, ROOT, templateRole } from '../testkit'
@@ -29,6 +31,12 @@ const ROLE_DIR = '/repo/.cadre/be'
 
 /** The per-launch folder of the BE role (D-102). */
 const RUNTIME = '/repo/.cadre/be/.runtime'
+
+/** BE's inbox folder in the user config folder of the fixture user, keyed on the repo root. */
+const INBOX_DIR = inboxDirOf(inboxHomeOf('/home/u/.claude', ROOT, await sha256Hex(ROOT)), 'be')
+
+/** BE's inbox in its inbox folder. */
+const INBOX = `${INBOX_DIR}/inbox.jsonl`
 
 /** The MCP config a render writes, as /cadre start passes it. */
 const MCP_TEXT = '{\n  "mcpServers": {}\n}\n'
@@ -130,6 +138,7 @@ function input(over: Partial<RenderInput> = {}): RenderInput {
     stats: disk(),
     listings: new Map<string, readonly PortEntry[]>(),
     memories: NO_MEMORY_LINKS,
+    inboxDir: INBOX_DIR,
     ...over,
   }
 }
@@ -143,8 +152,14 @@ function fileWritesOf(plan: LaunchPlan): RenderStep[] {
   ]
 }
 
+/** The making of BE's inbox folder: its mkdir, then one chmod 700 per level of it from the top. */
+const INBOX_FOLDER_STEPS: readonly RenderStep[] = [
+  { kind: 'mkdir', path: INBOX_DIR },
+  ...inboxFolderLevels(INBOX_DIR).map((path): RenderStep => ({ kind: 'chmod', path })),
+]
+
 /** The create of an empty inbox: an append of nothing, which never truncates an inbox that is there. */
-const INBOX_CREATE: RenderStep = { kind: 'append', path: `${RUNTIME}/inbox.jsonl`, text: '' }
+const INBOX_CREATE: RenderStep = { kind: 'append', path: INBOX, text: '' }
 
 /** The write of the stamp, the last step of every render (LNCH-03). */
 const STAMP_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/stamp`, text: STAMP_TEXT }
@@ -166,16 +181,16 @@ describe('runtime render (D-102)', () => {
   })
 
   test(
-    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the five files and DONE.md, ' +
-      'and lists .runtime, then the stale-link folders (#72 A2)',
+    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the four files, DONE.md ' +
+      'and the inbox in its folder, and lists .runtime, the stale-link folders and the inbox folder (#72 A2)',
     () => {
       expect(BE_PLAN.links).toEqual([])
-      expect(renderPaths(ROOT, 'be', BE_PLAN)).toEqual({
+      expect(renderPaths(ROOT, 'be', BE_PLAN, { inboxDir: INBOX_DIR })).toEqual({
         stats: [
+          INBOX,
           ROLE_DIR,
           RUNTIME,
           `${RUNTIME}/DONE.md`,
-          `${RUNTIME}/inbox.jsonl`,
           `${RUNTIME}/instructions`,
           `${RUNTIME}/instructions/global`,
           `${RUNTIME}/instructions/memory`,
@@ -194,6 +209,7 @@ describe('runtime render (D-102)', () => {
           `${RUNTIME}/overlay/.claude/agents`,
           `${RUNTIME}/instructions/global`,
           `${RUNTIME}/instructions/memory`,
+          INBOX_DIR,
         ],
       })
     },
@@ -202,11 +218,11 @@ describe('runtime render (D-102)', () => {
   test('renderPaths also stats each folder from .runtime down to a link and each link path, sorted, once each', () => {
     const plan = { ...BE_PLAN, links: [MEMORY_LINK, SKILL_LINK, RESUME_LINK] }
 
-    expect(renderPaths(ROOT, 'be', plan).stats).toEqual([
+    expect(renderPaths(ROOT, 'be', plan, { inboxDir: INBOX_DIR }).stats).toEqual([
+      INBOX,
       ROLE_DIR,
       RUNTIME,
       `${RUNTIME}/DONE.md`,
-      `${RUNTIME}/inbox.jsonl`,
       `${RUNTIME}/instructions`,
       `${RUNTIME}/instructions/global`,
       `${RUNTIME}/instructions/memory`,
@@ -224,12 +240,13 @@ describe('runtime render (D-102)', () => {
     ])
   })
 
-  test('a fresh role: .runtime, its overlay, three files, an empty inbox, the stamp last (D-102, D-114)', () => {
+  test('a fresh role: .runtime, its overlay, its inbox folder, three files, an empty inbox, the stamp last', () => {
     expect(BE_PLAN.links).toEqual([])
     expect(renderSteps(input())).toEqual({
       steps: [
         { kind: 'mkdir', path: RUNTIME },
         { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+        ...INBOX_FOLDER_STEPS,
         ...fileWritesOf(BE_PLAN),
         INBOX_CREATE,
         STAMP_WRITE,
@@ -244,25 +261,24 @@ describe('runtime render (D-102)', () => {
   })
 
   test('an inbox that is already there is never written again, so a note in it is not lost (D-114, Pitfall 3)', () => {
-    const inbox = `${RUNTIME}/inbox.jsonl`
-    const stats = disk({ [RUNTIME]: folder(RUNTIME), [inbox]: regular(inbox) })
+    const stats = disk({ [RUNTIME]: folder(RUNTIME), [INBOX]: regular(INBOX) })
 
     expect(renderSteps(input({ stats })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      ...INBOX_FOLDER_STEPS,
       ...fileWritesOf(BE_PLAN),
       STAMP_WRITE,
     ])
   })
 
   test('an epic seed is appended after a newline when there is no inbox, and never to an inbox that is there', () => {
-    const inbox = `${RUNTIME}/inbox.jsonl`
-    const kept = disk({ [RUNTIME]: folder(RUNTIME), [inbox]: regular(inbox) })
+    const kept = disk({ [RUNTIME]: folder(RUNTIME), [INBOX]: regular(INBOX) })
     const seeded = renderSteps(input({ inboxSeed: 'L\n' })).steps
     const reused = renderSteps(input({ inboxSeed: 'L\n', stats: kept })).steps
 
-    expect(seeded.filter(step => step.path === inbox)).toEqual([{ kind: 'append', path: inbox, text: '\nL\n' }])
-    expect(reused.filter(step => step.path === inbox)).toEqual([])
+    expect(seeded.filter(step => step.path === INBOX)).toEqual([{ kind: 'append', path: INBOX, text: '\nL\n' }])
+    expect(reused.filter(step => step.path === INBOX)).toEqual([])
   })
 
   test('an inbox.md of an older setup is left alone, file or link, and the empty inbox.jsonl is created', () => {
@@ -289,16 +305,16 @@ describe('runtime render (D-102)', () => {
     ])
     expect(renderArgv({ kind: 'write', path: `${RUNTIME}/mcp.json`, text: MCP_TEXT })).toBeNull()
     expect(renderArgv(INBOX_CREATE)).toEqual(['/usr/bin/tee', '-a', INBOX_CREATE.path])
-    expect(renderArgv({ kind: 'move', path: INBOX_CREATE.path, target: `${RUNTIME}/inbox-1000.jsonl` })).toEqual([
+    expect(renderArgv({ kind: 'move', path: INBOX_CREATE.path, target: `${INBOX_DIR}/inbox-1000.jsonl` })).toEqual([
       '/bin/mv',
       '--',
       INBOX_CREATE.path,
-      `${RUNTIME}/inbox-1000.jsonl`,
+      `${INBOX_DIR}/inbox-1000.jsonl`,
     ])
   })
 
   test('an append step runs tee -a with its text as stdin, writes nothing, and fails on a non-zero exit', async () => {
-    const path = `${RUNTIME}/inbox.jsonl`
+    const path = INBOX
     const argv = ['/usr/bin/tee', '-a', path]
     const done = memHost(hostWorld({}))
     const failed = memHost(hostWorld({ runs: [{ argv, result: { exitCode: 1, stdout: '', stderr: '' } }] }))
@@ -309,11 +325,16 @@ describe('runtime render (D-102)', () => {
     expect(await isStepDone(failed.io, { kind: 'append', path, text: '' })).toBe(false)
   })
 
-  test('every step of a render lies in the .runtime folder of the role', () => {
+  test('every step of a render lies in the .runtime folder of the role, but its inbox folder and inbox', () => {
     const paths = renderSteps(input()).steps.map(step => step.path)
 
     expect(paths.length).toBeGreaterThan(0)
-    expect(paths.filter(path => path !== RUNTIME && !path.startsWith(`${RUNTIME}/`))).toEqual([])
+    expect(paths.filter(path => path !== RUNTIME && !path.startsWith(`${RUNTIME}/`))).toEqual([
+      INBOX_DIR,
+      ...inboxFolderLevels(INBOX_DIR),
+      INBOX,
+    ])
+    expect(paths).not.toContain(`${RUNTIME}/inbox.jsonl`)
   })
 })
 
@@ -365,30 +386,30 @@ function listed(folders: Readonly<Record<string, readonly PortEntry[]>>): Readon
 }
 
 describe('the rotation of a large inbox', () => {
-  const inbox = `${RUNTIME}/inbox.jsonl`
-  const rotation = { archive: `${RUNTIME}/inbox-1000.jsonl`, text: '{"v":1}\n' }
-  const stats = disk({ [RUNTIME]: folder(RUNTIME), [inbox]: regular(inbox) })
+  const rotation = { archive: `${INBOX_DIR}/inbox-1000.jsonl`, text: '{"v":1}\n' }
+  const stats = disk({ [RUNTIME]: folder(RUNTIME), [INBOX]: regular(INBOX) })
 
-  test('a rotation moves the inbox to its archive, then appends the fresh entry in its place', () => {
+  test('a rotation moves the inbox to its archive in its folder, then appends the fresh entry in its place', () => {
     expect(renderSteps(input({ stats, rotation })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      ...INBOX_FOLDER_STEPS,
       ...fileWritesOf(BE_PLAN),
-      { kind: 'move', path: inbox, target: rotation.archive },
-      { kind: 'append', path: inbox, text: `\n${rotation.text}` },
+      { kind: 'move', path: INBOX, target: rotation.archive },
+      { kind: 'append', path: INBOX, text: `\n${rotation.text}` },
       STAMP_WRITE,
     ])
   })
 
   test('the fresh entry is appended, never written, so an entry another role added after the move is kept', () => {
-    const atInbox = renderSteps(input({ stats, rotation })).steps.filter(step => step.path === inbox)
+    const atInbox = renderSteps(input({ stats, rotation })).steps.filter(step => step.path === INBOX)
 
     expect(atInbox.map(step => step.kind)).toEqual(['move', 'append'])
   })
 
   test('without a rotation a real inbox gets no step and a missing one is created', () => {
-    const real = renderSteps(input({ stats })).steps.filter(step => step.path === inbox)
-    const missing = renderSteps(input()).steps.filter(step => step.path === inbox)
+    const real = renderSteps(input({ stats })).steps.filter(step => step.path === INBOX)
+    const missing = renderSteps(input()).steps.filter(step => step.path === INBOX)
 
     expect([real, missing]).toEqual([[], [INBOX_CREATE]])
   })
@@ -402,6 +423,7 @@ describe('runtime render links', () => {
         { kind: 'mkdir', path: RUNTIME },
         { kind: 'mkdir', path: `${RUNTIME}/overlay` },
         { kind: 'mkdir', path: SKILLS },
+        ...INBOX_FOLDER_STEPS,
         { kind: 'link', path: SKILL_LINK.path, target: SKILL_LINK.target },
         ...fileWritesOf(LINKED_PLAN),
         INBOX_CREATE,
@@ -421,9 +443,10 @@ describe('runtime render links', () => {
       `${RUNTIME}/instructions/memory`,
       `${RUNTIME}/overlay`,
       SKILLS,
+      INBOX_DIR,
     ])
     expect(steps.filter(step => step.kind === 'link')).toEqual(links.map(item => ({ kind: 'link', ...item })))
-    expect(steps.findIndex(step => step.kind === 'link')).toBe(4)
+    expect(steps.findIndex(step => step.kind === 'link')).toBe(4 + INBOX_FOLDER_STEPS.length)
   })
 
   test('a link path that is already a link is removed once, before every mkdir, and then linked again', () => {
@@ -490,21 +513,16 @@ describe('runtime render links', () => {
     expect(steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: `${SKILLS}/old` }])
   })
 
-  test('a file the render writes that is a link is removed first; an inbox link becomes an empty inbox', () => {
+  test('a file the render writes that is a link is removed first, then written', () => {
     const settings = `${RUNTIME}/settings.json`
-    const inbox = `${RUNTIME}/inbox.jsonl`
-    const steps = renderSteps(input({ stats: rendered({ [settings]: LINK_OUT, [inbox]: DANGLING }) })).steps
+    const steps = renderSteps(input({ stats: rendered({ [settings]: LINK_OUT }) })).steps
 
-    expect(steps.slice(0, 2)).toEqual([
-      { kind: 'remove', path: settings },
-      { kind: 'remove', path: inbox },
-    ])
+    expect(steps[0]).toEqual({ kind: 'remove', path: settings })
     expect(steps.filter(step => step.path === settings).map(step => step.kind)).toEqual(['remove', 'write'])
-    expect(steps.filter(step => step.path === inbox)).toEqual([{ kind: 'remove', path: inbox }, INBOX_CREATE])
   })
 
   test('a file the render writes that is a folder, or any kind but a file or a link, refuses with no step', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
     const results = names.flatMap(name => {
       const path = `${RUNTIME}/${name}`
       const other: PortStat = { kind: 'other', size: 0, isLink: false, realPath: path }
@@ -512,7 +530,7 @@ describe('runtime render links', () => {
       return [folder(path), other].map(stat => renderSteps(input({ stats: rendered({ [path]: stat }) })))
     })
 
-    expect(results).toHaveLength(10)
+    expect(results).toHaveLength(8)
     expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })))
   })
 
@@ -590,7 +608,7 @@ describe('runtime render links', () => {
   })
 
   test('a file a render writes that .runtime lists as a link, with no link in its stat, refuses (#72 A2)', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
     const results = names.map(name =>
       renderSteps(input({ stats: rendered(), listings: listed({ [RUNTIME]: [entry('notes'), link(name)] }) })),
     )
@@ -623,10 +641,11 @@ describe('runtime render links', () => {
   })
 
   test('no step removes a real file or folder but the old stamp, and nothing is removed with -r (T-03-20)', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.jsonl', 'stamp']
-    const files = Object.fromEntries(
-      names.map((name): [string, PortStat] => [`${RUNTIME}/${name}`, regular(`${RUNTIME}/${name}`)]),
-    )
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
+    const files = Object.fromEntries([
+      ...names.map((name): [string, PortStat] => [`${RUNTIME}/${name}`, regular(`${RUNTIME}/${name}`)]),
+      [INBOX, regular(INBOX)],
+    ])
     const listings = new Map(
       STALE_LINK_FOLDERS.map((name): [string, readonly PortEntry[]] => [
         `${RUNTIME}/${name}`,
@@ -647,6 +666,7 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
     expect(renderSteps(input({ kickoff: 'X\n' })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      ...INBOX_FOLDER_STEPS,
       ...fileWritesOf(BE_PLAN),
       INBOX_CREATE,
       { kind: 'write', path: `${RUNTIME}/${RUNTIME_KICKOFF_FILE}`, text: 'X\n' },
@@ -663,13 +683,49 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
       const folderFile = renderSteps(input({ kickoff: 'X\n', stats: rendered({ [kickoff]: folder(kickoff) }) }))
       const start = renderSteps(input({ stats: rendered({ [kickoff]: LINK_OUT }) }))
 
-      expect(renderPaths(ROOT, 'be', BE_PLAN, { kickoff: true }).stats).toContain(kickoff)
+      expect(renderPaths(ROOT, 'be', BE_PLAN, { inboxDir: INBOX_DIR, kickoff: true }).stats).toContain(kickoff)
       expect(linkedFile.steps[0]).toEqual({ kind: 'remove', path: kickoff })
       expect(linkedFile.steps.filter(step => step.path === kickoff).map(step => step.kind)).toEqual(['remove', 'write'])
       expect(folderFile).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
       expect(start.steps.filter(step => step.path === kickoff)).toEqual([])
     },
   )
+})
+
+describe('the inbox in its private folder', () => {
+  /** The refusal of a render whose inbox is a link or not a regular file. */
+  const REFUSAL = t('start.renderPlan.inboxRefusal', { role: 'be', path: INBOX })
+
+  test(
+    'an inbox that is a link, by its stat or by the listing of its folder while its stat shows none, refuses ' +
+      'with no step, so a link there is never removed',
+    () => {
+      const results = [
+        renderSteps(input({ stats: rendered({ [INBOX]: LINK_OUT }) })),
+        renderSteps(input({ stats: rendered({ [INBOX]: DANGLING }) })),
+        renderSteps(input({ stats: rendered(), listings: listed({ [INBOX_DIR]: [link('inbox.jsonl')] }) })),
+      ]
+
+      expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: REFUSAL })))
+    },
+  )
+
+  test('an inbox that is a folder or any other kind but a file refuses with no step', () => {
+    const other: PortStat = { kind: 'other', size: 0, isLink: false, realPath: INBOX }
+    const results = [folder(INBOX), other].map(stat => renderSteps(input({ stats: rendered({ [INBOX]: stat }) })))
+
+    expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: REFUSAL })))
+  })
+
+  test('a link listed beside the inbox, or a real inbox file, refuses nothing', () => {
+    const beside = listed({ [INBOX_DIR]: [link('inbox-1000.jsonl'), entry('session.json')] })
+    const results = [
+      renderSteps(input({ stats: rendered(), listings: beside })),
+      renderSteps(input({ stats: rendered({ [INBOX]: regular(INBOX) }) })),
+    ]
+
+    expect(results.map(result => result.refusal)).toEqual([null, null])
+  })
 })
 
 /** BE's private instructions folder for the fixture user: `<role memory folder>/instructions` (D-140 q1-b). */
@@ -715,12 +771,13 @@ function isIgnoredUnderAll(path: string): boolean {
 }
 
 describe('built files reach the session (G-02-1f)', () => {
-  test('a render makes the private link folder after the .runtime folders, chmods its levels, then links (S7)', () => {
+  test('a render makes the private link folder, chmods its levels, makes the inbox folder, then links (S7)', () => {
     expect(renderSteps(input({ plan: PRIVATE_PLAN })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
       { kind: 'mkdir', path: PRIVATE_FOLDER },
       ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
+      ...INBOX_FOLDER_STEPS,
       { kind: 'link', path: PRIVATE_LINK.path, target: PRIVATE_FOLDER },
       ...fileWritesOf(PRIVATE_PLAN),
       INBOX_CREATE,
