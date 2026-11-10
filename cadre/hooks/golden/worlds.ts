@@ -525,6 +525,11 @@ export async function regenWorld(
   }
 }
 
+/** The applied team of BE and PM that stores None in cadre.json while GSD is in use, for /cadre frameworks. */
+export async function frameworksWorld(): Promise<MemWorld> {
+  return regenWorld(team, { framework: 'none', frameworks: [] }, gitWorld({ facts: GOLDEN_WORLDS.gsd.world.facts }))
+}
+
 /** BE alone on the built-in default, as `.cadre/cadre.json` lists it. */
 const be = templateRole('be')
 
