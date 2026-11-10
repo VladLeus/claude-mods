@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, GsdFact, RepoEntry, SetupScan } from '../../../types'
 import { adaptersReportLines } from '../../detect/report'
+import { ARTIFACT } from '../../locales/artifact'
 import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 import { isDecisionType } from '../contract'
 import { adapterOf } from '../registry'
@@ -767,6 +768,22 @@ describe('the GSD start steps of a role', () => {
       [true, true],
     ])
     expect([...lead, ...worker].filter(step => step.includes('under autopilot'))).toEqual([])
+  })
+
+  test('every command a start step or a kickoff start, new project or verify line names is a start skill', () => {
+    const steps = [
+      ...GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }),
+      ...GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: false }),
+    ]
+    const texts = [...steps, ARTIFACT.gsdKickoffStart, ARTIFACT.gsdKickoffNewProject, ARTIFACT.gsdKickoffVerify]
+    const named = texts.flatMap(text => [...text.matchAll(/\/(gsd-[a-z-]+)/g)].map(match => match[1] ?? ''))
+
+    expect(named.filter(name => !GSD_ADAPTER.startSkills.includes(name))).toEqual([])
+    expect([named.length > 0, named.includes('gsd-new-milestone'), named.includes('gsd-quick')]).toEqual([
+      true,
+      true,
+      true,
+    ])
   })
 
   test('no step names a direct write under .planning/ or the workstreams skill that migrates', () => {

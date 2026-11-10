@@ -274,6 +274,15 @@ describe('compileScope', () => {
     expect(scope.overlay.agents).toEqual(['gsd-executor', 'gsd-planner'])
   })
 
+  test('TL on GSD has the commands its start steps name in its overlay, and none of them listed as not given', () => {
+    const named = ['gsd-new-project', 'gsd-new-milestone', 'gsd-quick', 'gsd-phase']
+    const scanned = emptySetupScan({ skills: named.map(name => skillRef(name)) })
+    const scope = compileScope(templateRole('tl'), context({ framework: 'gsd', setup: scanned }))
+
+    expect(named.filter(name => !scope.overlay.skills.includes(name))).toEqual([])
+    expect(named.filter(name => scope.card.notGiven.skills.includes(name))).toEqual([])
+  })
+
   test('a role with no MCP servers and no skills still has the infra plugins, the handoff and the start skills', () => {
     const scope = compileScope(templateRole('pm'), context())
 
