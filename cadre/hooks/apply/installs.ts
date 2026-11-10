@@ -131,27 +131,32 @@ export function projectInstallFailureText(install: ProjectInstall): string {
   })
 }
 
-/** The line of a framework install detection does not show: who fell back to what, and the command to run. */
+/**
+ * The line of a framework install detection does not show: who fell back to what, the command to run, and the cadre
+ * command to run again after it.
+ */
 export function frameworkFallbackText(fallen: {
   readonly name: string
   readonly command: string
   readonly roles: readonly string[]
   readonly isRepoDefault: boolean
   readonly fallback: string
+  readonly rerun: 'init' | 'frameworks'
 }): string {
-  const { name, roles, isRepoDefault, fallback } = fallen
+  const { name, roles, isRepoDefault, fallback, rerun } = fallen
   const command = reportText(fallen.command)
   const moved = [
     ...(roles.length === 0 ? [] : [tn('apply.installs.fallbackRoles', roles.length, { ids: roles.join(', ') })]),
     ...(isRepoDefault ? [t('apply.installs.fallbackDefault')] : []),
   ]
-  if (moved.length === 0) return t('apply.installs.frameworkFallbackNone', { name, command })
+  if (moved.length === 0) return t('apply.installs.frameworkFallbackNone', { name, command, rerun })
 
   return t('apply.installs.frameworkFallback', {
     name,
     moved: moved.join(t('apply.installs.namesJoin')),
     fallback,
     command,
+    rerun,
   })
 }
 
