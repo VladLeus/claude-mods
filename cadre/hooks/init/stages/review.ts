@@ -127,7 +127,7 @@ type PageOption = ReviewItem | 'next' | 'previous' | 'change'
 type ReviewChoice = Exclude<PageOption, 'change'>
 
 /** The one answer that confirms the paged review: its Confirm option, as the dialog gives it (T-02.1-78). */
-const CONFIRM_LABEL = t('init.review.confirm')
+export const CONFIRM_LABEL = t('init.review.confirm')
 
 /** The label of the review's typed choice (D-233, ASKED #4): the item to change is named in a note. */
 export const CHANGE_SOMETHING_LABEL = t('init.review.changeSomething')

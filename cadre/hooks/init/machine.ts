@@ -29,6 +29,7 @@ import { launchStage } from './stages/launch'
 import { modelStage } from './stages/model'
 import { pmPluginStage } from './stages/pm-plugin'
 import { policyStage } from './stages/policy'
+import { reframeReviewStage } from './stages/reframe'
 import { reviewStage } from './stages/review'
 import { rolesStage } from './stages/roles'
 import { securityStage } from './stages/security'
@@ -114,6 +115,7 @@ export const STAGES: Readonly<Record<InitStage, StageDef>> = Object.freeze({
   policy: policyStage,
   launch: launchStage,
   review: reviewStage,
+  'reframe-review': reframeReviewStage,
   cancelled: endStage,
   done: endStage,
 })

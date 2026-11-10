@@ -770,6 +770,18 @@ export const EN = Object.freeze({
     ''}session, not with claude -p.`,
   'frameworks.epicWorktree':
     'run /cadre frameworks in the root session of the main checkout, not in an epic worktree: {main}',
+  'frameworks.review.question': 'Review the framework changes. Confirm writes them; Cancel writes nothing.',
+  'frameworks.review.cancel': 'Cancel',
+  'frameworks.review.cancelledReason': 'Cancel was chosen at the review.',
+  'frameworks.review.kept': 'Frameworks: {names}',
+  'frameworks.review.role': '{id}: {framework}',
+  'frameworks.reply.head': 'cadre frameworks',
+  'frameworks.reply.headDry': 'cadre frameworks --dry-run',
+  'frameworks.reply.nothing': 'cadre frameworks: nothing changes, so nothing was written.',
+  'frameworks.replies.cancelled': 'frameworks cancelled, nothing written',
+  'frameworks.replies.cancelledReply': '{cancelled}: {reason}',
+  'frameworks.manifestSkippedNote':
+    '.cadre/manifest.json was not written because a file above was not written: run /cadre frameworks again.',
 
   'status.report.donePresent': 'DONE.md: present',
   'status.report.doneAbsent': 'DONE.md: not written yet',

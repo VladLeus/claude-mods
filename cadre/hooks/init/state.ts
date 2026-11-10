@@ -39,7 +39,7 @@ import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
 import type { SurfaceModule } from '../ui/surfaces/contract'
 import type { NameAssignment } from './assign-rules'
-import type { Draft, DraftBase, PlanResult, Reviewed } from './draft'
+import type { Draft, DraftBase, PlanResult, Reframed, Reviewed } from './draft'
 import type { HandoutCursor } from './handout'
 import type { PlanStepInput } from './initplan'
 
@@ -48,7 +48,8 @@ import type { PlanStepInput } from './initplan'
  * history question, the role steps (the roles, their frameworks, the security plugins, the duration, each role's model
  * and effort, the MCP and skill assignments, PM's grill plugin, the instructions and memories, the carried settings,
  * the hunks and the improver install), the git policy, the launcher start, and the review with Confirm's apply; then
- * `done`, a run that ended with its reply, or `cancelled`, a run that ended with nothing written.
+ * `done`, a run that ended with its reply, or `cancelled`, a run that ended with nothing written. `reframe-review` is
+ * the review of the frameworks flow (FLOW_ORDER).
  */
 export type InitStage =
   | 'guard'
@@ -69,6 +70,7 @@ export type InitStage =
   | 'policy'
   | 'launch'
   | 'review'
+  | 'reframe-review'
   | 'cancelled'
   | 'done'
 
@@ -93,6 +95,15 @@ export const STAGE_ORDER: readonly InitStage[] = Object.freeze([
   'launch',
   'review',
 ])
+
+/** The run the machine drives: /cadre init, or the framework step again for /cadre frameworks. */
+export type InitFlow = 'init' | 'frameworks'
+
+/** The stages each flow goes through, in order: init's are STAGE_ORDER. */
+export const FLOW_ORDER: Readonly<Record<InitFlow, readonly InitStage[]>> = Object.freeze({
+  init: STAGE_ORDER,
+  frameworks: Object.freeze<InitStage[]>(['frameworks', 'hunks', 'reframe-review']),
+})
 
 /**
  * What a stage gives the runner before its effect, in order (D-133): a fold, content no later context holds, which the
@@ -126,7 +137,8 @@ export type SessionListing = {
  * (readRepoFile), the names of the repo's rule files and AGENTS.md (repoInstructionNames), the read of the instruction
  * files after the content consent (readInstructionFiles), the check that a typed launcher folder is a folder inside
  * the repo (isRepoFolder), GSD's own check after a Yes (io.gsdIdentity, D-243), the review's plan (planStep) and
- * Confirm's apply (applyConfirmed).
+ * Confirm's apply (applyConfirmed); for the frameworks flow, its review's plan (reframePlan) and Confirm's apply of it
+ * (reframeApplied).
  */
 export type IoCall =
   | { readonly id: 'guard' }
@@ -140,6 +152,8 @@ export type IoCall =
   | { readonly id: 'gsd-identity'; readonly locations: InitLocations }
   | { readonly id: 'plan'; readonly input: PlanStepInput }
   | { readonly id: 'apply'; readonly reviewed: Reviewed }
+  | { readonly id: 'reframe-plan'; readonly input: PlanStepInput }
+  | { readonly id: 'reframe-apply'; readonly reframed: Reframed }
 
 /**
  * What an IoCall gave, under the same id; a session folder that cannot be listed gives null, and so does an apply in a
@@ -159,6 +173,8 @@ export type IoResult =
   | { readonly id: 'gsd-identity'; readonly result: RawGsdCandidate | null }
   | { readonly id: 'plan'; readonly result: PlanResult }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
+  | { readonly id: 'reframe-plan'; readonly result: PlanResult }
+  | { readonly id: 'reframe-apply'; readonly result: StepResult<Applied> | null }
 
 /**
  * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
@@ -486,6 +502,8 @@ export type InitState = {
    * the first step and when the width is unknown (tests, `-p`).
    */
   readonly pageColumns: number | null
+  /** The run the machine drives (FLOW_ORDER); absent is /cadre init. */
+  readonly flow?: InitFlow
 }
 
 /**

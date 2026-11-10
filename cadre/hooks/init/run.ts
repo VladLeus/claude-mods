@@ -811,7 +811,8 @@ function withToolsOnce(io: InitIo): InitIo {
  * session folder (listSessions), the history scan (scanHistory), the check of a typed launcher folder (isRepoFolder),
  * GSD's own check after the user said Yes (io.gsdIdentity, D-243, the only init caller of it), the review's plan
  * (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
- * hold, so it gives none there. The scans and the history scan first set their status line (D-232).
+ * hold, so it gives none there. The scans and the history scan first set their status line (D-232). The frameworks
+ * flow's plan (reframePlan) and its apply (reframeApplied) run the same way.
  */
 async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promise<IoResult> {
   switch (call.id) {
@@ -844,6 +845,13 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'plan', result: await planStep(io, call.input) }
     case 'apply':
       return { id: 'apply', result: options.dryRun ? null : await applyConfirmed(io, options.host, call.reviewed) }
+    case 'reframe-plan':
+      return { id: 'reframe-plan', result: await reframePlan(io, call.input) }
+    case 'reframe-apply': {
+      const result = options.dryRun ? null : await reframeApplied(io, options.host, call.reframed)
+
+      return { id: 'reframe-apply', result }
+    }
     default: {
       const unreachable: never = call
       return unreachable
