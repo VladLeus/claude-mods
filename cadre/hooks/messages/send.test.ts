@@ -328,6 +328,30 @@ describe('parseSendInput: the fields each kind takes', () => {
 
     expect(input).toEqual(parseSendInput(TASK_INPUT, BE, TEAM))
   })
+
+  test('a send missing several kind fields is refused once, naming each in order; one missing names it alone', () => {
+    const bareReport = { to: 'tl', kind: 'report', subject: 'PROJ-2 done', body: 'Done' }
+    const keyOnlyTask = { to: 'tl', kind: 'task', subject: 'Add the endpoint', body: 'Add it', ticketKey: 'PROJ-2' }
+    const reportFields = 'outcome, changes, verification, vector, reason, frameworkUsed, docPaths, openQuestions'
+
+    expect(refusalOf(bareReport)).toBe(`A report needs ${reportFields}.`)
+    expect(refusalOf(keyOnlyTask)).toBe('A task needs vector, use.')
+    expect(refusalOf({ ...REPORT, verification: undefined })).toBe('A report needs verification.')
+  })
+
+  test('the inbox_send description names every kind field of a ticket, a task, a report and a note', () => {
+    const fields: Readonly<Record<string, readonly string[]>> = {
+      ticket: ['ticketKey', 'scores', 'pin', 'reportForm'],
+      task: ['ticketKey', 'vector', 'use', 'specPath'],
+      report: ['outcome', 'changes', 'verification', 'vector', 'reason', 'frameworkUsed', 'docPaths', 'openQuestions'],
+      note: ['mode', 'tickets'],
+    }
+    const unnamed = Object.entries(fields).flatMap(([kind, names]) =>
+      names.filter(name => !PROMPTS.inboxSendDescription.includes(name)).map(name => `${kind} ${name}`),
+    )
+
+    expect(unnamed).toEqual([])
+  })
 })
 
 describe('parseMarkInput', () => {
