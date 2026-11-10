@@ -752,12 +752,17 @@ describe('the framework installs in the review', () => {
     return pagedLines(asking).filter(line => line.startsWith(START))
   }
 
-  test("GSD's line names its npx command, from the repo root after Confirm, and the five paths it writes", async () => {
-    const writes = '.claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json'
-    const line = `${START}npx -y @opengsd/gsd-core@latest --claude --local; it writes ${writes}`
-    expect(await installLines(['gsd'])).toEqual([line])
-    expect(line).toContain('.claude/settings.local.json')
-  })
+  test(
+    "GSD's line names its npx command, from the repo root after Confirm, and every path the install writes",
+    async () => {
+      const writes =
+        '.claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, ' +
+        '.claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json'
+      const line = `${START}npx -y @opengsd/gsd-core@latest --claude --local; it writes ${writes}`
+      expect(await installLines(['gsd'])).toEqual([line])
+      expect(line).toContain('.claude/settings.local.json')
+    },
+  )
 
   test("GSD's line says the repo's own settings (its .npmrc for npx) decide where it fetches from", async () => {
     const [line = ''] = await installLines(['gsd'])

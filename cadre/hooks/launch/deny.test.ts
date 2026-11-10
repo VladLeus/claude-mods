@@ -126,7 +126,7 @@ const INBOX_ENTRY = /\/cadre\/inboxes\/|inbox\.jsonl|session\.json/
  */
 function teamFileRules(root: string, ids: readonly string[]): string[] {
   const roleFiles = ids.map(id => `.cadre/${id}/role.json`)
-  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**']
+  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**', '.claude/scripts/**']
 
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
@@ -898,6 +898,20 @@ describe('the team and project install files deny', () => {
     expect(missing).toEqual(ids.map(() => []))
     expect(planDeny('be', launcher)).toContain('Write(//repo/.cadre/pm/role.json)')
     expect(planDeny('pm', launcher)).toContain('Edit(//repo/.claude/hooks/**)')
+  })
+
+  test('every role on any framework denies Edit and Write of .claude/scripts/**, also with no GSD in the repo', () => {
+    const rules = ['Edit(//repo/.claude/scripts/**)', 'Write(//repo/.claude/scripts/**)']
+    const missing = FRAMEWORKS.flatMap(framework =>
+      ROLE_TEMPLATE.map(row => {
+        const role = roleFromTemplate(row)
+        const deny = denyOf(launchPlan(role, compileScope(role, context({ framework })), user()).settings)
+
+        return rules.filter(rule => !deny.includes(rule))
+      }),
+    )
+
+    expect(missing).toEqual(FRAMEWORKS.flatMap(() => ROLE_TEMPLATE.map(() => [])))
   })
 
   test('an epic role denies them under its worktree and under the main checkout', () => {

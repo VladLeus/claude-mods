@@ -686,7 +686,8 @@ describe('the framework install question', () => {
     const lines = [
       'cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, ' +
         "so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
-      'It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json.',
+      'It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, ' +
+        '.claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json.',
     ]
     const [summary = ''] = lines
     const rows = lines.map(text => ({ role: 'plain', text, indent: 0 }))

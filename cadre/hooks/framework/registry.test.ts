@@ -93,7 +93,7 @@ describe('adapter contract (DET-04)', () => {
     expect(installs.map(install => Object.isFrozen(install.runs))).toEqual(installs.map(() => true))
     expect(installs.flatMap(install => install.runs.filter(dir => !install.writes.includes(dir)))).toEqual([])
     expect([GSD_ADAPTER.projectInstall?.runs, SUPERPOWERS_ADAPTER.projectInstall?.runs]).toEqual([
-      ['.claude/hooks', '.claude/gsd-core'],
+      ['.claude/hooks', '.claude/gsd-core', '.claude/scripts'],
       [],
     ])
   })

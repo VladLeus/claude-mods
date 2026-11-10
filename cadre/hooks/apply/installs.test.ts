@@ -140,8 +140,11 @@ describe('project installs', () => {
         '.claude/agents',
         '.claude/hooks',
         '.claude/settings.local.json',
+        '.claude/scripts',
+        '.claude/gsd-file-manifest.json',
+        '.claude/gsd-install-state.json',
       ],
-      runs: ['.claude/hooks', '.claude/gsd-core'],
+      runs: ['.claude/hooks', '.claude/gsd-core', '.claude/scripts'],
       isPlugin: false,
     })
     expect(projectInstallOf('superpowers')).toEqual(projectPluginInstall('superpowers@claude-plugins-official'))

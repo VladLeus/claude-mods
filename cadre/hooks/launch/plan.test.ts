@@ -123,7 +123,7 @@ function inboxFileRules(userDir: string): string[] {
  */
 function teamFileRules(root: string, ids: readonly string[]): string[] {
   const roleFiles = ids.map(id => `.cadre/${id}/role.json`)
-  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**']
+  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**', '.claude/scripts/**']
 
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
