@@ -700,6 +700,13 @@ describe('the framework install question', () => {
     })
   })
 
+  test("GSD's install question says the repo's own settings, its .npmrc for npx, decide where it fetches from", () => {
+    const lines = frameworkInstallAsk('gsd').spec.context?.lines ?? []
+    const holds = (text: string): boolean => lines.some(line => line.includes(text))
+
+    expect([holds('.npmrc'), holds("the repo's own settings")]).toEqual([true, true])
+  })
+
   test('parseFrameworkInstall reads the No and Yes labels, trimmed and in any case, and nothing else', () => {
     const read = ['No', ' no ', 'Yes, install it', 'YES, INSTALL IT'].map(parseFrameworkInstall)
     const unread = ['Install', 'Not now', 'yes', ''].map(parseFrameworkInstall)

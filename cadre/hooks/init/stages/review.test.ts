@@ -757,6 +757,12 @@ describe('the framework installs in the review', () => {
     expect(line).toContain('.claude/settings.local.json')
   })
 
+  test("GSD's line says the repo's own settings (its .npmrc for npx) decide where it fetches from", async () => {
+    const [line = ''] = await installLines(['gsd'])
+
+    expect(line).toContain('.npmrc')
+  })
+
   test("superpowers' line names its plugin install and the setting it writes; no install shows no line", async () => {
     const command = 'claude plugin install superpowers@claude-plugins-official --scope project'
     const line = `${START}${command}; it writes enabledPlugins in .claude/settings.json`
