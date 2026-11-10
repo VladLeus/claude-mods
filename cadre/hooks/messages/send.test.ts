@@ -24,6 +24,7 @@ const TEAM: TeamView = {
   pm: 'pm',
   sizing: { threshold: 0.5, mapping: { small: 'superpowers', large: 'gsd' }, rubric: '.cadre/sizing.md' },
   frameworks: ['gsd', 'superpowers'],
+  mayRun: { pm: ['none'], tl: ['gsd', 'superpowers'], be: ['gsd', 'superpowers'] },
 }
 const NOTE = { to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
 const PM: RoleContext = { id: 'pm', root: '/repo' }

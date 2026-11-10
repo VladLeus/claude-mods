@@ -21,6 +21,7 @@ function teamWith(frameworks: readonly FrameworkId[]): TeamView {
     pm: 'pm',
     sizing: defaultSizing(frameworks),
     frameworks,
+    mayRun: { pm: ['none'], tl: frameworks, be: frameworks },
   }
 }
 

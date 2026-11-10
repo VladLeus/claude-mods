@@ -26,6 +26,7 @@ describe('teamViewOf', () => {
       pm: 'pm',
       sizing: NO_FRAMEWORK_SIZING,
       frameworks: [],
+      mayRun: { pm: ['none'], tl: ['none'], be: ['none'] },
     })
   })
 
@@ -39,6 +40,7 @@ describe('teamViewOf', () => {
       pm: null,
       sizing: NO_FRAMEWORK_SIZING,
       frameworks: [],
+      mayRun: { tl: ['none'], be: ['none'] },
     })
   })
 
@@ -72,6 +74,12 @@ describe('teamViewOf', () => {
     const view = await viewOver({ framework: 'gsd' })
 
     expect([view?.frameworks, view?.sizing.mapping]).toEqual([['gsd'], { small: 'gsd', large: 'gsd' }])
+  })
+
+  test('each role may run its own framework, then the others the repo records; a role on none runs none', async () => {
+    const view = await viewOver({ framework: 'gsd', frameworks: ['gsd', 'superpowers'] })
+
+    expect(view?.mayRun).toEqual({ pm: ['none'], tl: ['gsd', 'superpowers'] })
   })
 
   test('a team that cannot be read gives null', async () => {

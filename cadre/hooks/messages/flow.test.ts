@@ -24,6 +24,7 @@ const TEAM: TeamView = {
   pm: 'pm',
   sizing: { threshold: 0.5, mapping: { small: 'superpowers', large: 'gsd' }, rubric: '.cadre/sizing.md' },
   frameworks: ['gsd', 'superpowers'],
+  mayRun: { pm: ['none'], tl: ['gsd', 'superpowers'], be: ['gsd', 'superpowers'] },
 }
 const TL_RUNTIME = '/repo/.cadre/tl/.runtime'
 const TL_INBOX = `${TL_RUNTIME}/inbox.jsonl`
@@ -385,7 +386,7 @@ describe('runInboxSend of the ticket loop', () => {
 
   /** The team view with the repo frameworks given. */
   function teamWith(frameworks: TeamView['frameworks']): TeamView {
-    return { ...TEAM, frameworks }
+    return { ...TEAM, frameworks, mayRun: { pm: ['none'], tl: frameworks, be: frameworks } }
   }
 
   test('pm sends tl a ticket: the entry carries its key, scores, pin and report form, and no size', async () => {
@@ -443,6 +444,32 @@ describe('runInboxSend of the ticket loop', () => {
 
     expect(entry).toMatchObject({ use: { framework: 'gsd', gsdPath: 'quick' } })
     expect([entry?.planPath, entry?.method]).toEqual([undefined, undefined])
+  })
+
+  test('a task in a framework its receiver may not run is refused, naming the ones it may; nothing runs', async () => {
+    const team: TeamView = {
+      ...TEAM,
+      ids: [...TEAM.ids, 'qa'],
+      parents: { ...TEAM.parents, qa: 'tl' },
+      frameworks: ['superpowers'],
+      mayRun: { pm: ['none'], tl: ['superpowers'], be: ['superpowers'], qa: ['none'] },
+    }
+    const gsdTask = { ...TASK, use: { framework: 'gsd', gsdPath: 'quick' } }
+    const gsdToBe = await sendFrom(beWorld(), gsdTask, { ctx: TL, team })
+    const toQa = await sendFrom(beWorld(), { ...TASK, to: 'qa' }, { ctx: TL, team })
+    const toBe = await sendFrom(beWorld(), TASK, { ctx: TL, team })
+
+    expect([gsdToBe.outcome, toQa.outcome]).toEqual([
+      { kind: 'deny', text: fill(PROMPTS.inboxUseNotRun, { to: 'be', framework: 'gsd', frameworks: 'superpowers' }) },
+      { kind: 'deny', text: fill(PROMPTS.inboxUseNotRun, { to: 'qa', framework: 'superpowers', frameworks: 'none' }) },
+    ])
+    expect([gsdToBe.host.calls, toQa.host.calls, gsdToBe.sends, toQa.sends]).toEqual([[], [], [], []])
+    expect(toBe.outcome.kind).toBe('result')
+    expect(entryLine(firstStdin(toBe.host))).toMatchObject({
+      to: 'be',
+      use: { framework: 'superpowers' },
+      planPath: 'docs/superpowers/plans/be-PROJ-2.md',
+    })
   })
 
   test('a gsd-epic brief is sent with gsd and superpowers; with gsd alone or none it is refused, no run', async () => {
