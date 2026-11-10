@@ -104,6 +104,19 @@ describe('repoGuard and readTeam', () => {
     })
   })
 
+  test('readTeam for /cadre frameworks takes a team with no default framework that regen still refuses', async () => {
+    const unframed = await teamWorld(team, { framework: null })
+    const frameworks = await readTeam(memIo(unframed, {}).io, '/repo', 'frameworks', null)
+    expect([frameworks.kind, frameworks.kind === 'ok' ? frameworks.value.roles.map(role => role.id) : []]).toEqual([
+      'ok',
+      ['be', 'pm'],
+    ])
+    expect(await readTeam(memIo(unframed, {}).io, '/repo', 'regen', null)).toEqual({
+      kind: 'refuse',
+      text: regenNeedsFramework('be'),
+    })
+  })
+
   test('readTeam gives the state, every listed role in cadre.json order and the text each was read from', async () => {
     const world = await teamWorld()
     const read = await readTeam(memIo(world, {}).io, '/repo', 'start', 'pm')

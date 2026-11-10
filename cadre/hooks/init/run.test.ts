@@ -72,6 +72,7 @@ import {
   tableMatchWorld,
 } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
+import { notGitRepoReply } from '../guards/repo'
 import { isPartsFlowRole } from '../launch/links'
 import { PANE_LIST_WORDS, t } from '../locales/t'
 import { SIZING_RUBRIC_PATH } from '../paths'
@@ -86,6 +87,7 @@ import { recommend } from '../roles/recommend'
 import { parseRoleJson } from '../roles/rolejson'
 import { AUTOPILOT_THRESHOLD } from '../roles/template'
 import { gatherScans, scanWarnings } from '../scan/gather'
+import { autopilotReply } from '../scan/autopilot'
 import { scanRepo } from '../scan/repo'
 import { scanSetup } from '../scan/setup/setup'
 import { scopeCardLines } from '../scope/card'
@@ -96,7 +98,7 @@ import { MCP_SYSTEM } from '../suggest/mcp'
 import type { McpPromptServer } from '../suggest/mcp'
 import { SKILLS_SYSTEM } from '../suggest/skills'
 import { TOPICS_SYSTEM } from '../suggest/topics'
-import { resolvedFramework, scopesFor } from '../team'
+import { noStateReply, regenBadRole, resolvedFramework, scopesFor } from '../team'
 import {
   ABSOLUTE_PATH_MARKERS,
   ancestor,
@@ -192,7 +194,7 @@ import type { Draft, PlanResult, ReframeDraft, Reframed } from './draft'
 import { CONFLICT_CONTEXT } from './initapply'
 import { consentedPluginKeys, initFrameworks, initSizing } from './initplan'
 import type { PlanStepInput } from './initplan'
-import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
+import { cancelledReply, frameworksInEpicReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
   APPLY_HUNKS_PROGRESS,
   consentedGsdCheck,
@@ -205,6 +207,7 @@ import {
   planStep,
   reframeApplied,
   reframePlan,
+  runFrameworks,
   runInit,
   SCAN_PROGRESS,
   SCAN_SUMMARY,
@@ -7226,5 +7229,101 @@ describe('the file plan and apply of /cadre frameworks', () => {
         'from the repo root, then /cadre frameworks again',
     ])
     expect(parseRoleJson(written)?.framework).toBe('none')
+  })
+})
+
+describe('runFrameworks', () => {
+  /** BE and PM as the stored team lists them. */
+  const TEAM: readonly RoleSpec[] = [templateRole('be'), templateRole('pm')]
+  /** The facts of a repo whose GSD is proven and in use. */
+  const GSD_IN_USE: InitFacts = {
+    ...PROVEN_FACTS,
+    facts: { ...PROVEN_FACTS.facts, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] },
+  }
+  /** The set question of a repo with GSD found. */
+  const SET_QUESTION = t('init.frameworks.setQuestion', { found: 'GSD' })
+  /** The answers of a run that keeps GSD, accepts its hunks and confirms the review. */
+  const ANSWERS = {
+    [SET_QUESTION]: 'Keep GSD (Recommended)',
+    '.planning/config.json:': 'Accept',
+    [t('frameworks.review.question')]: 'Confirm',
+  }
+
+  /** `world` with these files added or replaced. */
+  function withFiles(world: MemWorld, files: Readonly<Record<string, string>>): MemWorld {
+    return { ...world, files: { ...world.files, ...files } }
+  }
+
+  /** An applied team that stores None while GSD is in use; `over` changes its cadre.json. */
+  async function storedNoneWorld(over: Partial<CadreState> = {}): Promise<MemWorld> {
+    return regenWorld(TEAM, { framework: 'none', frameworks: [], ...over }, gitWorld({ facts: GSD_IN_USE }))
+  }
+
+  /** An epic worktree of the main checkout /m as /cadre epic made it: its .git file and the epic record. */
+  function epicWorld(): MemWorld {
+    const root = '/m/.claude/worktrees/k'
+    const files = { [`${root}/.git`]: 'gitdir: /m/.git/worktrees/k\n', '/m/.git/worktrees/k/cadre-epic.json': '{}' }
+
+    return gitWorld({ locations: { ...DEFAULT_LOCATIONS, root, givenRoot: root }, files })
+  }
+
+  test('it refuses in order before asking: claude -p, the repo, autopilot, an epic worktree, the team', async () => {
+    const epic = epicWorld()
+    const active = '{"isOn":true,"phase":"running","beat":1000000}'
+    const badRole = withFiles(await storedNoneWorld(), { '/repo/.cadre/be/role.json': 'not json' })
+    const cases: readonly (readonly [MemWorld, string | null])[] = [
+      [{ ...epic, interactive: false }, t('frameworks.notInteractive')],
+      [memWorld({}), notGitRepoReply('frameworks')],
+      [withFiles(epic, { [STATUS_PATH]: active }), autopilotReply('active', 'frameworks')],
+      [epic, frameworksInEpicReply('/m')],
+      [gitWorld(), noStateReply('frameworks')],
+      [badRole, regenBadRole('be')],
+    ]
+    for (const [world, text] of cases) {
+      const run = memIo(world, ANSWERS)
+      expect([await runFrameworks(run.io, { dryRun: true }), run.asked]).toEqual([text, []])
+    }
+    const host = memHost(hostWorld({}))
+    const plain = await runFrameworks(memIo(epic, ANSWERS).io, { dryRun: false, host: host.io })
+    expect([plain, host.calls, host.writes]).toEqual([frameworksInEpicReply('/m'), [], []])
+  })
+
+  test('a team with no default framework while a role has none is not refused: it asks the set question', async () => {
+    const run = memIo(await storedNoneWorld({ framework: null }), {})
+    await runFrameworks(run.io, { dryRun: true })
+    expect(firstLines(run.asked)).toEqual([SET_QUESTION])
+  })
+
+  test('a dry run asks every question but the ~/.claude.json one, shows the review, replies the plan', async () => {
+    const run = memIo(await storedNoneWorld(), ANSWERS)
+    const lines = (await runFrameworks(run.io, { dryRun: true })).split('\n')
+    const asked = firstLines(run.asked)
+    expect([asked[0], asked.at(-1), asked.includes(CLAUDE_JSON_QUESTION)]).toEqual([
+      SET_QUESTION,
+      t('frameworks.review.question'),
+      false,
+    ])
+    expect(asked.some(question => question.startsWith('.planning/config.json:'))).toBe(true)
+    expect([lines[0], lines.at(-1)]).toEqual([t('frameworks.reply.headDry'), DRY_RUN_NOTE])
+  })
+
+  test('a plain run answered Confirm writes, the manifest last, runs no git and says what it did', async () => {
+    const host = memHost(hostWorld({}))
+    const reply = await runFrameworks(memIo(await storedNoneWorld(), ANSWERS).io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect([lines[0], host.writes.at(-1)?.path]).toEqual([t('frameworks.reply.head'), '/repo/.cadre/manifest.json'])
+    expect(lines.some(line => line.startsWith('Applied: wrote '))).toBe(true)
+    expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
+  })
+
+  test('a dismissal at the set question or at the review replies with the frameworks cancel text', async () => {
+    const world = await storedNoneWorld()
+    const beforeReview = { [SET_QUESTION]: 'Keep GSD (Recommended)', '.planning/config.json:': 'Accept' }
+    const atSet = await runFrameworks(memIo(world, {}).io, { dryRun: true })
+    const atReview = await runFrameworks(memIo(world, beforeReview).io, { dryRun: true })
+    expect([atSet, atReview]).toEqual([
+      cancelledReply(FRAMEWORK_DISMISSED_REASON, 'frameworks'),
+      cancelledReply(REVIEW_DISMISSED_REASON, 'frameworks'),
+    ])
   })
 })
