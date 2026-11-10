@@ -21,6 +21,9 @@ export const ARTIFACT = Object.freeze({
   roleMdPlanningDocs: '## Planning docs',
   roleMdPlanningIntro:
     'Keep your own planning docs and state, so you load only the context of your task. Start your planning so:',
+  roleMdPlanningPick: `The framework your task names in its use: field picks the group; without one, take the first ${
+    ''}group, your own framework.`,
+  roleMdPlanningGroup: '{framework} (use: {id}):',
   roleMdPlanningStep: '- {step}',
   roleMdDecisions: '## Decisions',
   roleMdChainLine: '- {line}',

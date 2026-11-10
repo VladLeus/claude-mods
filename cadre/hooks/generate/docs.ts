@@ -40,19 +40,29 @@ export function mcpText(scope: CompiledScope): string {
 const ATTENDED_LINE = ARTIFACT.roleMdAttended
 
 /**
- * The Planning docs section of ROLE.md: its heading, its intro and one line per start step of each framework the role
- * may run, in the card's order, worded for the lead when the role stands for TL; none when no framework has a step.
+ * The Planning docs section of ROLE.md: the intro and the start steps of each framework the role may run, own
+ * framework first and worded for the lead when the role stands for TL; two or more frameworks with steps add the pick
+ * line and a label line per framework. None when no framework has a step.
  */
 function planningDocsLines(role: RoleSpec, card: ScopeCard): string[] {
   const ctx = { roleId: role.id, isLead: standsFor(role, 'tl') }
-  const steps = [card.framework, ...card.alsoRuns].flatMap(id => adapterOf(id).roleWork.startSteps(ctx))
-  if (steps.length === 0) return []
+  const groups = [card.framework, ...card.alsoRuns]
+    .map(id => ({ id, steps: adapterOf(id).roleWork.startSteps(ctx) }))
+    .filter(group => group.steps.length > 0)
+  if (groups.length === 0) return []
+
+  const stepLines = (steps: readonly string[]): string[] =>
+    steps.map(step => fill(ARTIFACT.roleMdPlanningStep, { step }))
+  const intro = [ARTIFACT.roleMdPlanningDocs, '', ARTIFACT.roleMdPlanningIntro]
+  if (groups.length === 1) return [...intro, ...groups.flatMap(group => stepLines(group.steps)), '']
 
   return [
-    ARTIFACT.roleMdPlanningDocs,
-    '',
-    ARTIFACT.roleMdPlanningIntro,
-    ...steps.map(step => fill(ARTIFACT.roleMdPlanningStep, { step })),
+    ...intro,
+    ARTIFACT.roleMdPlanningPick,
+    ...groups.flatMap(({ id, steps }) => [
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: adapterOf(id).name, id }),
+      ...stepLines(steps),
+    ]),
     '',
   ]
 }
