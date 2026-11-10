@@ -313,6 +313,39 @@ export function inboxArchiveFile(at: number): string {
 /** The file in `.cadre/<id>/.runtime/` where a role session publishes its session id, so other roles can wake it. */
 export const SESSION_FILE = 'session.json'
 
+/** The inbox homes' folder in `<userDir>/cadre`, beside the memory slugs, which always end in 8 hex, so none clash. */
+export const INBOX_TREE = 'inboxes'
+
+/** `<userDir>/cadre/inboxes`: it lies outside every folder a role session gets added. */
+export function inboxTreeOf(userDir: string): string {
+  return `${userDir}/cadre/${INBOX_TREE}`
+}
+
+/** A launch root's folder name in the inbox tree: its last segment, `-`, 8 hex of its hash, cleaned as memorySlug. */
+export function inboxRootKey(root: string, rootHash: string): string {
+  const name = root.split('/').filter(part => part !== '').at(-1) ?? ''
+
+  return `${name}-${rootHash.slice(0, 8)}`.replace(UNSAFE_SLUG_CHARS, '-')
+}
+
+/** The inbox home of a launch root: `<userDir>/cadre/inboxes/<root key>`. */
+export function inboxHomeOf(userDir: string, root: string, rootHash: string): string {
+  return `${inboxTreeOf(userDir)}/${inboxRootKey(root, rootHash)}`
+}
+
+/** A role's inbox folder in an inbox home: its inbox, its session record and its inbox archives. */
+export function inboxDirOf(home: string, id: string): string {
+  return `${home}/${id}`
+}
+
+/** The folders of a role's inbox folder from the top: `<userDir>/cadre`, the tree, the home, the folder itself. */
+export function inboxFolderLevels(dir: string): string[] {
+  const home = parentOf(dir)
+  const tree = parentOf(home)
+
+  return [parentOf(tree), tree, home, dir]
+}
+
 /** A role's runtime folder: `<root>/.cadre/<id>/.runtime`. */
 export function runtimeDirOf(root: string, id: string): string {
   return `${root}/.cadre/${id}/.runtime`
