@@ -15,6 +15,7 @@ import { GSD_ADAPTER } from '../framework/gsd/adapter'
 import { BUILTIN_ADAPTER } from '../framework/none/adapter'
 import { SUPERPOWERS_ADAPTER } from '../framework/superpowers/adapter'
 import { ARTIFACT } from '../locales/artifact'
+import { fill } from '../locales/t'
 import { scopeCardLines } from '../scope/card'
 import { parseCadreState } from '../state/cadre-files'
 import {
@@ -592,18 +593,45 @@ describe('role documents', () => {
 
 describe('the Planning docs section of ROLE.md', () => {
   const planningDocs = (text: string): string[] => sectionLines(text, '## Planning docs')
+  const stepLines = (adapter: FrameworkAdapter, roleId: string, isLead: boolean): string[] =>
+    adapter.roleWork.startSteps({ roleId, isLead }).map(step => `- ${step}`)
 
-  test('TL on gsd that may run superpowers lists the GSD lead steps, then the superpowers lead steps', () => {
+  test('TL that may run GSD and superpowers groups the steps under each framework, own framework first', () => {
     const tl = templateRole('tl')
     const scope = scopeOf(tl, 'gsd', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] })
     const section = planningDocs(roleMdText(tl, scope))
-    const steps = [
-      ...GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }),
-      ...SUPERPOWERS_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }),
-    ]
+    const gsd = stepLines(GSD_ADAPTER, 'tl', true)
+    const superpowers = stepLines(SUPERPOWERS_ADAPTER, 'tl', true)
 
-    expect(section[0]).toBe('## Planning docs')
-    expect(section.filter(line => line.startsWith('- '))).toEqual(steps.map(step => `- ${step}`))
+    expect(section).toEqual([
+      '## Planning docs',
+      '',
+      ARTIFACT.roleMdPlanningIntro,
+      ARTIFACT.roleMdPlanningPick,
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'GSD', id: 'gsd' }),
+      ...gsd,
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'superpowers', id: 'superpowers' }),
+      ...superpowers,
+      '',
+    ])
+    expect(section.filter(line => line.startsWith('- '))).toEqual([...gsd, ...superpowers])
+  })
+
+  test('a role on superpowers that also runs gsd lists the superpowers group first', () => {
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'superpowers', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] })
+
+    expect(planningDocs(roleMdText(be, scope))).toEqual([
+      '## Planning docs',
+      '',
+      ARTIFACT.roleMdPlanningIntro,
+      ARTIFACT.roleMdPlanningPick,
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'superpowers', id: 'superpowers' }),
+      ...stepLines(SUPERPOWERS_ADAPTER, 'be', false),
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'GSD', id: 'gsd' }),
+      ...stepLines(GSD_ADAPTER, 'be', false),
+      '',
+    ])
   })
 
   test('BE on gsd has the worker steps with the no-TL step; BE on superpowers its plan file and the method', () => {
@@ -616,6 +644,23 @@ describe('the Planning docs section of ROLE.md', () => {
     expect(gsd.join('\n')).toContain('no TL')
     expect(superpowers).toContain('docs/superpowers/plans/be-<ticket>.md')
     expect(superpowers).toContain('superpowers:subagent-driven-development')
+  })
+
+  test('BE on gsd alone or on superpowers alone has the intro and the steps, with no pick line and no label', () => {
+    const be = templateRole('be')
+    const alone: readonly FrameworkId[] = ['gsd', 'superpowers']
+
+    for (const framework of alone) {
+      const section = planningDocs(roleMdText(be, scopeOf(be, framework, TEMPLATE_ROLES)))
+
+      expect(section).toEqual([
+        '## Planning docs',
+        '',
+        ARTIFACT.roleMdPlanningIntro,
+        ...stepLines(ADAPTER_OF[framework], 'be', false),
+        '',
+      ])
+    }
   })
 
   test('PM on none has no Planning docs section, whatever the repo records', () => {
