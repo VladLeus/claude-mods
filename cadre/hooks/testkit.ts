@@ -1511,7 +1511,7 @@ export function launchProblems(
       .filter(key => !RUNTIME_SETTINGS_KEYS.includes(key))
       .map(key => `settings key ${key} is not allowed`),
     ...env
-      .filter(name => !role.carry.env.includes(name) && ![ROLE_ENV, ROOT_ENV, 'GSD_WORKSTREAM'].includes(name))
+      .filter(name => ![...role.carry.env, ROLE_ENV, ROOT_ENV, 'CADRE_MAIN_ROOT', 'GSD_WORKSTREAM'].includes(name))
       .map(name => `env ${name} is not carried by the role`),
     ...deny.flatMap(entry => {
       const message = lintRuntimeDenyPattern(entry)
