@@ -1,18 +1,25 @@
 import { randomBytes } from 'node:crypto'
-import { constants as fsConstants, existsSync } from 'node:fs'
-import { access, mkdir, readdir, readFile, stat } from 'node:fs/promises'
+import { constants as fsConstants, existsSync, realpathSync } from 'node:fs'
+import { access, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, relative } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { e2eConfigDir, parseAuthStatus } from './lib/auth.ts'
-import { liveEnv, SYSTEM_PATH } from './lib/env.ts'
+import { e2eConfigDir, e2eConfigPath, writeFilterFile } from './lib/auth.ts'
+import { authPreflight, authStatus } from './lib/claude.ts'
+import type { PreflightStage } from './lib/claude.ts'
+import { hostUser, isRealConfig, liveEnv, SYSTEM_PATH, writeClaudeFence } from './lib/env.ts'
+import type { HostUser } from './lib/env.ts'
 import { HarnessError, LeakError } from './lib/errors.ts'
-import { filterContext, isRecord, isStringList, leakCheck } from './lib/filter.ts'
+import { filterContext, filterText, isRecord, isStringList, leakCheck } from './lib/filter.ts'
 import type { FilterContext } from './lib/filter.ts'
+import { compareGuard, fenceRefusals, fleetBeats, globalAwayActive, guardSnapshot } from './lib/guard.ts'
+import { keychainDigest, needlesOf, projectTranscripts, removeSessionFiles, testSessionIds } from './lib/guard.ts'
+import type { GuardResult, GuardSnapshot, KeychainDigest, Needles, Removal } from './lib/guard.ts'
 import { run, spawn } from './lib/proc.ts'
 import type { Env } from './lib/proc.ts'
-import { makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
+import { isUnder, makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
 import { publishSummary, ROW_KINDS, rowFileName, SIDECAR_SCHEMA, summaryText, TIERS } from './lib/summary.ts'
 import { parseSidecar, writeRowResult, writeSummary } from './lib/summary.ts'
 import type { RowKind, Sidecar, SuiteVersion, Tier } from './lib/summary.ts'
@@ -21,7 +28,14 @@ const E2E_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_DIR = dirname(E2E_DIR)
 const MIN_NODE_MAJOR = 24
 const CLAUDE_VERSION_MS = 30_000
-const AUTH_STATUS_MS = 30_000
+const LIVE_CONCURRENCY = 2
+const SESSION_SETTLE_MS = 5_000
+const KEYCHAIN_LIST_MS = 30_000
+const BASELINE_PLUGINS = ['cadre', 'autopilot', 'agent-fleet'] as const
+const LOCK_PID_FILE = 'pid'
+const GUARD_PENDING = 'the guard check runs after the session cleanup'
+const POSITIVE_WHOLE_RE = /^[1-9][0-9]*$/
+const KEYCHAIN_LIST_ARGV = ['/usr/bin/security', 'dump-keychain'] as const
 
 const OPTIONS = {
   tier: { type: 'string' },
@@ -70,6 +84,56 @@ type Selection = {
   readonly notes: readonly string[]
   readonly unknown: readonly string[]
 }
+
+type RunInfo = {
+  readonly tier: Tier
+  readonly id: string
+  readonly scratch: string
+  readonly resultsDir: string
+}
+
+type LiveVars = {
+  readonly e2eDir: string
+  readonly filterFile: string
+}
+
+type LiveSetup = {
+  readonly cli: RunCli
+  readonly suites: readonly Suite[]
+  readonly selection: Selection
+  readonly claudeBin: string
+  readonly e2eDir: string
+  readonly host: HostUser
+  readonly needles: Needles
+  readonly concurrency: number
+}
+
+type LiveResult = {
+  readonly code: number
+  readonly rows: readonly Sidecar[]
+  readonly identities: readonly string[]
+  readonly filterFile: string | null
+}
+
+type LiveDone = {
+  readonly before: GuardSnapshot
+  readonly start: Removal
+  readonly claude: string
+  readonly result: LiveResult
+}
+
+type SessionPass = {
+  readonly ids: readonly string[]
+  readonly removal: Removal
+}
+
+type SessionCleanup = {
+  readonly removed: number
+  readonly failures: readonly string[]
+  readonly recorded: ReadonlySet<string>
+}
+
+const NO_LIVE_RESULT: LiveResult = { code: 1, rows: [], identities: [], filterFile: null }
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -120,17 +184,12 @@ function parseCli(argv: readonly string[]): LeakCheckCli | RunCli | string {
   }
 }
 
-async function statusIdentities(claudeBin: string, e2eDir: string, root: string): Promise<readonly string[] | string> {
+async function statusIdentities(claudeBin: string, root: string): Promise<readonly string[] | string> {
   const cwd = join(root, 'cwd')
   await mkdir(cwd)
-  const env = liveEnv({ claudeBin })
-  const result = await run([claudeBin, 'auth', 'status'], { cwd, env, timeoutMs: AUTH_STATUS_MS })
-  const status = parseAuthStatus(result.stdout)
-  if (status && !status.loggedIn) return `not logged in: ${e2eDir}`
-  if (result.code !== 0) return `claude auth status exited ${result.code}`
-  if (!status) return 'claude auth status printed no status'
+  const status = await authStatus(cwd, liveEnv({ claudeBin }), claudeBin)
 
-  return status.identityValues
+  return typeof status === 'string' ? status : status.identityValues
 }
 
 async function rebuildIdentities(): Promise<readonly string[] | string> {
@@ -147,7 +206,7 @@ async function rebuildIdentities(): Promise<readonly string[] | string> {
   process.env.E2E_SCRATCH = root
   process.env.E2E_CONFIG_DIR = e2eDir
   try {
-    return await statusIdentities(claudeBin, e2eDir, root)
+    return await statusIdentities(claudeBin, root)
   } catch (error) {
     return messageOf(error)
   } finally {
@@ -320,17 +379,17 @@ async function unitSpecFiles(): Promise<readonly string[]> {
   return [...lib, ...registries].map(path => relative(REPO_DIR, path))
 }
 
-function childEnv(tier: Tier, runId: string, scratch: string, resultsDir: string, claudeBin: string | null): Env {
+function childEnv(info: RunInfo, claudeBin: string | null, live: LiveVars | null): Env {
   return {
     ...process.env,
-    E2E_RUN: runId,
-    E2E_RUN_DIR: resultsDir,
-    E2E_SCRATCH: scratch,
-    E2E_FIXTURES: join(scratch, 'fixtures'),
-    E2E_TIER: tier,
+    E2E_RUN: info.id,
+    E2E_RUN_DIR: info.resultsDir,
+    E2E_SCRATCH: info.scratch,
+    E2E_FIXTURES: join(info.scratch, 'fixtures'),
+    E2E_TIER: info.tier,
     E2E_CLAUDE_BIN: claudeBin ?? undefined,
-    E2E_AUTH_SEED: undefined,
-    E2E_FILTER_FILE: undefined,
+    E2E_CONFIG_DIR: live?.e2eDir,
+    E2E_FILTER_FILE: live?.filterFile,
   }
 }
 
@@ -445,58 +504,349 @@ function verdictExit(rows: readonly Sidecar[], allowProductFail: boolean): numbe
   return 0
 }
 
-async function runSelected(
+function filesOf(entries: readonly Entry[]): readonly string[] {
+  return [...new Set(entries.map(entry => entry.file))]
+}
+
+function summaryPathOf(info: RunInfo): string {
+  return join(info.resultsDir, 'SUMMARY.md')
+}
+
+async function publishIfAsked(
   cli: RunCli,
   suites: readonly Suite[],
-  selection: Selection,
-  runId: string,
-  scratch: string,
-): Promise<number> {
-  const resultsDir = join(E2E_DIR, 'results', runId)
+  info: RunInfo,
+  ctx: FilterContext,
+): Promise<boolean> {
+  if (cli.publish === null) return true
+  const name = `${suites.map(suite => suite.name).join('-')}-E2E-SUMMARY-${info.id}.md`
+
+  return publishRunSummary(summaryPathOf(info), cli.publish, name, ctx)
+}
+
+async function runOffline(cli: RunCli, suites: readonly Suite[], selection: Selection, info: RunInfo): Promise<number> {
   const claudeBin = await resolveOnPath('claude', process.env.PATH ?? '')
-  const claude = claudeBin ? await claudeVersion(claudeBin, scratch) : 'absent'
-  const env = childEnv(cli.tier, runId, scratch, resultsDir, claudeBin)
+  const claude = claudeBin ? await claudeVersion(claudeBin, info.scratch) : 'absent'
+  const env = childEnv(info, claudeBin, null)
   const concurrency = Math.max(1, availableParallelism() - 1)
-  const unitFiles = cli.tier === 'offline' ? await unitSpecFiles() : []
+  const unitFiles = await unitSpecFiles()
   const unitCode = unitFiles.length > 0 ? await nodeTest(unitFiles, concurrency, env) : 0
-  const rowFiles = [...new Set(selection.entries.map(entry => entry.file))]
+  const rowFiles = filesOf(selection.entries)
   if (rowFiles.length > 0) await nodeTest(rowFiles, concurrency, env)
 
   const ctx = filterContext(process.env)
-  const rows = await collectRows(resultsDir, selection.entries, cli.tier, ctx)
+  const rows = await collectRows(info.resultsDir, selection.entries, info.tier, ctx)
   const versions = await suiteVersions(suites)
-  const summaryPath = join(resultsDir, 'SUMMARY.md')
-  const text = summaryText({ run: runId, tier: cli.tier, claude, versions, rows })
-  const written = await writeRunSummary(summaryPath, text, ctx)
-  const publishName = `${suites.map(suite => suite.name).join('-')}-E2E-SUMMARY-${runId}.md`
-  const published =
-    !written || cli.publish === null || await publishRunSummary(summaryPath, cli.publish, publishName, ctx)
+  const text = summaryText({ run: info.id, tier: info.tier, claude, versions, rows })
+  const written = await writeRunSummary(summaryPathOf(info), text, ctx)
+  const published = !written || await publishIfAsked(cli, suites, info, ctx)
   if (unitCode !== 0 || !written || !published) return 1
 
   return verdictExit(rows, cli.allowProductFail)
+}
+
+async function startRun(tier: Tier, selection: Selection): Promise<RunInfo> {
+  const now = Date.now()
+  const id = makeRunId(now, randomBytes(2).toString('hex'))
+  const base = scratchBase()
+  for (const warning of await pruneRuns(base, now)) process.stderr.write(`e2e: ${warning}\n`)
+  const scratch = await makeRunRoot(base, id)
+  process.env.E2E_SCRATCH = scratch
+  const resultsDir = join(E2E_DIR, 'results', id)
+  await mkdir(resultsDir, { recursive: true })
+  process.stdout.write(`e2e: run ${id}, tier ${tier}\n`)
+  for (const note of selection.notes) process.stdout.write(`e2e: ${note}\n`)
+
+  return { tier, id, scratch, resultsDir }
+}
+
+function printRunLine(id: string, code: number): void {
+  process.stdout.write(`e2e: run ${id} exit ${code} summary e2e/results/${id}/SUMMARY.md\n`)
+}
+
+function say(text: string, ctx: FilterContext, stream: NodeJS.WriteStream = process.stdout): void {
+  stream.write(`e2e: ${filterText(text, ctx)}\n`)
+}
+
+function liveFilter(identities: readonly string[]): FilterContext {
+  return filterContext(process.env, { identities })
+}
+
+function liveConcurrency(value: string | undefined): number | null {
+  if (value === undefined || value === '') return LIVE_CONCURRENCY
+
+  return POSITIVE_WHOLE_RE.test(value) ? Number(value) : null
+}
+
+function e2eDirReason(dir: string, host: HostUser): string | null {
+  if (isRealConfig(dir, host, process.env)) return 'the e2e config dir is the real config dir or lies under it'
+  const repo = realpathSync(REPO_DIR)
+  if (dir === repo || isUnder(dir, repo)) return 'the e2e config dir is inside the repo'
+
+  return null
+}
+
+function errorCode(error: unknown): unknown {
+  return isRecord(error) ? error.code : undefined
+}
+
+function isAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return errorCode(error) === 'EPERM'
+  }
+}
+
+async function lockPid(lock: string): Promise<number> {
+  return Number((await readFile(join(lock, LOCK_PID_FILE), 'utf8').catch(() => '')).trim())
+}
+
+async function makeLock(lock: string): Promise<boolean> {
+  try {
+    await mkdir(lock, { mode: 0o700 })
+  } catch (error) {
+    if (errorCode(error) === 'EEXIST') return false
+    throw error
+  }
+  await writeFile(join(lock, LOCK_PID_FILE), `${process.pid}\n`)
+
+  return true
+}
+
+async function takeLock(lock: string): Promise<boolean> {
+  if (await makeLock(lock)) return true
+  if (isAlive(await lockPid(lock))) return false
+  const stats = await lstat(lock).catch(() => null)
+  if (stats?.isSymbolicLink()) throw new HarnessError(`the run lock is a symlink: ${lock}`)
+  await rm(lock, { recursive: true, force: true })
+
+  return makeLock(lock)
+}
+
+async function releaseLock(lock: string): Promise<void> {
+  if (await lockPid(lock) !== process.pid) return
+
+  await rm(lock, { recursive: true, force: true })
+}
+
+async function isGlobalAway(home: string, now: number): Promise<boolean> {
+  const text = await readFile(join(home, '.claude', 'autopilot', 'status', 'global.json'), 'utf8').catch(() => '')
+
+  return globalAwayActive(text, now)
+}
+
+async function keychainState(host: HostUser): Promise<KeychainDigest | null | undefined> {
+  if (process.platform !== 'darwin') return undefined
+  const env = { PATH: SYSTEM_PATH, HOME: host.home, USER: host.user }
+  const opts = { cwd: REPO_DIR, env, timeoutMs: KEYCHAIN_LIST_MS, host: true }
+  const result = await run(KEYCHAIN_LIST_ARGV, opts).catch(() => null)
+
+  return result?.code === 0 ? keychainDigest(result.stdout) : null
+}
+
+function keychainNote(digest: KeychainDigest | null | undefined): string {
+  if (digest === undefined) return 'no keychain listing off macOS'
+  if (digest === null) return 'keychain listing unavailable'
+
+  return `keychain: ${digest.count} Claude Code items`
+}
+
+async function removeLeftovers(setup: LiveSetup): Promise<Removal> {
+  const transcripts = await projectTranscripts(setup.e2eDir)
+  const ids = testSessionIds(transcripts, await fleetBeats(setup.host.home), scratchBase(), setup.e2eDir)
+  const removal = await removeSessionFiles(setup.host.home, ids)
+  process.stdout.write(`e2e: removed ${removal.removed} leftover files of earlier test sessions\n`)
+
+  return removal
+}
+
+async function removeRunSessions(setup: LiveSetup, before: GuardSnapshot): Promise<SessionPass> {
+  const existed = new Set(before.sessionFiles)
+  const beats = (await fleetBeats(setup.host.home)).filter(beat => !existed.has(`fleet/${beat.id}.json`))
+  const ids = testSessionIds(await projectTranscripts(setup.e2eDir), beats, scratchBase(), setup.e2eDir)
+
+  return { ids, removal: await removeSessionFiles(setup.host.home, ids) }
+}
+
+async function cleanupSessions(setup: LiveSetup, before: GuardSnapshot): Promise<SessionCleanup> {
+  const first = await removeRunSessions(setup, before)
+  // A session that dies with its tmux server can still write one last beat after the first pass.
+  await delay(SESSION_SETTLE_MS)
+  const second = await removeRunSessions(setup, before)
+
+  return {
+    removed: first.removal.removed + second.removal.removed,
+    failures: [...new Set([...first.removal.failures, ...second.removal.failures])],
+    recorded: new Set([...first.ids, ...second.ids]),
+  }
+}
+
+async function checkGuard(
+  setup: LiveSetup,
+  info: RunInfo,
+  before: GuardSnapshot,
+  recorded: ReadonlySet<string>,
+): Promise<GuardResult> {
+  const after = await guardSnapshot(setup.host.home, setup.needles, await keychainState(setup.host))
+  const beats = await fleetBeats(setup.host.home)
+  const beatCwds = new Map(beats.flatMap(beat => (beat.cwd === null ? [] : [[beat.id, beat.cwd] as const])))
+  const refusals = await fenceRefusals(info.scratch)
+
+  return compareGuard(before, after, { needles: setup.needles, refusals, recorded, beatCwds })
+}
+
+function guardItems(notRemoved: readonly string[], cleanup: SessionCleanup, guard: GuardResult): readonly string[] {
+  return [
+    ...guard.failures.map(line => `failure: ${line}`),
+    ...notRemoved.map(rel => `session files not removed: ${rel}`),
+    `removed ${cleanup.removed} files of ${cleanup.recorded.size} test sessions`,
+    ...guard.warnings.map(line => `warning: ${line}`),
+  ]
+}
+
+function preflightLines(stage: PreflightStage, reason: string): readonly string[] {
+  if (stage === 'plugins') return [`e2e dir plugin baseline failed: ${reason}`]
+
+  return [reason, `log in again: CLAUDE_CONFIG_DIR=${e2eConfigPath()} claude auth login`]
+}
+
+async function liveRows(
+  setup: LiveSetup,
+  info: RunInfo,
+  live: LiveVars,
+  ctx: FilterContext,
+): Promise<readonly Sidecar[]> {
+  const files = filesOf(setup.selection.entries)
+  if (files.length > 0) await nodeTest(files, setup.concurrency, childEnv(info, setup.claudeBin, live))
+
+  return collectRows(info.resultsDir, setup.selection.entries, 'live', ctx)
+}
+
+async function liveBody(setup: LiveSetup, info: RunInfo): Promise<LiveResult> {
+  await writeClaudeFence(info.scratch, setup.claudeBin, setup.e2eDir)
+  const cwd = join(info.scratch, 'preflight')
+  await mkdir(cwd)
+  const plugins = BASELINE_PLUGINS
+  const preflight = await authPreflight({ cwd, marketplaceRoot: REPO_DIR, plugins, now: Date.now() })
+  const { identities } = preflight
+  const ctx = liveFilter(identities)
+  if (!preflight.ok) {
+    for (const line of preflightLines(preflight.stage, preflight.reason)) say(line, ctx, process.stderr)
+    return { ...NO_LIVE_RESULT, code: 2, identities }
+  }
+  say(`preflight passed, plugin baseline ${preflight.plugins}`, ctx)
+  const filterFile = await writeFilterFile(info.scratch, identities)
+  try {
+    const rows = await liveRows(setup, info, { e2eDir: setup.e2eDir, filterFile }, ctx)
+    return { code: verdictExit(rows, setup.cli.allowProductFail), rows, identities, filterFile }
+  } catch (error) {
+    say(messageOf(error), ctx, process.stderr)
+    return { code: 1, rows: [], identities, filterFile }
+  }
+}
+
+async function removeFilterFile(path: string | null, scratch: string): Promise<boolean> {
+  if (path === null) return true
+
+  return removeTree(path, scratch).then(() => true, () => false)
+}
+
+function liveExit(code: number, notRemoved: readonly string[], guard: GuardResult, isWritten: boolean): number {
+  if (guard.failures.length > 0) return 3
+  if (code === 2) return 2
+  if (notRemoved.length > 0 || !isWritten) return 1
+
+  return code
+}
+
+async function finishLive(setup: LiveSetup, info: RunInfo, lock: string, done: LiveDone): Promise<number> {
+  const { result } = done
+  const ctx = liveFilter(result.identities)
+  const versions = await suiteVersions(setup.suites)
+  const summary = (guard: readonly string[]): string =>
+    summaryText({ run: info.id, tier: 'live', claude: done.claude, versions, rows: result.rows, fixtures: [], guard })
+  await writeRunSummary(summaryPathOf(info), summary([GUARD_PENDING]), ctx).catch(() => false)
+  const isFilterRemoved = await removeFilterFile(result.filterFile, info.scratch)
+  const cleanup = await cleanupSessions(setup, done.before)
+  await releaseLock(lock)
+  const guard = await checkGuard(setup, info, done.before, cleanup.recorded)
+  const notRemoved = [...new Set([...done.start.failures, ...cleanup.failures])]
+  const items = [
+    ...(isFilterRemoved ? [] : ['the filter values file was not removed']),
+    ...guardItems(notRemoved, cleanup, guard),
+  ]
+  for (const item of items) say(item, ctx)
+  const written = await writeRunSummary(summaryPathOf(info), summary(items), ctx)
+  const published = !written || await publishIfAsked(setup.cli, setup.suites, info, ctx)
+
+  return liveExit(result.code, notRemoved, guard, isFilterRemoved && written && published)
+}
+
+async function runLocked(setup: LiveSetup, lock: string): Promise<number> {
+  if (await isGlobalAway(setup.host.home, Date.now())) {
+    return refuse('global away is on: run /back --global, or wait until it ends')
+  }
+  const start = await removeLeftovers(setup)
+  const before = await guardSnapshot(setup.host.home, setup.needles, await keychainState(setup.host))
+  process.stdout.write(`e2e: guard snapshot taken (${keychainNote(before.keychain)})\n`)
+  const info = await startRun('live', setup.selection)
+  const claude = await claudeVersion(setup.claudeBin, info.scratch)
+  let result = NO_LIVE_RESULT
+  try {
+    result = await liveBody(setup, info)
+  } catch (error) {
+    say(messageOf(error), filterContext(process.env), process.stderr)
+  }
+  const code = await finishLive(setup, info, lock, { before, start, claude, result })
+  printRunLine(info.id, code)
+
+  return code
+}
+
+async function runLive(cli: RunCli, suites: readonly Suite[], selection: Selection): Promise<number> {
+  if (cli.build.length > 0) return refuse('--build is not built yet')
+  const concurrency = liveConcurrency(process.env.E2E_CONCURRENCY)
+  if (concurrency === null) return refuse('E2E_CONCURRENCY must be a positive whole number')
+  const claudeBin = await resolveOnPath('claude', process.env.PATH ?? '')
+  if (!claudeBin) return refuse('claude is not on PATH')
+  const host = hostUser()
+  let e2eDir: string
+  try {
+    e2eDir = e2eConfigDir()
+  } catch (error) {
+    return refuse(messageOf(error))
+  }
+  const why = e2eDirReason(e2eDir, host)
+  if (why) return refuse(why)
+  process.env.E2E_CONFIG_DIR = e2eDir
+  process.env.E2E_CLAUDE_BIN = claudeBin
+  const lock = `${e2eDir}.lock`
+  if (!await takeLock(lock)) return refuse(`another live run holds ${lock}`)
+  const needles = needlesOf(scratchBase(), e2eDir)
+  try {
+    return await runLocked({ cli, suites, selection, claudeBin, e2eDir, host, needles, concurrency }, lock)
+  } finally {
+    await releaseLock(lock)
+  }
 }
 
 async function runTier(cli: RunCli): Promise<number> {
   const suites = await loadSuites()
   const selection = selectEntries(suites, cli.tier, cli.rows)
   if (selection.unknown.length > 0) return refuse(`unknown row id: ${selection.unknown.join(', ')}`)
-  const now = Date.now()
-  const runId = makeRunId(now, randomBytes(2).toString('hex'))
-  const base = scratchBase()
-  for (const warning of await pruneRuns(base, now)) process.stderr.write(`e2e: ${warning}\n`)
-  const scratch = await makeRunRoot(base, runId)
-  process.env.E2E_SCRATCH = scratch
-  await mkdir(join(E2E_DIR, 'results', runId), { recursive: true })
-  process.stdout.write(`e2e: run ${runId}, tier ${cli.tier}\n`)
-  for (const note of selection.notes) process.stdout.write(`e2e: ${note}\n`)
+  if (cli.tier === 'live') return runLive(cli, suites, selection)
+  const info = await startRun(cli.tier, selection)
 
   let code = 1
   try {
-    code = await runSelected(cli, suites, selection, runId, scratch)
+    code = await runOffline(cli, suites, selection, info)
   } catch (error) {
     process.stderr.write(`e2e: ${messageOf(error)}\n`)
   }
-  process.stdout.write(`e2e: run ${runId} exit ${code} summary e2e/results/${runId}/SUMMARY.md\n`)
+  printRunLine(info.id, code)
 
   return code
 }
@@ -507,7 +857,7 @@ async function main(argv: readonly string[]): Promise<number> {
   const cli = parseCli(argv)
   if (typeof cli === 'string') return refuse(cli)
   if (cli.mode === 'leak-check') return leakCheckFiles(cli)
-  if (cli.tier === 'live') return refuse('the live tier is not built yet')
+  if (cli.tier === 'live' && process.env.CI !== undefined) return refuse('the live tier does not run in CI (CI is set)')
 
   return runTier(cli)
 }
