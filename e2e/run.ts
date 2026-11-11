@@ -5,13 +5,14 @@ import { availableParallelism } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { SYSTEM_PATH } from './lib/env.ts'
+import { e2eConfigDir, parseAuthStatus } from './lib/auth.ts'
+import { liveEnv, SYSTEM_PATH } from './lib/env.ts'
 import { HarnessError, LeakError } from './lib/errors.ts'
 import { filterContext, isRecord, isStringList, leakCheck } from './lib/filter.ts'
 import type { FilterContext } from './lib/filter.ts'
 import { run, spawn } from './lib/proc.ts'
 import type { Env } from './lib/proc.ts'
-import { makeRunRoot, pruneRuns, scratchBase } from './lib/scratch.ts'
+import { makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
 import { publishSummary, ROW_KINDS, rowFileName, SIDECAR_SCHEMA, summaryText, TIERS } from './lib/summary.ts'
 import { parseSidecar, writeRowResult, writeSummary } from './lib/summary.ts'
 import type { RowKind, Sidecar, SuiteVersion, Tier } from './lib/summary.ts'
@@ -20,6 +21,7 @@ const E2E_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_DIR = dirname(E2E_DIR)
 const MIN_NODE_MAJOR = 24
 const CLAUDE_VERSION_MS = 30_000
+const AUTH_STATUS_MS = 30_000
 
 const OPTIONS = {
   tier: { type: 'string' },
@@ -118,12 +120,49 @@ function parseCli(argv: readonly string[]): LeakCheckCli | RunCli | string {
   }
 }
 
+async function statusIdentities(claudeBin: string, e2eDir: string, root: string): Promise<readonly string[] | string> {
+  const cwd = join(root, 'cwd')
+  await mkdir(cwd)
+  const env = liveEnv({ claudeBin })
+  const result = await run([claudeBin, 'auth', 'status'], { cwd, env, timeoutMs: AUTH_STATUS_MS })
+  const status = parseAuthStatus(result.stdout)
+  if (status && !status.loggedIn) return `not logged in: ${e2eDir}`
+  if (result.code !== 0) return `claude auth status exited ${result.code}`
+  if (!status) return 'claude auth status printed no status'
+
+  return status.identityValues
+}
+
+async function rebuildIdentities(): Promise<readonly string[] | string> {
+  const claudeBin = await resolveOnPath('claude', process.env.PATH ?? '')
+  if (!claudeBin) return 'claude is not on PATH'
+  let e2eDir: string
+  try {
+    e2eDir = e2eConfigDir()
+  } catch (error) {
+    return messageOf(error)
+  }
+  const base = scratchBase()
+  const root = await makeRunRoot(base, `leak-${randomBytes(2).toString('hex')}`)
+  process.env.E2E_SCRATCH = root
+  process.env.E2E_CONFIG_DIR = e2eDir
+  try {
+    return await statusIdentities(claudeBin, e2eDir, root)
+  } catch (error) {
+    return messageOf(error)
+  } finally {
+    await removeTree(root, base)
+  }
+}
+
 async function leakCheckFiles(cli: LeakCheckCli): Promise<number> {
-  if (!cli.genericOnly) {
-    process.stderr.write('leak-check: identity values unavailable: auth lands in A2\n')
+  const identities = cli.genericOnly ? [] : await rebuildIdentities()
+  if (typeof identities === 'string') {
+    process.stderr.write(`leak-check: identity values unavailable: ${identities}\n`)
     return 2
   }
-  const ctx = filterContext(process.env)
+  if (!cli.genericOnly) process.stdout.write(`leak-check: ${identities.length} identity value(s) rebuilt\n`)
+  const ctx = filterContext(process.env, { identities })
   let code = 0
   for (const file of cli.files) {
     const text = await readFile(file, 'utf8').catch(() => null)

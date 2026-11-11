@@ -37,12 +37,15 @@ export type Child = {
 
 const KILL_GRACE_MS = 2_000
 
-export function fenceReason(env: Env, root: string | undefined): string | null {
+export function fenceReason(env: Env, root: string | undefined, e2eDir: string | undefined): string | null {
   if (!root) return 'the scratch root is unknown (E2E_SCRATCH is unset)'
   const rootWhy = rootReason(root)
   if (rootWhy) return rootWhy
   if (!env.HOME) return 'HOME is missing'
-  if (!isUnder(resolve(env.HOME), root)) return 'HOME is outside the scratch root'
+  if (isUnder(resolve(env.HOME), root)) return null
+  if (!env.CLAUDE_CONFIG_DIR) return 'HOME is outside the scratch root and CLAUDE_CONFIG_DIR is unset'
+  if (!e2eDir) return 'HOME is outside the scratch root and E2E_CONFIG_DIR is unset'
+  if (env.CLAUDE_CONFIG_DIR !== e2eDir) return 'HOME is outside the scratch root and CLAUDE_CONFIG_DIR is another dir'
 
   return null
 }
@@ -58,7 +61,7 @@ export function spawn(argv: readonly string[], opts: SpawnOptions): Child {
   const [program, ...args] = argv
   if (!program) throw new HarnessError('spawn needs a program')
   const name = basename(program)
-  const why = opts.host === true ? null : fenceReason(opts.env, process.env.E2E_SCRATCH)
+  const why = opts.host === true ? null : fenceReason(opts.env, process.env.E2E_SCRATCH, process.env.E2E_CONFIG_DIR)
   if (why) throw new HarnessError(`refusing to start ${name}: ${why}`)
 
   const output = opts.inherit === true ? 'inherit' : 'pipe'
