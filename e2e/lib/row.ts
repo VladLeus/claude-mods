@@ -1,5 +1,9 @@
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { cassetteTargetOf, parseRecordMode, suiteOfFile, withCassette } from './cassette.ts'
+import type { CassetteInputs } from './cassette.ts'
 import { HarnessError, LeakError } from './errors.ts'
 import { filterContext, filterText } from './filter.ts'
 import { removeTree, rowDir, scratchRoot } from './scratch.ts'
@@ -9,6 +13,8 @@ import type { Check, Json, NotAutomated, Note, Observation, RowKind, Sidecar, Ti
 export const OFFLINE_TEST_MS = 60_000
 export const LIVE_TEST_MS = 600_000
 
+const E2E_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
+
 export type RowMeta = {
   readonly id: string
   readonly half?: 'a' | 'b'
@@ -17,6 +23,8 @@ export type RowMeta = {
   readonly kind: RowKind
   readonly mac?: string
   readonly skip?: string
+  readonly file?: string
+  readonly cassette?: CassetteInputs
 }
 
 export type Cleanup = () => void | Promise<void>
@@ -48,6 +56,7 @@ type RowRecord = {
   readonly screens: Note[]
   readonly notAutomated: NotAutomated[]
   readonly cleanups: Cleanup[]
+  cassette: string
   skipReason: string | null
   failure: unknown
   failed: boolean
@@ -90,6 +99,7 @@ function emptyRecord(): RowRecord {
     screens: [],
     notAutomated: [],
     cleanups: [],
+    cassette: 'none',
     skipReason: null,
     failure: null,
     failed: false,
@@ -177,7 +187,7 @@ function sidecarOf(meta: RowMeta, rec: RowRecord, verdict: Verdict, reason: stri
     evidence: rec.evidence,
     screens: rec.screens,
     notAutomated: rec.notAutomated,
-    cassette: 'none',
+    cassette: rec.cassette,
     durationMs,
   }
 }
@@ -211,6 +221,26 @@ async function finishRow(
   await removeTree(rec.scratch, scratchRoot())
 }
 
+function cassetteBody(meta: RowMeta, spec: CassetteInputs, rec: RowRecord, fn: RowBody): RowBody {
+  const onState = (state: string): void => {
+    rec.cassette = state
+  }
+
+  return async ctx => {
+    const mode = parseRecordMode(process.env.E2E_RECORD)
+    if (mode === null) throw new HarnessError('E2E_RECORD must be once, none or all')
+    const claude = process.env.E2E_CLAUDE_VERSION
+    if (!claude) throw new HarnessError('E2E_CLAUDE_VERSION is unset: run through npm run e2e:live')
+    if (!meta.file) throw new HarnessError(`rowTest: the registry entry of ${meta.id} names no test file`)
+    const suite = await suiteOfFile(E2E_DIR, meta.file)
+    const testFile = join(E2E_DIR, suite, meta.file)
+    const target = cassetteTargetOf(E2E_DIR, suite, testFile, { id: meta.id, half: meta.half, cassette: spec })
+    const world = { claude, mode, now: Date.now() }
+
+    await withCassette(ctx, { ...target, ...world, meta, filter: filterContext(process.env), onState }, fn)
+  }
+}
+
 async function runRow(meta: RowMeta, fn: RowBody, t: TestContext, runDir: string, timeoutMs: number): Promise<void> {
   const started = Date.now()
   const rec = emptyRecord()
@@ -224,7 +254,8 @@ async function runRow(meta: RowMeta, fn: RowBody, t: TestContext, runDir: string
   }
   try {
     rec.scratch = await rowDir(`${meta.id}${meta.half ?? ''}`, scratchRoot())
-    await fn(contextOf(rec, rec.scratch, t))
+    const body = meta.cassette ? cassetteBody(meta, meta.cassette, rec, fn) : fn
+    await body(contextOf(rec, rec.scratch, t))
   } catch (error) {
     rec.failure = error
     rec.failed = true

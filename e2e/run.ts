@@ -7,6 +7,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { e2eConfigDir, e2eConfigPath, writeFilterFile } from './lib/auth.ts'
+import { cassetteState, cassetteTargetOf, parseRecordMode, planText } from './lib/cassette.ts'
+import type { CassetteInputs, CassetteMode, CassettePlan } from './lib/cassette.ts'
 import { authPreflight, authStatus } from './lib/claude.ts'
 import type { PreflightStage } from './lib/claude.ts'
 import { otherEntryChanges, restoreState, snapshotState } from './lib/config-state.ts'
@@ -80,6 +82,7 @@ type Entry = {
   readonly fixture: readonly string[]
   readonly clipboard: boolean
   readonly exclusive: boolean
+  readonly cassette: CassetteInputs | null
 }
 
 type Suite = {
@@ -103,14 +106,12 @@ type RunInfo = {
 type LiveVars = {
   readonly e2eDir: string
   readonly filterFile: string
+  readonly claude: string
 }
 
 type VariantMap = ReadonlyMap<string, Builder>
 
-type Fixtures = {
-  readonly variants: VariantMap
-  readonly fixtures: readonly string[]
-}
+type Plans = ReadonlyMap<Entry, CassettePlan>
 
 type LiveSetup = {
   readonly cli: RunCli
@@ -121,8 +122,8 @@ type LiveSetup = {
   readonly host: HostUser
   readonly needles: Needles
   readonly concurrency: number
+  readonly mode: CassetteMode
   readonly variants: VariantMap
-  readonly fixtures: readonly string[]
 }
 
 type WorkLog = {
@@ -288,9 +289,18 @@ function halfOf(value: unknown): string | null {
   return null
 }
 
+function cassetteInputsOf(value: unknown): CassetteInputs | null {
+  if (!isRecord(value) || !isStringList(value.inputs)) return null
+  const { inputs, ttlDays } = value
+  if (ttlDays === undefined) return { inputs }
+  if (typeof ttlDays !== 'number' || !Number.isFinite(ttlDays) || ttlDays <= 0) return null
+
+  return { inputs, ttlDays }
+}
+
 function parseEntry(value: unknown, suite: string): Entry | null {
   if (!isRecord(value)) return null
-  const { id, half, title, tier, kind, file, fixture, clipboard, exclusive } = value
+  const { id, half, title, tier, kind, file, fixture, clipboard, exclusive, cassette } = value
   if (typeof id !== 'string' || typeof title !== 'string' || typeof file !== 'string') return null
   const entryTier = TIERS.find(item => item === tier)
   const entryKind = ROW_KINDS.find(item => item === kind)
@@ -298,6 +308,8 @@ function parseEntry(value: unknown, suite: string): Entry | null {
   if (!entryTier || !entryKind || entryHalf === null || !isStringList(fixture)) return null
   if (clipboard !== undefined && typeof clipboard !== 'boolean') return null
   if (exclusive !== undefined && typeof exclusive !== 'boolean') return null
+  const cassetteInputs = cassette === undefined ? null : cassetteInputsOf(cassette)
+  if (cassette !== undefined && cassetteInputs === null) return null
 
   return {
     suite,
@@ -310,6 +322,7 @@ function parseEntry(value: unknown, suite: string): Entry | null {
     fixture,
     clipboard: clipboard === true,
     exclusive: exclusive === true,
+    cassette: cassetteInputs,
   }
 }
 
@@ -468,6 +481,7 @@ function childEnv(info: RunInfo, claudeBin: string | null, live: LiveVars | null
     E2E_CLAUDE_BIN: claudeBin ?? undefined,
     E2E_CONFIG_DIR: live?.e2eDir,
     E2E_FILTER_FILE: live?.filterFile,
+    E2E_CLAUDE_VERSION: live?.claude,
   }
 }
 
@@ -912,11 +926,12 @@ async function fixtureStatus(
 async function buildFixtures(
   setup: LiveSetup,
   info: RunInfo,
+  variants: readonly string[],
   log: WorkLog,
   ctx: FilterContext,
 ): Promise<ReadonlySet<string>> {
   const failed = new Set<string>()
-  for (const variant of setup.fixtures) {
+  for (const variant of variants) {
     const status = await fixtureStatus(setup, info, variant, failed, log, ctx)
     log.fixtures.push({ variant, status })
     say(`fixture ${variant}: ${status}`, ctx)
@@ -928,8 +943,42 @@ async function buildFixtures(
   return failed
 }
 
-function blockedReason(entry: Entry, setup: LiveSetup, failed: ReadonlySet<string>, log: WorkLog): string | null {
+function isLiveEntry(entry: Entry, plans: Plans): boolean {
+  const plan = plans.get(entry)
+
+  return plan === undefined || plan.action === 'record'
+}
+
+async function cassettePlans(setup: LiveSetup, claude: string, ctx: FilterContext): Promise<Plans> {
+  const plans = new Map<Entry, CassettePlan>()
+  const now = Date.now()
+  for (const entry of setup.selection.entries) {
+    if (entry.cassette === null) continue
+    const row = { id: entry.id, half: entry.half, cassette: entry.cassette }
+    const target = cassetteTargetOf(E2E_DIR, entry.suite, join(REPO_DIR, entry.file), row)
+    const plan = await cassetteState(target, { claude, mode: setup.mode, now })
+    plans.set(entry, plan)
+    say(`cassette ${rowFileName(entry.id, entry.half)}: ${planText(plan)}`, ctx)
+  }
+
+  return plans
+}
+
+function fixturesToBuild(setup: LiveSetup, plans: Plans): readonly string[] {
+  const live = setup.selection.entries.filter(entry => isLiveEntry(entry, plans))
+
+  return closureOf([...live.flatMap(entry => entry.fixture), ...setup.cli.build], setup.variants)
+}
+
+function blockedReason(
+  entry: Entry,
+  setup: LiveSetup,
+  failed: ReadonlySet<string>,
+  plans: Plans,
+  log: WorkLog,
+): string | null {
   if (log.stopped !== null) return log.stopped
+  if (!isLiveEntry(entry, plans)) return null
   const variant = closureOf(entry.fixture, setup.variants).find(name => failed.has(name))
 
   return variant === undefined ? null : `the fixture ${variant} failed`
@@ -939,12 +988,13 @@ async function runnableEntries(
   setup: LiveSetup,
   info: RunInfo,
   failed: ReadonlySet<string>,
+  plans: Plans,
   log: WorkLog,
   ctx: FilterContext,
 ): Promise<readonly Entry[]> {
   const runnable: Entry[] = []
   for (const entry of setup.selection.entries) {
-    const reason = blockedReason(entry, setup, failed, log)
+    const reason = blockedReason(entry, setup, failed, plans, log)
     if (reason === null) runnable.push(entry)
     else await writeNotRun(info, [entry], reason, ctx)
   }
@@ -987,14 +1037,15 @@ async function liveWork(
   log: WorkLog,
   ctx: FilterContext,
 ): Promise<readonly Sidecar[]> {
-  const failed = await buildFixtures(setup, info, log, ctx)
-  const runnable = await runnableEntries(setup, info, failed, log, ctx)
+  const plans = await cassettePlans(setup, live.claude, ctx)
+  const failed = await buildFixtures(setup, info, fixturesToBuild(setup, plans), log, ctx)
+  const runnable = await runnableEntries(setup, info, failed, plans, log, ctx)
   await spawnRows(setup, info, live, runnable, log, ctx)
 
   return collectRows(info.resultsDir, setup.selection.entries, 'live', ctx)
 }
 
-async function liveBody(setup: LiveSetup, info: RunInfo, log: WorkLog): Promise<LiveResult> {
+async function liveBody(setup: LiveSetup, info: RunInfo, log: WorkLog, claude: string): Promise<LiveResult> {
   await writeClaudeFence(info.scratch, setup.claudeBin, setup.e2eDir)
   const cwd = join(info.scratch, 'preflight')
   await mkdir(cwd)
@@ -1010,7 +1061,7 @@ async function liveBody(setup: LiveSetup, info: RunInfo, log: WorkLog): Promise<
   const filterFile = await writeFilterFile(info.scratch, identities)
   const clipboard = await saveClipboard(setup.host, ctx)
   try {
-    const rows = await liveWork(setup, info, { e2eDir: setup.e2eDir, filterFile }, log, ctx)
+    const rows = await liveWork(setup, info, { e2eDir: setup.e2eDir, filterFile, claude }, log, ctx)
     const code = Math.max(verdictExit(rows, setup.cli.allowProductFail), log.failed ? 1 : 0)
     return { code, rows, identities, filterFile, clipboard, log }
   } catch (error) {
@@ -1079,7 +1130,7 @@ async function runLocked(setup: LiveSetup, lock: string): Promise<number> {
   const log = emptyLog()
   let result = emptyLive(log)
   try {
-    result = await liveBody(setup, info, log)
+    result = await liveBody(setup, info, log, claude)
   } catch (error) {
     say(messageOf(error), filterContext(process.env), process.stderr)
   }
@@ -1089,11 +1140,12 @@ async function runLocked(setup: LiveSetup, lock: string): Promise<number> {
   return code
 }
 
-async function fixturesOf(cli: RunCli, suites: readonly Suite[], selection: Selection): Promise<Fixtures | string> {
+async function variantsOf(cli: RunCli, suites: readonly Suite[], selection: Selection): Promise<VariantMap | string> {
   try {
     const variants = await loadVariants(suites)
-    const names = [...selection.entries.flatMap(entry => entry.fixture), ...cli.build]
-    return { variants, fixtures: closureOf(names, variants) }
+    closureOf([...selection.entries.flatMap(entry => entry.fixture), ...cli.build], variants)
+
+    return variants
   } catch (error) {
     return messageOf(error)
   }
@@ -1102,6 +1154,8 @@ async function fixturesOf(cli: RunCli, suites: readonly Suite[], selection: Sele
 async function runLive(cli: RunCli, suites: readonly Suite[], selection: Selection): Promise<number> {
   const concurrency = liveConcurrency(process.env.E2E_CONCURRENCY)
   if (concurrency === null) return refuse('E2E_CONCURRENCY must be a positive whole number')
+  const mode = parseRecordMode(process.env.E2E_RECORD)
+  if (mode === null) return refuse('E2E_RECORD must be once, none or all')
   if (!await resolveOnPath('tmux', SYSTEM_PATH)) return refuse(`tmux is not in ${SYSTEM_PATH}`)
   const claudeBin = await resolveOnPath('claude', process.env.PATH ?? '')
   if (!claudeBin) return refuse('claude is not on PATH')
@@ -1114,14 +1168,14 @@ async function runLive(cli: RunCli, suites: readonly Suite[], selection: Selecti
   }
   const why = e2eDirReason(e2eDir, host)
   if (why) return refuse(why)
-  const fixtures = await fixturesOf(cli, suites, selection)
-  if (typeof fixtures === 'string') return refuse(fixtures)
+  const variants = await variantsOf(cli, suites, selection)
+  if (typeof variants === 'string') return refuse(variants)
   process.env.E2E_CONFIG_DIR = e2eDir
   process.env.E2E_CLAUDE_BIN = claudeBin
   const lock = `${e2eDir}.lock`
   if (!await takeLock(lock)) return refuse(`another live run holds ${lock}`)
   const needles = needlesOf(scratchBase(), e2eDir)
-  const setup = { cli, suites, selection, claudeBin, e2eDir, host, needles, concurrency, ...fixtures }
+  const setup = { cli, suites, selection, claudeBin, e2eDir, host, needles, concurrency, mode, variants }
   try {
     return await runLocked(setup, lock)
   } finally {
