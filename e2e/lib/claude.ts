@@ -229,8 +229,15 @@ const CURSOR_RE = /^\s*❯ +/
 const MARK_RE = /^✔ +/
 const NUMBER_RE = /^[0-9]+\.\s+/
 const OTHER_LABELS: readonly string[] = ['Other', 'Type something.']
+const DIALOG_CURSOR_RE = /^\s*❯ +\S/m
+const DIALOG_FOOTER_RE = /Esc to cancel|Enter to (?:select|confirm)|↑\/↓ to navigate/
+const NOTES_KEY = 'n'
+const GAP_RE = /\s{3,}/
+const WRAPPED_MIN_CHARS = 6
 const CURSOR_MS = 5_000
 const TUI_ROUNDS = 8
+
+export type ScreenTest = (screen: string) => boolean
 
 type OptionLine = {
   readonly label: string
@@ -241,6 +248,15 @@ type Pick = (options: readonly OptionLine[]) => OptionLine | undefined
 
 function isLoginPrompt(screen: string): boolean {
   return TUI_LOGIN_RE.test(screen)
+}
+
+// A dialog shows an option row under the cursor and a footer naming its keys; the empty prompt box has neither.
+export function isDialogScreen(screen: string): boolean {
+  return DIALOG_CURSOR_RE.test(screen) && DIALOG_FOOTER_RE.test(screen)
+}
+
+function isReadyScreen(screen: string): boolean {
+  return TUI_READY.test(screen)
 }
 
 function authChecked(screen: string): string {
@@ -320,9 +336,16 @@ async function select(pane: Pane, screen: string, pick: Pick, name: string): Pro
   await sendKeys(pane, 'Enter')
 }
 
+// The left column of a previewed dialog is narrow, so a long label wraps and only its first line is the option's text.
+function visibleLabel(option: OptionLine): string {
+  return option.label.split(GAP_RE)[0] ?? ''
+}
+
 function labelPick(label: string): Pick {
   return options =>
-    options.find(option => option.label === label) ?? options.find(option => option.label.startsWith(label))
+    options.find(option => option.label === label) ??
+      options.find(option => option.label.startsWith(label)) ??
+      options.find(option => visibleLabel(option).length >= WRAPPED_MIN_CHARS && label.startsWith(visibleLabel(option)))
 }
 
 // A dialog takes keys only once its screen has settled; keys sent while it still draws are lost.
@@ -330,9 +353,17 @@ export async function answer(pane: Pane, label: string): Promise<void> {
   await select(pane, await idleTui(pane), labelPick(label), JSON.stringify(label))
 }
 
+// Beside an option preview the engine draws no Other row: a note typed after n is the answer.
 export async function answerOther(pane: Pane, text: string): Promise<void> {
+  const screen = await idleTui(pane)
   const pick: Pick = options => options.find(option => OTHER_LABELS.includes(option.label))
-  await select(pane, await idleTui(pane), pick, 'Other')
+  if (pick(optionLines(screen)) === undefined) {
+    await sendText(pane, NOTES_KEY)
+    await sendText(pane, text)
+    await sendKeys(pane, 'Enter')
+    return
+  }
+  await select(pane, screen, pick, 'Other')
   await sendText(pane, text)
 
   await sendKeys(pane, 'Enter')
@@ -346,13 +377,18 @@ function stepOf(screen: string): TuiStep | undefined {
   return TUI_TRUST.find(step => step.matcher.test(screen))
 }
 
-async function passTrustIn(pane: Pane): Promise<string> {
-  const known = (screen: string): boolean => TUI_READY.test(screen) || stepOf(screen) !== undefined
+// A dialog of the command the session started with, as opposed to the first-run and trust steps.
+export function isAppDialog(screen: string): boolean {
+  return isDialogScreen(screen) && stepOf(screen) === undefined
+}
+
+async function passTrustIn(pane: Pane, until: ScreenTest): Promise<string> {
+  const known = (screen: string): boolean => until(screen) || stepOf(screen) !== undefined
   const label = 'the ready prompt, the folder trust dialog or a first-run screen'
   for (let round = 0; round < TUI_ROUNDS; round += 1) {
     await waitTui(pane, known, WAIT_MS, label)
     const screen = await idleTui(pane)
-    if (TUI_READY.test(screen)) return screen
+    if (until(screen)) return screen
     const step = stepOf(screen)
     if (!step) continue
     if (step.label === null) await sendKeys(pane, 'Enter')
@@ -362,11 +398,21 @@ async function passTrustIn(pane: Pane): Promise<string> {
   throw new HarnessError(`claude did not reach the ready prompt in ${TUI_ROUNDS} rounds`)
 }
 
-export async function startTui(server: Server, cwd: string, args: readonly string[]): Promise<Pane> {
+// A session started with a command as its first prompt never shows the ready prompt: `until` names where to stop.
+export async function startTuiUntil(
+  server: Server,
+  cwd: string,
+  args: readonly string[],
+  until: ScreenTest,
+): Promise<Pane> {
   const pane = await newWindow(server, 'claude', cwd, [claudeBin(), ...args])
-  await passTrustIn(pane)
+  await passTrustIn(pane, until)
 
   return pane
+}
+
+export async function startTui(server: Server, cwd: string, args: readonly string[]): Promise<Pane> {
+  return startTuiUntil(server, cwd, args, isReadyScreen)
 }
 
 export async function passTrust(server: Server, window: string): Promise<Pane> {
@@ -375,7 +421,7 @@ export async function passTrust(server: Server, window: string): Promise<Pane> {
   const found = windows.find(item => item.name === window)
   if (!found) throw new HarnessError(`no tmux window named ${window}`)
   const pane = { server, id: found.pane }
-  await passTrustIn(pane)
+  await passTrustIn(pane, isReadyScreen)
 
   return pane
 }
