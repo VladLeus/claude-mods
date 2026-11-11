@@ -5,9 +5,13 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck:cadre": "tsc -p cadre/tsconfig.strict.json"
+    "typecheck:cadre": "tsc -p cadre/tsconfig.strict.json",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.strict.json",
+    "e2e": "node e2e/run.ts --tier offline",
+    "e2e:live": "node e2e/run.ts --tier live"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "typescript": "7.0.2"
   }
 }
