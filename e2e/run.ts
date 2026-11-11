@@ -9,11 +9,15 @@ import { parseArgs } from 'node:util'
 import { e2eConfigDir, e2eConfigPath, writeFilterFile } from './lib/auth.ts'
 import { authPreflight, authStatus } from './lib/claude.ts'
 import type { PreflightStage } from './lib/claude.ts'
+import { otherEntryChanges, restoreState, snapshotState } from './lib/config-state.ts'
+import type { TopEntry } from './lib/config-state.ts'
 import { hostUser, isRealConfig, liveEnv, SYSTEM_PATH, writeClaudeFence } from './lib/env.ts'
-import type { HostUser } from './lib/env.ts'
+import type { ChildEnv, HostUser } from './lib/env.ts'
 import { HarnessError, LeakError } from './lib/errors.ts'
 import { filterContext, filterText, isRecord, isStringList, leakCheck } from './lib/filter.ts'
 import type { FilterContext } from './lib/filter.ts'
+import { fixtureDir, variantClosure } from './lib/fixture.ts'
+import type { BuildContext, Builder } from './lib/fixture.ts'
 import { compareGuard, fenceRefusals, fleetBeats, globalAwayActive, guardSnapshot } from './lib/guard.ts'
 import { keychainDigest, needlesOf, projectTranscripts, removeSessionFiles, testSessionIds } from './lib/guard.ts'
 import type { GuardResult, GuardSnapshot, KeychainDigest, Needles, Removal } from './lib/guard.ts'
@@ -22,7 +26,8 @@ import type { Env } from './lib/proc.ts'
 import { isUnder, makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
 import { publishSummary, ROW_KINDS, rowFileName, SIDECAR_SCHEMA, summaryText, TIERS } from './lib/summary.ts'
 import { parseSidecar, writeRowResult, writeSummary } from './lib/summary.ts'
-import type { RowKind, Sidecar, SuiteVersion, Tier } from './lib/summary.ts'
+import type { FixtureStatus, RowKind, Sidecar, SuiteVersion, Tier } from './lib/summary.ts'
+import { runSocketPrefix, sweepServers } from './lib/tmux.ts'
 
 const E2E_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_DIR = dirname(E2E_DIR)
@@ -35,6 +40,8 @@ const BASELINE_PLUGINS = ['cadre', 'autopilot', 'agent-fleet'] as const
 const LOCK_PID_FILE = 'pid'
 const GUARD_PENDING = 'the guard check runs after the session cleanup'
 const POSITIVE_WHOLE_RE = /^[1-9][0-9]*$/
+const CLIPBOARD_MS = 10_000
+const BUILT = 'built'
 const KEYCHAIN_LIST_ARGV = ['/usr/bin/security', 'dump-keychain'] as const
 
 const OPTIONS = {
@@ -72,6 +79,7 @@ type Entry = {
   readonly file: string
   readonly fixture: readonly string[]
   readonly clipboard: boolean
+  readonly exclusive: boolean
 }
 
 type Suite = {
@@ -97,6 +105,13 @@ type LiveVars = {
   readonly filterFile: string
 }
 
+type VariantMap = ReadonlyMap<string, Builder>
+
+type Fixtures = {
+  readonly variants: VariantMap
+  readonly fixtures: readonly string[]
+}
+
 type LiveSetup = {
   readonly cli: RunCli
   readonly suites: readonly Suite[]
@@ -106,6 +121,21 @@ type LiveSetup = {
   readonly host: HostUser
   readonly needles: Needles
   readonly concurrency: number
+  readonly variants: VariantMap
+  readonly fixtures: readonly string[]
+}
+
+type WorkLog = {
+  readonly fixtures: FixtureStatus[]
+  readonly guard: string[]
+  windows: number
+  failed: boolean
+  stopped: string | null
+}
+
+type WindowResult = {
+  readonly ran: boolean
+  readonly error: string | null
 }
 
 type LiveResult = {
@@ -113,6 +143,8 @@ type LiveResult = {
   readonly rows: readonly Sidecar[]
   readonly identities: readonly string[]
   readonly filterFile: string | null
+  readonly clipboard: string | null
+  readonly log: WorkLog
 }
 
 type LiveDone = {
@@ -133,7 +165,13 @@ type SessionCleanup = {
   readonly recorded: ReadonlySet<string>
 }
 
-const NO_LIVE_RESULT: LiveResult = { code: 1, rows: [], identities: [], filterFile: null }
+function emptyLog(): WorkLog {
+  return { fixtures: [], guard: [], windows: 0, failed: false, stopped: null }
+}
+
+function emptyLive(log: WorkLog): LiveResult {
+  return { code: 1, rows: [], identities: [], filterFile: null, clipboard: null, log }
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -252,13 +290,14 @@ function halfOf(value: unknown): string | null {
 
 function parseEntry(value: unknown, suite: string): Entry | null {
   if (!isRecord(value)) return null
-  const { id, half, title, tier, kind, file, fixture, clipboard } = value
+  const { id, half, title, tier, kind, file, fixture, clipboard, exclusive } = value
   if (typeof id !== 'string' || typeof title !== 'string' || typeof file !== 'string') return null
   const entryTier = TIERS.find(item => item === tier)
   const entryKind = ROW_KINDS.find(item => item === kind)
   const entryHalf = halfOf(half)
   if (!entryTier || !entryKind || entryHalf === null || !isStringList(fixture)) return null
   if (clipboard !== undefined && typeof clipboard !== 'boolean') return null
+  if (exclusive !== undefined && typeof exclusive !== 'boolean') return null
 
   return {
     suite,
@@ -270,6 +309,7 @@ function parseEntry(value: unknown, suite: string): Entry | null {
     file: relative(REPO_DIR, join(E2E_DIR, suite, file)),
     fixture,
     clipboard: clipboard === true,
+    exclusive: exclusive === true,
   }
 }
 
@@ -301,6 +341,44 @@ async function loadSuites(): Promise<readonly Suite[]> {
   }
 
   return suites
+}
+
+function parseBuilder(value: unknown): Builder | null {
+  if (!isRecord(value) || !isStringList(value.from)) return null
+  const { build, exclusive } = value
+  if (typeof build !== 'function') return null
+  if (exclusive !== undefined && typeof exclusive !== 'boolean') return null
+
+  return {
+    from: value.from,
+    exclusive: exclusive === true,
+    build: async (ctx: BuildContext) => {
+      await build(ctx)
+    },
+  }
+}
+
+async function loadVariants(suites: readonly Suite[]): Promise<VariantMap> {
+  const variants = new Map<string, Builder>()
+  for (const suite of suites) {
+    const index = join(E2E_DIR, suite.name, 'fixtures', 'index.ts')
+    if (!existsSync(index)) continue
+    const module: unknown = await import(pathToFileURL(index).href)
+    const map: unknown = isRecord(module) ? module.VARIANTS : undefined
+    if (!isRecord(map)) throw new HarnessError(`e2e/${suite.name}/fixtures/index.ts exports no VARIANTS map`)
+    for (const [name, value] of Object.entries(map)) {
+      const builder = parseBuilder(value)
+      if (!builder) throw new HarnessError(`e2e/${suite.name}/fixtures/index.ts: the variant ${name} is malformed`)
+      if (variants.has(name)) throw new HarnessError(`the fixture variant ${name} is defined by two suites`)
+      variants.set(name, builder)
+    }
+  }
+
+  return variants
+}
+
+function closureOf(names: readonly string[], variants: VariantMap): readonly string[] {
+  return variantClosure(names, name => variants.get(name)?.from)
 }
 
 function matches(entry: Entry, token: string): boolean {
@@ -552,6 +630,7 @@ async function startRun(tier: Tier, selection: Selection): Promise<RunInfo> {
   for (const warning of await pruneRuns(base, now)) process.stderr.write(`e2e: ${warning}\n`)
   const scratch = await makeRunRoot(base, id)
   process.env.E2E_SCRATCH = scratch
+  process.env.E2E_FIXTURES = join(scratch, 'fixtures')
   const resultsDir = join(E2E_DIR, 'results', id)
   await mkdir(resultsDir, { recursive: true })
   process.stdout.write(`e2e: run ${id}, tier ${tier}\n`)
@@ -713,19 +792,209 @@ function preflightLines(stage: PreflightStage, reason: string): readonly string[
   return [reason, `log in again: CLAUDE_CONFIG_DIR=${e2eConfigPath()} claude auth login`]
 }
 
-async function liveRows(
+function clipboardEnv(host: HostUser): ChildEnv {
+  return { PATH: SYSTEM_PATH, HOME: host.home, USER: host.user, LANG: 'en_US.UTF-8' }
+}
+
+async function saveClipboard(host: HostUser, ctx: FilterContext): Promise<string | null> {
+  if (process.platform !== 'darwin') return null
+  const opts = { cwd: REPO_DIR, env: clipboardEnv(host), timeoutMs: CLIPBOARD_MS, host: true }
+  const result = await run(['/usr/bin/pbpaste'], opts).catch(() => null)
+  if (result?.code === 0) return result.stdout
+  say('the clipboard was not saved, so it is not restored after the run', ctx, process.stderr)
+
+  return null
+}
+
+async function restoreClipboard(text: string | null, host: HostUser, ctx: FilterContext): Promise<void> {
+  if (text === null) return
+  const opts = { cwd: REPO_DIR, env: clipboardEnv(host), input: text, timeoutMs: CLIPBOARD_MS, host: true }
+  const result = await run(['/usr/bin/pbcopy'], opts).catch(() => null)
+  if (result?.code === 0) return
+
+  say('the clipboard was not restored', ctx, process.stderr)
+}
+
+async function sweepTmux(info: RunInfo, ctx: FilterContext): Promise<void> {
+  const opts = { env: { PATH: SYSTEM_PATH }, cwd: REPO_DIR, host: true }
+  try {
+    const swept = await sweepServers(runSocketPrefix(info.id), opts)
+    say(`removed ${swept.length} tmux server sockets of this run`, ctx)
+  } catch (error) {
+    say(messageOf(error), ctx, process.stderr)
+  }
+}
+
+async function writeNotRun(
+  info: RunInfo,
+  entries: readonly Entry[],
+  reason: string,
+  ctx: FilterContext,
+): Promise<void> {
+  for (const entry of entries) {
+    const row = { ...missingSidecar(entry), reason: `not run: ${reason}` }
+    try {
+      await writeRowResult(info.resultsDir, row, ctx)
+    } catch (error) {
+      if (!(error instanceof LeakError)) throw error
+      await writeRowResult(info.resultsDir, { ...row, reason: 'not run: the reason failed the leak check' }, ctx)
+    }
+  }
+}
+
+async function exclusiveWindow(
+  setup: LiveSetup,
+  info: RunInfo,
+  name: string,
+  body: () => Promise<string | null>,
+  log: WorkLog,
+  ctx: FilterContext,
+): Promise<WindowResult> {
+  log.windows += 1
+  const snapshot = join(info.scratch, 'state', String(log.windows))
+  let before: readonly TopEntry[]
+  try {
+    before = await snapshotState(setup.e2eDir, snapshot)
+  } catch (error) {
+    return { ran: false, error: `the e2e dir state snapshot before ${name} failed: ${messageOf(error)}` }
+  }
+  const error = await body().catch(messageOf)
+  try {
+    const after = await restoreState(setup.e2eDir, snapshot)
+    log.guard.push(`e2e dir state restored after ${name}`)
+    for (const entry of otherEntryChanges(before, after)) {
+      log.guard.push(`e2e dir entry ${entry} changed in the exclusive window`)
+    }
+    return { ran: true, error }
+  } catch (restoreError) {
+    const line = `e2e dir state not restored after ${name}: ${messageOf(restoreError)}`
+    say(line, ctx, process.stderr)
+    log.guard.push(line)
+    log.stopped = line
+    log.failed = true
+    return { ran: true, error: error ?? line }
+  }
+}
+
+async function attemptBuild(variant: string, builder: Builder): Promise<string | null> {
+  try {
+    const repo = fixtureDir(variant)
+    await mkdir(dirname(repo), { recursive: true })
+    await builder.build({ variant, dir: dirname(repo), repo })
+    return existsSync(repo) ? null : 'the builder made no repo'
+  } catch (error) {
+    return messageOf(error)
+  }
+}
+
+async function fixtureStatus(
+  setup: LiveSetup,
+  info: RunInfo,
+  variant: string,
+  failed: ReadonlySet<string>,
+  log: WorkLog,
+  ctx: FilterContext,
+): Promise<string> {
+  if (log.stopped !== null) return `error: not built: ${log.stopped}`
+  const builder = setup.variants.get(variant)
+  if (!builder) return 'error: no builder'
+  const broken = builder.from.find(name => failed.has(name))
+  if (broken !== undefined) return `error: ${broken} failed`
+  say(`building the fixture ${variant}`, ctx)
+  const build = (): Promise<string | null> => attemptBuild(variant, builder)
+  const outcome = builder.exclusive === true
+    ? await exclusiveWindow(setup, info, variant, build, log, ctx)
+    : { ran: true, error: await build() }
+
+  return outcome.error === null ? BUILT : `error: ${outcome.error}`
+}
+
+async function buildFixtures(
+  setup: LiveSetup,
+  info: RunInfo,
+  log: WorkLog,
+  ctx: FilterContext,
+): Promise<ReadonlySet<string>> {
+  const failed = new Set<string>()
+  for (const variant of setup.fixtures) {
+    const status = await fixtureStatus(setup, info, variant, failed, log, ctx)
+    log.fixtures.push({ variant, status })
+    say(`fixture ${variant}: ${status}`, ctx)
+    if (status === BUILT) continue
+    failed.add(variant)
+    log.failed = true
+  }
+
+  return failed
+}
+
+function blockedReason(entry: Entry, setup: LiveSetup, failed: ReadonlySet<string>, log: WorkLog): string | null {
+  if (log.stopped !== null) return log.stopped
+  const variant = closureOf(entry.fixture, setup.variants).find(name => failed.has(name))
+
+  return variant === undefined ? null : `the fixture ${variant} failed`
+}
+
+async function runnableEntries(
+  setup: LiveSetup,
+  info: RunInfo,
+  failed: ReadonlySet<string>,
+  log: WorkLog,
+  ctx: FilterContext,
+): Promise<readonly Entry[]> {
+  const runnable: Entry[] = []
+  for (const entry of setup.selection.entries) {
+    const reason = blockedReason(entry, setup, failed, log)
+    if (reason === null) runnable.push(entry)
+    else await writeNotRun(info, [entry], reason, ctx)
+  }
+
+  return runnable
+}
+
+async function spawnRows(
   setup: LiveSetup,
   info: RunInfo,
   live: LiveVars,
+  runnable: readonly Entry[],
+  log: WorkLog,
+  ctx: FilterContext,
+): Promise<void> {
+  const env = childEnv(info, setup.claudeBin, live)
+  const parallel = filesOf(runnable.filter(entry => !entry.exclusive && !entry.clipboard))
+  const clipboard = filesOf(runnable.filter(entry => !entry.exclusive && entry.clipboard))
+  if (parallel.length > 0) await nodeTest(parallel, setup.concurrency, env)
+  if (clipboard.length > 0) await nodeTest(clipboard, 1, env)
+  for (const file of filesOf(runnable.filter(entry => entry.exclusive))) {
+    const entries = runnable.filter(entry => entry.file === file)
+    if (log.stopped !== null) {
+      await writeNotRun(info, entries, log.stopped, ctx)
+      continue
+    }
+    const body = async (): Promise<null> => {
+      await nodeTest([file], 1, env)
+      return null
+    }
+    const outcome = await exclusiveWindow(setup, info, file, body, log, ctx)
+    if (!outcome.ran) await writeNotRun(info, entries, outcome.error ?? 'the exclusive window did not open', ctx)
+  }
+}
+
+async function liveWork(
+  setup: LiveSetup,
+  info: RunInfo,
+  live: LiveVars,
+  log: WorkLog,
   ctx: FilterContext,
 ): Promise<readonly Sidecar[]> {
-  const files = filesOf(setup.selection.entries)
-  if (files.length > 0) await nodeTest(files, setup.concurrency, childEnv(info, setup.claudeBin, live))
+  const failed = await buildFixtures(setup, info, log, ctx)
+  const runnable = await runnableEntries(setup, info, failed, log, ctx)
+  await spawnRows(setup, info, live, runnable, log, ctx)
 
   return collectRows(info.resultsDir, setup.selection.entries, 'live', ctx)
 }
 
-async function liveBody(setup: LiveSetup, info: RunInfo): Promise<LiveResult> {
+async function liveBody(setup: LiveSetup, info: RunInfo, log: WorkLog): Promise<LiveResult> {
   await writeClaudeFence(info.scratch, setup.claudeBin, setup.e2eDir)
   const cwd = join(info.scratch, 'preflight')
   await mkdir(cwd)
@@ -735,16 +1004,19 @@ async function liveBody(setup: LiveSetup, info: RunInfo): Promise<LiveResult> {
   const ctx = liveFilter(identities)
   if (!preflight.ok) {
     for (const line of preflightLines(preflight.stage, preflight.reason)) say(line, ctx, process.stderr)
-    return { ...NO_LIVE_RESULT, code: 2, identities }
+    return { ...emptyLive(log), code: 2, identities }
   }
   say(`preflight passed, plugin baseline ${preflight.plugins}`, ctx)
   const filterFile = await writeFilterFile(info.scratch, identities)
+  const clipboard = await saveClipboard(setup.host, ctx)
   try {
-    const rows = await liveRows(setup, info, { e2eDir: setup.e2eDir, filterFile }, ctx)
-    return { code: verdictExit(rows, setup.cli.allowProductFail), rows, identities, filterFile }
+    const rows = await liveWork(setup, info, { e2eDir: setup.e2eDir, filterFile }, log, ctx)
+    const code = Math.max(verdictExit(rows, setup.cli.allowProductFail), log.failed ? 1 : 0)
+    return { code, rows, identities, filterFile, clipboard, log }
   } catch (error) {
     say(messageOf(error), ctx, process.stderr)
-    return { code: 1, rows: [], identities, filterFile }
+    const rows = await collectRows(info.resultsDir, setup.selection.entries, 'live', ctx).catch(() => [])
+    return { code: 1, rows, identities, filterFile, clipboard, log }
   }
 }
 
@@ -764,11 +1036,21 @@ function liveExit(code: number, notRemoved: readonly string[], guard: GuardResul
 
 async function finishLive(setup: LiveSetup, info: RunInfo, lock: string, done: LiveDone): Promise<number> {
   const { result } = done
+  const { log } = result
   const ctx = liveFilter(result.identities)
   const versions = await suiteVersions(setup.suites)
-  const summary = (guard: readonly string[]): string =>
-    summaryText({ run: info.id, tier: 'live', claude: done.claude, versions, rows: result.rows, fixtures: [], guard })
+  const summary = (guard: readonly string[]): string => summaryText({
+    run: info.id,
+    tier: 'live',
+    claude: done.claude,
+    versions,
+    rows: result.rows,
+    fixtures: log.fixtures,
+    guard: [...log.guard, ...guard],
+  })
   await writeRunSummary(summaryPathOf(info), summary([GUARD_PENDING]), ctx).catch(() => false)
+  await sweepTmux(info, ctx)
+  await restoreClipboard(result.clipboard, setup.host, ctx)
   const isFilterRemoved = await removeFilterFile(result.filterFile, info.scratch)
   const cleanup = await cleanupSessions(setup, done.before)
   await releaseLock(lock)
@@ -794,9 +1076,10 @@ async function runLocked(setup: LiveSetup, lock: string): Promise<number> {
   process.stdout.write(`e2e: guard snapshot taken (${keychainNote(before.keychain)})\n`)
   const info = await startRun('live', setup.selection)
   const claude = await claudeVersion(setup.claudeBin, info.scratch)
-  let result = NO_LIVE_RESULT
+  const log = emptyLog()
+  let result = emptyLive(log)
   try {
-    result = await liveBody(setup, info)
+    result = await liveBody(setup, info, log)
   } catch (error) {
     say(messageOf(error), filterContext(process.env), process.stderr)
   }
@@ -806,10 +1089,20 @@ async function runLocked(setup: LiveSetup, lock: string): Promise<number> {
   return code
 }
 
+async function fixturesOf(cli: RunCli, suites: readonly Suite[], selection: Selection): Promise<Fixtures | string> {
+  try {
+    const variants = await loadVariants(suites)
+    const names = [...selection.entries.flatMap(entry => entry.fixture), ...cli.build]
+    return { variants, fixtures: closureOf(names, variants) }
+  } catch (error) {
+    return messageOf(error)
+  }
+}
+
 async function runLive(cli: RunCli, suites: readonly Suite[], selection: Selection): Promise<number> {
-  if (cli.build.length > 0) return refuse('--build is not built yet')
   const concurrency = liveConcurrency(process.env.E2E_CONCURRENCY)
   if (concurrency === null) return refuse('E2E_CONCURRENCY must be a positive whole number')
+  if (!await resolveOnPath('tmux', SYSTEM_PATH)) return refuse(`tmux is not in ${SYSTEM_PATH}`)
   const claudeBin = await resolveOnPath('claude', process.env.PATH ?? '')
   if (!claudeBin) return refuse('claude is not on PATH')
   const host = hostUser()
@@ -821,13 +1114,16 @@ async function runLive(cli: RunCli, suites: readonly Suite[], selection: Selecti
   }
   const why = e2eDirReason(e2eDir, host)
   if (why) return refuse(why)
+  const fixtures = await fixturesOf(cli, suites, selection)
+  if (typeof fixtures === 'string') return refuse(fixtures)
   process.env.E2E_CONFIG_DIR = e2eDir
   process.env.E2E_CLAUDE_BIN = claudeBin
   const lock = `${e2eDir}.lock`
   if (!await takeLock(lock)) return refuse(`another live run holds ${lock}`)
   const needles = needlesOf(scratchBase(), e2eDir)
+  const setup = { cli, suites, selection, claudeBin, e2eDir, host, needles, concurrency, ...fixtures }
   try {
-    return await runLocked({ cli, suites, selection, claudeBin, e2eDir, host, needles, concurrency }, lock)
+    return await runLocked(setup, lock)
   } finally {
     await releaseLock(lock)
   }
@@ -835,7 +1131,8 @@ async function runLive(cli: RunCli, suites: readonly Suite[], selection: Selecti
 
 async function runTier(cli: RunCli): Promise<number> {
   const suites = await loadSuites()
-  const selection = selectEntries(suites, cli.tier, cli.rows)
+  const rows = cli.rows ?? (cli.build.length > 0 ? [] : null)
+  const selection = selectEntries(suites, cli.tier, rows)
   if (selection.unknown.length > 0) return refuse(`unknown row id: ${selection.unknown.join(', ')}`)
   if (cli.tier === 'live') return runLive(cli, suites, selection)
   const info = await startRun(cli.tier, selection)

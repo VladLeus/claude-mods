@@ -4,6 +4,9 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { HarnessError } from '../lib/errors.ts'
+import { variantClosure } from '../lib/fixture.ts'
+import { VARIANTS } from './fixtures/index.ts'
 import { ROWS } from './rows.ts'
 import type { RowEntry } from './rows.ts'
 
@@ -30,6 +33,9 @@ const CASSETTE_ROWS: readonly string[] = [
   '03.2#3', '03.2#27',
 ]
 const RC_PIN_ROWS: readonly string[] = ['03#50', '03#52', '03#59', '03#60', '03#75']
+const EXCLUSIVE_ROWS: readonly string[] = ['03#80', '03#82', '03#83', '03#87', '03.2#3', '03.2#30']
+const SAMPLE_FROM: Readonly<Record<string, readonly string[]>> = { gsd: ['gsd-pre'], 'gsd-pre': [], 'sp-pre': [] }
+const CYCLE_FROM: Readonly<Record<string, readonly string[]>> = { a: ['b'], b: ['c'], c: ['a'] }
 const NO_PLANNING = existsSync(PLANNING_DIR) ? false : 'no .planning/ folder: the UAT files are not on this branch'
 const SAMPLE_UAT = [
   '### 1. A scripted row',
@@ -57,6 +63,18 @@ function entryOf(id: string): RowEntry | undefined {
 
 function sorted(values: Iterable<string>): string[] {
   return [...values].sort()
+}
+
+function fromOf(map: Readonly<Record<string, readonly string[]>>): (variant: string) => readonly string[] | undefined {
+  return variant => map[variant]
+}
+
+function builderFrom(variant: string): readonly string[] | undefined {
+  return VARIANTS[variant]?.from
+}
+
+function harnessErrorNaming(name: string): (error: unknown) => boolean {
+  return error => error instanceof HarnessError && error.message.includes(name)
 }
 
 function scriptedIds(text: string, phase: string): string[] | null {
@@ -145,4 +163,45 @@ test('the rows with a 2.1.295 half record that half as a partial', () => {
     const parts = entryOf(id)?.partial ?? []
     assert.ok(parts.some(item => item.part.includes('2.1.295')), `${id} has no partial for its 2.1.295 half`)
   }
+})
+
+test('the variant closure lists every variant once, after the variants it copies from', () => {
+  assert.deepEqual(variantClosure(['sp-pre', 'gsd'], fromOf(SAMPLE_FROM)), ['sp-pre', 'gsd-pre', 'gsd'])
+  assert.deepEqual(variantClosure(['gsd', 'gsd-pre', 'gsd'], fromOf(SAMPLE_FROM)), ['gsd-pre', 'gsd'])
+})
+
+test('the variant closure refuses an unknown variant and a cycle', () => {
+  const unknown = harnessErrorNaming('no-such-variant')
+
+  assert.throws(() => variantClosure(['gsd', 'no-such-variant'], fromOf(SAMPLE_FROM)), unknown)
+  assert.throws(() => variantClosure(['a'], fromOf(CYCLE_FROM)), HarnessError)
+})
+
+test('every builder copies only from variants that have a builder', () => {
+  for (const [variant, builder] of Object.entries(VARIANTS)) {
+    const missing = builder.from.filter(name => VARIANTS[name] === undefined)
+    assert.deepEqual(missing, [], `${variant} copies from variants with no builder`)
+  }
+})
+
+test('the closure of every live entry with built variants holds each once, after what it copies from', () => {
+  const entries = ROWS.filter(row => row.tier === 'live' && row.fixture.every(name => VARIANTS[name] !== undefined))
+  assert.ok(entries.length > 0, 'no live entry names only variants that have a builder')
+  for (const row of entries) {
+    const closure = variantClosure(row.fixture, builderFrom)
+    assert.equal(new Set(closure).size, closure.length, `${key(row)}: a variant twice in the closure`)
+    for (const name of row.fixture) assert.ok(closure.includes(name), `${key(row)}: ${name} not in the closure`)
+    for (const [index, name] of closure.entries()) {
+      const late = (builderFrom(name) ?? []).filter(dependency => !closure.slice(0, index).includes(dependency))
+      assert.deepEqual(late, [], `${key(row)}: ${name} does not come after every variant it copies from`)
+    }
+  }
+})
+
+test('the exclusive entries are exactly the six live rows that install plugins or marketplaces', () => {
+  const exclusive = ROWS.filter(row => row.exclusive === true)
+
+  assert.deepEqual(sorted(exclusive.map(key)), sorted(EXCLUSIVE_ROWS))
+  assert.ok(exclusive.every(row => row.tier === 'live'), 'an exclusive entry is not live')
+  assert.equal(entryOf('03#83')?.file, entryOf('03#87')?.file, '03#83 and 03#87 do not share one file')
 })

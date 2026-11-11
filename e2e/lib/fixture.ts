@@ -8,7 +8,40 @@ import { scratchRoot } from './scratch.ts'
 
 export const COPY_MS = 120_000
 
+export type BuildContext = {
+  readonly variant: string
+  readonly dir: string
+  readonly repo: string
+}
+
+export type Builder = {
+  readonly from: readonly string[]
+  readonly exclusive?: boolean
+  readonly build: (ctx: BuildContext) => Promise<void>
+}
+
 const VARIANT_RE = /^[a-z0-9-]+$/
+
+export function variantClosure(
+  names: readonly string[],
+  fromOf: (variant: string) => readonly string[] | undefined,
+): readonly string[] {
+  const order: string[] = []
+  const visiting = new Set<string>()
+  const visit = (name: string): void => {
+    if (order.includes(name)) return
+    if (visiting.has(name)) throw new HarnessError(`the fixture variants form a cycle through ${name}`)
+    const from = fromOf(name)
+    if (!from) throw new HarnessError(`unknown fixture variant: ${name}`)
+    visiting.add(name)
+    for (const dependency of from) visit(dependency)
+    visiting.delete(name)
+    order.push(name)
+  }
+  for (const name of names) visit(name)
+
+  return order
+}
 
 export function copyArgv(src: string, dst: string, platform: string): readonly string[] {
   if (platform === 'darwin') return ['/bin/cp', '-cRp', src, dst]

@@ -22,6 +22,7 @@ export type RowEntry = {
   readonly mac?: string
   readonly net?: boolean
   readonly clipboard?: boolean
+  readonly exclusive?: boolean
   readonly cassette?: CassetteSpec
   readonly partial?: readonly PartialPart[]
 }
@@ -287,6 +288,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'recorded',
     file: 'live/03-80.test.ts',
     net: true,
+    exclusive: true,
     cassette: { inputs: [], ttlDays: NET_TTL_DAYS },
     partial: [{ part: 'the `source plugin` field', reason: PROBE_MOD_REASON }],
   },
@@ -298,6 +300,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'mixed',
     file: 'live/03-82.test.ts',
     net: true,
+    exclusive: true,
     cassette: CADRE_HOOKS_NET,
   },
   {
@@ -308,6 +311,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'pass',
     file: 'live/03-83.test.ts',
     net: true,
+    exclusive: true,
   },
   {
     id: '03#87',
@@ -317,6 +321,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'pass',
     file: 'live/03-83.test.ts',
     net: true,
+    exclusive: true,
   },
   {
     id: '03.1#1',
@@ -434,6 +439,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'mixed',
     file: 'live/03.2-3.test.ts',
     net: true,
+    exclusive: true,
     cassette: CADRE_HOOKS_NET,
   },
   {
@@ -493,6 +499,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'pass',
     file: 'live/03.2-30.test.ts',
     net: true,
+    exclusive: true,
   },
   {
     id: '03.2#31',
