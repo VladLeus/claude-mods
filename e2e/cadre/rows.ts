@@ -28,6 +28,14 @@ export type RowEntry = {
 
 export const ROWS: readonly RowEntry[] = [
   {
+    id: '03#45',
+    title: 'SC1 launcher refusals (LNCH-03)',
+    tier: 'offline',
+    fixture: [],
+    kind: 'pass',
+    file: 'offline/03-45.test.ts',
+  },
+  {
     id: '03#57',
     title: 'Launcher freshness check: whole-second `-nt` (#5 item, decision #37)',
     tier: 'offline',
