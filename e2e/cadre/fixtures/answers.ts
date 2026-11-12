@@ -177,6 +177,12 @@ export const SP_GSD_INSTALLS_SCRIPT = initScript({
   framework: 'add-gsd',
   installs: true,
 })
+// A superpowers repo that adds GSD and lets the real install run after Confirm.
+export const SP_GSD_INSTALL_SCRIPT = initScript({
+  policy: POLICY_DEFINITIONS,
+  launch: 'git-root',
+  framework: 'add-gsd',
+})
 // /cadre frameworks on a team with no framework found: add GSD, then the review of the changes.
 export const FRAMEWORKS_ADD_GSD_SCRIPT: readonly DialogEntry[] = [
   GSD_CHECK_ENTRY,
@@ -188,6 +194,10 @@ export const FRAMEWORKS_ADD_GSD_SCRIPT: readonly DialogEntry[] = [
 // A gsd init that installs the security plugins and declines every other install offer.
 export const GSD_SECURITY_INSTALL_SCRIPT: readonly DialogEntry[] = GSD_SCRIPT.map(entry =>
   entry.question === SECURITY_QUESTION ? { ...entry, answer: 'Install' } : entry
+)
+// A gsd init that installs the grill plugin for PM at project scope and declines every other install offer.
+export const GSD_GRILL_INSTALL_SCRIPT: readonly DialogEntry[] = GSD_SCRIPT.map(entry =>
+  entry.question === GRILL_QUESTION ? { ...entry, answer: INSTALL_YES } : entry
 )
 // A superpowers repo that adds GSD and accepts only the first GSD hunk.
 export const SP_GSD_FIRST_HUNK_SCRIPT: readonly DialogEntry[] = SP_GSD_SCRIPT.map(entry =>
