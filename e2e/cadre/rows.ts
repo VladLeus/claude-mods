@@ -39,6 +39,13 @@ const PROBE_MOD_REASON = 'needs a probe mod; manual-later per D-452'
 const NO_REFUSAL_WINDOW_REASON = 'manual-later: needs a launcher refusal inside a cadre-opened window'
 const REAL_CONFIG_DIR_REASON =
   'manual-later on the real config dir: agent-fleet reads $HOME/.claude/projects and ignores CLAUDE_CONFIG_DIR'
+const NO_LOGGING_WINDOW_REASON =
+  'manual-later: needs a logging claude in a cadre-opened window, which takes the PATH of the tmux client'
+const NO_MCP_HAND_OUT_REASON =
+  'manual-later: the e2e team gives no role an MCP server and records no consent to read ~/.claude.json, so the ' +
+  'rendered mcp.json holds none whatever main records; needs a team built with an MCP hand-out'
+const NO_MEMORY_HAND_OUT_REASON =
+  'manual-later: the e2e team hands out no memory, so start links none; needs a team built with a memory hand-out'
 
 export const ROWS: readonly RowEntry[] = [
   {
@@ -366,6 +373,8 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'pass',
     file: 'live/03.1-4.test.ts',
     mac: 'the epic opens the role windows',
+    roleSession: 'be',
+    partial: [{ part: 'a logging claude in the opened role windows', reason: NO_LOGGING_WINDOW_REASON }],
   },
   {
     id: '03.1#5',
@@ -398,6 +407,10 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd', 'gsd-ignoreall'],
     kind: 'pass',
     file: 'live/03.1-14.test.ts',
+    partial: [
+      { part: 'the MCP servers rendered for a role given one', reason: NO_MCP_HAND_OUT_REASON },
+      { part: 'the memory links start keeps in the worktree', reason: NO_MEMORY_HAND_OUT_REASON },
+    ],
   },
   {
     id: '03.1#15',
@@ -406,6 +419,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd'],
     kind: 'mixed',
     file: 'live/03.1-15.test.ts',
+    roleSession: 'be',
     cassette: CADRE_HOOKS,
     partial: [
       {

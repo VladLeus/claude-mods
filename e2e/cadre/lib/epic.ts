@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises'
+import { lstat, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
@@ -17,7 +17,17 @@ import { HarnessError } from '../../lib/errors.ts'
 import { pollUntil } from '../../lib/poll.ts'
 import { run } from '../../lib/proc.ts'
 import type { RunResult } from '../../lib/proc.ts'
-import { capture, paneState, POLL_MS, sendKeys, sendText, WAIT_MS } from '../../lib/tmux.ts'
+import {
+  capture,
+  listWindows,
+  paneCommand,
+  paneCwd,
+  paneState,
+  POLL_MS,
+  sendKeys,
+  sendText,
+  WAIT_MS,
+} from '../../lib/tmux.ts'
 import type { Pane, Server } from '../../lib/tmux.ts'
 import type { DialogAnswer } from '../fixtures/answers.ts'
 import { cadrePrint, replyOf } from './session.ts'
@@ -61,6 +71,14 @@ export type EpicPrinted = {
   readonly worktree: string
 }
 
+export type PathKind = 'file' | 'dir' | 'link' | 'other' | 'absent'
+
+export type WindowSeen = {
+  readonly command: string
+  readonly folder: string
+  readonly screen: string
+}
+
 // The slug cadre gives an epic: the key and the title words, lowercased, each run of other characters one dash.
 export function epicSlug(key: string, title: string): string {
   const slug = `${key} ${title}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -73,6 +91,20 @@ export function epicSlug(key: string, title: string): string {
 
 export function epicWorktree(copy: LiveRepo, key: string, title: string = EPIC_TITLE): string {
   return join(copy.repo, WORKTREES_DIR, epicSlug(key, title))
+}
+
+export function epicBranchOf(key: string, title: string = EPIC_TITLE): string {
+  return `epic/${epicSlug(key, title)}`
+}
+
+// What a path is, never following a link.
+export async function kindOf(path: string): Promise<PathKind> {
+  const stats = await lstat(path).catch(() => null)
+  if (stats === null) return 'absent'
+  if (stats.isSymbolicLink()) return 'link'
+  if (stats.isDirectory()) return 'dir'
+
+  return stats.isFile() ? 'file' : 'other'
 }
 
 async function isFile(path: string): Promise<boolean> {
@@ -117,6 +149,14 @@ async function gitEnvOf(copy: LiveRepo): Promise<ChildEnv> {
 // git in the copy, with a scratch HOME and git config: it starts no claude.
 export async function gitRun(copy: LiveRepo, args: readonly string[]): Promise<RunResult> {
   return run(['git', ...args], { cwd: copy.repo, env: await gitEnvOf(copy), timeoutMs: GIT_MS })
+}
+
+// git in the copy for a step the row needs to have worked: a failure is a harness fault.
+export async function gitOk(copy: LiveRepo, args: readonly string[]): Promise<string> {
+  const result = await gitRun(copy, args)
+  if (result.code !== 0) throw new HarnessError(`git ${args.join(' ')} exited ${result.code}: ${result.stderr.trim()}`)
+
+  return result.stdout.trim()
 }
 
 async function gitLines(copy: LiveRepo, args: readonly string[]): Promise<readonly string[]> {
@@ -212,4 +252,31 @@ export async function openEpic(
   const screen = pick === 'dismiss' ? await dismissed(pane) : await replied(pane, before)
 
   return { pane, dialog, screen, worktree: epicWorktree(copy, key, title) }
+}
+
+// A new file committed on the branch checked out in the worktree.
+export async function commitInWorktree(copy: LiveRepo, worktree: string, name: string, text: string): Promise<void> {
+  await writeFile(join(worktree, name), text)
+  await gitOk(copy, ['-C', worktree, 'add', '--', name])
+  await gitOk(copy, ['-C', worktree, 'commit', '-q', '-m', `add ${name}`])
+}
+
+// `ls -la` of a folder, as the sweep reads it; a folder that is not there gives the failure as the text.
+export async function lsLong(copy: LiveRepo, path: string): Promise<string> {
+  const result = await run(['/bin/ls', '-la', path], { cwd: copy.repo, env: await gitEnvOf(copy), timeoutMs: GIT_MS })
+
+  return result.code === 0 ? result.stdout : `ls -la exited ${result.code}: ${result.stderr.trim()}`
+}
+
+// Each window a role was opened in, named `cadre-<id>`, read the moment it is listed: its command, folder and screen.
+export async function readWindows(server: Server, ids: readonly string[]): Promise<ReadonlyMap<string, WindowSeen>> {
+  const seen = new Map<string, WindowSeen>()
+  for (const window of await listWindows(server)) {
+    const id = ids.find(item => window.name === `cadre-${item}`)
+    if (id === undefined) continue
+    const pane = { server, id: window.pane }
+    seen.set(id, { command: await paneCommand(pane), folder: await paneCwd(pane), screen: await capture(pane) })
+  }
+
+  return seen
 }
