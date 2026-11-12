@@ -41,7 +41,6 @@ const SKILL_GROUP_QUESTION = ' skills ('
 const ACCEPT = 'Accept'
 const DECLINE = 'Decline'
 const INSTALL_YES = 'Yes, install it'
-const FRAMEWORK_SET_QUESTION = 'Which frameworks does this team use?'
 const FRAMEWORK_INSTALL_QUESTION = 'Install GSD for this repo?'
 const FRAMEWORK_MODE_QUESTION = 'Which framework do the roles use?'
 const FRAMEWORK_ALL_QUESTION = 'Framework for all roles?'
@@ -52,6 +51,9 @@ const GSD_CHECK_ENTRY: DialogEntry = { question: `Run GSD's own check`, answer: 
 // The first lines of the questions that end the init flow and the frameworks flow.
 export const INIT_REVIEW_QUESTION = 'Review the plan shown in the cadre init pane'
 export const REFRAME_REVIEW_QUESTION = 'Review the framework changes'
+// The Keep mine or Take new question init asks after Confirm for each file changed outside cadre.
+export const CONFLICT_QUESTION = 'was changed outside cadre. Keep your version, or take the new one'
+export const FRAMEWORK_SET_QUESTION = 'Which frameworks does this team use?'
 
 // The dialog wraps the label `Commit definitions (default)` in its narrow option column: the answer is a prefix.
 export const POLICY_DEFINITIONS = 'Commit definitions'
@@ -107,12 +109,16 @@ function mcpEntries(hand: McpHandOut | undefined): readonly DialogEntry[] {
   ]
 }
 
+// Each GSD hunk question is `<file>: <dotted key>`.
+export const HUNK_QUESTION_PREFIX = '.planning/config.json: '
+export const MODE_HUNK_QUESTION = `${HUNK_QUESTION_PREFIX}mode`
+
 // The two GSD hunks that autonomy requires take `required`; the optional third is always declined.
 function hunkEntries(required: string): readonly DialogEntry[] {
   return [
-    { question: '.planning/config.json: mode', answer: required },
-    { question: '.planning/config.json: workflow.text_mode', answer: required },
-    { question: '.planning/config.json: hooks.context_warnings', answer: DECLINE },
+    { question: MODE_HUNK_QUESTION, answer: required },
+    { question: `${HUNK_QUESTION_PREFIX}workflow.text_mode`, answer: required },
+    { question: `${HUNK_QUESTION_PREFIX}hooks.context_warnings`, answer: DECLINE },
   ]
 }
 
@@ -179,3 +185,27 @@ export const FRAMEWORKS_ADD_GSD_SCRIPT: readonly DialogEntry[] = [
   ...hunkEntries(DECLINE),
   { question: REFRAME_REVIEW_QUESTION, answer: 'Confirm' },
 ]
+// A superpowers repo that adds GSD and accepts only the first GSD hunk.
+export const SP_GSD_FIRST_HUNK_SCRIPT: readonly DialogEntry[] = SP_GSD_SCRIPT.map(entry =>
+  entry.question === MODE_HUNK_QUESTION ? { ...entry, answer: ACCEPT } : entry
+)
+// A re-init of a gsd team that keeps the person's version of any file changed outside cadre.
+export const GSD_REINIT_KEEP_MINE_SCRIPT: readonly DialogEntry[] = [
+  ...GSD_SCRIPT,
+  { question: CONFLICT_QUESTION, answer: 'Keep mine', repeat: true },
+]
+
+function frameworksKeepGsd(install: string): readonly DialogEntry[] {
+  return [
+    GSD_CHECK_ENTRY,
+    { question: FRAMEWORK_SET_QUESTION, answer: 'Keep GSD' },
+    { question: FRAMEWORK_INSTALL_QUESTION, answer: install },
+    ...hunkEntries(DECLINE),
+    { question: REFRAME_REVIEW_QUESTION, answer: 'Confirm' },
+  ]
+}
+
+// /cadre frameworks on a team where GSD is found: keep it, decline every hunk, Confirm; an install offer is declined.
+export const FRAMEWORKS_KEEP_GSD_SCRIPT = frameworksKeepGsd('No')
+// The same for a --dry-run, where an install offer is answered Yes, as a --dry-run must still install nothing.
+export const FRAMEWORKS_KEEP_GSD_DRY_SCRIPT = frameworksKeepGsd(INSTALL_YES)
