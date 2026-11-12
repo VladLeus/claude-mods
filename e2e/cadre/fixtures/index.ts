@@ -17,6 +17,7 @@ import {
   MCP_ROLE,
   MCP_SCRIPT,
   MCP_SERVER,
+  NONE_TEAM_SCRIPT,
   V050_SCRIPT,
 } from './answers.ts'
 import type { DialogEntry } from './answers.ts'
@@ -100,6 +101,7 @@ export const VARIANTS: Record<string, Builder> = {
   'gsd-here': initBuilder('gsd-pre', GSD_HERE_SCRIPT),
   'gsd-dir': initBuilder('gsd-pre', GSD_DIR_SCRIPT),
   'gsd-ignoreall': initBuilder('gsd-pre', GSD_IGNOREALL_SCRIPT),
+  'none-team': initBuilder('bare', NONE_TEAM_SCRIPT),
   mcp,
   v050,
 }
