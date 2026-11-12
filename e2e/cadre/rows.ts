@@ -33,6 +33,9 @@ const CADRE_HOOKS: CassetteSpec = { inputs: ['cadre/hooks'] }
 const CADRE_HOOKS_NET: CassetteSpec = { inputs: ['cadre/hooks'], ttlDays: NET_TTL_DAYS }
 const RC_PIN_HALF: PartialPart = { part: 'the 2.1.295 half', reason: 'waits for the RC pin, D-212' }
 const PROBE_MOD_REASON = 'needs a probe mod; manual-later per D-452'
+const NO_REFUSAL_WINDOW_REASON = 'manual-later: needs a launcher refusal inside a cadre-opened window'
+const REAL_CONFIG_DIR_REASON =
+  'manual-later on the real config dir: agent-fleet reads $HOME/.claude/projects and ignores CLAUDE_CONFIG_DIR'
 
 export const ROWS: readonly RowEntry[] = [
   {
@@ -244,8 +247,9 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd'],
     kind: 'mixed',
     file: 'live/03-73.test.ts',
-    mac: 'the refusal window stays until Enter',
+    mac: 'cadre opens a terminal window only on macOS',
     cassette: CADRE_HOOKS,
+    partial: [{ part: 'the refusal held until Enter', reason: NO_REFUSAL_WINDOW_REASON }],
   },
   {
     id: '03#75',
@@ -263,6 +267,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd-dir', 'gsd-here'],
     kind: 'pass',
     file: 'live/03-76.test.ts',
+    partial: [{ part: 'the here half', reason: REAL_CONFIG_DIR_REASON }],
   },
   {
     id: '03#77',

@@ -57,6 +57,7 @@ const HANDOFF_ROOT = 'thoughts/shared/handoffs'
 const TITLE_ROW_START = '{"type":"custom-title"'
 const LONG_FOLDER_NAME_CHARS = 200
 const NON_ALPHANUMERIC_RE = /[^A-Za-z0-9]/g
+const FALLBACK_SHELLS: readonly string[] = ['/bin/tcsh', '/bin/csh']
 
 export const APPLIED_REPLY = /Applied: wrote [0-9]+ files? \([0-9]+ executable\)/
 
@@ -129,16 +130,32 @@ export async function pastedText(): Promise<string> {
   return result.stdout
 }
 
+async function isExecutableFile(path: string): Promise<boolean> {
+  const stats = await stat(path).catch(() => null)
+  if (!stats?.isFile()) return false
+
+  return access(path, constants.X_OK).then(() => true, () => false)
+}
+
 // The absolute path of a tool in the system folders, which a shim execs so it never hands a call on to itself.
 export async function systemTool(name: string): Promise<string> {
   for (const dir of SYSTEM_PATH.split(':')) {
     const path = join(dir, name)
-    const stats = await stat(path).catch(() => null)
-    if (!stats?.isFile()) continue
-    if (await access(path, constants.X_OK).then(() => true, () => false)) return path
+    if (await isExecutableFile(path)) return path
   }
 
   throw new HarnessError(`no ${name} in ${SYSTEM_PATH}`)
+}
+
+// A tmux default-shell that is not POSIX: fish from the system folders, else tcsh, else csh; null when none is there.
+export async function nonPosixShell(): Promise<string | null> {
+  const fish = await systemTool('fish').catch(() => null)
+  if (fish !== null) return fish
+  for (const path of FALLBACK_SHELLS) {
+    if (await isExecutableFile(path)) return path
+  }
+
+  return null
 }
 
 // The launcher with --probe, run from the git root in the live env so its claude calls pass the claude fence.

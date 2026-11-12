@@ -23,6 +23,7 @@ const SESSION = 'e2e'
 const SOCKET_RE = /^[A-Za-z0-9_-]+$/
 const RUN_PREFIX_RE = /^e2e-[0-9a-f]{4}-$/
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+const OPTION_NAME_RE = /^[a-z][a-z0-9-]*$/
 const PANE_ID_RE = /^%[0-9]+$/
 const SENTINEL_RE = /__E2E_DONE__ ([0-9]+)/g
 const NBSP_RE = /\u00a0/g
@@ -125,13 +126,19 @@ function paneOf(server: Server, output: string): Pane {
   return { server, id }
 }
 
+// tmux expands formats in a start folder (`#P` is a pane index), so each `#` of the path is doubled to keep it literal.
+function literalFolder(cwd: string): string {
+  return cwd.replaceAll('#', '##')
+}
+
 export async function newWindow(server: Server, name: string, cwd: string, argv: readonly string[]): Promise<Pane> {
   if (argv.length === 0) throw new HarnessError('newWindow needs a command')
   if (!isAbsolute(cwd)) throw new HarnessError('newWindow needs an absolute folder')
   // tmux runs a lone argument through the default shell, which can read the user's rc files; sh -c execs it as is.
   const command = argv.length === 1 ? ['/bin/sh', '-c', 'exec "$0"', ...argv] : argv
   const target = `${server.session}:`
-  const args = ['new-window', '-d', '-P', '-F', '#{pane_id}', '-n', name, '-c', cwd, '-t', target, '--', ...command]
+  const folder = literalFolder(cwd)
+  const args = ['new-window', '-d', '-P', '-F', '#{pane_id}', '-n', name, '-c', folder, '-t', target, '--', ...command]
 
   return paneOf(server, await tmux(server, args))
 }
@@ -248,10 +255,21 @@ export async function paneCwd(pane: Pane): Promise<string> {
   return (await tmux(pane.server, ['display-message', '-p', '-t', pane.id, '#{pane_current_path}'])).trim()
 }
 
+// The command the pane was started with, as tmux prints it: each argv item, quoted when it needs it.
+export async function paneCommand(pane: Pane): Promise<string> {
+  return (await tmux(pane.server, ['display-message', '-p', '-t', pane.id, '#{pane_start_command}'])).trim()
+}
+
 export async function setEnv(server: Server, name: string, value: string): Promise<void> {
   if (!ENV_NAME_RE.test(name)) throw new HarnessError(`not an env name: ${name}`)
 
   await tmux(server, ['set-environment', '-t', server.session, name, value])
+}
+
+export async function setOption(server: Server, name: string, value: string): Promise<void> {
+  if (!OPTION_NAME_RE.test(name)) throw new HarnessError(`not a tmux option name: ${name}`)
+
+  await tmux(server, ['set-option', '-g', name, value])
 }
 
 async function removeSocket(name: string): Promise<void> {
