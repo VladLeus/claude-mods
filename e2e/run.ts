@@ -25,6 +25,7 @@ import { keychainDigest, needlesOf, projectTranscripts, removeSessionFiles, test
 import type { GuardResult, GuardSnapshot, KeychainDigest, Needles, Removal } from './lib/guard.ts'
 import { run, spawn } from './lib/proc.ts'
 import type { Env } from './lib/proc.ts'
+import { roleWaves } from './lib/schedule.ts'
 import { isUnder, makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
 import { publishSummary, ROW_KINDS, rowFileName, SIDECAR_SCHEMA, summaryText, TIERS } from './lib/summary.ts'
 import { parseSidecar, writeRowResult, writeSummary } from './lib/summary.ts'
@@ -82,6 +83,7 @@ type Entry = {
   readonly fixture: readonly string[]
   readonly clipboard: boolean
   readonly exclusive: boolean
+  readonly roleSession: string | null
   readonly cassette: CassetteInputs | null
 }
 
@@ -300,7 +302,7 @@ function cassetteInputsOf(value: unknown): CassetteInputs | null {
 
 function parseEntry(value: unknown, suite: string): Entry | null {
   if (!isRecord(value)) return null
-  const { id, half, title, tier, kind, file, fixture, clipboard, exclusive, cassette } = value
+  const { id, half, title, tier, kind, file, fixture, clipboard, exclusive, roleSession, cassette } = value
   if (typeof id !== 'string' || typeof title !== 'string' || typeof file !== 'string') return null
   const entryTier = TIERS.find(item => item === tier)
   const entryKind = ROW_KINDS.find(item => item === kind)
@@ -308,6 +310,7 @@ function parseEntry(value: unknown, suite: string): Entry | null {
   if (!entryTier || !entryKind || entryHalf === null || !isStringList(fixture)) return null
   if (clipboard !== undefined && typeof clipboard !== 'boolean') return null
   if (exclusive !== undefined && typeof exclusive !== 'boolean') return null
+  if (roleSession !== undefined && (typeof roleSession !== 'string' || roleSession === '')) return null
   const cassetteInputs = cassette === undefined ? null : cassetteInputsOf(cassette)
   if (cassette !== undefined && cassetteInputs === null) return null
 
@@ -322,6 +325,7 @@ function parseEntry(value: unknown, suite: string): Entry | null {
     fixture,
     clipboard: clipboard === true,
     exclusive: exclusive === true,
+    roleSession: typeof roleSession === 'string' ? roleSession : null,
     cassette: cassetteInputs,
   }
 }
@@ -1011,9 +1015,9 @@ async function spawnRows(
   ctx: FilterContext,
 ): Promise<void> {
   const env = childEnv(info, setup.claudeBin, live)
-  const parallel = filesOf(runnable.filter(entry => !entry.exclusive && !entry.clipboard))
+  const parallel = runnable.filter(entry => !entry.exclusive && !entry.clipboard)
   const clipboard = filesOf(runnable.filter(entry => !entry.exclusive && entry.clipboard))
-  if (parallel.length > 0) await nodeTest(parallel, setup.concurrency, env)
+  for (const files of roleWaves(parallel)) await nodeTest(files, setup.concurrency, env)
   if (clipboard.length > 0) await nodeTest(clipboard, 1, env)
   for (const file of filesOf(runnable.filter(entry => entry.exclusive))) {
     const entries = runnable.filter(entry => entry.file === file)

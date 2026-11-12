@@ -26,7 +26,7 @@ import { pollUntil } from '../../lib/poll.ts'
 import { run } from '../../lib/proc.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import type { RowContext } from '../../lib/row.ts'
-import { removeTree, scratchRoot } from '../../lib/scratch.ts'
+import { scratchRoot } from '../../lib/scratch.ts'
 import { shellQuote } from '../../lib/shims.ts'
 import { importSource } from '../../lib/source.ts'
 import { killServer, matches, sendKeys, sendText, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
@@ -51,8 +51,6 @@ const CLIPBOARD_LANG = 'en_US.UTF-8'
 const SESSION_START = 'SessionStart'
 const STATUS_POLL_MS = 3_000
 const TRANSCRIPT_POLL_MS = 1_000
-const ROLE_NAME_POLL_MS = 1_000
-const ROLE_NAME_WAIT_MS = 480_000
 const HANDOFF_ROOT = 'thoughts/shared/handoffs'
 const TITLE_ROW_START = '{"type":"custom-title"'
 const LONG_FOLDER_NAME_CHARS = 200
@@ -236,29 +234,6 @@ async function hasTitledTranscript(folder: string, title: string): Promise<boole
   }
 
   return false
-}
-
-// The engine gives a session whose name a live session of the same config dir already has a random suffix (`cadre-be`
-// becomes `cadre-be-swirling-gray`), and status finds a role session by its exact name. Rows that start a role session
-// therefore take turns per role id: the lock is a folder of the run's scratch root, released when the row ends, after
-// the cleanups registered later (the tmux server with the session) have run.
-export async function holdRoleName(ctx: RowContext, id: string): Promise<void> {
-  const lock = join(scratchRoot(), 'role-names', id)
-  await mkdir(dirname(lock), { recursive: true })
-  const deadline = Date.now() + ROLE_NAME_WAIT_MS
-  for (;;) {
-    try {
-      await mkdir(lock)
-      break
-    } catch (error) {
-      if (!isRecord(error) || error.code !== 'EEXIST') throw error
-    }
-    if (Date.now() >= deadline) {
-      throw new HarnessError(`another row kept the role name cadre-${id} for ${ROLE_NAME_WAIT_MS} ms`)
-    }
-    await delay(ROLE_NAME_POLL_MS)
-  }
-  ctx.after(() => removeTree(lock, scratchRoot()))
 }
 
 // The folder of the e2e dir's projects/ that holds a transcript of the role session started in `startFolder`, once one

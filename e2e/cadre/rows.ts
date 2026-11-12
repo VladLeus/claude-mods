@@ -23,6 +23,9 @@ export type RowEntry = {
   readonly net?: boolean
   readonly clipboard?: boolean
   readonly exclusive?: boolean
+  // Rows that start a session of the same role run one at a time: the engine adds a random suffix to a session name
+  // that a live session already has, and status finds a role session by its exact name.
+  readonly roleSession?: string
   readonly cassette?: CassetteSpec
   readonly partial?: readonly PartialPart[]
 }
@@ -167,6 +170,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd'],
     kind: 'pass',
     file: 'live/03-64.test.ts',
+    roleSession: 'be',
   },
   {
     id: '03#65',
@@ -248,6 +252,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'mixed',
     file: 'live/03-73.test.ts',
     mac: 'cadre opens a terminal window only on macOS',
+    roleSession: 'be',
     cassette: CADRE_HOOKS,
     partial: [{ part: 'the refusal held until Enter', reason: NO_REFUSAL_WINDOW_REASON }],
   },
@@ -267,6 +272,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd-dir', 'gsd-here'],
     kind: 'pass',
     file: 'live/03-76.test.ts',
+    roleSession: 'be',
     partial: [{ part: 'the here half', reason: REAL_CONFIG_DIR_REASON }],
   },
   {
@@ -276,6 +282,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd'],
     kind: 'pass',
     file: 'live/03-77.test.ts',
+    roleSession: 'be',
   },
   {
     id: '03#78',
@@ -284,6 +291,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd'],
     kind: 'recorded',
     file: 'live/03-78.test.ts',
+    roleSession: 'be',
     cassette: { inputs: ['cadre/hooks/status'] },
   },
   {

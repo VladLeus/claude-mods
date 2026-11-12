@@ -7,7 +7,6 @@ import { capture, killServer, newWindow, socketName, startServer, WAIT_MS } from
 import {
   cadrePrint,
   firstLineOf,
-  holdRoleName,
   liveRepo,
   noteReply,
   printedCommand,
@@ -56,7 +55,6 @@ rowTest(rowEntry('03#78'), async ctx => {
     throw new HarnessError(`03#78: the start did not render: ${firstLineOf(replyOf(started))}`)
   }
 
-  await holdRoleName(ctx, ROLE)
   const server = await startServer(socketName(), copy.env)
   ctx.after(() => killServer(server))
   await newWindow(server, WINDOW, copy.repo, [join(copy.repo, LAUNCHER)])
