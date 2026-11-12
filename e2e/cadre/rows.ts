@@ -147,6 +147,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd-pre', 'gsd'],
     kind: 'pass',
     file: 'live/03-61.test.ts',
+    exclusive: true,
   },
   {
     id: '03#62',

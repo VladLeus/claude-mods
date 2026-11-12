@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
-import { access, readdir, readFile, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { access, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join } from 'node:path'
 import {
   answer,
   answerOther,
+  configDir,
   dismiss,
   idleTui,
   isAppDialog,
@@ -24,6 +25,7 @@ import { run } from '../../lib/proc.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import type { RowContext } from '../../lib/row.ts'
 import { scratchRoot } from '../../lib/scratch.ts'
+import { shellQuote } from '../../lib/shims.ts'
 import { importSource } from '../../lib/source.ts'
 import { killServer, matches, sendKeys, sendText, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
 import type { Matcher, Pane, Server } from '../../lib/tmux.ts'
@@ -32,6 +34,7 @@ import type { DialogAnswer, DialogEntry } from '../fixtures/answers.ts'
 export const INIT_BUILD_MS = 900_000
 
 const DIALOG_WAIT_MS = 2 * WAIT_MS
+const PROBE_MS = 300_000
 const PROMPT_SETTLE_MS = 5_000
 const STUCK_MS = 8_000
 const GIT_MS = 30_000
@@ -43,6 +46,7 @@ const MEDIUM = 'medium'
 const REPLY_PREFIX = 'cadre: '
 const CLIPBOARD_MS = 10_000
 const CLIPBOARD_LANG = 'en_US.UTF-8'
+const SESSION_START = 'SessionStart'
 
 export const APPLIED_REPLY = /Applied: wrote [0-9]+ files? \([0-9]+ executable\)/
 
@@ -125,6 +129,105 @@ export async function systemTool(name: string): Promise<string> {
   }
 
   throw new HarnessError(`no ${name} in ${SYSTEM_PATH}`)
+}
+
+// The launcher with --probe, run from the git root in the live env so its claude calls pass the claude fence.
+export async function runProbe(copy: LiveRepo, id: string, env: ChildEnv = copy.env): Promise<RunResult> {
+  return run([join(copy.repo, '.cadre', 'bin', id), '--probe'], { cwd: copy.repo, env, timeoutMs: PROBE_MS })
+}
+
+// A project hook that appends one `SessionStart` line to `logFile` each time a session of the repo starts.
+export async function writeSessionStartHook(repo: string, logFile: string): Promise<void> {
+  const command = `/bin/sh -c ${shellQuote(`echo ${SESSION_START} >> ${shellQuote(logFile)}`)}`
+  const settings = { hooks: { SessionStart: [{ hooks: [{ type: 'command', command }] }] } }
+  await mkdir(join(repo, '.claude'), { recursive: true })
+  await writeFile(join(repo, '.claude', 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`)
+}
+
+// How many times the hook of writeSessionStartHook ran.
+export async function sessionStartRuns(logFile: string): Promise<number> {
+  const text = await readFile(logFile, 'utf8').catch(() => '')
+
+  return text.split('\n').filter(line => line === SESSION_START).length
+}
+
+// The line of a GSD identity module that proves an install, and a `config-set <dotted.key> <value>` on
+// ./.planning/config.json: the one command cadre runs through a proven user-level GSD.
+const GSD_STUB_IDENTITY = 'const packageName = "@opengsd/gsd-core";\nmodule.exports = { packageName };\n'
+const GSD_STUB_TOOLS = String.raw`'use strict'
+const { readFileSync, writeFileSync } = require('node:fs')
+const { join } = require('node:path')
+
+const [command, key, value] = process.argv.slice(2)
+const fail = message => {
+  process.stderr.write('gsd-tools stub: ' + message + '\n')
+  process.exit(2)
+}
+if (command !== 'config-set' || !key || value === undefined) fail('only config-set <key> <value> is supported')
+const parts = key.split('.')
+if (parts.some(part => part === '' || part === '__proto__' || part === 'constructor' || part === 'prototype')) {
+  fail('not a plain key: ' + key)
+}
+const file = join(process.cwd(), '.planning', 'config.json')
+let config = null
+try {
+  config = JSON.parse(readFileSync(file, 'utf8'))
+} catch {
+  fail('.planning/config.json is not readable JSON')
+}
+if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+  fail('.planning/config.json is not an object')
+}
+let parsed = value
+try {
+  parsed = JSON.parse(value)
+} catch {
+  parsed = value
+}
+let target = config
+for (const part of parts.slice(0, -1)) {
+  const next = target[part]
+  if (next === null || typeof next !== 'object' || Array.isArray(next)) target[part] = {}
+  target = target[part]
+}
+target[parts[parts.length - 1]] = parsed
+writeFileSync(file, JSON.stringify(config, null, 2) + '\n')
+`
+const GSD_STUB_DIR = 'gsd-core'
+const GSD_STUB_FILES: readonly (readonly [string, string])[] = [
+  ['VERSION', '0.0.0-e2e-stub\n'],
+  ['bin/lib/package-identity.cjs', GSD_STUB_IDENTITY],
+  ['bin/gsd-tools.cjs', GSD_STUB_TOOLS],
+]
+
+async function removeStubGsd(dir: string): Promise<void> {
+  const stats = await lstat(dir).catch(() => null)
+  if (stats === null) return
+  if (!stats.isDirectory()) throw new HarnessError(`refusing to remove ${GSD_STUB_DIR}: it is not a folder`)
+
+  await rm(dir, { recursive: true, force: true })
+}
+
+// A minimal user-level GSD in the e2e dir, enough for cadre to prove it and run an accepted config hunk through it.
+// The folder is created, never replaced, and removed when the row ends; run it only in an exclusive window.
+export async function stageStubGsd(ctx: RowContext): Promise<string> {
+  const base = configDir()
+  if (!isAbsolute(base)) throw new HarnessError('stageStubGsd: the e2e config dir is not an absolute path')
+  const dir = join(base, GSD_STUB_DIR)
+  try {
+    await mkdir(dir)
+  } catch (error) {
+    const code = isRecord(error) ? error.code : undefined
+    const reason = code === 'EEXIST' ? 'it is already there and not replaced' : `error ${String(code)}`
+    throw new HarnessError(`could not stage ${GSD_STUB_DIR} in the e2e config dir: ${reason}`)
+  }
+  ctx.after(() => removeStubGsd(dir))
+  for (const [name, text] of GSD_STUB_FILES) {
+    await mkdir(dirname(join(dir, name)), { recursive: true })
+    await writeFile(join(dir, name), text)
+  }
+
+  return dir
 }
 
 // The command is the first prompt of the session, so it runs as soon as the folder is trusted.

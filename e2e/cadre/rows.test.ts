@@ -33,7 +33,7 @@ const CASSETTE_ROWS: readonly string[] = [
   '03.2#3', '03.2#27',
 ]
 const RC_PIN_ROWS: readonly string[] = ['03#50', '03#52', '03#59', '03#60', '03#75']
-const EXCLUSIVE_ROWS: readonly string[] = ['03#80', '03#82', '03#83', '03#87', '03.2#3', '03.2#30']
+const EXCLUSIVE_ROWS: readonly string[] = ['03#61', '03#80', '03#82', '03#83', '03#87', '03.2#3', '03.2#30']
 const SAMPLE_FROM: Readonly<Record<string, readonly string[]>> = { gsd: ['gsd-pre'], 'gsd-pre': [], 'sp-pre': [] }
 const CYCLE_FROM: Readonly<Record<string, readonly string[]>> = { a: ['b'], b: ['c'], c: ['a'] }
 const NO_PLANNING = existsSync(PLANNING_DIR) ? false : 'no .planning/ folder: the UAT files are not on this branch'
@@ -198,7 +198,7 @@ test('the closure of every live entry with built variants holds each once, after
   }
 })
 
-test('the exclusive entries are exactly the six live rows that install plugins or marketplaces', () => {
+test('the exclusive entries are exactly the live rows that install plugins or marketplaces or stage a user-level GSD', () => {
   const exclusive = ROWS.filter(row => row.exclusive === true)
 
   assert.deepEqual(sorted(exclusive.map(key)), sorted(EXCLUSIVE_ROWS))

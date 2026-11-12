@@ -11,6 +11,8 @@ export type LaunchAnswer = 'git-root' | 'here' | 'dir'
 export type InitScriptOptions = {
   readonly policy: string
   readonly launch: LaunchAnswer
+  // Accept the two required GSD config hunks (mode, workflow.text_mode) instead of declining them.
+  readonly acceptHunks?: true
 }
 
 const POLICY_QUESTION = 'Git policy for .cadre/?'
@@ -20,6 +22,8 @@ const LAUNCH_DIR = 'src'
 // The question of every plugin skill group and of the own skills handed out as one group: `Which roles get <label>
 // skills (<count>)?`. A repeat entry stays available after it answers, since the groups depend on the environment.
 const SKILL_GROUP_QUESTION = ' skills ('
+const ACCEPT = 'Accept'
+const DECLINE = 'Decline'
 
 // The dialog wraps the label `Commit definitions (default)` in its narrow option column: the answer is a prefix.
 export const POLICY_DEFINITIONS = 'Commit definitions'
@@ -44,6 +48,8 @@ const LAUNCH_ENTRIES: Readonly<Record<LaunchAnswer, readonly DialogEntry[]>> = {
 // questions an environment may or may not raise sit here with the answer that hands out and installs nothing.
 // The skill group entry stays behind the own-skills entry, so the own-skills question is answered by its own entry.
 export function initScript(opts: InitScriptOptions): readonly DialogEntry[] {
+  const required = opts.acceptHunks === true ? ACCEPT : DECLINE
+
   return [
     { question: 'Read ~/.claude.json for MCP server names?', answer: 'No, skip it' },
     { question: `Scan this repo's session history`, answer: 'No, skip it' },
@@ -63,9 +69,9 @@ export function initScript(opts: InitScriptOptions): readonly DialogEntry[] {
     { question: 'Which roles get the auto-memories', answer: 'None' },
     { question: 'Which roles get the project CLAUDE.md', answer: 'None' },
     { question: 'Which env variables do roles carry?', answer: 'None' },
-    { question: '.planning/config.json: mode', answer: 'Decline' },
-    { question: '.planning/config.json: workflow.text_mode', answer: 'Decline' },
-    { question: '.planning/config.json: hooks.context_warnings', answer: 'Decline' },
+    { question: '.planning/config.json: mode', answer: required },
+    { question: '.planning/config.json: workflow.text_mode', answer: required },
+    { question: '.planning/config.json: hooks.context_warnings', answer: DECLINE },
     { question: POLICY_QUESTION, answer: opts.policy },
     ...LAUNCH_ENTRIES[opts.launch],
     { question: 'Review the plan shown in the cadre init pane', answer: 'Confirm' },
@@ -76,3 +82,4 @@ export const GSD_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-
 export const GSD_HERE_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'here' })
 export const GSD_DIR_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'dir' })
 export const GSD_IGNOREALL_SCRIPT = initScript({ policy: POLICY_IGNORE_ALL, launch: 'git-root' })
+export const gsdAcceptHunk = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-root', acceptHunks: true })
