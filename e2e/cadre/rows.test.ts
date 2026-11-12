@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,9 @@ import { VARIANTS } from './fixtures/index.ts'
 import { ROWS } from './rows.ts'
 import type { RowEntry } from './rows.ts'
 
+const SUITE_DIR = dirname(fileURLToPath(import.meta.url))
+const ROW_DIRS: readonly string[] = ['offline', 'live']
+const TEST_FILE_SUFFIX = '.test.ts'
 const PLANNING_DIR = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))), '.planning')
 const UAT_FILES = [
   { phase: '03', path: 'phases/03-apply-launch-kickoff-and-isolation-check/03-UAT.md' },
@@ -214,4 +217,26 @@ test('the entries that start a real role session are exactly the pinned live row
 
   assert.deepEqual(sorted(withRole.map(row => `${key(row)}:${row.roleSession}`)), sorted(ROLE_SESSION_ROWS))
   assert.ok(withRole.every(row => row.tier === 'live'), 'a role session entry is not live')
+})
+
+test('every registry entry names a test file that exists', () => {
+  assert.deepEqual(ROWS.filter(row => !existsSync(join(SUITE_DIR, row.file))).map(key), [])
+})
+
+test('every test file under offline/ and live/ is named by a registry entry', async () => {
+  const named = new Set(ROWS.map(row => row.file))
+  const files: string[] = []
+  for (const dir of ROW_DIRS) {
+    const names = await readdir(join(SUITE_DIR, dir))
+    files.push(...names.filter(name => name.endsWith(TEST_FILE_SUFFIX)).map(name => `${dir}/${name}`))
+  }
+
+  assert.deepEqual(files.filter(file => !named.has(file)), [])
+})
+
+test('every variant a live entry names has a builder', () => {
+  const missing = ROWS.filter(row => row.tier === 'live')
+    .flatMap(row => row.fixture.filter(name => VARIANTS[name] === undefined).map(name => `${key(row)}: ${name}`))
+
+  assert.deepEqual(missing, [])
 })
