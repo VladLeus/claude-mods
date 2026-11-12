@@ -219,8 +219,11 @@ export type TuiStep = {
 // The empty input box between its two rules: claude takes typed prompts. A session started with --name draws its
 // name at the end of the top rule.
 export const TUI_READY = /^─+(?: [^\n]*─)?\n❯\n─+$/m
+// The engine stops at a Settings Warning dialog for a settings entry it skips; its first option is Continue.
+export const SETTINGS_WARNING: TuiStep = { matcher: /Settings Warning/, label: 'Continue' }
 // Dialogs before the ready prompt: first-run screens take Enter; folder trust starts on "No, exit", so pick by label.
 export const TUI_TRUST: readonly TuiStep[] = [
+  SETTINGS_WARNING,
   { matcher: /Choose the text style that looks best with your terminal/, label: null },
   { matcher: /Press Enter to continue/, label: null },
   { matcher: /Yes, I trust this folder/, label: 'Yes, I trust this folder' },
@@ -239,6 +242,7 @@ const CURSOR_MS = 5_000
 const TUI_ROUNDS = 8
 
 export type ScreenTest = (screen: string) => boolean
+export type StepSeen = (step: TuiStep, screen: string) => void
 
 type OptionLine = {
   readonly label: string
@@ -383,9 +387,9 @@ export function isAppDialog(screen: string): boolean {
   return isDialogScreen(screen) && stepOf(screen) === undefined
 }
 
-async function passTrustIn(pane: Pane, until: ScreenTest): Promise<string> {
+async function passTrustIn(pane: Pane, until: ScreenTest, seen?: StepSeen): Promise<string> {
   const known = (screen: string): boolean => until(screen) || stepOf(screen) !== undefined
-  const label = 'the ready prompt, the folder trust dialog or a first-run screen'
+  const label = 'the ready prompt, a settings warning, the folder trust dialog or a first-run screen'
   for (let round = 0; round < TUI_ROUNDS; round += 1) {
     const shown = await waitTui(pane, known, WAIT_MS, label)
     if (until(shown)) return shown
@@ -393,6 +397,7 @@ async function passTrustIn(pane: Pane, until: ScreenTest): Promise<string> {
     if (until(screen)) return screen
     const step = stepOf(screen)
     if (!step) continue
+    seen?.(step, screen)
     if (step.label === null) await sendKeys(pane, 'Enter')
     else await select(pane, screen, labelPick(step.label), JSON.stringify(step.label))
   }
@@ -406,15 +411,16 @@ export async function startTuiUntil(
   cwd: string,
   args: readonly string[],
   until: ScreenTest,
+  seen?: StepSeen,
 ): Promise<Pane> {
   const pane = await newWindow(server, 'claude', cwd, [claudeBin(), ...args])
-  await passTrustIn(pane, until)
+  await passTrustIn(pane, until, seen)
 
   return pane
 }
 
-export async function startTui(server: Server, cwd: string, args: readonly string[]): Promise<Pane> {
-  return startTuiUntil(server, cwd, args, isReadyScreen)
+export async function startTui(server: Server, cwd: string, args: readonly string[], seen?: StepSeen): Promise<Pane> {
+  return startTuiUntil(server, cwd, args, isReadyScreen, seen)
 }
 
 export async function passTrust(server: Server, window: string): Promise<Pane> {
