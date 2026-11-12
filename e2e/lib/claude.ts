@@ -216,8 +216,9 @@ export type TuiStep = {
   readonly label: string | null
 }
 
-// The empty input box between its two rules: claude takes typed prompts.
-export const TUI_READY = /^─+\n❯\n─+$/m
+// The empty input box between its two rules: claude takes typed prompts. A session started with --name draws its
+// name at the end of the top rule.
+export const TUI_READY = /^─+(?: [^\n]*─)?\n❯\n─+$/m
 // Dialogs before the ready prompt: first-run screens take Enter; folder trust starts on "No, exit", so pick by label.
 export const TUI_TRUST: readonly TuiStep[] = [
   { matcher: /Choose the text style that looks best with your terminal/, label: null },
@@ -386,7 +387,8 @@ async function passTrustIn(pane: Pane, until: ScreenTest): Promise<string> {
   const known = (screen: string): boolean => until(screen) || stepOf(screen) !== undefined
   const label = 'the ready prompt, the folder trust dialog or a first-run screen'
   for (let round = 0; round < TUI_ROUNDS; round += 1) {
-    await waitTui(pane, known, WAIT_MS, label)
+    const shown = await waitTui(pane, known, WAIT_MS, label)
+    if (until(shown)) return shown
     const screen = await idleTui(pane)
     if (until(screen)) return screen
     const step = stepOf(screen)

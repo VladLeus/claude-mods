@@ -19,21 +19,28 @@ export function shellQuote(value: string): string {
   return `'${value.replaceAll(`'`, `'\\''`)}'`
 }
 
+// The whole record is built first and appended by one cat, so records of parallel calls never interleave; a printf of
+// more than about 1 KB reaches the file in pieces.
 function recordFunction(name: string, envNames: readonly string[]): string {
-  const envLines = envNames.map(env =>
-    `    if [ "\${${env}+set}" = set ]; then printf '\\tenv:${env}=%s' "$${env}"; else printf '\\tenv:${env}'; fi`)
+  const envLines = envNames.map(env => {
+    const set = `line="$line$tab"'env:${env}='"$${env}"`
+    const unset = `line="$line$tab"'env:${env}'`
+
+    return `  if [ "\${${env}+set}" = set ]; then ${set}; else ${unset}; fi`
+  })
 
   return [
     'record() {',
-    '  {',
-    `    printf '%s' ${shellQuote(name)}`,
-    `    printf '\\tcwd=%s' "$(pwd -P)"`,
-    `    if [ -t 0 ]; then printf '\\ttty=yes'; else printf '\\ttty=no'; fi`,
+    `  tab=$(printf '\\t')`,
+    `  line=${shellQuote(name)}`,
+    `  line="$line\${tab}cwd=$(pwd -P)"`,
+    `  if [ -t 0 ]; then line="$line\${tab}tty=yes"; else line="$line\${tab}tty=no"; fi`,
     ...envLines,
-    `    printf '\\targv'`,
-    `    for arg in "$@"; do printf '\\t%s' "$arg"; done`,
-    `    printf '\\n'`,
-    '  } >> "$log"',
+    `  line="$line\${tab}argv"`,
+    `  for arg in "$@"; do line="$line$tab$arg"; done`,
+    '  /bin/cat >> "$log" <<EOF',
+    '$line',
+    'EOF',
     '}',
   ].join('\n')
 }
@@ -74,6 +81,21 @@ export async function versionShim(dir: string, version: string, logFile: string)
     'fi',
     'record "$@"',
     `exec /bin/sleep ${SHIM_SLEEP_S}`,
+    '',
+  ]
+
+  return writeShim(dir, 'claude', script.join('\n'))
+}
+
+// A claude that answers `--version` through `claudeBin` and fails every other call with `message` on stderr.
+export async function probeFailShim(dir: string, claudeBin: string, message: string): Promise<string> {
+  const script = [
+    '#!/bin/sh',
+    'if [ "$1" = --version ]; then',
+    `  exec ${shellQuote(claudeBin)} "$@"`,
+    'fi',
+    `printf '%s\\n' ${shellQuote(message)} >&2`,
+    'exit 1',
     '',
   ]
 
