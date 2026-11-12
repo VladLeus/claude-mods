@@ -46,8 +46,11 @@ const SLUG_MAX = 48
 const LINKED_LINE_RE = /Linked [0-9]+, copied [0-9]+\./
 const LEADING_MARK_RE = /^[^\p{L}\p{N}]+/u
 const WORKTREE_PREFIX = 'worktree '
-const NO_DIALOG_ROUTE = 'epicDone: only the print route is built; the row that answers the consent question types it'
+const NO_DIALOG_ROUTE = 'epicDone: only the print route is built; askEpicDone types the route that answers the question'
 const NO_COMMON_DIR = 'git rev-parse --git-common-dir gave no absolute path'
+const FORCE_FLAG = '--force'
+const PROMPT_MARK = '❯ '
+const REPLY_MARK = 'cadre: '
 
 export type EpicOptions = {
   readonly title?: string
@@ -77,6 +80,15 @@ export type WindowSeen = {
   readonly command: string
   readonly folder: string
   readonly screen: string
+}
+
+export type CommandSeen = {
+  readonly pane: Pane
+  readonly command: string
+  // The question on screen once it settled; null when the command replied without asking one.
+  readonly dialog: string | null
+  // The pane's history after the typed line.
+  readonly reply: string
 }
 
 // The slug cadre gives an epic: the key and the title words, lowercased, each run of other characters one dash.
@@ -191,10 +203,16 @@ export async function printEpic(copy: LiveRepo, key: string, title: string = EPI
   return { result, reply: replyOf(result), worktree: epicWorktree(copy, key, title) }
 }
 
-export async function epicDone(copy: LiveRepo, key: string, viaPrint: boolean): Promise<RunResult> {
+// `/cadre epic done` in print mode, where it asks nothing: with `force` it can only refuse, as no dialog is there.
+export async function epicDone(
+  copy: LiveRepo,
+  key: string,
+  viaPrint: boolean,
+  force: boolean = false,
+): Promise<RunResult> {
   if (!viaPrint) throw new HarnessError(NO_DIALOG_ROUTE)
 
-  return cadrePrint(copy, `epic done ${key}`)
+  return cadrePrint(copy, `epic done ${key}${force ? ` ${FORCE_FLAG}` : ''}`)
 }
 
 function linkedLines(text: string): number {
@@ -279,4 +297,73 @@ export async function readWindows(server: Server, ids: readonly string[]): Promi
   }
 
   return seen
+}
+
+// True once nothing is at `path`; false when something still is after `timeoutMs`.
+export async function waitGone(path: string, timeoutMs: number = WAIT_MS): Promise<boolean> {
+  const opts = { timeoutMs, intervalMs: POLL_MS, now: Date.now, sleep: delay, label: 'the path to be removed' }
+  try {
+    await pollUntil(() => kindOf(path), kind => kind === 'absent', opts)
+
+    return true
+  } catch (error) {
+    if (error instanceof HarnessError) return false
+    throw error
+  }
+}
+
+// The history after the last typed line of `command`; null while that line is not in it.
+function afterEcho(history: string, command: string): string | null {
+  const at = history.lastIndexOf(`${PROMPT_MARK}${command}`)
+  if (at === -1) return null
+  const rest = history.slice(at)
+  const end = rest.indexOf('\n')
+
+  return end === -1 ? '' : rest.slice(end + 1)
+}
+
+function hasReply(history: string, command: string): boolean {
+  return afterEcho(history, command)?.includes(REPLY_MARK) ?? false
+}
+
+// A slash command typed into a root session either asks a question or replies, and the reply starts with `cadre: `.
+export async function typeCommand(pane: Pane, command: string): Promise<CommandSeen> {
+  await sendText(pane, command)
+  await sendKeys(pane, 'Enter')
+  const opts = {
+    timeoutMs: WAIT_MS,
+    intervalMs: POLL_MS,
+    now: Date.now,
+    sleep: delay,
+    isDead: async () => (await paneState(pane)).dead,
+    label: `the question or the reply of ${command}`,
+  }
+  const read = async () => ({ screen: await capture(pane), history: await capture(pane, { history: true }) })
+  await pollUntil(read, now => isAppDialog(now.screen) || hasReply(now.history, command), opts)
+  // A line printed above a question can show first, so what the settled screen holds decides.
+  const screen = await idleTui(pane)
+  const reply = afterEcho(await capture(pane, { history: true }), command) ?? ''
+
+  return { pane, command, dialog: isAppDialog(screen) ? screen : null, reply }
+}
+
+// `/cadre epic done <key> --force` typed into a root session of the main checkout, which asks the consent question.
+export async function askEpicDone(
+  server: Server,
+  copy: LiveRepo,
+  key: string,
+  pane?: Pane,
+): Promise<CommandSeen> {
+  const session = pane ?? await startTui(server, copy.repo, [])
+
+  return typeCommand(session, `/cadre epic done ${key} ${FORCE_FLAG}`)
+}
+
+// The consent question answered by `label`: the reply once the question closed and the session settled.
+export async function answerEpicDone(asked: CommandSeen, label: string): Promise<string> {
+  await answer(asked.pane, label)
+  await waitTui(asked.pane, screen => !isDialogScreen(screen), WAIT_MS, 'the Epic done question to close')
+  await idleTui(asked.pane)
+
+  return afterEcho(await capture(asked.pane, { history: true }), asked.command) ?? ''
 }
