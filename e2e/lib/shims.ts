@@ -102,6 +102,77 @@ export async function probeFailShim(dir: string, claudeBin: string, message: str
   return writeShim(dir, 'claude', script.join('\n'))
 }
 
+// Logs every call like logShim; the first call that holds `matchArg` as one argument writes `stateFile` and exits 1,
+// every other call execs `execPath`.
+export async function failMatchShim(
+  dir: string,
+  name: string,
+  execPath: string,
+  logFile: string,
+  matchArg: string,
+  stateFile: string,
+): Promise<string> {
+  const script = [
+    '#!/bin/sh',
+    `log=${shellQuote(logFile)}`,
+    `state=${shellQuote(stateFile)}`,
+    recordFunction(name, ['CLAUDECODE']),
+    'record "$@"',
+    'if [ ! -e "$state" ]; then',
+    '  for arg in "$@"; do',
+    `    if [ "$arg" = ${shellQuote(matchArg)} ]; then`,
+    '      : > "$state"',
+    '      exit 1',
+    '    fi',
+    '  done',
+    'fi',
+    `exec ${shellQuote(execPath)} "$@"`,
+    '',
+  ]
+
+  return writeShim(dir, name, script.join('\n'))
+}
+
+const MCP_STUB_FILE = 'mcp-stub.mjs'
+
+const MCP_STUB_LINES: readonly string[] = [
+  'import { createInterface } from "node:readline"',
+  'const tool = { name: "ping", description: "Answers pong.", inputSchema: { type: "object", properties: {} } }',
+  'const serverInfo = { name: "e2e-stub", version: "0.0.0" }',
+  'const results = {',
+  '  initialize: params => ({',
+  '    protocolVersion: params?.protocolVersion ?? "2024-11-05",',
+  '    capabilities: { tools: {} },',
+  '    serverInfo,',
+  '  }),',
+  '  "tools/list": () => ({ tools: [tool] }),',
+  '  "tools/call": () => ({ content: [{ type: "text", text: "pong" }] }),',
+  '  ping: () => ({}),',
+  '}',
+  'const send = message => process.stdout.write(JSON.stringify(message) + "\\n")',
+  'for await (const line of createInterface({ input: process.stdin })) {',
+  '  let request = null',
+  '  try { request = JSON.parse(line) } catch { continue }',
+  '  if (request === null || typeof request !== "object" || request.id === undefined) continue',
+  '  const result = results[request.method]',
+  '  if (result === undefined) {',
+  '    send({ jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "method not found" } })',
+  '    continue',
+  '  }',
+  '  send({ jsonrpc: "2.0", id: request.id, result: result(request.params) })',
+  '}',
+  '',
+]
+
+// A stdio MCP server with one tool `ping`; notifications such as notifications/initialized get no answer.
+export async function mcpStub(dir: string): Promise<string> {
+  await mkdir(dir, { recursive: true })
+  const path = join(dir, MCP_STUB_FILE)
+  await writeFile(path, MCP_STUB_LINES.join('\n'))
+
+  return path
+}
+
 function parseCall(line: string): ShimCall | null {
   const fields = line.split('\t')
   const [name, cwdField, ttyField] = fields

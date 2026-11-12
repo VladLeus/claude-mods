@@ -185,6 +185,10 @@ export const FRAMEWORKS_ADD_GSD_SCRIPT: readonly DialogEntry[] = [
   ...hunkEntries(DECLINE),
   { question: REFRAME_REVIEW_QUESTION, answer: 'Confirm' },
 ]
+// A gsd init that installs the security plugins and declines every other install offer.
+export const GSD_SECURITY_INSTALL_SCRIPT: readonly DialogEntry[] = GSD_SCRIPT.map(entry =>
+  entry.question === SECURITY_QUESTION ? { ...entry, answer: 'Install' } : entry
+)
 // A superpowers repo that adds GSD and accepts only the first GSD hunk.
 export const SP_GSD_FIRST_HUNK_SCRIPT: readonly DialogEntry[] = SP_GSD_SCRIPT.map(entry =>
   entry.question === MODE_HUNK_QUESTION ? { ...entry, answer: ACCEPT } : entry
