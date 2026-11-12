@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { readdir, readFile, realpath } from 'node:fs/promises'
+import { constants, existsSync } from 'node:fs'
+import { access, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import {
   answer,
@@ -14,7 +14,7 @@ import {
   TUI_READY,
   waitTui,
 } from '../../lib/claude.ts'
-import { liveEnv, scratchEnv } from '../../lib/env.ts'
+import { liveEnv, scratchEnv, SYSTEM_PATH } from '../../lib/env.ts'
 import type { ChildEnv } from '../../lib/env.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
@@ -23,6 +23,7 @@ import type { BuildContext } from '../../lib/fixture.ts'
 import { run } from '../../lib/proc.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import type { RowContext } from '../../lib/row.ts'
+import { scratchRoot } from '../../lib/scratch.ts'
 import { importSource } from '../../lib/source.ts'
 import { killServer, matches, sendKeys, sendText, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
 import type { Matcher, Pane, Server } from '../../lib/tmux.ts'
@@ -39,6 +40,9 @@ const WHITESPACE_RE = /\s+/g
 const HEADER_RE = /^ *☐ /gm
 const HAIKU = 'haiku'
 const MEDIUM = 'medium'
+const REPLY_PREFIX = 'cadre: '
+const CLIPBOARD_MS = 10_000
+const CLIPBOARD_LANG = 'en_US.UTF-8'
 
 export const APPLIED_REPLY = /Applied: wrote [0-9]+ files? \([0-9]+ executable\)/
 
@@ -75,6 +79,52 @@ export async function liveRepo(ctx: RowContext, variant: string, opts: LiveRepoO
 
 export async function cadrePrint(copy: LiveRepo, args: string, env?: ChildEnv): Promise<RunResult> {
   return printMode(copy.repo, [`/cadre ${args}`], env ?? copy.env)
+}
+
+// Print mode shows a slash command's reply behind the command's name.
+export function replyOf(result: RunResult): string {
+  const text = result.stdout.startsWith(REPLY_PREFIX) ? result.stdout.slice(REPLY_PREFIX.length) : result.stdout
+
+  return text.trimEnd()
+}
+
+export function firstLineOf(text: string): string {
+  return text.trim().split('\n')[0] ?? ''
+}
+
+// The launcher command a start reply prints: the line that is the launcher's path, bare or in single quotes.
+export function printedCommand(reply: string, id: string): string | null {
+  const path = `/.cadre/bin/${id}`
+  const isCommand = (line: string): boolean =>
+    (line.startsWith('/') && line.endsWith(path)) || (line.startsWith(`'/`) && line.endsWith(`${path}'`))
+
+  return reply.split('\n').map(line => line.trim()).find(isCommand) ?? null
+}
+
+export function noteReply(ctx: RowContext, label: string, result: RunResult): void {
+  ctx.evidence(`${label}, stdout`, result.stdout)
+  ctx.evidence(`${label}, stderr and exit code`, `exit ${result.code}\n${result.stderr}`)
+}
+
+// The text clipboard, read with a UTF-8 locale so a non-ASCII path comes back as it was copied.
+export async function pastedText(): Promise<string> {
+  const env = { PATH: SYSTEM_PATH, HOME: join(scratchRoot(), 'home'), LANG: CLIPBOARD_LANG }
+  const result = await run(['/usr/bin/pbpaste'], { cwd: scratchRoot(), env, timeoutMs: CLIPBOARD_MS })
+  if (result.code !== 0) throw new HarnessError(`pbpaste exited ${result.code}: ${result.stderr.trim()}`)
+
+  return result.stdout
+}
+
+// The absolute path of a tool in the system folders, which a shim execs so it never hands a call on to itself.
+export async function systemTool(name: string): Promise<string> {
+  for (const dir of SYSTEM_PATH.split(':')) {
+    const path = join(dir, name)
+    const stats = await stat(path).catch(() => null)
+    if (!stats?.isFile()) continue
+    if (await access(path, constants.X_OK).then(() => true, () => false)) return path
+  }
+
+  throw new HarnessError(`no ${name} in ${SYSTEM_PATH}`)
 }
 
 // The command is the first prompt of the session, so it runs as soon as the folder is trusted.
