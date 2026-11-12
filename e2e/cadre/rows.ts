@@ -34,8 +34,8 @@ const NET_TTL_DAYS = 7
 const NO_INPUTS: CassetteSpec = { inputs: [] }
 const CADRE_HOOKS: CassetteSpec = { inputs: ['cadre/hooks'] }
 const CADRE_HOOKS_NET: CassetteSpec = { inputs: ['cadre/hooks'], ttlDays: NET_TTL_DAYS }
-const RC_PIN_HALF: PartialPart = { part: 'the 2.1.295 half', reason: 'waits for the RC pin, D-212' }
-const PROBE_MOD_REASON = 'needs a probe mod; manual-later per D-452'
+const RC_PIN_HALF: PartialPart = { part: 'the 2.1.295 half', reason: 'waits for the release candidate engine pin' }
+const PROBE_MOD_REASON = 'needs a probe mod; manual-later'
 const NO_REFUSAL_WINDOW_REASON = 'manual-later: needs a launcher refusal inside a cadre-opened window'
 const REAL_CONFIG_DIR_REASON =
   'manual-later on the real config dir: agent-fleet reads $HOME/.claude/projects and ignores CLAUDE_CONFIG_DIR'
@@ -84,7 +84,7 @@ export const ROWS: readonly RowEntry[] = [
     partial: [
       {
         part: 'the claude.ai connector half',
-        reason: 'a scratch config dir has no claude.ai connectors; agent batch per D-447 and D-452',
+        reason: 'the e2e config dir has no claude.ai connectors; left to the agent UAT batch',
       },
       RC_PIN_HALF,
     ],
@@ -419,7 +419,7 @@ export const ROWS: readonly RowEntry[] = [
     partial: [
       {
         part: 'which live sessions read running',
-        reason: 'needs real autopilot runs; agent batch per D-447 and D-452',
+        reason: 'needs real autopilot runs; left to the agent UAT batch',
       },
     ],
   },
