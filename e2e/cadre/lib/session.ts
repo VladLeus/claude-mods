@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   answer,
   answerOther,
+  claudeBin,
   configDir,
   dismiss,
   idleTui,
@@ -40,6 +41,7 @@ const PROBE_MS = 300_000
 const PROMPT_SETTLE_MS = 5_000
 const STUCK_MS = 8_000
 const GIT_MS = 30_000
+const MCP_ADD_MS = 60_000
 const EXIT_COMMAND = '/exit'
 const WHITESPACE_RE = /\s+/g
 const HEADER_RE = /^ *☐ /gm
@@ -73,6 +75,12 @@ export type DialogLog = {
   readonly screens: readonly string[]
   readonly asked: readonly string[]
   readonly final: string
+}
+
+// What a build does around its init: `before` runs on the fresh copy, `after` on the team the init wrote.
+export type InitBuildSteps = {
+  readonly before?: (copy: LiveRepo) => Promise<void>
+  readonly after?: (copy: LiveRepo) => Promise<void>
 }
 
 function squashed(text: string): string {
@@ -478,6 +486,44 @@ export async function assertHaikuRoles(copy: LiveRepo): Promise<void> {
   if (roles === 0) throw new HarnessError('assertHaikuRoles: the copy has no .cadre/*/role.json')
 }
 
+async function jsonFileOf(path: string): Promise<unknown> {
+  const text = await readFile(path, 'utf8').catch(() => null)
+  if (text === null) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+// claude writes the server into its own config for the project of the copy, as a person's `claude mcp add` does.
+export async function addMcpServer(copy: LiveRepo, name: string): Promise<RunResult> {
+  const argv = [claudeBin(), 'mcp', 'add', '--scope', 'local', name, '--', '/bin/echo', 'e2e']
+
+  return run(argv, { cwd: copy.repo, env: copy.env, timeoutMs: MCP_ADD_MS })
+}
+
+// The init recorded the consent to read ~/.claude.json and gave `server` to `role` and to no other role.
+export async function assertMcpHandOut(copy: LiveRepo, server: string, role: string): Promise<void> {
+  const cadre = join(copy.repo, '.cadre')
+  const state = await jsonFileOf(join(cadre, 'cadre.json'))
+  if (!isRecord(state) || state.readUserMcp !== true) {
+    throw new HarnessError('assertMcpHandOut: .cadre/cadre.json does not record the consent to read ~/.claude.json')
+  }
+  const entries = await readdir(cadre, { withFileTypes: true }).catch(() => null)
+  if (entries === null) throw new HarnessError('assertMcpHandOut: the copy has no .cadre/ folder')
+  const given: string[] = []
+  for (const entry of entries.filter(item => item.isDirectory())) {
+    const value = await jsonFileOf(join(cadre, entry.name, 'role.json'))
+    const servers = isRecord(value) && Array.isArray(value.mcp) ? value.mcp : []
+    if (servers.includes(server)) given.push(entry.name)
+  }
+  if (given.length === 1 && given[0] === role) return
+  const holders = given.join(', ') || 'no role'
+
+  throw new HarnessError(`assertMcpHandOut: ${server} is given to ${holders}, not to ${role} alone`)
+}
+
 function sha256Hex(text: string): string {
   return createHash('sha256').update(text).digest('hex')
 }
@@ -514,9 +560,15 @@ async function commitAll(repo: string, env: ChildEnv): Promise<void> {
 }
 
 // Builds a fixture by driving the real /cadre init in a TUI on a copy of `from`, then commits the team.
-export async function buildByInit(ctx: BuildContext, from: string, script: readonly DialogEntry[]): Promise<void> {
+export async function buildByInit(
+  ctx: BuildContext,
+  from: string,
+  script: readonly DialogEntry[],
+  steps: InitBuildSteps = {},
+): Promise<void> {
   await copyTree(fixtureDir(from), ctx.repo)
   const copy: LiveRepo = { repo: ctx.repo, env: liveEnv() }
+  await steps.before?.(copy)
   const server = await startServer(socketName(), copy.env)
   try {
     const pane = await cadreTui(server, copy, '/cadre init')
@@ -528,5 +580,6 @@ export async function buildByInit(ctx: BuildContext, from: string, script: reado
     await killServer(server)
   }
   await assertHaikuRoles(copy)
+  await steps.after?.(copy)
   await commitAll(ctx.repo, await scratchEnv(join(ctx.dir, 'env')))
 }

@@ -8,12 +8,22 @@ export type DialogEntry = {
 
 export type LaunchAnswer = 'git-root' | 'here' | 'dir'
 
+export type McpHandOut = {
+  readonly server: string
+  readonly role: string
+}
+
 export type InitScriptOptions = {
   readonly policy: string
   readonly launch: LaunchAnswer
   // Accept the two required GSD config hunks (mode, workflow.text_mode) instead of declining them.
   readonly acceptHunks?: true
+  // Consent to read ~/.claude.json and give one server to one role; absent, the consent is declined.
+  readonly mcp?: McpHandOut
 }
+
+export const MCP_SERVER = 'e2e-echo'
+export const MCP_ROLE = 'be'
 
 const POLICY_QUESTION = 'Git policy for .cadre/?'
 const LAUNCH_QUESTION = 'Where should the role launchers start their sessions?'
@@ -44,6 +54,29 @@ const LAUNCH_ENTRIES: Readonly<Record<LaunchAnswer, readonly DialogEntry[]>> = {
   ],
 }
 
+const MCP_CONSENT_QUESTION = 'Read ~/.claude.json for MCP server names?'
+const MCP_ENTRY_QUESTION = 'Which roles get the MCP servers ('
+const MCP_WHOLE_QUESTION = 'Which roles get all the MCP servers ('
+// The question that asks one server on its own: `Which roles get the <name> MCP server? (e.g. BE, QA, or none)`.
+const MCP_ONE_QUESTION = ' MCP server? (e.g.'
+
+// Servers the scan finds without a hand-out, such as the account's claude.ai connectors, are declined one by one by
+// the repeat entry, so only the named server goes to the named role.
+function mcpEntries(hand: McpHandOut | undefined): readonly DialogEntry[] {
+  if (hand === undefined) {
+    return [
+      { question: MCP_ENTRY_QUESTION, answer: 'Whole group' },
+      { question: MCP_WHOLE_QUESTION, answer: 'None' },
+    ]
+  }
+
+  return [
+    { question: MCP_ENTRY_QUESTION, answer: 'Go one by one' },
+    { question: `Which roles get the ${hand.server} MCP server?`, answer: { other: hand.role } },
+    { question: MCP_ONE_QUESTION, answer: 'No', repeat: true },
+  ]
+}
+
 // The questions in the order the init flow asks them. An entry whose question never comes up is skipped, so the
 // questions an environment may or may not raise sit here with the answer that hands out and installs nothing.
 // The skill group entry stays behind the own-skills entry, so the own-skills question is answered by its own entry.
@@ -51,7 +84,7 @@ export function initScript(opts: InitScriptOptions): readonly DialogEntry[] {
   const required = opts.acceptHunks === true ? ACCEPT : DECLINE
 
   return [
-    { question: 'Read ~/.claude.json for MCP server names?', answer: 'No, skip it' },
+    { question: MCP_CONSENT_QUESTION, answer: opts.mcp === undefined ? 'No, skip it' : 'Yes, read names only' },
     { question: `Scan this repo's session history`, answer: 'No, skip it' },
     { question: 'Use these roles?', answer: 'Use these roles' },
     { question: `Run GSD's own check`, answer: 'No, skip the check' },
@@ -59,8 +92,7 @@ export function initScript(opts: InitScriptOptions): readonly DialogEntry[] {
     { question: 'Install from claude-plugins-official after you confirm the plan', answer: 'Not now' },
     { question: 'Autopilot duration for roles?', answer: '4h' },
     ...MODEL_ENTRIES,
-    { question: 'Which roles get the MCP servers (', answer: 'Whole group' },
-    { question: 'Which roles get all the MCP servers (', answer: 'None' },
+    ...mcpEntries(opts.mcp),
     { question: 'How do you want to hand out your own skills (', answer: 'Whole group' },
     { question: SKILL_GROUP_QUESTION, answer: 'None', repeat: true },
     { question: 'Install mattpocock-skills', answer: 'No' },
@@ -86,3 +118,8 @@ export const gsdAcceptHunk = initScript({ policy: POLICY_DEFINITIONS, launch: 'g
 // cadre 0.5.0 asks the questions of a GSD repo in the same order: its locale and init stages differ from today's only
 // in the framework question of a repo with no framework found.
 export const V050_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-root' })
+export const MCP_SCRIPT = initScript({
+  policy: POLICY_DEFINITIONS,
+  launch: 'git-root',
+  mcp: { server: MCP_SERVER, role: MCP_ROLE },
+})

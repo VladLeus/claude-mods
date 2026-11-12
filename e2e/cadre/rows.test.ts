@@ -20,10 +20,10 @@ const ROW_HEADER_RE = /^### ([0-9]+[a-z]?)\.(?:\s|$)/
 const HEADER_RE = /^#{1,6}\s/
 const SCRIPTED_RE = /^cut: scripted(?:\s|$)/
 const KINDS: readonly string[] = ['pass', 'recorded', 'mixed']
-const TWO_VARIANT_ROWS: Readonly<Record<string, readonly string[]>> = {
+const MULTI_VARIANT_ROWS: Readonly<Record<string, readonly string[]>> = {
   '03#61': ['gsd-pre', 'gsd'],
   '03#76': ['gsd-dir', 'gsd-here'],
-  '03.1#14': ['gsd', 'gsd-ignoreall'],
+  '03.1#14': ['gsd', 'mcp', 'gsd-ignoreall'],
   '03.1#16': ['gsd', 'gsd-ignoreall'],
   '03.2#5': ['sp-pre', 'gsd'],
 }
@@ -133,8 +133,8 @@ test('every live entry names at least one fixture variant and none twice', () =>
   }
 })
 
-test('the rows that copy two variants list exactly those two', () => {
-  for (const [id, variants] of Object.entries(TWO_VARIANT_ROWS)) {
+test('the rows that copy several variants list exactly those', () => {
+  for (const [id, variants] of Object.entries(MULTI_VARIANT_ROWS)) {
     const row = entryOf(id)
     assert.ok(row, `${id} is not in the registry`)
     assert.deepEqual(sorted(row.fixture), sorted(variants), `${id} lists other variants`)

@@ -1,16 +1,24 @@
 import assert from 'node:assert/strict'
 import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { claudeBin } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { hashFile } from '../../lib/hash.ts'
-import { run } from '../../lib/proc.ts'
 import { rowTest } from '../../lib/row.ts'
 import type { RowContext } from '../../lib/row.ts'
 import type { Json } from '../../lib/summary.ts'
+import { MCP_ROLE, MCP_SERVER } from '../fixtures/answers.ts'
 import { EPIC_KEY, gitOk, printEpic, roleIdsOf } from '../lib/epic.ts'
-import { cadrePrint, firstLineOf, liveRepo, noteReply, printedCommand, replyOf, statusLine } from '../lib/session.ts'
+import {
+  addMcpServer,
+  cadrePrint,
+  firstLineOf,
+  liveRepo,
+  noteReply,
+  printedCommand,
+  replyOf,
+  statusLine,
+} from '../lib/session.ts'
 import type { LiveRepo } from '../lib/session.ts'
 import { rowEntry } from '../rows.ts'
 
@@ -18,8 +26,6 @@ const ROLE = 'be'
 const NO_BASH_ROLE = 'pm'
 const CODE_DIR = 'src'
 const LAUNCHER = `.cadre/bin/${ROLE}`
-const MCP_NAME = 'e2e-echo'
-const MCP_ADD_MS = 60_000
 const HAND_EDIT = '# edited by hand\n'
 const NON_ALPHANUMERIC_RE = /[^A-Za-z0-9]/g
 const CODE_DIR_RULE_RE = new RegExp(`^(?:Read|Edit)\\(.*/${CODE_DIR}/\\*\\*\\)$`)
@@ -60,20 +66,14 @@ async function hashOrNull(path: string): Promise<string | null> {
   return hashFile(path).catch(() => null)
 }
 
-// claude writes the server into its own config for the project of main, as a person's `claude mcp add` does.
-async function addMcpServer(ctx: RowContext, copy: LiveRepo): Promise<void> {
-  const argv = [claudeBin(), 'mcp', 'add', '--scope', 'local', MCP_NAME, '--', '/bin/echo', 'e2e']
-  const added = await run(argv, { cwd: copy.repo, env: copy.env, timeoutMs: MCP_ADD_MS })
-  ctx.evidence('claude mcp add in main', `exit ${added.code}\n${added.stdout}\n${added.stderr}`)
-}
-
 async function definitionsHalf(ctx: RowContext): Promise<void> {
-  const copy = await liveRepo(ctx, 'gsd', { path: 'definitions/repo' })
+  const copy = await liveRepo(ctx, 'mcp', { path: 'definitions/repo' })
   const ids = await roleIdsOf(copy)
   const mainRoot = await realpath(copy.repo)
   const userDir = copy.env.CLAUDE_CONFIG_DIR
   if (userDir === undefined) throw new HarnessError('03.1#14: the live env has no CLAUDE_CONFIG_DIR')
-  await addMcpServer(ctx, copy)
+  const added = await addMcpServer(copy, MCP_SERVER)
+  ctx.evidence('claude mcp add in main', `exit ${added.code}\n${added.stdout}\n${added.stderr}`)
 
   const epic = await printEpic(copy, EPIC_KEY)
   noteReply(ctx, 'definitions: epic', epic.result)
@@ -126,9 +126,27 @@ async function definitionsHalf(ctx: RowContext): Promise<void> {
     })
   }
 
+  const servers = new Map<string, readonly string[] | null>()
+  for (const id of ids) servers.set(id, await mcpNamesOf(epic.worktree, id))
   const rendered: Record<string, Json> = {}
-  for (const id of ids) rendered[id] = [...(await mcpNamesOf(epic.worktree, id) ?? [])]
+  for (const [id, names] of servers) rendered[id] = [...(names ?? [])]
   ctx.observe('renderedMcpServers', rendered, 'the servers in .cadre/<id>/.runtime/mcp.json of the worktree, by role')
+
+  await ctx.check(`definitions: claude mcp add records ${MCP_SERVER} for the project of main`, () => {
+    assert.equal(added.code, 0, `claude mcp add exited ${added.code}`)
+  })
+  await ctx.check(`definitions: ${MCP_ROLE} gets the MCP server ${MCP_SERVER} recorded for the project of main`, () => {
+    const names = servers.get(MCP_ROLE) ?? null
+    assert.ok(names !== null, `${MCP_ROLE} has no rendered mcp.json in the worktree`)
+    assert.ok(names.includes(MCP_SERVER), `the rendered servers of ${MCP_ROLE} are: ${names.join(', ') || 'none'}`)
+  })
+  for (const id of ids.filter(item => item !== MCP_ROLE)) {
+    await ctx.check(`definitions: ${id} is not given ${MCP_SERVER}, so its rendered mcp.json does not hold it`, () => {
+      const names = servers.get(id) ?? null
+      assert.ok(names !== null, `${id} has no rendered mcp.json in the worktree`)
+      assert.ok(!names.includes(MCP_SERVER), `the rendered servers of ${id} hold ${MCP_SERVER}`)
+    })
+  }
 }
 
 // Only the launcher reaches HEAD, so the branch holds a launcher its manifest does not name, as after a regen whose
