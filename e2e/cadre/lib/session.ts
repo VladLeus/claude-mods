@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
 import { access, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import {
   answer,
   answerOther,
@@ -21,10 +22,11 @@ import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { copyTree, fixtureDir } from '../../lib/fixture.ts'
 import type { BuildContext } from '../../lib/fixture.ts'
+import { pollUntil } from '../../lib/poll.ts'
 import { run } from '../../lib/proc.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import type { RowContext } from '../../lib/row.ts'
-import { scratchRoot } from '../../lib/scratch.ts'
+import { removeTree, scratchRoot } from '../../lib/scratch.ts'
 import { shellQuote } from '../../lib/shims.ts'
 import { importSource } from '../../lib/source.ts'
 import { killServer, matches, sendKeys, sendText, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
@@ -47,6 +49,14 @@ const REPLY_PREFIX = 'cadre: '
 const CLIPBOARD_MS = 10_000
 const CLIPBOARD_LANG = 'en_US.UTF-8'
 const SESSION_START = 'SessionStart'
+const STATUS_POLL_MS = 3_000
+const TRANSCRIPT_POLL_MS = 1_000
+const ROLE_NAME_POLL_MS = 1_000
+const ROLE_NAME_WAIT_MS = 480_000
+const HANDOFF_ROOT = 'thoughts/shared/handoffs'
+const TITLE_ROW_START = '{"type":"custom-title"'
+const LONG_FOLDER_NAME_CHARS = 200
+const NON_ALPHANUMERIC_RE = /[^A-Za-z0-9]/g
 
 export const APPLIED_REPLY = /Applied: wrote [0-9]+ files? \([0-9]+ executable\)/
 
@@ -149,6 +159,123 @@ export async function sessionStartRuns(logFile: string): Promise<number> {
   const text = await readFile(logFile, 'utf8').catch(() => '')
 
   return text.split('\n').filter(line => line === SESSION_START).length
+}
+
+// The text after `<label>: ` on the first line of a reply that starts with it.
+export function statusLine(reply: string, label: string): string | null {
+  const prefix = `${label}: `
+  const line = reply.split('\n').find(item => item.startsWith(prefix))
+
+  return line === undefined ? null : line.slice(prefix.length)
+}
+
+// `/cadre status <id>` until `until` holds for its reply, else the last result once `timeoutMs` has passed. Each call
+// is a print-mode run that makes no model turn.
+export async function statusUntil(
+  copy: LiveRepo,
+  id: string,
+  until: (reply: string) => boolean,
+  timeoutMs: number,
+): Promise<RunResult> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const result = await cadrePrint(copy, `status ${id}`)
+    if (until(replyOf(result)) || Date.now() >= deadline) return result
+    await delay(STATUS_POLL_MS)
+  }
+}
+
+// A handoff file where autopilot keeps them: `<folder>/thoughts/shared/handoffs/<id>/<name>`.
+export async function writeHandoff(folder: string, id: string, name: string): Promise<string> {
+  const dir = join(folder, HANDOFF_ROOT, id)
+  await mkdir(dir, { recursive: true })
+  const path = join(dir, name)
+  await writeFile(path, `# Handoff ${name}\n`)
+
+  return path
+}
+
+function hasTitleRow(text: string, title: string): boolean {
+  return text.split('\n').some(line => {
+    if (!line.startsWith(TITLE_ROW_START)) return false
+    try {
+      const row: unknown = JSON.parse(line)
+
+      return isRecord(row) && row.customTitle === title
+    } catch {
+      return false
+    }
+  })
+}
+
+function folderNameOf(path: string): string {
+  return path.replace(NON_ALPHANUMERIC_RE, '-')
+}
+
+async function hasTitledTranscript(folder: string, title: string): Promise<boolean> {
+  const files = (await readdir(folder).catch((): string[] => [])).filter(name => name.endsWith('.jsonl'))
+  for (const file of files) {
+    if (hasTitleRow(await readFile(join(folder, file), 'utf8').catch(() => ''), title)) return true
+  }
+
+  return false
+}
+
+// The engine gives a session whose name a live session of the same config dir already has a random suffix (`cadre-be`
+// becomes `cadre-be-swirling-gray`), and status finds a role session by its exact name. Rows that start a role session
+// therefore take turns per role id: the lock is a folder of the run's scratch root, released when the row ends, after
+// the cleanups registered later (the tmux server with the session) have run.
+export async function holdRoleName(ctx: RowContext, id: string): Promise<void> {
+  const lock = join(scratchRoot(), 'role-names', id)
+  await mkdir(dirname(lock), { recursive: true })
+  const deadline = Date.now() + ROLE_NAME_WAIT_MS
+  for (;;) {
+    try {
+      await mkdir(lock)
+      break
+    } catch (error) {
+      if (!isRecord(error) || error.code !== 'EEXIST') throw error
+    }
+    if (Date.now() >= deadline) {
+      throw new HarnessError(`another row kept the role name cadre-${id} for ${ROLE_NAME_WAIT_MS} ms`)
+    }
+    await delay(ROLE_NAME_POLL_MS)
+  }
+  ctx.after(() => removeTree(lock, scratchRoot()))
+}
+
+// The folder of the e2e dir's projects/ that holds a transcript of the role session started in `startFolder`, once one
+// carries the title `cadre-<id>`; null when none does within `timeoutMs`. The engine shortens a folder name over 200
+// characters but keeps its start, so such a name is matched by the encoded `row` scratch folder, unique to the row.
+export async function waitForRoleTranscript(
+  startFolder: string,
+  id: string,
+  row: string,
+  timeoutMs: number,
+): Promise<string | null> {
+  const projects = join(configDir(), 'projects')
+  const name = folderNameOf(await realpath(startFolder))
+  const rowName = folderNameOf(await realpath(row))
+  const isStartFolder = (folder: string): boolean => {
+    if (name.length <= LONG_FOLDER_NAME_CHARS) return folder === name
+
+    return folder.startsWith(rowName)
+  }
+  const find = async (): Promise<string | null> => {
+    for (const folder of (await readdir(projects).catch((): string[] => [])).filter(isStartFolder)) {
+      if (await hasTitledTranscript(join(projects, folder), `cadre-${id}`)) return folder
+    }
+
+    return null
+  }
+  const label = `the transcript of cadre-${id}`
+  const opts = { timeoutMs, intervalMs: TRANSCRIPT_POLL_MS, now: Date.now, sleep: delay, label }
+  try {
+    return await pollUntil(find, folder => folder !== null, opts)
+  } catch (error) {
+    if (error instanceof HarnessError) return null
+    throw error
+  }
 }
 
 // The line of a GSD identity module that proves an install, and a `config-set <dotted.key> <value>` on
