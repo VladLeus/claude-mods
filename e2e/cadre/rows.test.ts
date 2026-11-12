@@ -34,6 +34,9 @@ const CASSETTE_ROWS: readonly string[] = [
 ]
 const RC_PIN_ROWS: readonly string[] = ['03#50', '03#52', '03#59', '03#60', '03#75']
 const EXCLUSIVE_ROWS: readonly string[] = ['03#61', '03#80', '03#82', '03#83', '03#87', '03.2#3', '03.2#30']
+const ROLE_SESSION_ROWS: readonly string[] = [
+  '03#64:be', '03#73:be', '03#76:be', '03#77:be', '03#78:be', '03.1#1:be', '03.1#4:be', '03.1#15:be',
+]
 const SAMPLE_FROM: Readonly<Record<string, readonly string[]>> = { gsd: ['gsd-pre'], 'gsd-pre': [], 'sp-pre': [] }
 const CYCLE_FROM: Readonly<Record<string, readonly string[]>> = { a: ['b'], b: ['c'], c: ['a'] }
 const NO_PLANNING = existsSync(PLANNING_DIR) ? false : 'no .planning/ folder: the UAT files are not on this branch'
@@ -204,4 +207,11 @@ test('the exclusive entries are exactly the live rows that install plugins or ma
   assert.deepEqual(sorted(exclusive.map(key)), sorted(EXCLUSIVE_ROWS))
   assert.ok(exclusive.every(row => row.tier === 'live'), 'an exclusive entry is not live')
   assert.equal(entryOf('03#83')?.file, entryOf('03#87')?.file, '03#83 and 03#87 do not share one file')
+})
+
+test('the entries that start a real role session are exactly the pinned live rows with their role', () => {
+  const withRole = ROWS.filter(row => row.roleSession !== undefined)
+
+  assert.deepEqual(sorted(withRole.map(row => `${key(row)}:${row.roleSession}`)), sorted(ROLE_SESSION_ROWS))
+  assert.ok(withRole.every(row => row.tier === 'live'), 'a role session entry is not live')
 })
