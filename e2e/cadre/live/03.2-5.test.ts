@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, idleTui, isDialogScreen, waitTui } from '../../lib/claude.ts'
+import { answer, idleTui, waitTui } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { rowTest } from '../../lib/row.ts'
 import { parseShimLog } from '../../lib/shims.ts'
 import { capture, killServer, socketName, startServer, WAIT_MS } from '../../lib/tmux.ts'
 import type { Pane } from '../../lib/tmux.ts'
 import { INIT_REVIEW_QUESTION, SP_GSD_INSTALLS_SCRIPT } from '../fixtures/answers.ts'
-import type { DialogEntry } from '../fixtures/answers.ts'
 import { APPLIED_REPLY, cadrePrint, cadreTui, driveDialogs, liveRepo, noteReply, replyOf } from '../lib/session.ts'
 import { npxShim } from '../lib/shims.ts'
 import { rowEntry } from '../rows.ts'
@@ -81,20 +80,6 @@ function pageOf(screen: string): { readonly page: number; readonly count: number
   return { page: Number(found[1]), count: Number(found[2]) }
 }
 
-// The review is the one dialog the script leaves open: driveDialogs gives up on it once the screen stays unchanged.
-async function parkAtReview(pane: Pane, script: readonly DialogEntry[]): Promise<string> {
-  let failure: unknown = null
-  try {
-    await driveDialogs(pane, script, APPLIED_REPLY)
-  } catch (error) {
-    failure = error
-  }
-  const screen = await idleTui(pane)
-  if (isDialogScreen(screen) && squashed(screen).includes(INIT_REVIEW_QUESTION)) return screen
-
-  throw failure ?? new HarnessError(`the dialogs ended before the review:\n${screen}`)
-}
-
 // The preview of every page of the review, one entry per page, ending with the pane on the last page.
 async function readReview(pane: Pane, first: string): Promise<readonly (readonly string[])[]> {
   const pages = [previewLines(first)]
@@ -141,7 +126,7 @@ rowTest(rowEntry('03.2#5'), async ctx => {
 
   const pane = await cadreTui(server, sp, DRY_RUN_COMMAND)
   const withoutReview = SP_GSD_INSTALLS_SCRIPT.filter(entry => entry.question !== INIT_REVIEW_QUESTION)
-  const first = await parkAtReview(pane, withoutReview)
+  const first = (await driveDialogs(pane, withoutReview, APPLIED_REPLY, { stopAt: INIT_REVIEW_QUESTION })).final
   const pages = await readReview(pane, first)
   ctx.screen('the first page of the dry-run review', first)
   const preview = pages.map((page, at) => `-- page ${at + 1}\n${page.join('\n')}`)

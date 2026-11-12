@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { lstat, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, idleTui, isDialogScreen, waitTui } from '../../lib/claude.ts'
+import { answer, idleTui, waitTui } from '../../lib/claude.ts'
 import { liveEnv } from '../../lib/env.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
@@ -11,7 +11,6 @@ import { rowDir, scratchRoot } from '../../lib/scratch.ts'
 import { capture, killServer, socketName, startServer, WAIT_MS } from '../../lib/tmux.ts'
 import type { Pane } from '../../lib/tmux.ts'
 import { GSD_SECURITY_INSTALL_SCRIPT, INIT_REVIEW_QUESTION } from '../fixtures/answers.ts'
-import type { DialogEntry } from '../fixtures/answers.ts'
 import {
   APPLIED_REPLY,
   assertHaikuRoles,
@@ -78,20 +77,6 @@ function pageOf(screen: string): { readonly page: number; readonly count: number
   if (found === null) return null
 
   return { page: Number(found[1]), count: Number(found[2]) }
-}
-
-// The review is the one dialog the script leaves open: driveDialogs gives up on it once the screen stays unchanged.
-async function parkAtReview(pane: Pane, script: readonly DialogEntry[]): Promise<string> {
-  let failure: unknown = null
-  try {
-    await driveDialogs(pane, script, APPLIED_REPLY)
-  } catch (error) {
-    failure = error
-  }
-  const screen = await idleTui(pane)
-  if (isDialogScreen(screen) && squashed(screen).includes(INIT_REVIEW_QUESTION)) return screen
-
-  throw failure ?? new HarnessError(`the dialogs ended before the review:\n${screen}`)
 }
 
 // The preview of every page of the review, one entry per page, ending with the pane on the last page.
@@ -174,7 +159,7 @@ rowTest(rowEntry('03#83'), async ctx => {
 
   const pane = await cadreTui(server, copy, INIT_COMMAND)
   const withoutReview = GSD_SECURITY_INSTALL_SCRIPT.filter(entry => entry.question !== INIT_REVIEW_QUESTION)
-  const first = await parkAtReview(pane, withoutReview)
+  const first = (await driveDialogs(pane, withoutReview, APPLIED_REPLY, { stopAt: INIT_REVIEW_QUESTION })).final
   const pages = await readReview(pane, first)
   ctx.screen('the first page of the review', first)
   ctx.evidence('the review, preview text of every page', pages.map((page, at) => {

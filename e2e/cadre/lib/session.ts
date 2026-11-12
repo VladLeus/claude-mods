@@ -77,6 +77,12 @@ export type DialogLog = {
   readonly final: string
 }
 
+// `stopAt` names a question the driver leaves open: it returns once that question shows and its screen is still.
+export type DriveOptions = {
+  readonly budgetMs?: number
+  readonly stopAt?: string
+}
+
 // What a build does around its init: `before` runs on the fresh copy, `after` on the team the init wrote.
 export type InitBuildSteps = {
   readonly before?: (copy: LiveRepo) => Promise<void>
@@ -390,6 +396,10 @@ function entryOn(screen: string, script: readonly DialogEntry[], from: number): 
   return script.findIndex((entry, index) => index >= from && text.includes(squashed(entry.question)))
 }
 
+function isQuestionOn(screen: string, question: string | undefined): boolean {
+  return question !== undefined && squashed(activeText(screen)).includes(squashed(question))
+}
+
 function budgetLeft(deadline: number, screen: string): number {
   const left = deadline - Date.now()
   if (left > 0) return Math.min(left, DIALOG_WAIT_MS)
@@ -427,18 +437,25 @@ export async function driveDialogs(
   pane: Pane,
   script: readonly DialogEntry[],
   done: Matcher,
-  budgetMs: number = INIT_BUILD_MS,
+  opts: DriveOptions = {},
 ): Promise<DialogLog> {
+  const { budgetMs = INIT_BUILD_MS, stopAt } = opts
   const deadline = Date.now() + budgetMs
   const screens: string[] = []
   const asked: string[] = []
   let next = 0
   let last = ''
+  const ended = (screen: string): DialogLog => {
+    if (stopAt !== undefined) throw new HarnessError(`the dialogs ended before the question ${stopAt}:\n${screen}`)
+
+    return { screens, asked, final: screen }
+  }
   for (;;) {
     const screen = await stable(pane, undefined, budgetLeft(deadline, last))
     if (screen === null) continue
     last = screen
     if (isDialogScreen(screen)) {
+      if (isQuestionOn(screen, stopAt)) return { screens, asked, final: screen }
       const at = entryOn(screen, script, next)
       const entry = script[at]
       if (entry === undefined) {
@@ -451,14 +468,14 @@ export async function driveDialogs(
       await respond(pane, entry.answer)
       continue
     }
-    if (matches(done, screen)) return { screens, asked, final: screen }
+    if (matches(done, screen)) return ended(screen)
     if (!TUI_READY.test(screen)) continue
     if (next < script.length) {
       if (await changes(pane, screen)) continue
       throw new HarnessError(`the prompt is back with dialogs left to answer:\n${screen}`)
     }
     const quiet = await stable(pane, PROMPT_SETTLE_MS, budgetLeft(deadline, last))
-    if (quiet !== null && TUI_READY.test(quiet)) return { screens, asked, final: quiet }
+    if (quiet !== null && TUI_READY.test(quiet)) return ended(quiet)
   }
 }
 

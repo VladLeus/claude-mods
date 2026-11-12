@@ -5,7 +5,6 @@ import { answer, idleTui, isDialogScreen, waitTui } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { rowTest } from '../../lib/row.ts'
 import { capture, killServer, socketName, startServer, WAIT_MS } from '../../lib/tmux.ts'
-import type { Pane } from '../../lib/tmux.ts'
 import { CONFLICT_QUESTION, GSD_SCRIPT } from '../fixtures/answers.ts'
 import { APPLIED_REPLY, assertHaikuRoles, cadreTui, driveDialogs, liveRepo } from '../lib/session.ts'
 import { rowEntry } from '../rows.ts'
@@ -48,20 +47,6 @@ function pageOf(screen: string): Page {
   return { page: Number(found[1]), count: Number(found[2]) }
 }
 
-// The script ends at the review, so driveDialogs gives up on the conflict question once the screen stays unchanged.
-async function parkAtConflict(pane: Pane): Promise<string> {
-  let failure: unknown = null
-  try {
-    await driveDialogs(pane, GSD_SCRIPT, APPLIED_REPLY)
-  } catch (error) {
-    failure = error
-  }
-  const screen = await idleTui(pane)
-  if (isConflictScreen(screen)) return screen
-
-  throw failure ?? new HarnessError(`the re-init asked no Keep mine / Take new question:\n${screen}`)
-}
-
 rowTest(rowEntry('03.2#31'), async ctx => {
   const copy = await liveRepo(ctx, 'gsd')
   const role = join(copy.repo, ROLE_FILE)
@@ -72,7 +57,7 @@ rowTest(rowEntry('03.2#31'), async ctx => {
   const server = await startServer(socketName(), copy.env)
   ctx.after(() => killServer(server))
   const pane = await cadreTui(server, copy, INIT_COMMAND)
-  let screen = await parkAtConflict(pane)
+  let screen = (await driveDialogs(pane, GSD_SCRIPT, APPLIED_REPLY, { stopAt: CONFLICT_QUESTION })).final
   let at = pageOf(screen)
   ctx.observe('conflictPages', at.count, 'the page count of the Keep mine / Take new question')
   await ctx.check('the Keep mine / Take new question is asked a page at a time', () => {

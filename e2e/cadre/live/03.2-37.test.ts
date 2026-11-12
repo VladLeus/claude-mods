@@ -1,15 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, idleTui, isDialogScreen } from '../../lib/claude.ts'
-import { HarnessError } from '../../lib/errors.ts'
+import { answer, idleTui } from '../../lib/claude.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { rowTest } from '../../lib/row.ts'
 import { parseShimLog } from '../../lib/shims.ts'
 import { capture, killServer, socketName, startServer } from '../../lib/tmux.ts'
-import type { Pane } from '../../lib/tmux.ts'
 import { FRAMEWORKS_ADD_GSD_SCRIPT, REFRAME_REVIEW_QUESTION } from '../fixtures/answers.ts'
-import type { DialogEntry } from '../fixtures/answers.ts'
 import { APPLIED_REPLY, assertHaikuRoles, cadreTui, driveDialogs, liveRepo } from '../lib/session.ts'
 import type { LiveRepo } from '../lib/session.ts'
 import { npxShim } from '../lib/shims.ts'
@@ -27,20 +24,6 @@ const WHITESPACE_RE = /\s+/g
 
 function squashed(text: string): string {
   return text.replace(WHITESPACE_RE, ' ')
-}
-
-// The review is the one dialog the script leaves open: driveDialogs gives up on it once the screen stays unchanged.
-async function parkAtReview(pane: Pane, script: readonly DialogEntry[]): Promise<string> {
-  let failure: unknown = null
-  try {
-    await driveDialogs(pane, script, APPLIED_REPLY)
-  } catch (error) {
-    failure = error
-  }
-  const screen = await idleTui(pane)
-  if (isDialogScreen(screen) && squashed(screen).includes(REFRAME_REVIEW_QUESTION)) return screen
-
-  throw failure ?? new HarnessError(`the dialogs ended before the review:\n${screen}`)
 }
 
 async function npxCalls(log: string): Promise<number> {
@@ -74,7 +57,7 @@ rowTest(rowEntry('03.2#37'), async ctx => {
   })
 
   const withoutReview = FRAMEWORKS_ADD_GSD_SCRIPT.filter(entry => entry.question !== REFRAME_REVIEW_QUESTION)
-  const review = await parkAtReview(pane, withoutReview)
+  const review = (await driveDialogs(pane, withoutReview, APPLIED_REPLY, { stopAt: REFRAME_REVIEW_QUESTION })).final
   ctx.screen('the review of the framework changes', review)
   await ctx.check('the install has not run at the review: the npx shim log is empty', async () => {
     assert.equal(await npxCalls(log), 0, 'the npx shim was called before Confirm')
