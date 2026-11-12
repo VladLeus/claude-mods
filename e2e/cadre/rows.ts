@@ -345,7 +345,9 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'mixed',
     file: 'live/03.1-1.test.ts',
     mac: 'a new epic opens the role windows',
+    roleSession: 'be',
     cassette: CADRE_HOOKS,
+    partial: [{ part: 'a logging claude in the opened role windows', reason: NO_REFUSAL_WINDOW_REASON }],
   },
   {
     id: '03.1#3',

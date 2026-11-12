@@ -83,3 +83,6 @@ export const GSD_HERE_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 
 export const GSD_DIR_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'dir' })
 export const GSD_IGNOREALL_SCRIPT = initScript({ policy: POLICY_IGNORE_ALL, launch: 'git-root' })
 export const gsdAcceptHunk = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-root', acceptHunks: true })
+// cadre 0.5.0 asks the questions of a GSD repo in the same order: its locale and init stages differ from today's only
+// in the framework question of a repo with no framework found.
+export const V050_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-root' })
