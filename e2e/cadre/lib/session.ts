@@ -44,6 +44,7 @@ const STUCK_MS = 8_000
 const GIT_MS = 30_000
 const MCP_ADD_MS = 60_000
 const EXIT_COMMAND = '/exit'
+const INIT_COMMAND = '/cadre init'
 const WHITESPACE_RE = /\s+/g
 const HEADER_RE = /^ *☐ /gm
 const HAIKU = 'haiku'
@@ -88,6 +89,8 @@ export type DriveOptions = {
 export type InitBuildSteps = {
   readonly before?: (copy: LiveRepo) => Promise<void>
   readonly after?: (copy: LiveRepo) => Promise<void>
+  // The cadre command the build drives, /cadre init when absent.
+  readonly command?: string
 }
 
 function squashed(text: string): string {
@@ -589,7 +592,7 @@ export async function buildByInit(
   await steps.before?.(copy)
   const server = await startServer(socketName(), copy.env)
   try {
-    const pane = await cadreTui(server, copy, '/cadre init')
+    const pane = await cadreTui(server, copy, steps.command ?? INIT_COMMAND)
     await driveDialogs(pane, script, APPLIED_REPLY)
     await submitTui(pane, EXIT_COMMAND)
     await waitDead(pane)

@@ -10,6 +10,7 @@ import { run } from '../../lib/proc.ts'
 import { addMcpServer, assertMcpHandOut, buildByInit } from '../lib/session.ts'
 import type { InitBuildSteps, LiveRepo } from '../lib/session.ts'
 import {
+  FRAMEWORKS_ADD_GSD_SCRIPT,
   GSD_DIR_SCRIPT,
   GSD_HERE_SCRIPT,
   GSD_IGNOREALL_SCRIPT,
@@ -20,6 +21,7 @@ import {
   NONE_DIR_SCRIPT,
   NONE_TEAM_SCRIPT,
   SP_GSD_INSTALL_SCRIPT,
+  SP_INSTALLED_SCRIPT,
   V050_SCRIPT,
 } from './answers.ts'
 import type { DialogEntry } from './answers.ts'
@@ -33,6 +35,7 @@ const V050_COMMIT = '74a51375'
 const MARKETPLACE_PATHS: readonly string[] = ['.claude-plugin', 'cadre', 'autopilot', 'agent-fleet']
 const V050_PLUGINS: readonly string[] = ['cadre', 'autopilot', 'agent-fleet']
 const ARCHIVE_MS = 120_000
+const FRAMEWORKS_COMMAND = '/cadre frameworks'
 
 function offlineBuilder(build: RepoBuild): Builder {
   return {
@@ -106,6 +109,13 @@ export const VARIANTS: Record<string, Builder> = {
   'none-team': initBuilder('bare', NONE_TEAM_SCRIPT),
   'none-dir': initBuilder('bare', NONE_DIR_SCRIPT),
   'sp-gsd': { ...initBuilder('sp-pre', SP_GSD_INSTALL_SCRIPT), exclusive: true },
+  // GSD added by /cadre frameworks to a built-in team with no .planning/, and superpowers kept and installed by init;
+  // both run the real project install, so they build alone.
+  'gsd-installed': {
+    ...initBuilder('none-team', FRAMEWORKS_ADD_GSD_SCRIPT, { command: FRAMEWORKS_COMMAND }),
+    exclusive: true,
+  },
+  'sp-installed': { ...initBuilder('sp-pre', SP_INSTALLED_SCRIPT), exclusive: true },
   mcp,
   v050,
 }

@@ -13,8 +13,9 @@ export type McpHandOut = {
   readonly role: string
 }
 
-// Keep the GSD a repo has, add GSD to a repo that has superpowers (every role but PM then runs it), or choose none.
-export type FrameworkAnswer = 'keep-gsd' | 'add-gsd' | 'none'
+// Keep the GSD a repo has, add GSD to a repo that has superpowers (every role but PM then runs it), keep the
+// superpowers a repo has and install it, or choose none.
+export type FrameworkAnswer = 'keep-gsd' | 'add-gsd' | 'keep-sp' | 'none'
 
 export type InitScriptOptions = {
   readonly policy: string
@@ -41,7 +42,9 @@ const SKILL_GROUP_QUESTION = ' skills ('
 const ACCEPT = 'Accept'
 const DECLINE = 'Decline'
 const INSTALL_YES = 'Yes, install it'
-const FRAMEWORK_INSTALL_QUESTION = 'Install GSD for this repo?'
+const INSTALL_NO = 'No'
+export const GSD_INSTALL_QUESTION = 'Install GSD for this repo?'
+export const SP_INSTALL_QUESTION = 'Install superpowers for this repo?'
 const FRAMEWORK_MODE_QUESTION = 'Which framework do the roles use?'
 const FRAMEWORK_ALL_QUESTION = 'Framework for all roles?'
 const SECURITY_QUESTION = 'Install from claude-plugins-official after you confirm the plan'
@@ -66,13 +69,22 @@ export const MODEL_ENTRIES: readonly DialogEntry[] = [
 ]
 
 // Adding GSD to a repo with superpowers leaves two frameworks in use, so the roles are asked once: all on GSD.
+// A kept framework found but not installed is asked to install; only the fixture that runs it says yes.
 const FRAMEWORK_ENTRIES: Readonly<Record<FrameworkAnswer, readonly DialogEntry[]>> = {
-  'keep-gsd': [{ question: FRAMEWORK_SET_QUESTION, answer: 'Keep GSD' }],
+  'keep-gsd': [
+    { question: FRAMEWORK_SET_QUESTION, answer: 'Keep GSD' },
+    { question: GSD_INSTALL_QUESTION, answer: INSTALL_NO, repeat: true },
+  ],
   'add-gsd': [
     { question: FRAMEWORK_SET_QUESTION, answer: 'Add GSD too' },
-    { question: FRAMEWORK_INSTALL_QUESTION, answer: INSTALL_YES },
+    { question: GSD_INSTALL_QUESTION, answer: INSTALL_YES },
+    { question: SP_INSTALL_QUESTION, answer: INSTALL_NO, repeat: true },
     { question: FRAMEWORK_MODE_QUESTION, answer: 'Same for all roles' },
     { question: FRAMEWORK_ALL_QUESTION, answer: 'GSD' },
+  ],
+  'keep-sp': [
+    { question: FRAMEWORK_SET_QUESTION, answer: 'Keep superpowers' },
+    { question: SP_INSTALL_QUESTION, answer: INSTALL_YES },
   ],
   none: [{ question: FRAMEWORK_SET_QUESTION, answer: 'None (built-in)' }],
 }
@@ -185,11 +197,13 @@ export const SP_GSD_INSTALL_SCRIPT = initScript({
   launch: 'git-root',
   framework: 'add-gsd',
 })
+// A superpowers repo that keeps superpowers and lets its real project install run after Confirm.
+export const SP_INSTALLED_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-root', framework: 'keep-sp' })
 // /cadre frameworks on a team with no framework found: add GSD, then the review of the changes.
 export const FRAMEWORKS_ADD_GSD_SCRIPT: readonly DialogEntry[] = [
   GSD_CHECK_ENTRY,
   { question: FRAMEWORK_SET_QUESTION, answer: 'Add GSD' },
-  { question: FRAMEWORK_INSTALL_QUESTION, answer: INSTALL_YES },
+  { question: GSD_INSTALL_QUESTION, answer: INSTALL_YES },
   ...hunkEntries(DECLINE),
   { question: REFRAME_REVIEW_QUESTION, answer: 'Confirm' },
 ]
@@ -215,7 +229,7 @@ function frameworksKeepGsd(install: string): readonly DialogEntry[] {
   return [
     GSD_CHECK_ENTRY,
     { question: FRAMEWORK_SET_QUESTION, answer: 'Keep GSD' },
-    { question: FRAMEWORK_INSTALL_QUESTION, answer: install },
+    { question: GSD_INSTALL_QUESTION, answer: install },
     ...hunkEntries(DECLINE),
     { question: REFRAME_REVIEW_QUESTION, answer: 'Confirm' },
   ]
