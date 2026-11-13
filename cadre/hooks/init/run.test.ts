@@ -3109,10 +3109,8 @@ describe('the start folder settings of a dir start', () => {
     await runInit(memIo(world, answers).io, { dryRun: false, host: host.io })
     const written = Object.fromEntries(host.writes.map(write => [write.path, write.text]))
     const role = written['/repo/.cadre/be/ROLE.md'] ?? ''
-    const regen = await runRegen(memIo({ ...world, files: { ...world.files, ...written } }, {}).io, {
-      id: 'be',
-      dryRun: true,
-    })
+    const applied = { ...world, dirs: { ...world.dirs, '/repo/.cadre': [] }, files: { ...world.files, ...written } }
+    const regen = await runRegen(memIo(applied, {}).io, { id: 'be', dryRun: true })
 
     expect(role).toContain(settingsLine)
     expect(role).toContain('guard.sh')

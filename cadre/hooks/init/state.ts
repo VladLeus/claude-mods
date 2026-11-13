@@ -302,6 +302,7 @@ export type EachCursor = {
  * - `review`: the review question about `planned` is out on page `page` (D-233), asked `tries` times so far.
  * - `launch-dir`: the launcher folder question is out, asked `tries` times so far.
  * - `launch-check`: the check of the folder `path`, typed as `answer` at try `tries`, is out.
+ * - `launch-settings`: the read of the checked folder `path`'s `.claude/settings.json` is out.
  * - `back`: the review goes back to the stage `to` (D-204); nextStage enters it.
  * - `mode`, `all`, `each`: a question asked once for every role or per role, asked `tries` times so far: the mode
  *   question, the question for all roles, or the question of the role at `index`, with the roles answered before it.
@@ -354,6 +355,7 @@ export type StageSub =
   | { readonly kind: 'review'; readonly tries: number; readonly planned: PlanResult; readonly page: number }
   | { readonly kind: 'launch-dir'; readonly tries: number }
   | { readonly kind: 'launch-check'; readonly tries: number; readonly answer: string; readonly path: string }
+  | { readonly kind: 'launch-settings'; readonly path: string }
   | { readonly kind: 'back'; readonly to: InitStage }
   | { readonly kind: 'mode'; readonly tries: number }
   | { readonly kind: 'all'; readonly tries: number }

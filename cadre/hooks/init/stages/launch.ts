@@ -3,16 +3,20 @@
  * once per repo with the role ids on its second line (launchContextLine): the git root, the folder a launcher is run
  * from, or another folder of the repo, which the folder question asks for and has checked to be a folder inside the
  * repo (the launch-dir-check io effect); launchStage, the pure stage that asks them; and launchLine, the line of the
- * review and the init reply that says where the launchers start. Pure: it gives states and never performs an effect,
- * imports core, paths, ui/ask, init/state and init/stages/duration, and never imports init/machine or init/run.
+ * review and the init reply that says where the launchers start. A dir start's own `.claude/settings.json` is read
+ * (the read-repo-file io effect) for its hooks. Pure: it gives states and never performs an effect, imports core,
+ * paths, scan, ui/ask, init/state and init/stages/duration, and never imports init/machine or init/run.
  */
-import type { LaunchStart, RoleSpec } from '../../../types'
+import type { LaunchStart, PortRead, RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText, shown } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { t } from '../../locales/t'
 import { isSafeRelativePath } from '../../paths'
+import { MAX_READ_BYTES } from '../../scan/facts/normalize'
+import type { Gathered } from '../../scan/gather'
+import { startSettingsHooks } from '../../scan/setup/settings'
 import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { launchContext, launchDirContext } from '../../ui/blocks/context'
@@ -209,8 +213,17 @@ function afterStart(state: InitState, answer: string | null): InitState {
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   const choice = next.value
   if (choice === 'dir') return dirAsked(state, 1, null)
+  const { gathered } = state.draft
+  const draft = gathered === undefined ? state.draft : { ...state.draft, gathered: withoutStartHooks(gathered) }
 
-  return stageDone({ ...state, draft: { ...state.draft, launchStart: { kind: choice } } })
+  return stageDone({ ...state, draft: { ...draft, launchStart: { kind: choice } } })
+}
+
+/** The scans with no start folder hooks, so a start other than a dir keeps none from an earlier answer. */
+function withoutStartHooks(gathered: Gathered): Gathered {
+  const { startHooks, ...setup } = gathered.setup
+
+  return { ...gathered, setup }
 }
 
 /**
@@ -236,18 +249,41 @@ function afterDir(state: InitState, answer: string | null): InitState {
   return withEffect({ ...state, sub }, { kind: 'io', call: { id: 'launch-dir-check', root: locations.root, path } })
 }
 
-/** After the folder check: a folder inside the repo ends the stage with it; else it is asked again with why on top. */
+/**
+ * After the folder check: a folder inside the repo has its `.claude/settings.json` read (readRepoFile, capped at
+ * MAX_READ_BYTES); else it is asked again with why on top.
+ */
 function afterCheck(state: InitState, isFolder: boolean): InitState {
-  if (state.sub.kind !== 'launch-check') return stageFailed(state)
+  const { locations } = state.draft
+  if (state.sub.kind !== 'launch-check' || locations === undefined) return stageFailed(state)
   const { tries, answer, path } = state.sub
-  if (isFolder) return stageDone({ ...state, draft: { ...state.draft, launchStart: { kind: 'dir', path } } })
+  if (!isFolder) return dirRefused(state, tries, answer, NOT_A_LAUNCH_DIR)
+  const sub: InitState['sub'] = { kind: 'launch-settings', path }
+  const settings = `${path}/.claude/settings.json`
 
-  return dirRefused(state, tries, answer, NOT_A_LAUNCH_DIR)
+  return withEffect(
+    { ...state, sub },
+    { kind: 'io', call: { id: 'read-repo-file', root: locations.root, path: settings, maxBytes: MAX_READ_BYTES } },
+  )
 }
 
-/** The answer to the effect the launch stage has out: the start question, the folder question, or the check. */
+/** After the start folder's settings read: its hooks are the start hooks of the scans, and the stage ends with it. */
+function afterSettings(state: InitState, read: PortRead): InitState {
+  const { gathered } = state.draft
+  if (state.sub.kind !== 'launch-settings' || gathered === undefined) return stageFailed(state)
+  const setup = { ...gathered.setup, startHooks: startSettingsHooks(read) }
+  const launchStart: LaunchStart = { kind: 'dir', path: state.sub.path }
+
+  return stageDone({ ...state, draft: { ...state.draft, gathered: { ...gathered, setup }, launchStart } })
+}
+
+/**
+ * The answer to the effect the launch stage has out: the start question, the folder question, the check, or the read
+ * of the start folder's settings.
+ */
 function launchAnswer(state: InitState, answer: Answer): InitState {
   if (answer.kind === 'io' && answer.result.id === 'launch-dir-check') return afterCheck(state, answer.result.result)
+  if (answer.kind === 'io' && answer.result.id === 'read-repo-file') return afterSettings(state, answer.result.result)
   if (answer.kind !== 'answer') return stageFailed(state)
   if (state.sub.kind === 'launch-dir') return afterDir(state, answer.text)
 
