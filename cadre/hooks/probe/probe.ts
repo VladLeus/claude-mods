@@ -6,9 +6,12 @@
  * probeVerdicts for the specs.
  */
 import type { CompiledScope, ProbeCheck, ProbeCheckKind, ProbeExpectation, ScopeRule } from '../../types'
+import { sortedUnique } from '../core/text'
 import { asciiLine } from '../generate/kickoff'
 import { CONTRACTS } from '../locales/contracts'
 import { fill } from '../locales/t'
+import { INFRA_SKILLS } from '../roles/infra'
+import { pluginName, skillPlugin } from '../scope/lint'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
 export const PROBE_CHECK_KINDS: readonly ProbeCheckKind[] = Object.freeze([
@@ -17,6 +20,7 @@ export const PROBE_CHECK_KINDS: readonly ProbeCheckKind[] = Object.freeze([
   'tool-present',
   'command-present',
   'skill-present',
+  'skill-absent',
   'permission-mode',
   'memory-path',
   'not-visible',
@@ -73,6 +77,7 @@ function checkLabel(check: ProbeCheck): string {
   if (kind === 'tool-present') return fill(CONTRACTS.probeToolPresent, { token })
   if (kind === 'command-present') return fill(CONTRACTS.probeCommandPresent, { token })
   if (kind === 'skill-present') return fill(CONTRACTS.probeSkillPresent, { token })
+  if (kind === 'skill-absent') return fill(CONTRACTS.probeSkillAbsent, { token })
 
   return fill(CONTRACTS.probePermissionMode, { token })
 }
@@ -99,15 +104,60 @@ function ruleExpectations(rule: ScopeRule): ProbeExpectation[] {
   )
 }
 
+/** The skill names of the `Skill(<name>)` entries of a deny list, in order. */
+export function deniedSkillNames(entries: readonly string[]): string[] {
+  return entries.flatMap(entry => {
+    const match = /^Skill\((.+)\)$/.exec(entry)
+
+    return match?.[1] === undefined ? [] : [match[1]]
+  })
+}
+
+/** One best-effort expectation of a single skill, written as a card rule's check is. */
+function skillExpectation(kind: 'skill-present' | 'skill-absent', text: string, token: string): ProbeExpectation {
+  const checked = fill(CONTRACTS.probeChecked, { text, label: checkLabel({ kind, token }) })
+
+  return written({ check: kind, enforcement: 'best-effort', text: probeText(checked), token })
+}
+
+/**
+ * The per-skill expectations: skill-present for each skill given to the role but the handoff skills the infra rule
+ * checks, then skill-absent for each denied skill, sorted and once each: the denied names, and the not-given plugin
+ * skills whose plugin the role's settings do not enable.
+ */
+function skillExpectations(scope: CompiledScope, deniedSkills: readonly string[]): ProbeExpectation[] {
+  const enabled = new Set(
+    Object.entries(scope.settings.enabledPlugins)
+      .filter(([, isOn]) => isOn)
+      .map(([key]) => pluginName(key)),
+  )
+  const offPluginSkills = scope.card.notGiven.skills.filter(name => {
+    const plugin = skillPlugin(name)
+
+    return plugin !== null && !enabled.has(plugin)
+  })
+  const denied = sortedUnique([...deniedSkills, ...offPluginSkills])
+  const granted = scope.card.skills.filter(name => !INFRA_SKILLS.includes(name))
+
+  return [
+    ...granted.map(name => skillExpectation('skill-present', CONTRACTS.probeSkillGranted, name)),
+    ...denied.map(name => skillExpectation('skill-absent', CONTRACTS.probeSkillDenied, name)),
+  ]
+}
+
 /**
  * The expectations of a role's probe (D-112, D-130), in card rule order: one per check of a rule, as
  * `<rule text> [<check>]` with the rule's label, or for a rule with no check one not-visible expectation (hard or best
- * effort), which the launcher reports best-effort, or one note (none). The last one is the role's memory folder, which
- * the init event shows as `memory_paths.auto` (ISO-03). A check or memory token that fails isProbeToken is never
- * written as a check: that expectation is not-visible, its token '' and its text ends with
- * ` (not checked: unusual characters)` (T-03-10).
+ * effort), which the launcher reports best-effort, or one note (none). Then one best-effort line per granted and per
+ * denied skill (skillExpectations). The last one is the role's memory folder, which the init event shows as
+ * `memory_paths.auto` (ISO-03). A check or memory token that fails isProbeToken is never written as a check: that
+ * expectation is not-visible, its token '' and its text ends with ` (not checked: unusual characters)` (T-03-10).
  */
-export function expectationsFor(scope: CompiledScope, memoryDir: string): ProbeExpectation[] {
+export function expectationsFor(
+  scope: CompiledScope,
+  memoryDir: string,
+  deniedSkills: readonly string[] = [],
+): ProbeExpectation[] {
   const memory = written({
     check: 'memory-path',
     enforcement: 'hard',
@@ -115,7 +165,7 @@ export function expectationsFor(scope: CompiledScope, memoryDir: string): ProbeE
     token: memoryDir,
   })
 
-  return [...scope.card.rules.flatMap(ruleExpectations), memory]
+  return [...scope.card.rules.flatMap(ruleExpectations), ...skillExpectations(scope, deniedSkills), memory]
 }
 
 /**

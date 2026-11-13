@@ -174,7 +174,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "93c587818305e200bbbf0ba2bd66e989fad4af135fc789594707359305c852e2",
+        "sha256": "c6fb17958e7cc4fe710f450a1853335e988e37aa5ab07f3649d231decd63898f",
         "isWritten": true
       }
     ],
@@ -224,12 +224,12 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/be\",",
-      "      \"sha256\": \"67d73fe57731cebb46cb1d49705528af8856f78cc0363da53a30cc7ae42de027\"",
+      "      \"sha256\": \"65f388b1a8462f4cf6467d8fb00839f9316be891e0a25d91de1d6adc978bcb08\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",
       "      \"path\": \".cadre/bin/pm\",",
-      "      \"sha256\": \"9fb677b0e2a5984f0efb4cbab6c500f39d83c6add898c2263c7e74ea49737a30\"",
+      "      \"sha256\": \"6ee35b865c0d60d5bba7ca33e09b6b50a2da7e3b57b024315fba9b434f33b9ce\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",

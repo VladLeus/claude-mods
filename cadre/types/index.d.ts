@@ -1334,6 +1334,7 @@ export type Enforcement = 'hard' | 'best-effort' | 'none'
  * - `tool-present`: `tools` lists the tool named by the token;
  * - `command-present`: `slash_commands` lists the command named by the token;
  * - `skill-present`: `skills` lists the skill named by the token;
+ * - `skill-absent`: `skills` does not list the skill named by the token;
  * - `permission-mode`: `permissionMode` is the token;
  * - `memory-path`: `memory_paths.auto` is the folder of the token, with or without a trailing `/` (ISO-03);
  * - `not-visible`: nothing; the event cannot show the rule, so the probe reports it best-effort;
@@ -1345,6 +1346,7 @@ export type ProbeCheckKind =
   | 'tool-present'
   | 'command-present'
   | 'skill-present'
+  | 'skill-absent'
   | 'permission-mode'
   | 'memory-path'
   | 'not-visible'
