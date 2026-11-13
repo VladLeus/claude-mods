@@ -4,6 +4,7 @@
  * gather the scans and list their warnings here with no cycle, and none of them reaches into init for them.
  */
 import type { InitFacts, InitIo, InitLocations, LaunchStart, RepoScan, SetupScan } from '../../types'
+import { startSettingsPath } from '../paths'
 import { MAX_READ_BYTES } from './facts/normalize'
 import { readRepoFile } from './port-read'
 import { scanRepo } from './repo'
@@ -45,11 +46,17 @@ export async function withStartHooks(
   root: string,
   start: LaunchStart,
 ): Promise<Gathered> {
-  const { startHooks, ...setup } = gathered.setup
-  if (start.kind !== 'dir') return { ...gathered, setup }
-  const read = await readRepoFile(io, root, `${start.path}/.claude/settings.json`, MAX_READ_BYTES)
+  if (start.kind !== 'dir') return withoutStartHooks(gathered)
+  const read = await readRepoFile(io, root, startSettingsPath(start.path), MAX_READ_BYTES)
 
-  return { ...gathered, setup: { ...setup, startHooks: startSettingsHooks(read) } }
+  return { ...gathered, setup: { ...gathered.setup, startHooks: startSettingsHooks(read) } }
+}
+
+/** The scans with no start folder hooks, so a start other than a dir keeps none from an earlier answer. */
+export function withoutStartHooks(gathered: Gathered): Gathered {
+  const { startHooks, ...setup } = gathered.setup
+
+  return { ...gathered, setup }
 }
 
 /**

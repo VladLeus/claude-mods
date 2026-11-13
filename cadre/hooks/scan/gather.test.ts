@@ -12,7 +12,7 @@ import {
   withStats,
 } from '../testkit'
 import { scanWarningLines } from '../ui/blocks/scan'
-import { gatherScans, scanWarnings, withStartHooks } from './gather'
+import { gatherScans, scanWarnings, withoutStartHooks, withStartHooks } from './gather'
 import type { Gathered } from './gather'
 import { scanRepo } from './repo'
 import { scanSetup } from './setup/setup'
@@ -148,5 +148,16 @@ describe('withStartHooks', () => {
       expect(started.setup).toEqual(emptySetupScan())
       expect('startHooks' in started.setup).toBe(false)
     }
+  })
+})
+
+describe('withoutStartHooks', () => {
+  test('drops the start hooks and keeps every other field of the scans', () => {
+    const gathered = gatheredWith([], [], [])
+    const started = { ...gathered, setup: { ...gathered.setup, startHooks: guardFrom(['project']).hooks } }
+    const dropped = withoutStartHooks(started)
+
+    expect(dropped).toEqual(gathered)
+    expect('startHooks' in dropped.setup).toBe(false)
   })
 })

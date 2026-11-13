@@ -36,6 +36,7 @@ import {
   SESSION_FILE,
   shortenedProjectDirs,
   startCwdNeedle,
+  startSettingsPath,
   trimSlash,
 } from './paths'
 import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry, link } from './testkit'
@@ -307,6 +308,15 @@ describe('safety net: instructions helpers (A8)', () => {
 describe('cadreStatePath', () => {
   test('cadreStatePath is the repo-relative path of the repo state', () => {
     expect(cadreStatePath()).toBe('.cadre/cadre.json')
+  })
+})
+
+describe('startSettingsPath', () => {
+  test('startSettingsPath is the repo-relative .claude/settings.json of a start folder', () => {
+    expect([startSettingsPath('src'), startSettingsPath('apps/web')]).toEqual([
+      'src/.claude/settings.json',
+      'apps/web/.claude/settings.json',
+    ])
   })
 })
 

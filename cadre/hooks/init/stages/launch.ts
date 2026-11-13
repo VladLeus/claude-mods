@@ -13,9 +13,9 @@ import type { Labelled } from '../../core/labelled'
 import { reportText, shown } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { t } from '../../locales/t'
-import { isSafeRelativePath } from '../../paths'
+import { isSafeRelativePath, startSettingsPath } from '../../paths'
 import { MAX_READ_BYTES } from '../../scan/facts/normalize'
-import type { Gathered } from '../../scan/gather'
+import { withoutStartHooks } from '../../scan/gather'
 import { startSettingsHooks } from '../../scan/setup/settings'
 import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
@@ -219,13 +219,6 @@ function afterStart(state: InitState, answer: string | null): InitState {
   return stageDone({ ...state, draft: { ...draft, launchStart: { kind: choice } } })
 }
 
-/** The scans with no start folder hooks, so a start other than a dir keeps none from an earlier answer. */
-function withoutStartHooks(gathered: Gathered): Gathered {
-  const { startHooks, ...setup } = gathered.setup
-
-  return { ...gathered, setup }
-}
-
 /**
  * The answer to the folder question (A2): `Cancel init` or a dismissal cancels with LAUNCH_DIR_CANCELLED_REASON.
  * `Type a folder` with nothing typed as a note or under Other is an empty answer, refused and asked again, counting a
@@ -259,7 +252,7 @@ function afterCheck(state: InitState, isFolder: boolean): InitState {
   const { tries, answer, path } = state.sub
   if (!isFolder) return dirRefused(state, tries, answer, NOT_A_LAUNCH_DIR)
   const sub: InitState['sub'] = { kind: 'launch-settings', path }
-  const settings = `${path}/.claude/settings.json`
+  const settings = startSettingsPath(path)
 
   return withEffect(
     { ...state, sub },
