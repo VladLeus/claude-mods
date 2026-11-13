@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { run } from '../../lib/proc.ts'
 import { rowTest } from '../../lib/row.ts'
 import { capture, killServer, socketName, startServer } from '../../lib/tmux.ts'
-import { FRAMEWORK_SET_QUESTION, SP_GSD_INSTALL_SCRIPT } from '../fixtures/answers.ts'
+import { FRAMEWORK_SET_QUESTION, FRAMEWORKS_KEEP_GSD_DRY_SCRIPT, SP_GSD_INSTALL_SCRIPT } from '../fixtures/answers.ts'
 import {
   APPLIED_REPLY,
   assertHaikuRoles,
@@ -29,7 +29,7 @@ const EXPECTED_PATHS: readonly string[] = [
 ]
 const EXPECTED_FOUND = 'GSD'
 const INIT_COMMAND = '/cadre init'
-const DRY_RUN_COMMAND = '/cadre init --dry-run'
+const DRY_RUN_COMMAND = '/cadre frameworks --dry-run'
 const DRY_RUN_NOTE_RE = /Dry run: nothing was written\./
 const FOUND_RE = /Found: (.*?)\. Adding one installs it/
 const FOUND_SPLIT_RE = /,| and /
@@ -62,8 +62,10 @@ rowTest(rowEntry('03.2#3'), async ctx => {
   }
 
   const dry = await cadreTui(server, copy, DRY_RUN_COMMAND)
-  const asked = await driveDialogs(dry, SP_GSD_INSTALL_SCRIPT, DRY_RUN_NOTE_RE, { stopAt: FRAMEWORK_SET_QUESTION })
-  ctx.screen('the framework question of /cadre init --dry-run', asked.final)
+  const asked = await driveDialogs(dry, FRAMEWORKS_KEEP_GSD_DRY_SCRIPT, DRY_RUN_NOTE_RE, {
+    stopAt: FRAMEWORK_SET_QUESTION,
+  })
+  ctx.screen(`the framework question of ${DRY_RUN_COMMAND}`, asked.final)
   const found = FOUND_RE.exec(squashed(asked.final))?.[1] ?? null
   ctx.evidence('the frameworks the dry run found', found ?? 'no Found: list on the question')
   const names = found === null ? [] : found.split(FOUND_SPLIT_RE).map(name => name.trim())
