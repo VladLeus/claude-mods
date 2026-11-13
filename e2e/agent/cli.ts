@@ -1,21 +1,24 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import type { Stats } from 'node:fs'
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { cadrePrint, firstLineOf, printedCommand, replyOf } from '../cadre/lib/session.ts'
+import { cadrePrint, firstLineOf, inboxDirOf, printedCommand, replyOf, runProbe } from '../cadre/lib/session.ts'
 import { agentSidecar, filterLines, HISTORY_LINES_DEFAULT, HISTORY_LINES_MAX, parseCommand } from '../lib/agent.ts'
 import { parseGuardSnapshot, parseRunState, parseWsState, RESULT_MAX_BYTES, ROOT_ROLE } from '../lib/agent.ts'
 import { tokenHash, tokenRefusal, windowNameFor, wsIdOf } from '../lib/agent.ts'
 import { answerRefusal, claimRefusal, claimsTaken, keysRefusal, SAFE_KEYS, sendRefusal } from '../lib/agent.ts'
+import { cadreRefusal, exclusiveRefusal, GIT_READS, isWsId, runRefusal, seedRefusal } from '../lib/agent.ts'
 import { WAIT_MAX_S, WAIT_TIMEOUT_DEFAULT_S } from '../lib/agent.ts'
-import type { AgentCommand, RunState, WsState } from '../lib/agent.ts'
+import type { AgentCommand, Location, RunState, WsState } from '../lib/agent.ts'
 import { e2eConfigDir, e2eConfigPath, writeFilterFile } from '../lib/auth.ts'
 import { answer, answerOther, authPreflight, idleTui, isDialogScreen, passTrust, startTui } from '../lib/claude.ts'
 import { submitTui } from '../lib/claude.ts'
 import type { PreflightStage } from '../lib/claude.ts'
+import { otherEntryChanges, restoreState, snapshotState } from '../lib/config-state.ts'
 import { hostUser, liveEnv, SYSTEM_PATH, writeClaudeFence } from '../lib/env.ts'
 import type { ChildEnv } from '../lib/env.ts'
 import { HarnessError, LeakError } from '../lib/errors.ts'
@@ -28,12 +31,15 @@ import { checkGuard, claudeVersion, cleanupSessions, e2eDirReason, guardItems, i
 import { keychainState, releaseLock, removeLeftovers, resolveOnPath, takeLock } from '../lib/live.ts'
 import type { LiveScope } from '../lib/live.ts'
 import { pollUntil } from '../lib/poll.ts'
+import { run as runProcess } from '../lib/proc.ts'
+import type { RunResult } from '../lib/proc.ts'
 import { isUnder, makeRunRoot, PRUNE_AGE_MS, removeTree, RUN_ID_RE, scratchBase, scratchRoot } from '../lib/scratch.ts'
 import { parseSidecar, rowFileName, SIDECAR_SCHEMA, summaryText, writeRowResult, writeSummary } from '../lib/summary.ts'
 import type { Note, Sidecar, SuiteVersion } from '../lib/summary.ts'
 import { capture, killServer, listWindows, newWindow, runSocketPrefix, socketName, startServer } from '../lib/tmux.ts'
 import { paneState, sendKeys, sweepServers, waitDead, waitFor } from '../lib/tmux.ts'
 import type { Pane, Server, WindowInfo } from '../lib/tmux.ts'
+import { SEEDS } from './seeds.ts'
 
 const CLI_PATH = fileURLToPath(import.meta.url)
 const REPO_DIR = dirname(dirname(dirname(CLI_PATH)))
@@ -56,6 +62,15 @@ const FAILED = 1
 const GUARD_FAILED = 3
 const NOT_FINISHED = 'not finished: the agent did not call finish'
 const CLAIMS_LOCK = 'claims.lock'
+const EXCLUSIVE_DIR = 'exclusive'
+const EXCLUSIVE_HOLDER_FILE = 'ws'
+const UNKNOWN_HOLDER = 'unknown'
+// Sessions that die with their tmux server can still write the e2e dir for a moment.
+const EXCLUSIVE_SETTLE_MS = 5_000
+const RUN_MS = 60_000
+const READ_MAX_BYTES = 200_000
+const PROJECTS_DIR = 'projects'
+const NON_ALPHANUMERIC_RE = /[^A-Za-z0-9]/g
 
 type Command<V extends AgentCommand['verb']> = Extract<AgentCommand, { readonly verb: V }>
 
@@ -81,6 +96,20 @@ type BeginSetup = {
   readonly scope: LiveScope
   readonly token: string
   readonly holderPid: number
+}
+
+type Restore =
+  | { readonly ok: true; readonly changes: readonly string[] }
+  | { readonly ok: false; readonly reason: string }
+
+type WindowRestore = {
+  readonly ok: boolean
+  readonly lines: readonly string[]
+}
+
+type LocationBase = {
+  readonly root: string
+  readonly rest: string
 }
 
 let identities: readonly string[] = []
@@ -151,6 +180,29 @@ function wsFile(root: string, id: string): string {
 
 function resultsDirOf(run: string): string {
   return join(RESULTS_DIR, run)
+}
+
+function exclusiveDir(root: string): string {
+  return join(agentDir(root), EXCLUSIVE_DIR)
+}
+
+function snapshotDir(root: string, id: string): string {
+  return join(agentDir(root), 'state', id)
+}
+
+function repoOf(run: RunState, ws: WsState): string {
+  return join(wsDir(run.root, ws.id), 'repo')
+}
+
+function copyOf(run: RunState, ws: WsState, wt: string | null): string | null {
+  if (wt === null) return repoOf(run, ws)
+  const tree = join(repoOf(run, ws), '.claude', 'worktrees', wt)
+
+  return existsSync(tree) ? tree : null
+}
+
+function launcherOf(copy: string, role: string): string {
+  return join(copy, '.cadre', 'bin', role)
 }
 
 function makeRunId(now: number, hex: string): string {
@@ -312,7 +364,7 @@ async function stayAlive(ms: number): Promise<void> {
 }
 
 function helpText(): string {
-  return `fixture <variant> --row <row>: copy a built fixture into a new workspace and print its id
+  return `fixture <variant> --row <row> [--exclusive]: copy a built fixture into a new workspace and print its id (--exclusive: alone, and finish restores the e2e dir)
 claim <ws> <role...> [--wait <s>]: claim roles for this workspace before starting them (--wait retries every ${CLAIM_RETRY_MS / 1000} s, at most ${WAIT_MAX_S})
 start <ws> root|<role> [--cwd <folder>] [--wt <worktree>] [--raw]: open the root window or a claimed role window (--raw starts the launcher without /cadre start)
 windows <ws>: list the windows, live or dead, with their folder
@@ -325,6 +377,12 @@ capture <ws> <window> [--history] [--lines <n>]: print the last lines of a windo
 wait <ws> <window> <regex> [--timeout <s>]: wait until the screen matches, ^ and $ at each line (${WAIT_TIMEOUT_DEFAULT_S} s by default, at most ${WAIT_MAX_S})
 idle <ws> <window>: wait until the screen stops changing and print it
 stop <ws> <window>: exit the session in a window and print its exit status
+cadre <ws> <args...> [--wt <worktree>]: run /cadre <args> in print mode in the copy and print the reply (opens no epic)
+probe <ws> <role> [--wt <worktree>]: run the role launcher with --probe in the copy and print its output
+run <ws> [--wt <worktree>] git <subcommand> [args...]: run read-only git in the copy: ${GIT_READS.join(', ')}, worktree list, config --get|--get-all|--list
+files <ws> <location>: list a folder at repo/<path>, inbox[:<worktree>]/<role>/<path> or projects/[<folder>/<path>]
+read <ws> <location>: print a file of at most ${READ_MAX_BYTES} bytes, at the locations files takes
+seed <ws> <name> [<role>]: write a fixed seed: ${[...SEEDS.keys()].join(', ')} (user-claude-md needs an exclusive workspace, bypass a role)
 finish <ws>: read the result JSON on stdin, write the row and close the workspace
 help: print this list`
 }
@@ -501,11 +559,40 @@ async function writeRunSummary(path: string, text: string): Promise<boolean> {
   }
 }
 
-function endExit(guard: GuardResult, notRemoved: readonly string[], isWritten: boolean): number {
+function endExit(guard: GuardResult, notRemoved: readonly string[], isComplete: boolean): number {
   if (guard.failures.length > 0) return GUARD_FAILED
-  if (notRemoved.length > 0 || !isWritten) return FAILED
+  if (notRemoved.length > 0 || !isComplete) return FAILED
 
   return 0
+}
+
+async function restoreWindow(run: RunState, ws: WsState | null): Promise<Restore> {
+  if (!ws?.snapshot) return { ok: false, reason: 'the workspace holds no snapshot of the e2e dir' }
+  await delay(EXCLUSIVE_SETTLE_MS)
+  try {
+    const after = await restoreState(run.e2eDir, snapshotDir(run.root, ws.id))
+    return { ok: true, changes: otherEntryChanges(ws.snapshot, after) }
+  } catch (error) {
+    return { ok: false, reason: messageOf(error) }
+  }
+}
+
+async function exclusiveHolder(root: string): Promise<string | null> {
+  if (!existsSync(exclusiveDir(root))) return null
+  const id = await readFile(join(exclusiveDir(root), EXCLUSIVE_HOLDER_FILE), 'utf8').catch(() => '')
+
+  return isWsId(id.trim()) ? id.trim() : UNKNOWN_HOLDER
+}
+
+async function restoreOpenWindow(run: RunState): Promise<WindowRestore> {
+  const holder = await exclusiveHolder(run.root)
+  if (holder === null) return { ok: true, lines: [] }
+  const restore = await restoreWindow(run, parseWsState(await readJson(wsFile(run.root, holder))))
+  if (!restore.ok) return { ok: false, lines: [`e2e dir state not restored after ${holder}: ${restore.reason}`] }
+  await removeTree(exclusiveDir(run.root), run.root)
+  const changed = restore.changes.map(name => `e2e dir entry ${name} changed in the exclusive window`)
+
+  return { ok: true, lines: [`e2e dir state restored after ${holder}`, ...changed] }
 }
 
 async function end(cmd: Command<'end'>, run: RunState): Promise<number> {
@@ -520,12 +607,13 @@ async function end(cmd: Command<'end'>, run: RunState): Promise<number> {
     await writeRowResult(results, row, outputContext())
   }
   await sweepRun(run)
+  const window = await restoreOpenWindow(run)
   const scope = scopeOf(run.e2eDir)
   const cleanup = await cleanupSessions(scope, before)
   stopHolder(run.holderPid)
   if (!await waitLockGone(`${run.e2eDir}.lock`)) say('agent: the e2e dir lock is still held', process.stderr)
   const guard = await checkGuard(scope, run.root, before, cleanup.recorded, REPO_DIR)
-  const items = guardItems(cleanup.failures, cleanup, guard)
+  const items = [...window.lines, ...guardItems(cleanup.failures, cleanup, guard)]
   for (const item of items) say(item)
   const versions = await pluginVersions()
   const rows = await collectRows(results)
@@ -534,10 +622,45 @@ async function end(cmd: Command<'end'>, run: RunState): Promise<number> {
   const isFilterRemoved = await removeTree(run.filterFile, run.root).then(() => true, () => false)
   if (!isFilterRemoved) say('agent: the filter values file was not removed', process.stderr)
   await rm(pointerPath(), { force: true })
-  const code = endExit(guard, cleanup.failures, isWritten)
+  const code = endExit(guard, cleanup.failures, isWritten && window.ok)
   say(`agent run ${run.run} exit ${code} summary e2e/results/${run.run}/SUMMARY.md`)
 
   return code
+}
+
+// The mkdir is the lock: only one exclusive workspace takes the folder, which then names it.
+async function takeExclusive(root: string, id: string): Promise<boolean> {
+  try {
+    await mkdir(exclusiveDir(root))
+  } catch (error) {
+    if (isRecord(error) && error.code === 'EEXIST') return false
+    throw error
+  }
+  await writeFile(join(exclusiveDir(root), EXCLUSIVE_HOLDER_FILE), `${id}\n`, { mode: 0o600 })
+
+  return true
+}
+
+async function openWorkspace(run: RunState, cmd: Command<'fixture'>, id: string, source: string): Promise<void> {
+  const dir = wsDir(run.root, id)
+  await mkdir(dirname(dir), { recursive: true, mode: 0o700 })
+  await mkdir(dir)
+  await copyTree(source, join(dir, 'repo'))
+  const snapshot = cmd.exclusive ? await snapshotState(run.e2eDir, snapshotDir(run.root, id)) : null
+  const ws: WsState = {
+    id,
+    row: cmd.row,
+    variant: cmd.variant,
+    exclusive: cmd.exclusive,
+    socket: socketName(),
+    startedAt: Date.now(),
+    status: 'live',
+    windows: [],
+    claims: [],
+    uuids: [],
+    ...(snapshot === null ? {} : { snapshot }),
+  }
+  await saveWs(run, ws)
 }
 
 async function fixture(cmd: Command<'fixture'>, run: RunState): Promise<number> {
@@ -545,23 +668,15 @@ async function fixture(cmd: Command<'fixture'>, run: RunState): Promise<number> 
   if (!existsSync(source)) return refuse(`the fixture ${cmd.variant} is not built in run ${basename(run.fixtures)}`)
   const id = wsIdOf(cmd.row, randomBytes(2).toString('hex'))
   if (id === null) return refuse(`not a row id: ${cmd.row}`)
-  const dir = wsDir(run.root, id)
-  await mkdir(dirname(dir), { recursive: true, mode: 0o700 })
-  await mkdir(dir)
-  await copyTree(source, join(dir, 'repo'))
-  const ws: WsState = {
-    id,
-    row: cmd.row,
-    variant: cmd.variant,
-    exclusive: false,
-    socket: socketName(),
-    startedAt: Date.now(),
-    status: 'live',
-    windows: [],
-    claims: [],
-    uuids: [],
+  const why = exclusiveRefusal(id, await workspaces(run), await exclusiveHolder(run.root), cmd.exclusive)
+  if (why) return refuse(why)
+  if (cmd.exclusive && !await takeExclusive(run.root, id)) return refuse('another exclusive workspace is opening')
+  try {
+    await openWorkspace(run, cmd, id, source)
+  } catch (error) {
+    if (cmd.exclusive) await removeTree(exclusiveDir(run.root), run.root)
+    throw error
   }
-  await saveWs(run, ws)
   say(`ws ${id}`)
 
   return 0
@@ -609,7 +724,7 @@ async function claim(cmd: Command<'claim'>, run: RunState, ws: WsState): Promise
 }
 
 async function launchRefusal(copy: string, role: string, raw: boolean, env: ChildEnv): Promise<string | null> {
-  if (raw) return existsSync(join(copy, '.cadre', 'bin', role)) ? null : `the copy has no launcher for ${role}`
+  if (raw) return existsSync(launcherOf(copy, role)) ? null : `the copy has no launcher for ${role}`
   const reply = replyOf(await cadrePrint({ repo: copy, env }, `start ${role}`))
   if (printedCommand(reply, role) !== null) return null
 
@@ -626,10 +741,9 @@ async function openWindow(server: Server, name: string, cwd: string, launcher: s
 }
 
 async function start(cmd: Command<'start'>, run: RunState, ws: WsState): Promise<number> {
-  const repo = join(wsDir(run.root, ws.id), 'repo')
-  const copy = cmd.wt === null ? repo : join(repo, '.claude', 'worktrees', cmd.wt)
+  const copy = copyOf(run, ws, cmd.wt)
+  if (copy === null) return refuse(`no worktree ${cmd.wt} in ${ws.id}`)
   const cwd = cmd.cwd === null ? copy : join(copy, cmd.cwd)
-  if (cmd.wt !== null && !existsSync(copy)) return refuse(`no worktree ${cmd.wt} in ${ws.id}`)
   if (cmd.cwd !== null && !existsSync(cwd)) return refuse(`no folder ${cmd.cwd} in the copy`)
   const isRoot = cmd.role === ROOT_ROLE
   if (isRoot && ws.windows.some(item => item.kind === 'root')) return refuse(`${ws.id} has a root window already`)
@@ -640,7 +754,7 @@ async function start(cmd: Command<'start'>, run: RunState, ws: WsState): Promise
   if (ws.windows.length === 0 && !await isServerUp(server)) await startServer(ws.socket, server.env)
   const name = windowNameFor(cmd.role, (await listWindows(server)).map(item => item.name))
   if (name === null) return refuse(`no free window name for ${cmd.role}`)
-  await openWindow(server, name, cwd, isRoot ? null : join(copy, '.cadre', 'bin', cmd.role))
+  await openWindow(server, name, cwd, isRoot ? null : launcherOf(copy, cmd.role))
   await saveWs(run, { ...ws, windows: [...ws.windows, { name, kind: isRoot ? 'root' : 'role' }] })
   say(`window ${name}`)
 
@@ -772,6 +886,144 @@ async function stopWindow(cmd: Command<'stop'>, ws: WsState): Promise<number> {
   return 0
 }
 
+function resultText(stdout: string, result: RunResult): string {
+  const stderr = result.stderr.trimEnd()
+  const parts = [stdout.trimEnd(), stderr === '' ? '' : `stderr:\n${stderr}`, `exit ${result.code}`]
+
+  return parts.filter(part => part !== '').join('\n')
+}
+
+async function cadreCommand(cmd: Command<'cadre'>, run: RunState, ws: WsState): Promise<number> {
+  const why = cadreRefusal(cmd.args)
+  if (why) return refuse(why)
+  const copy = copyOf(run, ws, cmd.wt)
+  if (copy === null) return refuse(`no worktree ${cmd.wt} in ${ws.id}`)
+  const result = await cadrePrint({ repo: copy, env: liveEnv() }, cmd.args.join(' '))
+  say(resultText(replyOf(result), result))
+
+  return 0
+}
+
+async function probe(cmd: Command<'probe'>, run: RunState, ws: WsState): Promise<number> {
+  const copy = copyOf(run, ws, cmd.wt)
+  if (copy === null) return refuse(`no worktree ${cmd.wt} in ${ws.id}`)
+  if (!existsSync(launcherOf(copy, cmd.role))) return refuse(`the copy has no launcher for ${cmd.role}`)
+  const result = await runProbe({ repo: copy, env: liveEnv() }, cmd.role)
+  say(resultText(result.stdout, result))
+
+  return 0
+}
+
+async function runInCopy(cmd: Command<'run'>, run: RunState, ws: WsState): Promise<number> {
+  const why = runRefusal(cmd.argv)
+  if (why) return refuse(why)
+  const copy = copyOf(run, ws, cmd.wt)
+  if (copy === null) return refuse(`no worktree ${cmd.wt} in ${ws.id}`)
+  const result = await runProcess(cmd.argv, { cwd: copy, env: liveEnv(), timeoutMs: RUN_MS })
+  say(resultText(result.stdout, result))
+
+  return 0
+}
+
+// The e2e dir's project folders of sessions started in this workspace, named by what follows this prefix.
+async function projectsPrefix(run: RunState, ws: WsState): Promise<string> {
+  return `${(await realpath(wsDir(run.root, ws.id))).replace(NON_ALPHANUMERIC_RE, '-')}-`
+}
+
+async function locationBase(run: RunState, ws: WsState, location: Location): Promise<LocationBase | string> {
+  if (location.root === 'repo') return { root: repoOf(run, ws), rest: location.path }
+  if (location.root === 'projects') {
+    const [entry = '', ...rest] = location.path.split('/')
+    const root = join(run.e2eDir, PROJECTS_DIR, `${await projectsPrefix(run, ws)}${entry}`)
+    return { root, rest: rest.join('/') }
+  }
+  const copy = copyOf(run, ws, location.worktree)
+  if (copy === null) return `no worktree ${location.worktree} in ${ws.id}`
+  if (location.role === null) return 'an inbox location names a role'
+
+  return { root: await inboxDirOf(run.e2eDir, { repo: copy, env: liveEnv() }, location.role), rest: location.path }
+}
+
+// Both ends are resolved, so a symlink cannot lead out of the root.
+async function locate(run: RunState, ws: WsState, location: Location): Promise<{ readonly path: string } | string> {
+  const base = await locationBase(run, ws, location)
+  if (typeof base === 'string') return base
+  const root = await realpath(base.root).catch(() => null)
+  const path = root === null ? null : await realpath(join(root, base.rest)).catch(() => null)
+  if (root === null || path === null) throw new HarnessError('no such file or folder')
+  if (path !== root && !isUnder(path, root)) return 'the location leads out of its root through a symlink'
+
+  return { path }
+}
+
+function kindOf(stats: Stats): string {
+  if (stats.isSymbolicLink()) return 'link'
+  if (stats.isDirectory()) return 'dir'
+  if (stats.isFile()) return 'file'
+
+  return 'other'
+}
+
+async function entryLines(dir: string, names: readonly string[], shown: (name: string) => string): Promise<string> {
+  const lines: string[] = []
+  for (const name of [...names].sort()) {
+    const stats = await lstat(join(dir, name)).catch(() => null)
+    if (stats) lines.push(`${shown(name)} ${kindOf(stats)} ${stats.size}`)
+  }
+
+  return lines.length > 0 ? lines.join('\n') : 'no entries'
+}
+
+async function listProjects(run: RunState, ws: WsState): Promise<number> {
+  const dir = join(run.e2eDir, PROJECTS_DIR)
+  const prefix = await projectsPrefix(run, ws)
+  const names = (await readdir(dir).catch((): string[] => [])).filter(name => name.startsWith(prefix))
+  say(await entryLines(dir, names, name => name.slice(prefix.length)))
+
+  return 0
+}
+
+async function listFiles(cmd: Command<'files'>, run: RunState, ws: WsState): Promise<number> {
+  if (cmd.location.root === 'projects' && cmd.location.path === '') return listProjects(run, ws)
+  const found = await locate(run, ws, cmd.location)
+  if (typeof found === 'string') return refuse(found)
+  if (!(await stat(found.path)).isDirectory()) return refuse('that is a file: use read')
+  say(await entryLines(found.path, await readdir(found.path), name => name))
+
+  return 0
+}
+
+async function readLocation(cmd: Command<'read'>, run: RunState, ws: WsState): Promise<number> {
+  if (cmd.location.root === 'projects' && cmd.location.path === '') return refuse('projects/ holds folders: use files')
+  const found = await locate(run, ws, cmd.location)
+  if (typeof found === 'string') return refuse(found)
+  const stats = await stat(found.path)
+  if (stats.isDirectory()) return refuse('that is a folder: use files')
+  if (!stats.isFile()) return refuse('that is not a regular file')
+  if (stats.size > READ_MAX_BYTES) return refuse(`the file is over ${READ_MAX_BYTES} bytes`)
+  say(await readFile(found.path, 'utf8'))
+
+  return 0
+}
+
+async function seed(cmd: Command<'seed'>, run: RunState, ws: WsState): Promise<number> {
+  const plant = SEEDS.get(cmd.name)
+  if (!plant) return refuse(`unknown seed ${cmd.name}: use ${[...SEEDS.keys()].join(', ')}`)
+  const why = seedRefusal(cmd.name, ws.exclusive)
+  if (why) return refuse(why)
+  const target = { repo: repoOf(run, ws), e2eDir: run.e2eDir, ...(cmd.role === null ? {} : { role: cmd.role }) }
+  let summary: string
+  try {
+    summary = await plant(target)
+  } catch (error) {
+    if (!(error instanceof HarnessError)) throw error
+    return refuse(error.message)
+  }
+  say(summary)
+
+  return 0
+}
+
 async function readStdin(): Promise<string | null> {
   const chunks: Buffer[] = []
   let size = 0
@@ -810,11 +1062,23 @@ async function finish(run: RunState, ws: WsState): Promise<number> {
   const row = agentSidecar(input, { row: ws.row, durationMs: Date.now() - ws.startedAt, screens })
   if (typeof row === 'string') return refuse(row)
   await killServer(server)
-  await writeRowResult(resultsDirOf(run.run), row, outputContext())
+  const restore = ws.exclusive ? await restoreWindow(run, ws) : null
+  await writeRowResult(resultsDirOf(run.run), restoredRow(row, restore), outputContext())
   await saveWs(run, { ...ws, status: 'finished', claims: [] })
   say(`wrote ${rowFileName(row.id, row.half)}`)
+  if (restore === null) return 0
+  if (!restore.ok) return fail(`e2e dir state not restored: ${restore.reason}`)
+  await removeTree(exclusiveDir(run.root), run.root)
 
   return 0
+}
+
+function restoredRow(row: Sidecar, restore: Restore | null): Sidecar {
+  if (restore === null) return row
+  if (!restore.ok) return { ...row, verdict: 'error', reason: `e2e dir state not restored: ${restore.reason}` }
+  const lines = ['e2e dir state restored', ...restore.changes.map(name => `e2e dir entry ${name} changed`)]
+
+  return { ...row, evidence: [...row.evidence, { label: 'e2e dir state', text: lines.join('\n') }] }
 }
 
 async function runWsVerb(cmd: WsCommand, run: RunState, ws: WsState): Promise<number> {
@@ -830,6 +1094,12 @@ async function runWsVerb(cmd: WsCommand, run: RunState, ws: WsState): Promise<nu
   if (cmd.verb === 'wait') return waitWindow(cmd, ws)
   if (cmd.verb === 'idle') return idleWindow(cmd, ws)
   if (cmd.verb === 'stop') return stopWindow(cmd, ws)
+  if (cmd.verb === 'cadre') return cadreCommand(cmd, run, ws)
+  if (cmd.verb === 'probe') return probe(cmd, run, ws)
+  if (cmd.verb === 'run') return runInCopy(cmd, run, ws)
+  if (cmd.verb === 'files') return listFiles(cmd, run, ws)
+  if (cmd.verb === 'read') return readLocation(cmd, run, ws)
+  if (cmd.verb === 'seed') return seed(cmd, run, ws)
 
   return finish(run, ws)
 }

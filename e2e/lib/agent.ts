@@ -21,9 +21,13 @@ export const SAFE_KEYS: readonly string[] = [
   'Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BTab', 'Space', 'BSpace', 'PageUp', 'PageDown', 'C-c',
 ]
 
+export const GIT_READS: readonly string[] = [
+  'status', 'log', 'diff', 'show', 'branch', 'ls-files', 'rev-parse', 'check-ignore',
+]
+
 const WITHHELD_LINE = '[line withheld: it failed the leak check]'
 const ROOT_WINDOW = 'claude'
-const ROLE_WINDOW_PREFIX = 'cadre-'
+const ROLE_WINDOW_PREFIX = 'role-'
 const ROW_ID_RE = /^\d+(?:\.\d+)*#\d+[a-z]*$/
 const WS_ID_RE = /^\d+(?:\.\d+)*-\d+[a-z]*-[0-9a-f]{4}$/
 const WS_HEX_RE = /^[0-9a-f]{4}$/
@@ -35,8 +39,14 @@ const WHOLE_RE = /^[1-9][0-9]*$/
 const SECONDS_RE = /^(?:0|[1-9][0-9]*)$/
 const CONTROL_RE = /\p{Cc}/u
 const INSTALL_LABEL_RE = /^(?:install|yes, install)/i
+const SEED_NAME_RE = /^[a-z][a-z0-9-]*$/
+const INBOX_HEAD_RE = /^inbox(?::(.+))?$/
 const TERMINAL_FLAG = '--terminal'
 const SAFE_TERMINALS: readonly string[] = ['--terminal=tmux', '--terminal=none']
+const CONFIG_READS: readonly string[] = ['--get', '--get-all', '--list']
+const EXCLUSIVE_SEEDS: readonly string[] = ['user-claude-md']
+const LOCATION_USAGE = 'use repo/<path>, inbox/<role>/<path>, inbox:<worktree>/<role>/<path> or projects/<path>'
+const RUN_USAGE = 'run needs a command: run <ws> [--wt <worktree>] git <subcommand> [args...]'
 const CLAIM_WAIT_DEFAULT_S = 0
 const MS_PER_SECOND = 1000
 const HALVES: readonly string[] = ['', 'a', 'b']
@@ -61,6 +71,7 @@ type FixtureCommand = {
   readonly verb: 'fixture'
   readonly variant: string
   readonly row: string
+  readonly exclusive: boolean
 }
 
 type StartCommand = {
@@ -127,6 +138,40 @@ type WaitCommand = {
   readonly timeoutMs: number
 }
 
+type CadreCommand = {
+  readonly verb: 'cadre'
+  readonly ws: string
+  readonly args: readonly string[]
+  readonly wt: string | null
+}
+
+type ProbeCommand = {
+  readonly verb: 'probe'
+  readonly ws: string
+  readonly role: string
+  readonly wt: string | null
+}
+
+type RunCommand = {
+  readonly verb: 'run'
+  readonly ws: string
+  readonly wt: string | null
+  readonly argv: readonly string[]
+}
+
+type LocationCommand<V extends string> = {
+  readonly verb: V
+  readonly ws: string
+  readonly location: Location
+}
+
+type SeedCommand = {
+  readonly verb: 'seed'
+  readonly ws: string
+  readonly name: string
+  readonly role: string | null
+}
+
 type HelpCommand = {
   readonly verb: 'help'
 }
@@ -148,6 +193,12 @@ export type AgentCommand =
   | WaitCommand
   | WindowCommand<'idle'>
   | WindowCommand<'stop'>
+  | CadreCommand
+  | ProbeCommand
+  | RunCommand
+  | LocationCommand<'files'>
+  | LocationCommand<'read'>
+  | SeedCommand
   | WsOnlyCommand<'finish'>
   | HelpCommand
 
@@ -343,7 +394,7 @@ function parseEnd(argv: readonly string[]): AgentCommand | string {
 }
 
 function parseFixture(argv: readonly string[]): AgentCommand | string {
-  const args = argsOf('fixture', argv, { count: 1, strings: ['row'] })
+  const args = argsOf('fixture', argv, { count: 1, strings: ['row'], switches: ['exclusive'] })
   if (typeof args === 'string') return args
   const [variant = ''] = args.positionals
   const row = args.strings.get('row')
@@ -351,7 +402,7 @@ function parseFixture(argv: readonly string[]): AgentCommand | string {
   if (row === undefined) return 'fixture needs --row <row>'
   if (!ROW_ID_RE.test(row)) return `not a row id: ${row}`
 
-  return { verb: 'fixture', variant, row }
+  return { verb: 'fixture', variant, row, exclusive: args.switches.has('exclusive') }
 }
 
 function parseStart(argv: readonly string[]): AgentCommand | string {
@@ -453,6 +504,65 @@ function parseWait(argv: readonly string[]): AgentCommand | string {
   return { verb: 'wait', ws, window, pattern, timeoutMs }
 }
 
+function parseCadre(argv: readonly string[]): AgentCommand | string {
+  const args = argsOf('cadre', argv, { count: 2, variadic: true, strings: ['wt'] })
+  if (typeof args === 'string') return args
+  const [ws = '', ...rest] = args.positionals
+  const wt = args.strings.get('wt') ?? null
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  if (wt !== null && !WORKTREE_RE.test(wt)) return `not a worktree name: ${wt}`
+
+  return { verb: 'cadre', ws, args: rest, wt }
+}
+
+function parseProbe(argv: readonly string[]): AgentCommand | string {
+  const args = argsOf('probe', argv, { count: 2, strings: ['wt'] })
+  if (typeof args === 'string') return args
+  const [ws = '', role = ''] = args.positionals
+  const wt = args.strings.get('wt') ?? null
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  if (role === ROOT_ROLE || !ROLE_RE.test(role)) return `not a role id: ${role}`
+  if (wt !== null && !WORKTREE_RE.test(wt)) return `not a worktree name: ${wt}`
+
+  return { verb: 'probe', ws, role, wt }
+}
+
+// The argv after the workspace and --wt is taken as given, so its options are never read as flags of run.
+function parseRun(argv: readonly string[]): AgentCommand | string {
+  const [ws = '', ...rest] = argv
+  const hasWt = rest[0] === '--wt'
+  const wt = hasWt ? rest[1] ?? '' : null
+  const command = rest.slice(hasWt ? 2 : 0)
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  if (wt !== null && !WORKTREE_RE.test(wt)) return `--wt needs a worktree name: ${JSON.stringify(wt)}`
+  if (command.length === 0) return RUN_USAGE
+
+  return { verb: 'run', ws, wt, argv: command }
+}
+
+function parseLocated(verb: 'files' | 'read', argv: readonly string[]): AgentCommand | string {
+  const args = argsOf(verb, argv, { count: 2 })
+  if (typeof args === 'string') return args
+  const [ws = '', text = ''] = args.positionals
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  const location = parseLocation(text)
+  if (location === null) return `not a location: ${text}: ${LOCATION_USAGE}`
+
+  return { verb, ws, location }
+}
+
+function parseSeed(argv: readonly string[]): AgentCommand | string {
+  const args = argsOf('seed', argv, { count: 2, variadic: true })
+  if (typeof args === 'string') return args
+  const [ws = '', name = '', role, ...extra] = args.positionals
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  if (!SEED_NAME_RE.test(name)) return `not a seed name: ${name}`
+  if (extra.length > 0) return `seed takes 2 or 3 arguments, not ${args.positionals.length}: run help`
+  if (role !== undefined && (role === ROOT_ROLE || !ROLE_RE.test(role))) return `not a role id: ${role}`
+
+  return { verb: 'seed', ws, name, role: role ?? null }
+}
+
 function parseHelp(argv: readonly string[]): AgentCommand | string {
   const args = argsOf('help', argv, { count: 0 })
   if (typeof args === 'string') return args
@@ -477,6 +587,12 @@ const PARSERS: ReadonlyMap<string, Parser> = new Map<string, Parser>([
   ['wait', parseWait],
   ['idle', argv => parseWindowVerb('idle', argv)],
   ['stop', argv => parseWindowVerb('stop', argv)],
+  ['cadre', parseCadre],
+  ['probe', parseProbe],
+  ['run', parseRun],
+  ['files', argv => parseLocated('files', argv)],
+  ['read', argv => parseLocated('read', argv)],
+  ['seed', parseSeed],
   ['finish', argv => parseWsOnly('finish', argv)],
   ['help', parseHelp],
 ])
@@ -553,6 +669,13 @@ export function parseRunState(value: unknown): RunState | null {
   return { run, root, e2eDir, claudeBin, claude, fixtures, filterFile, startedAt, holderPid, tokenHash: hash }
 }
 
+function snapshotField(value: unknown): { readonly snapshot?: readonly TopEntry[] } | null {
+  if (value === undefined) return {}
+  if (!isListOf(value, isTopEntry)) return null
+
+  return { snapshot: value.map(entry => ({ name: entry.name, kind: entry.kind, mtimeMs: entry.mtimeMs })) }
+}
+
 export function parseWsState(value: unknown): WsState | null {
   if (!isRecord(value)) return null
   const { id, row, variant, exclusive, socket, startedAt, status, windows, claims, uuids } = value
@@ -560,6 +683,8 @@ export function parseWsState(value: unknown): WsState | null {
   if (typeof exclusive !== 'boolean' || typeof socket !== 'string' || !isCount(startedAt)) return null
   const wsStatus = WS_STATUSES.find(item => item === status)
   if (!wsStatus || !isListOf(windows, isWsWindow) || !isStringList(claims) || !isListOf(uuids, isUuidPair)) return null
+  const snapshot = snapshotField(value.snapshot)
+  if (snapshot === null) return null
 
   return {
     id,
@@ -572,6 +697,7 @@ export function parseWsState(value: unknown): WsState | null {
     windows: windows.map(item => ({ name: item.name, kind: item.kind })),
     claims,
     uuids: uuids.map(([uuid, number]) => [uuid, number] as const),
+    ...snapshot,
   }
 }
 
@@ -767,27 +893,61 @@ export function claimRefusal(role: string, wsId: string, taken: ReadonlyMap<stri
   return `busy: ${role} held by ${holder}`
 }
 
-export function parseLocation(_text: string): Location | null {
-  return null
+export function parseLocation(text: string): Location | null {
+  if (text.startsWith('/')) return null
+  const parts = (text.endsWith('/') ? text.slice(0, -1) : text).split('/')
+  if (parts.some(part => part === '' || part === '.' || part === '..')) return null
+  const [head = '', ...rest] = parts
+  if (head === 'repo' || head === 'projects') return { root: head, worktree: null, role: null, path: rest.join('/') }
+  const inbox = INBOX_HEAD_RE.exec(head)
+  if (!inbox) return null
+  const worktree = inbox[1] ?? null
+  const [role = '', ...inner] = rest
+  if (worktree !== null && !WORKTREE_RE.test(worktree)) return null
+  if (role === ROOT_ROLE || !ROLE_RE.test(role)) return null
+
+  return { root: 'inbox', worktree, role, path: inner.join('/') }
 }
 
-export function runRefusal(_argv: readonly string[]): string | null {
-  return null
+export function runRefusal(argv: readonly string[]): string | null {
+  const [program, sub = '', ...args] = argv
+  if (program === undefined) return RUN_USAGE
+  if (program !== 'git') return `only git runs here, not ${program}`
+  if (sub === '') return 'git needs a subcommand'
+  if (sub.startsWith('-')) return `git takes no option before its subcommand: ${sub}`
+  if (GIT_READS.includes(sub)) return null
+  if (sub === 'worktree') return args[0] === 'list' ? null : 'git worktree runs only as git worktree list'
+  if (sub !== 'config') return `git ${sub} is refused: use ${GIT_READS.join(', ')}, worktree list or config`
+  const options = args.filter(arg => arg.startsWith('-'))
+  if (options.length > 0 && options.every(option => CONFIG_READS.includes(option))) return null
+
+  return `git config runs only with ${CONFIG_READS.join(', ')} and no other option`
 }
 
-export function cadreRefusal(_args: readonly string[]): string | null {
-  return null
+// Print mode would open an epic's terminals outside the workspace tmux server, so an epic opens only in a root window.
+export function cadreRefusal(args: readonly string[]): string | null {
+  const [sub = '', next = ''] = args.join(' ').trim().split(/\s+/)
+  if (sub.toLowerCase() !== 'epic' || next === 'done') return null
+
+  return 'cadre opens no epic: send /cadre epic <key> <title> --terminal=tmux to a root window'
 }
 
 export function exclusiveRefusal(
-  _wsId: string,
-  _workspaces: readonly WsState[],
-  _holder: string | null,
-  _exclusive: boolean,
+  wsId: string,
+  workspaces: readonly WsState[],
+  holder: string | null,
+  exclusive: boolean,
 ): string | null {
-  return null
+  if (holder !== null && holder !== wsId) return `the exclusive workspace ${holder} is open: wait until it finishes`
+  if (!exclusive) return null
+  const other = workspaces.find(ws => ws.status === 'live' && ws.id !== wsId)
+  if (other === undefined) return null
+
+  return `an exclusive workspace opens only when no other is live: ${other.id} is live`
 }
 
-export function seedRefusal(_name: string, _exclusive: boolean): string | null {
-  return null
+export function seedRefusal(name: string, exclusive: boolean): string | null {
+  if (exclusive || !EXCLUSIVE_SEEDS.includes(name)) return null
+
+  return `the seed ${name} writes the e2e dir: it needs an exclusive workspace (fixture --exclusive)`
 }
