@@ -7544,7 +7544,7 @@ describe('runFrameworks', () => {
     expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
   })
 
-  test('a team with a dir start reads the start folder settings, as regen does, and its hooks reach ROLE.md', async () => {
+  test('a dir start team reads the start folder settings, as regen does, and its hooks reach ROLE.md', async () => {
     const base = startSettingsWorld({ facts: GSD_IN_USE })
     const stored: Partial<CadreState> = { framework: 'none', frameworks: [], launchStart: { kind: 'dir', path: 'src' } }
     const world = await regenWorld(TEAM, stored, base)
