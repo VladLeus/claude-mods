@@ -5,6 +5,7 @@ import { CONFLICT_OPTIONS, conflictContext } from '../../apply/conflict'
 import { isObject } from '../../core/json'
 import { memIo, memWorld } from '../../testkit'
 import { lineDiff } from '../diff'
+import type { DiffRow } from '../diff'
 import { wrapLine } from '../pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../paging'
 import { PREVIEW_LINE_ROWS, previewMarkdown } from '../preview'
@@ -133,8 +134,16 @@ describe('the TUI-default paged conflict question', () => {
     return { io, specs }
   }
 
-  /** The preview the TUI default gives the dialog of one asked page. */
-  function pagePreview(spec: AskSpec): unknown {
+  /** The conflict question over a diff that adds `lines` and removes none. */
+  function addedSpec(lines: readonly string[]): AskSpec {
+    const rows = lines.map((line): DiffRow => ({ kind: 'added', line }))
+    const context = conflictContext('.cadre/roles/be/ROLE.md', { rows, added: rows.length, removed: 0 })
+
+    return { options: CONFLICT_OPTIONS, header: 'Conflict', context }
+  }
+
+  /** The preview the TUI default gives the dialog of one asked page at `columns`. */
+  function pagePreview(spec: AskSpec, columns: number | null = 80): unknown {
     const options = spec.options.map(label => ({ label, description: label }))
     const raw = [{ question: QUESTION, header: 'Conflict', multiSelect: false, options }]
     const open: OpenQuestion = {
@@ -144,7 +153,7 @@ describe('the TUI-default paged conflict question', () => {
       acceptsTyped: false,
       takesNote: false,
     }
-    const [previews = []] = optionPreviews(TUI_DEFAULT.dialogPlan(raw, open, null, 80)?.questions ?? undefined)
+    const [previews = []] = optionPreviews(TUI_DEFAULT.dialogPlan(raw, open, null, columns)?.questions ?? undefined)
 
     return previews[0]
   }
@@ -174,6 +183,42 @@ describe('the TUI-default paged conflict question', () => {
     const { io, specs } = recordingIo('Keep mine')
     expect(await TUI_DEFAULT.pagedPort(io, VIEW).ask(QUESTION, spec)).toBe('Keep mine')
     expect(specs).toEqual([spec])
+  })
+
+  test('on a wide preview each diff line is whole on exactly one page and no page preview is cut', async () => {
+    const wide: PageView = { ...VIEW, columns: () => 122 }
+    const spec = addedSpec(Array.from({ length: 60 }, (_, at) => `${'lorem ipsum '.repeat(18)}END${at + 1}X`))
+    const { io, specs } = recordingIo('Take new')
+    expect(await TUI_DEFAULT.pagedPort(io, wide).ask(QUESTION, spec)).toBe('Take new')
+    expect(specs.length).toBeGreaterThan(1)
+    const texts = specs.map(page => (page.context?.rows ?? []).flatMap(section => section.rows.map(row => row.text)))
+    expect(texts.flat()).toEqual(spec.context?.lines ?? [])
+    for (const [at, page] of specs.entries()) {
+      const preview = String(pagePreview(page, 122))
+      expect(preview).toBe(previewMarkdown([{ title: page.context?.title ?? '', lines: texts[at] ?? [] }], 122))
+      expect([preview.endsWith('\n…'), preview.includes('more above')]).toEqual([false, false])
+    }
+  })
+
+  test('a diff whose counts line and lines fill the preview rows exactly is asked once; one line more pages', async () => {
+    const short = (count: number): string[] => Array.from({ length: count }, (_, at) => `line ${at + 1}`)
+    const exact = addedSpec(short(PREVIEW_LINE_ROWS - 2))
+    const once = recordingIo('Keep mine')
+    expect(await TUI_DEFAULT.pagedPort(once.io, VIEW).ask(QUESTION, exact)).toBe('Keep mine')
+    expect(once.specs).toEqual([exact])
+    const over = recordingIo('Keep mine')
+    await TUI_DEFAULT.pagedPort(over.io, VIEW).ask(QUESTION, addedSpec(short(PREVIEW_LINE_ROWS - 1)))
+    expect(over.specs.length).toBe(2)
+  })
+
+  test('with unknown columns a diff of long lines that fits the preview is asked once', async () => {
+    const unknown: PageView = { ...VIEW, columns: () => null }
+    for (const count of [10, 15]) {
+      const spec = addedSpec(Array.from({ length: count }, (_, at) => `${'lorem ipsum '.repeat(6)}END${at + 1}X`))
+      const { io, specs } = recordingIo('Keep mine')
+      expect(await TUI_DEFAULT.pagedPort(io, unknown).ask(QUESTION, spec)).toBe('Keep mine')
+      expect([count, specs]).toEqual([count, [spec]])
+    }
   })
 
   test('a question of another kind with a long context is asked once, as given', async () => {
