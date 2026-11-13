@@ -14,6 +14,12 @@ export const RESULT_MAX_BYTES = 200_000
 export const HISTORY_LINES_DEFAULT = 200
 export const HISTORY_LINES_MAX = 2000
 export const ROOT_ROLE = 'root'
+export const WAIT_TIMEOUT_DEFAULT_S = 60
+// A verb that waits returns within one agent Bash call, which runs at most 10 minutes.
+export const WAIT_MAX_S = 540
+export const SAFE_KEYS: readonly string[] = [
+  'Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BTab', 'Space', 'BSpace', 'PageUp', 'PageDown', 'C-c',
+]
 
 const WITHHELD_LINE = '[line withheld: it failed the leak check]'
 const ROOT_WINDOW = 'claude'
@@ -26,6 +32,13 @@ const VARIANT_RE = /^[a-z0-9-]+$/
 const WINDOW_RE = /^[A-Za-z0-9._-]+$/
 const WORKTREE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const WHOLE_RE = /^[1-9][0-9]*$/
+const SECONDS_RE = /^(?:0|[1-9][0-9]*)$/
+const CONTROL_RE = /\p{Cc}/u
+const INSTALL_LABEL_RE = /^(?:install|yes, install)/i
+const TERMINAL_FLAG = '--terminal'
+const SAFE_TERMINALS: readonly string[] = ['--terminal=tmux', '--terminal=none']
+const CLAIM_WAIT_DEFAULT_S = 0
+const MS_PER_SECOND = 1000
 const HALVES: readonly string[] = ['', 'a', 'b']
 const ENTRY_KINDS: readonly EntryKind[] = ['dir', 'file', 'link', 'other']
 
@@ -59,6 +72,45 @@ type StartCommand = {
   readonly raw: boolean
 }
 
+type ClaimCommand = {
+  readonly verb: 'claim'
+  readonly ws: string
+  readonly roles: readonly string[]
+  readonly waitMs: number
+}
+
+type WsOnlyCommand<V extends string> = {
+  readonly verb: V
+  readonly ws: string
+}
+
+type WindowCommand<V extends string> = {
+  readonly verb: V
+  readonly ws: string
+  readonly window: string
+}
+
+type TextCommand<V extends string> = {
+  readonly verb: V
+  readonly ws: string
+  readonly window: string
+  readonly text: string
+}
+
+type AnswerCommand = {
+  readonly verb: 'answer'
+  readonly ws: string
+  readonly window: string
+  readonly label: string
+}
+
+type KeysCommand = {
+  readonly verb: 'keys'
+  readonly ws: string
+  readonly window: string
+  readonly keys: readonly string[]
+}
+
 type CaptureCommand = {
   readonly verb: 'capture'
   readonly ws: string
@@ -67,9 +119,12 @@ type CaptureCommand = {
   readonly lines: number
 }
 
-type FinishCommand = {
-  readonly verb: 'finish'
+type WaitCommand = {
+  readonly verb: 'wait'
   readonly ws: string
+  readonly window: string
+  readonly pattern: RegExp
+  readonly timeoutMs: number
 }
 
 type HelpCommand = {
@@ -81,9 +136,19 @@ export type AgentCommand =
   | HoldCommand
   | EndCommand
   | FixtureCommand
+  | ClaimCommand
   | StartCommand
+  | WsOnlyCommand<'windows'>
+  | WindowCommand<'trust'>
+  | TextCommand<'send'>
+  | KeysCommand
+  | AnswerCommand
+  | TextCommand<'other'>
   | CaptureCommand
-  | FinishCommand
+  | WaitCommand
+  | WindowCommand<'idle'>
+  | WindowCommand<'stop'>
+  | WsOnlyCommand<'finish'>
   | HelpCommand
 
 export type RunState = {
@@ -145,6 +210,7 @@ type ResultMeta = {
 
 type ArgSpec = {
   readonly count: number
+  readonly variadic?: boolean
   readonly strings?: readonly string[]
   readonly switches?: readonly string[]
 }
@@ -182,12 +248,50 @@ function argsOf(verb: string, argv: readonly string[], spec: ArgSpec): Args | st
     strings.set(name, value)
     index += 1
   }
-  if (positionals.length !== spec.count) {
+  const isCountOk = spec.variadic ? positionals.length >= spec.count : positionals.length === spec.count
+  if (!isCountOk) {
     const noun = spec.count === 1 ? 'argument' : 'arguments'
-    return `${verb} takes ${spec.count} ${noun}, not ${positionals.length}: run help`
+    const least = spec.variadic ? 'at least ' : ''
+    return `${verb} takes ${least}${spec.count} ${noun}, not ${positionals.length}: run help`
   }
 
   return { positionals, strings, switches }
+}
+
+function windowRefusal(ws: string, window: string): string | null {
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  if (!WINDOW_RE.test(window)) return `not a window name: ${window}`
+
+  return null
+}
+
+// The text verbs take no flags, so a text that starts with -- stays text.
+function textArgs(verb: string, argv: readonly string[]): readonly [string, string, string] | string {
+  if (argv.length !== 3) return `${verb} takes 3 arguments, not ${argv.length}: quote the text, run help`
+  const [ws = '', window = '', text = ''] = argv
+  const refusal = windowRefusal(ws, window)
+  if (refusal) return refusal
+  if (text.trim() === '') return `${verb} needs a text`
+  if (CONTROL_RE.test(text)) return 'the text must be one line with no control characters'
+
+  return [ws, window, text]
+}
+
+function secondsMs(value: string | undefined, fallbackS: number, minS: number): number | null {
+  if (value === undefined) return fallbackS * MS_PER_SECOND
+  if (!SECONDS_RE.test(value)) return null
+  const seconds = Number(value)
+
+  return seconds >= minS && seconds <= WAIT_MAX_S ? seconds * MS_PER_SECOND : null
+}
+
+function regexOf(source: string): RegExp | null {
+  if (source === '') return null
+  try {
+    return new RegExp(source, 'm')
+  } catch {
+    return null
+  }
 }
 
 function isFolderPath(path: string): boolean {
@@ -258,25 +362,87 @@ function parseStart(argv: readonly string[]): AgentCommand | string {
   return { verb: 'start', ws, role, cwd, wt, raw }
 }
 
+function parseClaim(argv: readonly string[]): AgentCommand | string {
+  const args = argsOf('claim', argv, { count: 2, variadic: true, strings: ['wait'] })
+  if (typeof args === 'string') return args
+  const [ws = '', ...roles] = args.positionals
+  const waitMs = secondsMs(args.strings.get('wait'), CLAIM_WAIT_DEFAULT_S, 0)
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  if (roles.includes(ROOT_ROLE)) return 'the root window needs no claim'
+  const bad = roles.find(role => !ROLE_RE.test(role))
+  if (bad !== undefined) return `not a role id: ${bad}`
+  const twice = roles.find((role, index) => roles.indexOf(role) !== index)
+  if (twice !== undefined) return `${twice} is given twice`
+  if (waitMs === null) return `--wait must be a whole number of seconds from 0 to ${WAIT_MAX_S}`
+
+  return { verb: 'claim', ws, roles, waitMs }
+}
+
+function parseWsOnly(verb: 'windows' | 'finish', argv: readonly string[]): AgentCommand | string {
+  const args = argsOf(verb, argv, { count: 1 })
+  if (typeof args === 'string') return args
+  const [ws = ''] = args.positionals
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+
+  return { verb, ws }
+}
+
+function parseWindowVerb(verb: 'trust' | 'idle' | 'stop', argv: readonly string[]): AgentCommand | string {
+  const args = argsOf(verb, argv, { count: 2 })
+  if (typeof args === 'string') return args
+  const [ws = '', window = ''] = args.positionals
+
+  return windowRefusal(ws, window) ?? { verb, ws, window }
+}
+
+function parseText(verb: 'send' | 'other', argv: readonly string[]): AgentCommand | string {
+  const args = textArgs(verb, argv)
+  if (typeof args === 'string') return args
+  const [ws, window, text] = args
+
+  return { verb, ws, window, text }
+}
+
+function parseAnswer(argv: readonly string[]): AgentCommand | string {
+  const args = textArgs('answer', argv)
+  if (typeof args === 'string') return args
+  const [ws, window, label] = args
+
+  return { verb: 'answer', ws, window, label }
+}
+
+function parseKeys(argv: readonly string[]): AgentCommand | string {
+  const args = argsOf('keys', argv, { count: 3, variadic: true })
+  if (typeof args === 'string') return args
+  const [ws = '', window = '', ...keys] = args.positionals
+
+  return windowRefusal(ws, window) ?? { verb: 'keys', ws, window, keys }
+}
+
 function parseCapture(argv: readonly string[]): AgentCommand | string {
   const args = argsOf('capture', argv, { count: 2, strings: ['lines'], switches: ['history'] })
   if (typeof args === 'string') return args
   const [ws = '', window = ''] = args.positionals
   const lines = linesOf(args.strings.get('lines'))
-  if (!isWsId(ws)) return `not a workspace id: ${ws}`
-  if (!WINDOW_RE.test(window)) return `not a window name: ${window}`
+  const refusal = windowRefusal(ws, window)
+  if (refusal) return refusal
   if (lines === null) return `--lines must be a whole number from 1 to ${HISTORY_LINES_MAX}`
 
   return { verb: 'capture', ws, window, history: args.switches.has('history'), lines }
 }
 
-function parseFinish(argv: readonly string[]): AgentCommand | string {
-  const args = argsOf('finish', argv, { count: 1 })
+function parseWait(argv: readonly string[]): AgentCommand | string {
+  const args = argsOf('wait', argv, { count: 3, strings: ['timeout'] })
   if (typeof args === 'string') return args
-  const [ws = ''] = args.positionals
-  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  const [ws = '', window = '', source = ''] = args.positionals
+  const refusal = windowRefusal(ws, window)
+  if (refusal) return refusal
+  const pattern = regexOf(source)
+  if (pattern === null) return `not a valid regex: ${JSON.stringify(source)}`
+  const timeoutMs = secondsMs(args.strings.get('timeout'), WAIT_TIMEOUT_DEFAULT_S, 1)
+  if (timeoutMs === null) return `--timeout must be a whole number of seconds from 1 to ${WAIT_MAX_S}`
 
-  return { verb: 'finish', ws }
+  return { verb: 'wait', ws, window, pattern, timeoutMs }
 }
 
 function parseHelp(argv: readonly string[]): AgentCommand | string {
@@ -286,14 +452,24 @@ function parseHelp(argv: readonly string[]): AgentCommand | string {
   return { verb: 'help' }
 }
 
-const PARSERS: ReadonlyMap<string, Parser> = new Map([
+const PARSERS: ReadonlyMap<string, Parser> = new Map<string, Parser>([
   ['begin', parseBegin],
   ['hold', parseHold],
   ['end', parseEnd],
   ['fixture', parseFixture],
+  ['claim', parseClaim],
   ['start', parseStart],
+  ['windows', argv => parseWsOnly('windows', argv)],
+  ['trust', argv => parseWindowVerb('trust', argv)],
+  ['send', argv => parseText('send', argv)],
+  ['keys', parseKeys],
+  ['answer', parseAnswer],
+  ['other', argv => parseText('other', argv)],
   ['capture', parseCapture],
-  ['finish', parseFinish],
+  ['wait', parseWait],
+  ['idle', argv => parseWindowVerb('idle', argv)],
+  ['stop', argv => parseWindowVerb('stop', argv)],
+  ['finish', argv => parseWsOnly('finish', argv)],
   ['help', parseHelp],
 ])
 
@@ -528,22 +704,57 @@ type SendTarget = {
   readonly root: boolean
 }
 
-export function sendRefusal(_text: string, _target: SendTarget): string | null {
+function isEpicOpen(words: readonly string[]): boolean {
+  const [command = '', sub = '', next = ''] = words.map(word => word.toLowerCase())
+
+  return command === '/cadre' && sub === 'epic' && next !== 'done'
+}
+
+function hasSafeTerminal(words: readonly string[]): boolean {
+  const flags = words.filter(word => word.startsWith(TERMINAL_FLAG))
+
+  return flags.length > 0 && flags.every(flag => SAFE_TERMINALS.includes(flag))
+}
+
+export function sendRefusal(text: string, target: SendTarget): string | null {
+  const trimmed = text.trim()
+  const words = trimmed.split(/\s+/)
+  const command = (words[0] ?? '').toLowerCase()
+  if (trimmed.startsWith('!')) return 'shell mode (!) is refused'
+  if (command === '/login' || command === '/logout') return `${command} is refused: every workspace shares the login`
+  if (trimmed.toLowerCase().includes('--global')) return '--global is refused: it changes state outside the workspace'
+  if (command.startsWith('/plugin') && !target.exclusive) return '/plugin is refused outside an exclusive workspace'
+  if (isEpicOpen(words) && !hasSafeTerminal(words)) return '/cadre epic needs --terminal=tmux or --terminal=none'
+  // Untrimmed: the slash must be the first typed character, so a leading space cannot make the text a prompt.
+  if (target.root && !text.startsWith('/')) return 'a root window takes slash commands only'
+
   return null
 }
 
-export function answerRefusal(_label: string, _exclusive: boolean): string | null {
-  return null
+export function answerRefusal(label: string, exclusive: boolean): string | null {
+  if (exclusive) return null
+  if (!INSTALL_LABEL_RE.test(label.trimStart())) return null
+
+  return `the answer ${label} installs: it needs an exclusive workspace`
 }
 
-export function keysRefusal(_keys: readonly string[]): string | null {
-  return null
+export function keysRefusal(keys: readonly string[]): string | null {
+  if (keys.length === 0) return 'no keys given'
+  const refused = keys.find(key => !SAFE_KEYS.includes(key))
+  if (refused === undefined) return null
+
+  return `the key ${refused} is refused: use ${SAFE_KEYS.join(', ')}`
 }
 
-export function claimsTaken(_workspaces: readonly WsState[]): ReadonlyMap<string, string> {
-  return new Map()
+export function claimsTaken(workspaces: readonly WsState[]): ReadonlyMap<string, string> {
+  const live = workspaces.filter(ws => ws.status === 'live')
+
+  return new Map(live.flatMap(ws => ws.claims.map(role => [role, ws.id] as const)))
 }
 
-export function claimRefusal(_role: string, _wsId: string, _taken: ReadonlyMap<string, string>): string | null {
-  return null
+export function claimRefusal(role: string, wsId: string, taken: ReadonlyMap<string, string>): string | null {
+  const holder = taken.get(role)
+  if (holder === undefined || holder === wsId) return null
+
+  return `busy: ${role} held by ${holder}`
 }

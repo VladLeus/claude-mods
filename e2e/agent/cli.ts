@@ -2,20 +2,23 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { cadrePrint, firstLineOf, printedCommand, replyOf } from '../cadre/lib/session.ts'
 import { agentSidecar, filterLines, HISTORY_LINES_DEFAULT, HISTORY_LINES_MAX, parseCommand } from '../lib/agent.ts'
 import { parseGuardSnapshot, parseRunState, parseWsState, RESULT_MAX_BYTES, ROOT_ROLE } from '../lib/agent.ts'
 import { tokenHash, tokenRefusal, windowNameFor, wsIdOf } from '../lib/agent.ts'
+import { answerRefusal, claimRefusal, claimsTaken, keysRefusal, SAFE_KEYS, sendRefusal } from '../lib/agent.ts'
+import { WAIT_MAX_S, WAIT_TIMEOUT_DEFAULT_S } from '../lib/agent.ts'
 import type { AgentCommand, RunState, WsState } from '../lib/agent.ts'
 import { e2eConfigDir, e2eConfigPath, writeFilterFile } from '../lib/auth.ts'
-import { authPreflight, passTrust, startTui } from '../lib/claude.ts'
+import { answer, answerOther, authPreflight, idleTui, isDialogScreen, passTrust, startTui } from '../lib/claude.ts'
+import { submitTui } from '../lib/claude.ts'
 import type { PreflightStage } from '../lib/claude.ts'
 import { hostUser, liveEnv, SYSTEM_PATH, writeClaudeFence } from '../lib/env.ts'
 import type { ChildEnv } from '../lib/env.ts'
-import { LeakError } from '../lib/errors.ts'
+import { HarnessError, LeakError } from '../lib/errors.ts'
 import { filterContext, isRecord } from '../lib/filter.ts'
 import type { FilterContext } from '../lib/filter.ts'
 import { copyTree, fixtureDir } from '../lib/fixture.ts'
@@ -25,12 +28,12 @@ import { checkGuard, claudeVersion, cleanupSessions, e2eDirReason, guardItems, i
 import { keychainState, releaseLock, removeLeftovers, resolveOnPath, takeLock } from '../lib/live.ts'
 import type { LiveScope } from '../lib/live.ts'
 import { pollUntil } from '../lib/poll.ts'
-import { makeRunRoot, PRUNE_AGE_MS, removeTree, RUN_ID_RE, scratchBase, scratchRoot } from '../lib/scratch.ts'
+import { isUnder, makeRunRoot, PRUNE_AGE_MS, removeTree, RUN_ID_RE, scratchBase, scratchRoot } from '../lib/scratch.ts'
 import { parseSidecar, rowFileName, SIDECAR_SCHEMA, summaryText, writeRowResult, writeSummary } from '../lib/summary.ts'
 import type { Note, Sidecar, SuiteVersion } from '../lib/summary.ts'
 import { capture, killServer, listWindows, newWindow, runSocketPrefix, socketName, startServer } from '../lib/tmux.ts'
-import { sweepServers } from '../lib/tmux.ts'
-import type { Pane, Server } from '../lib/tmux.ts'
+import { paneState, sendKeys, sweepServers, waitDead, waitFor } from '../lib/tmux.ts'
+import type { Pane, Server, WindowInfo } from '../lib/tmux.ts'
 
 const CLI_PATH = fileURLToPath(import.meta.url)
 const REPO_DIR = dirname(dirname(dirname(CLI_PATH)))
@@ -44,13 +47,26 @@ const HOLDER_WAIT_MS = 10_000
 const LOCK_WAIT_MS = 10_000
 const WAIT_TICK_MS = 200
 const HOLD_TICK_MS = 60_000
+const CLAIM_RETRY_MS = 5_000
+const STOP_EXIT_MS = 30_000
+const STOP_KILL_MS = 10_000
 const SCREEN_LINES = 60
 const REFUSED = 2
 const FAILED = 1
 const GUARD_FAILED = 3
 const NOT_FINISHED = 'not finished: the agent did not call finish'
+const CLAIMS_LOCK = 'claims.lock'
 
 type Command<V extends AgentCommand['verb']> = Extract<AgentCommand, { readonly verb: V }>
+
+type WsCommand = Exclude<AgentCommand, Command<'begin' | 'hold' | 'end' | 'fixture' | 'help'>>
+
+type WsWindow = WsState['windows'][number]
+
+type Target = {
+  readonly pane: Pane
+  readonly kind: WsWindow['kind']
+}
 
 type Holder = {
   readonly pid: number
@@ -222,10 +238,24 @@ async function isServerUp(server: Server): Promise<boolean> {
   return listWindows(server).then(() => true, () => false)
 }
 
+async function windowOf(server: Server, window: string): Promise<WindowInfo | null> {
+  return (await listWindows(server).catch(() => [])).find(item => item.name === window) ?? null
+}
+
 async function paneOf(server: Server, window: string): Promise<Pane | null> {
-  const found = (await listWindows(server).catch(() => [])).find(item => item.name === window)
+  const found = await windowOf(server, window)
 
   return found ? { server, id: found.pane } : null
+}
+
+// The server's first window is a plain shell, so input goes only to a window this workspace started or trusted.
+async function inputTarget(ws: WsState, window: string): Promise<Target | string> {
+  const recorded = ws.windows.find(item => item.name === window)
+  if (!recorded) return `${window} is not a window this workspace started or trusted: run windows, then trust it`
+  const pane = await paneOf(serverOf(ws), window)
+  if (!pane) return `no window ${window} in ${ws.id}`
+
+  return { pane, kind: recorded.kind }
 }
 
 function stopHolder(pid: number | undefined): void {
@@ -283,8 +313,18 @@ async function stayAlive(ms: number): Promise<void> {
 
 function helpText(): string {
   return `fixture <variant> --row <row>: copy a built fixture into a new workspace and print its id
-start <ws> root|<role> [--cwd <folder>] [--wt <worktree>] [--raw]: open the root window or a role window (--raw starts the launcher without /cadre start)
+claim <ws> <role...> [--wait <s>]: claim roles for this workspace before starting them (--wait retries every ${CLAIM_RETRY_MS / 1000} s, at most ${WAIT_MAX_S})
+start <ws> root|<role> [--cwd <folder>] [--wt <worktree>] [--raw]: open the root window or a claimed role window (--raw starts the launcher without /cadre start)
+windows <ws>: list the windows, live or dead, with their folder
+trust <ws> <window>: pass the trust screens of a window cadre opened and take it into the workspace
+send <ws> <window> <text>: type one line into a window and submit it (a root window takes slash commands only)
+keys <ws> <window> <key...>: press keys in a window: ${SAFE_KEYS.join(', ')}
+answer <ws> <window> <label>: pick the option with this label in the question on the screen
+other <ws> <window> <text>: answer the question on the screen with typed text
 capture <ws> <window> [--history] [--lines <n>]: print the last lines of a window (${HISTORY_LINES_DEFAULT} by default, at most ${HISTORY_LINES_MAX})
+wait <ws> <window> <regex> [--timeout <s>]: wait until the screen matches, ^ and $ at each line (${WAIT_TIMEOUT_DEFAULT_S} s by default, at most ${WAIT_MAX_S})
+idle <ws> <window>: wait until the screen stops changing and print it
+stop <ws> <window>: exit the session in a window and print its exit status
 finish <ws>: read the result JSON on stdin, write the row and close the workspace
 help: print this list`
 }
@@ -527,6 +567,47 @@ async function fixture(cmd: Command<'fixture'>, run: RunState): Promise<number> 
   return 0
 }
 
+async function takeClaimsLock(lock: string): Promise<boolean> {
+  const until = Date.now() + LOCK_WAIT_MS
+  while (!await takeLock(lock)) {
+    if (Date.now() >= until) return false
+    await delay(WAIT_TICK_MS)
+  }
+
+  return true
+}
+
+async function tryClaim(run: RunState, ws: WsState, roles: readonly string[]): Promise<readonly string[]> {
+  const lock = join(agentDir(run.root), CLAIMS_LOCK)
+  if (!await takeClaimsLock(lock)) throw new HarnessError(`the claims lock stayed held for ${LOCK_WAIT_MS} ms`)
+  try {
+    const taken = claimsTaken(await workspaces(run))
+    const busy = roles.flatMap(role => claimRefusal(role, ws.id, taken) ?? [])
+    if (busy.length > 0) return busy
+    await saveWs(run, { ...ws, claims: [...new Set([...ws.claims, ...roles])] })
+    return []
+  } finally {
+    await releaseLock(lock)
+  }
+}
+
+async function claim(cmd: Command<'claim'>, run: RunState, ws: WsState): Promise<number> {
+  const deadline = Date.now() + cmd.waitMs
+  for (;;) {
+    const busy = await tryClaim(run, ws, cmd.roles)
+    if (busy.length === 0) {
+      say(`claimed ${cmd.roles.join(' ')}`)
+      return 0
+    }
+    const left = deadline - Date.now()
+    if (left <= 0) {
+      say(busy.join('\n'))
+      return FAILED
+    }
+    await delay(Math.min(CLAIM_RETRY_MS, left))
+  }
+}
+
 async function launchRefusal(copy: string, role: string, raw: boolean, env: ChildEnv): Promise<string | null> {
   if (raw) return existsSync(join(copy, '.cadre', 'bin', role)) ? null : `the copy has no launcher for ${role}`
   const reply = replyOf(await cadrePrint({ repo: copy, env }, `start ${role}`))
@@ -552,6 +633,7 @@ async function start(cmd: Command<'start'>, run: RunState, ws: WsState): Promise
   if (cmd.cwd !== null && !existsSync(cwd)) return refuse(`no folder ${cmd.cwd} in the copy`)
   const isRoot = cmd.role === ROOT_ROLE
   if (isRoot && ws.windows.some(item => item.kind === 'root')) return refuse(`${ws.id} has a root window already`)
+  if (!isRoot && !ws.claims.includes(cmd.role)) return refuse(`claim ${cmd.role} first: claim ${ws.id} ${cmd.role}`)
   const server = serverOf(ws)
   const refusal = isRoot ? null : await launchRefusal(copy, cmd.role, cmd.raw, server.env)
   if (refusal) return refuse(refusal)
@@ -569,6 +651,123 @@ async function captureWindow(cmd: Command<'capture'>, ws: WsState): Promise<numb
   const pane = await paneOf(serverOf(ws), cmd.window)
   if (!pane) return refuse(`no window ${cmd.window} in ${ws.id}`)
   say(lastLines(await capture(pane, { history: cmd.history }), cmd.lines))
+
+  return 0
+}
+
+function placeOf(cwd: string, dir: string): string {
+  return isUnder(cwd, dir) ? relative(dir, cwd) : cwd
+}
+
+async function showWindows(run: RunState, ws: WsState): Promise<number> {
+  const dir = wsDir(run.root, ws.id)
+  const windows = await listWindows(serverOf(ws)).catch(() => [])
+  const lines = windows.map(item => `${item.name} ${item.dead ? 'dead' : 'live'} ${placeOf(item.cwd, dir)}`)
+  say(lines.length > 0 ? lines.join('\n') : 'no windows')
+
+  return 0
+}
+
+async function trust(cmd: Command<'trust'>, run: RunState, ws: WsState): Promise<number> {
+  const server = serverOf(ws)
+  if (!await isServerUp(server)) return refuse(`${ws.id} has no windows yet: run start first`)
+  const isRecorded = ws.windows.some(item => item.name === cmd.window)
+  await passTrust(server, cmd.window)
+  if (!isRecorded) await saveWs(run, { ...ws, windows: [...ws.windows, { name: cmd.window, kind: 'role' }] })
+  say(`trusted ${cmd.window}`)
+
+  return 0
+}
+
+async function send(cmd: Command<'send'>, ws: WsState): Promise<number> {
+  const target = await inputTarget(ws, cmd.window)
+  if (typeof target === 'string') return refuse(target)
+  const why = sendRefusal(cmd.text, { exclusive: ws.exclusive, root: target.kind === 'root' })
+  if (why) return refuse(why)
+  await submitTui(target.pane, cmd.text)
+  say(`sent to ${cmd.window}`)
+
+  return 0
+}
+
+async function pressKeys(cmd: Command<'keys'>, ws: WsState): Promise<number> {
+  const why = keysRefusal(cmd.keys)
+  if (why) return refuse(why)
+  const target = await inputTarget(ws, cmd.window)
+  if (typeof target === 'string') return refuse(target)
+  await sendKeys(target.pane, ...cmd.keys)
+  say(`pressed ${cmd.keys.join(' ')} in ${cmd.window}`)
+
+  return 0
+}
+
+async function answerWindow(cmd: Command<'answer'>, ws: WsState): Promise<number> {
+  const why = answerRefusal(cmd.label, ws.exclusive)
+  if (why) return refuse(why)
+  const target = await inputTarget(ws, cmd.window)
+  if (typeof target === 'string') return refuse(target)
+  await answer(target.pane, cmd.label)
+  say(`answered ${cmd.label}`)
+
+  return 0
+}
+
+// With no question on the screen, answerOther would type n and the text into the input box and submit them.
+async function answerOtherWindow(cmd: Command<'other'>, ws: WsState): Promise<number> {
+  const target = await inputTarget(ws, cmd.window)
+  if (typeof target === 'string') return refuse(target)
+  if (!isDialogScreen(await idleTui(target.pane))) return refuse(`no question is showing in ${cmd.window}`)
+  await answerOther(target.pane, cmd.text)
+  say('answered with the typed text')
+
+  return 0
+}
+
+async function waitWindow(cmd: Command<'wait'>, ws: WsState): Promise<number> {
+  const server = serverOf(ws)
+  const pane = await paneOf(server, cmd.window)
+  if (!pane) return refuse(`no window ${cmd.window} in ${ws.id}`)
+  const screen = await waitFor(pane, cmd.pattern, cmd.timeoutMs).catch((error: unknown) => {
+    if (error instanceof HarnessError) return null
+    throw error
+  })
+  if (screen !== null) {
+    say(`matched\n${screen}`)
+    return 0
+  }
+  const isExited = (await windowOf(server, cmd.window))?.dead === true
+  const last = await capture(pane).catch(() => '')
+  say(`${isExited ? 'exited' : 'timeout'}\n${lastLines(last, SCREEN_LINES)}`)
+
+  return FAILED
+}
+
+async function idleWindow(cmd: Command<'idle'>, ws: WsState): Promise<number> {
+  const pane = await paneOf(serverOf(ws), cmd.window)
+  if (!pane) return refuse(`no window ${cmd.window} in ${ws.id}`)
+  say(await idleTui(pane))
+
+  return 0
+}
+
+async function exitsWithin(pane: Pane, timeoutMs: number): Promise<boolean> {
+  return waitDead(pane, timeoutMs).then(() => true, () => false)
+}
+
+async function stopSession(pane: Pane): Promise<void> {
+  const isSubmitted = await submitTui(pane, '/exit').then(() => true, () => false)
+  if (isSubmitted && await exitsWithin(pane, STOP_EXIT_MS)) return
+  await sendKeys(pane, 'C-c', 'C-c')
+  await exitsWithin(pane, STOP_KILL_MS)
+}
+
+async function stopWindow(cmd: Command<'stop'>, ws: WsState): Promise<number> {
+  const target = await inputTarget(ws, cmd.window)
+  if (typeof target === 'string') return refuse(target)
+  if (!(await paneState(target.pane)).dead) await stopSession(target.pane)
+  const state = await paneState(target.pane)
+  if (!state.dead) return fail(`${cmd.window} still runs after /exit and two C-c`)
+  say(`${cmd.window} exited with status ${state.status ?? 'unknown'}`)
 
   return 0
 }
@@ -612,19 +811,34 @@ async function finish(run: RunState, ws: WsState): Promise<number> {
   if (typeof row === 'string') return refuse(row)
   await killServer(server)
   await writeRowResult(resultsDirOf(run.run), row, outputContext())
-  await saveWs(run, { ...ws, status: 'finished' })
+  await saveWs(run, { ...ws, status: 'finished', claims: [] })
   say(`wrote ${rowFileName(row.id, row.half)}`)
 
   return 0
 }
 
-async function wsVerb(cmd: Command<'start' | 'capture' | 'finish'>, run: RunState): Promise<number> {
+async function runWsVerb(cmd: WsCommand, run: RunState, ws: WsState): Promise<number> {
+  if (cmd.verb === 'claim') return claim(cmd, run, ws)
+  if (cmd.verb === 'start') return start(cmd, run, ws)
+  if (cmd.verb === 'windows') return showWindows(run, ws)
+  if (cmd.verb === 'trust') return trust(cmd, run, ws)
+  if (cmd.verb === 'send') return send(cmd, ws)
+  if (cmd.verb === 'keys') return pressKeys(cmd, ws)
+  if (cmd.verb === 'answer') return answerWindow(cmd, ws)
+  if (cmd.verb === 'other') return answerOtherWindow(cmd, ws)
+  if (cmd.verb === 'capture') return captureWindow(cmd, ws)
+  if (cmd.verb === 'wait') return waitWindow(cmd, ws)
+  if (cmd.verb === 'idle') return idleWindow(cmd, ws)
+  if (cmd.verb === 'stop') return stopWindow(cmd, ws)
+
+  return finish(run, ws)
+}
+
+async function wsVerb(cmd: WsCommand, run: RunState): Promise<number> {
   const ws = await loadLiveWs(run, cmd.ws)
   if (typeof ws === 'string') return refuse(ws)
   try {
-    if (cmd.verb === 'start') return await start(cmd, run, ws)
-    if (cmd.verb === 'capture') return await captureWindow(cmd, ws)
-    return await finish(run, ws)
+    return await runWsVerb(cmd, run, ws)
   } finally {
     await saveUuids(run, ws.id)
   }

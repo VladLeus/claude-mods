@@ -151,7 +151,12 @@ test('parseCommand reads claim with its roles and --wait from 0 to 540 seconds, 
     roles: ['qa'],
     waitMs: 540_000,
   })
-  assert.deepEqual(parseCommand(['claim', WS, 'pm', '--wait', '0']), { verb: 'claim', ws: WS, roles: ['pm'], waitMs: 0 })
+  assert.deepEqual(parseCommand(['claim', WS, 'pm', '--wait', '0']), {
+    verb: 'claim',
+    ws: WS,
+    roles: ['pm'],
+    waitMs: 0,
+  })
   for (const wait of ['541', '-1', '1.5', 'soon', '']) refused(['claim', WS, 'be', '--wait', wait])
   refused(['claim', WS])
   refused(['claim', WS, 'BE'])
@@ -466,7 +471,7 @@ test('filterLines withholds each line the leak check names and prints the other 
   assert.equal(filterLines(text, filterCtx()), expected)
 })
 
-test('sendRefusal refuses shell mode, login, --global, /plugin, an unsafe epic and root free text, allows the rest', () => {
+test('sendRefusal refuses !, /login, --global, /plugin, an unsafe epic and root free text and allows the rest', () => {
   const refusals: readonly (readonly [string, boolean])[] = [
     ['!ls', false],
     ['  !ls', true],
@@ -520,10 +525,12 @@ test('keysRefusal allows only Enter, Escape, the arrows, Tab, BTab, Space, BSpac
     ['F1'],
     ['C-c', 'C-\\'],
   ]
-  const safe = ['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BTab', 'Space', 'BSpace', 'PageUp', 'PageDown']
+  const safe = [
+    'Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BTab', 'Space', 'BSpace', 'PageUp', 'PageDown', 'C-c',
+  ]
 
   for (const keys of keyLists) assert.notEqual(keysRefusal(keys), null, keys.join(' '))
-  assert.equal(keysRefusal([...safe, 'C-c']), null)
+  assert.equal(keysRefusal(safe), null)
 })
 
 test('claimsTaken maps each role a live workspace claims to its id and skips finished workspaces', () => {
