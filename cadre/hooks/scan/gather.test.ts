@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HookScript } from '../../types'
-import { DEFAULT_LOCATIONS, EMPTY_FACTS, emptySetupScan, entry, gitWorld, memIo, repoScan } from '../testkit'
+import type { HookScript, LaunchStart } from '../../types'
+import {
+  DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
+  emptySetupScan,
+  entry,
+  gitWorld,
+  memIo,
+  repoScan,
+  withStats,
+} from '../testkit'
 import { scanWarningLines } from '../ui/blocks/scan'
-import { gatherScans, scanWarnings } from './gather'
+import { gatherScans, scanWarnings, withStartHooks } from './gather'
 import type { Gathered } from './gather'
 import { scanRepo } from './repo'
 import { scanSetup } from './setup/setup'
@@ -100,3 +109,44 @@ function guardFrom(sources: readonly HookScript['source'][]): Gathered['setup'] 
     hooks: sources.map(source => ({ script: 'gsd-secret-read-guard.js', event: 'PreToolUse', source })),
   })
 }
+
+describe('withStartHooks', () => {
+  const guard = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}}'
+  const world = gitWorld({
+    dirs: { '/repo/.git': [], '/repo/src': [entry('.claude', 'dir')], '/repo/src/.claude': [entry('settings.json')] },
+    files: { '/repo/src/.claude/settings.json': guard },
+  })
+
+  test('a dir start reads <path>/.claude/settings.json of the root and sets its hooks as the start hooks', async () => {
+    const run = memIo(world, {})
+    const gathered = gatheredWith([], [], [])
+    const started = await withStartHooks(run.io, gathered, '/repo', { kind: 'dir', path: 'src' })
+
+    expect(run.reads).toEqual(['/repo/src/.claude/settings.json'])
+    expect(started).toEqual({
+      ...gathered,
+      setup: { ...gathered.setup, startHooks: [{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }] },
+    })
+  })
+
+  test('a dir start with no settings file gets no start hook', async () => {
+    const gathered = gatheredWith([], [], [])
+    const started = await withStartHooks(memIo(gitWorld(), {}).io, gathered, '/repo', { kind: 'dir', path: 'src' })
+
+    expect(started.setup.startHooks).toEqual([])
+  })
+
+  test('a git-root or here start has no start hooks and makes no port call', async () => {
+    const gathered = { ...gatheredWith([], [], []), setup: emptySetupScan({ startHooks: [] }) }
+    const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }]
+    for (const start of starts) {
+      const run = memIo(world, {})
+      const stats = withStats(run)
+      const started = await withStartHooks(stats.io, gathered, '/repo', start)
+
+      expect([run.reads, stats.stats]).toEqual([[], []])
+      expect(started.setup).toEqual(emptySetupScan())
+      expect('startHooks' in started.setup).toBe(false)
+    }
+  })
+})

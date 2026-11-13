@@ -28,6 +28,7 @@ import {
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
   emptySetupScan,
+  entry,
   gitWorld,
   launcherEntry,
   launcherOf,
@@ -135,10 +136,28 @@ describe('repoGuard and readTeam', () => {
     const run = memIo(world, {})
     const state = stateOf(team, { launchStart: start, readUserMcp: true })
     const { gathered, scopes } = await compileTeam(run.io, DEFAULT_LOCATIONS, state, team)
-    expect(gathered).toEqual(await scansOf(world, true))
+    const scans = await scansOf(world, true)
+    expect(gathered).toEqual({ ...scans, setup: { ...scans.setup, startHooks: [] } })
     expect(run.reads.filter(path => path === '/home/u/.claude.json')).toHaveLength(1)
     expect(scopes).toEqual(scopesFor(team, 'none', gathered, [], start))
     expect(scopes).not.toEqual(scopesFor(team, 'none', gathered, [], { kind: 'git-root' }))
+  })
+
+  test('compileTeam of a dir start reads the start folder settings: the card names it and lists its hook', async () => {
+    const guard = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}}'
+    const world = gitWorld({
+      dirs: { '/repo/.git': [], '/repo/src': [entry('.claude', 'dir')], '/repo/src/.claude': [entry('settings.json')] },
+      files: { '/repo/src/.claude/settings.json': guard },
+    })
+    const state = stateOf(team, { launchStart: { kind: 'dir', path: 'src' } })
+    const { gathered, scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
+    const lines = scopeCardLines(cardOf(scopes, 'be'))
+
+    expect(gathered.setup.startHooks).toEqual([{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }])
+    expect(lines).toContain(
+      '    [none] <git root>/src/.claude/settings.json loads: its hooks run and its permission rules apply',
+    )
+    expect(lines).toContain('  hooks loaded by project settings: guard.sh')
   })
 
   test('compileTeam lets every role not on none run every framework cadre.json records', async () => {

@@ -13,7 +13,7 @@ import {
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import type { SetupContext } from './read'
-import { projectHooks, projectSettings } from './settings'
+import { projectHooks, projectSettings, startSettingsHooks } from './settings'
 
 /** The secret fixtures and the fixture home: nothing of these may survive into a scan. */
 const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
@@ -437,5 +437,23 @@ describe('the .mcp.json approval lists of the settings (D-332)', () => {
     expect([out.mcpDisabled, out.mcpEnabled, out.isAllProjectMcpEnabled]).toEqual([[], [], false])
     const empty = projectSettings([])
     expect([empty.mcpDisabled, empty.mcpEnabled, empty.isAllProjectMcpEnabled]).toEqual([[], [], false])
+  })
+})
+
+describe('startSettingsHooks', () => {
+  const guard = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}}'
+
+  test('a text read gives its hook scripts as projectHooks reads them, from project settings', () => {
+    const hooks = startSettingsHooks({ state: 'text', text: guard })
+
+    expect(hooks).toEqual([{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }])
+    expect(hooks).toEqual(projectHooks(JSON.parse(guard), 'project'))
+  })
+
+  test('an absent, unknown, too large or unparseable file gives no hook', () => {
+    expect(startSettingsHooks({ state: 'absent' })).toEqual([])
+    expect(startSettingsHooks({ state: 'unknown' })).toEqual([])
+    expect(startSettingsHooks({ state: 'too-large', bytes: 1_000_000 })).toEqual([])
+    expect(startSettingsHooks({ state: 'text', text: '{"hooks":' })).toEqual([])
   })
 })

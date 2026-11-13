@@ -378,59 +378,106 @@ const GUARDED_BE: RoleSpec = templateRole('be', { carry: { ...EMPTY_CARRY, hooks
 /** The folder apps/web of the repo as a launch start (A2). */
 const APPS_WEB: LaunchStart = { kind: 'dir', path: 'apps/web' }
 
-/** The three none rules on the card of BE whose launcher starts in `folder` (D-122, D-127, D-113). */
+/** The none line a start folder's settings get on the card of a launcher that starts in `folder`. */
+function startSettingsLine(folder: string): string {
+  const loads = 'loads: its hooks run and its permission rules apply'
+  if (folder === HERE_FOLDER) return `.claude/settings.json of the folder the launcher is run from ${loads}`
+
+  return `${folder}/.claude/settings.json ${loads}`
+}
+
+/** The folder a here start names. */
+const HERE_FOLDER = 'the folder the launcher is run from'
+
+/** The four none rules on the card of BE whose launcher starts in `folder`. */
 function startNotes(folder: string): ScopeRule[] {
   return [
     `project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`,
+    startSettingsLine(folder),
     `Additional directory: <git root> (start folder is ${folder})`,
     `Handoffs (thoughts/shared/handoffs/be/) and GSD .planning/ follow the start folder (${folder})`,
   ].map((text): ScopeRule => ({ text, enforcement: 'none' }))
 }
 
+/** The project monitor warning for `script`. */
+function monitorWarning(script: string): string {
+  return (
+    `WARNING: ${script} is registered in project settings and loads in every role; ` +
+    'it conflicts with the autopilot handoff (D-62)'
+  )
+}
+
 describe('launch start card (D-122)', () => {
-  test('a dir start lists the project hook scripts as not loaded and none as loaded by project settings', () => {
+  test('a dir start with no start hook lists the project hooks as not loaded and none as loaded by project', () => {
     const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: START_SETUP })).card
 
     expect(card.hooks).toEqual({ loaded: ['gsd-secret-read-guard.js'], loadedByProject: [], notLoaded: ['lint.sh'] })
   })
 
-  test('a dir start ends the rules, right before the MCP route rule, with the three start notes labelled none', () => {
+  test('a dir start ends the rules, right before the MCP route rule, with the four start notes labelled none', () => {
     const rules = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: START_SETUP })).card.rules
 
-    expect(rules.slice(-4, -1)).toEqual(startNotes('<git root>/apps/web'))
+    expect(rules.slice(-5, -1)).toEqual(startNotes('<git root>/apps/web'))
     expect(rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
   })
 
-  test('a here start names the folder the launcher is run from in all three notes', () => {
-    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup: START_SETUP })).card
+  test('a dir start lists the start folder hooks as loaded by project settings, less the role\'s own', () => {
+    const startHooks = [hook('guard.sh', 'project'), hook('gsd-secret-read-guard.js', 'project')]
+    const setup = { ...START_SETUP, startHooks }
+    const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup })).card
 
-    expect(card.rules.slice(-4, -1)).toEqual(startNotes('the folder the launcher is run from'))
+    expect(card.hooks).toEqual({
+      loaded: ['gsd-secret-read-guard.js'],
+      loadedByProject: ['guard.sh'],
+      notLoaded: ['lint.sh'],
+    })
+    expect(scopeCardLines(card)).toContain('  hooks loaded by project settings: guard.sh')
+  })
+
+  test('a here start names the folder the launcher is run from in all four notes', () => {
+    const setup = { ...START_SETUP, startHooks: [hook('guard.sh', 'project')] }
+    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup })).card
+
+    expect(card.rules.slice(-5, -1)).toEqual(startNotes(HERE_FOLDER))
     expect(card.rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
     expect(card.hooks.loadedByProject).toEqual([])
   })
 
   test('a git-root start has no start note and lists the project hook scripts as loaded by project settings', () => {
-    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup: START_SETUP })).card
-    const notes = [...startNotes('<git root>/apps/web'), ...startNotes('the folder the launcher is run from')]
+    const setup = { ...START_SETUP, startHooks: [hook('guard.sh', 'project')] }
+    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup })).card
+    const plain = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup: START_SETUP })).card
+    const notes = [...startNotes('<git root>/apps/web'), ...startNotes(HERE_FOLDER)]
 
     expect(card.rules.filter(item => notes.some(note => note.text === item.text))).toEqual([])
     expect(card.rules.filter(item => item.text.includes('<git root>'))).toEqual([])
+    expect(card.rules.filter(item => item.text.includes('.claude/settings.json'))).toEqual([])
     expect(card.hooks).toEqual({ loaded: ['gsd-secret-read-guard.js'], loadedByProject: ['lint.sh'], notLoaded: [] })
+    expect(card).toEqual(plain)
   })
 
   test('a context monitor in project settings gets its warning for a git-root start only', () => {
     const setup = emptySetupScan({ hooks: [hook('gsd-context-monitor.js', 'project')] })
-    const warning =
-      'WARNING: gsd-context-monitor.js is registered in project settings and loads in every role; ' +
-      'it conflicts with the autopilot handoff (D-62)'
     const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, APPS_WEB]
     const labels = starts.map(launchStart => {
       const scope = compileScope(templateRole('be'), context({ launchStart, setup }))
 
-      return ruleOf(scope, warning)?.enforcement
+      return ruleOf(scope, monitorWarning('gsd-context-monitor.js'))?.enforcement
     })
 
     expect(labels).toEqual(['none', undefined, undefined])
+  })
+
+  test('a context monitor among the start folder hooks gets its warning for a dir start', () => {
+    const setup = emptySetupScan({ startHooks: [hook('gsd-context-monitor.js', 'project')] })
+    const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, APPS_WEB]
+    const labels = starts.map(launchStart => {
+      const scope = compileScope(templateRole('be'), context({ launchStart, setup }))
+
+      return ruleOf(scope, monitorWarning('gsd-context-monitor.js'))?.enforcement
+    })
+
+    expect(labels).toEqual([undefined, undefined, 'none'])
   })
 })
 
