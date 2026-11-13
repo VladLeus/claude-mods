@@ -5,7 +5,7 @@ import { GSD_AUTONOMY } from '../framework/gsd/adapter'
 import { isUnmetHunk } from '../framework/gsd/hunks'
 import type { GsdToolContext } from '../framework/gsd/tools'
 import { BIDI_OVERRIDE, emptySetupScan, file } from '../testkit'
-import { hunkFailureLine, hunkProposal, hunkRuns, hunksAfterRuns } from './hunks'
+import { hunkFailureLine, hunkNotRunLine, hunkProposal, hunkRuns, hunksAfterRuns, hunksNotRun } from './hunks'
 import type { HunkRun } from './hunks'
 
 /** A user-level GSD in the fixture home, as hunkStep builds the tool context from proven facts (D-71). */
@@ -117,5 +117,25 @@ describe('hunk runs (D-106)', () => {
     expect(hunkFailureLine(hostile)).toBe(
       `the .planning/config.json change mode failed: run it yourself: ${GSD_TOOLS} config-set mode yolo`,
     )
+  })
+
+  test('hunksNotRun gives the accepted hunks no run has, in hunk order; never a declined or a run one', () => {
+    const declined: HunkOp = { ...WARNINGS_HUNK, isAccepted: false }
+    const notRunnable: HunkOp = { ...MODE_HUNK, key: 'workflow.text_mode', isRunnable: false }
+
+    expect(hunksNotRun([MODE_HUNK, WARNINGS_HUNK], [])).toEqual([MODE_HUNK, WARNINGS_HUNK])
+    expect(hunksNotRun([MODE_HUNK, WARNINGS_HUNK], [MODE_RUN])).toEqual([WARNINGS_HUNK])
+    expect(hunksNotRun([declined, notRunnable, MODE_HUNK], [MODE_RUN])).toEqual([notRunnable])
+    expect(hunksNotRun([], [MODE_RUN])).toEqual([])
+  })
+
+  test('hunkNotRunLine names the file, the key and the command to run by hand, each cleaned', () => {
+    const hostile: HunkOp = { ...MODE_HUNK, key: `mo${BIDI_OVERRIDE}\nde` }
+    const line =
+      'the .planning/config.json change mode was not run by cadre: run this yourself: ' +
+      `${GSD_TOOLS} config-set mode yolo`
+
+    expect(hunkNotRunLine(MODE_HUNK)).toBe(line)
+    expect(hunkNotRunLine(hostile)).toBe(line)
   })
 })

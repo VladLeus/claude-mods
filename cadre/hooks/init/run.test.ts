@@ -4906,6 +4906,11 @@ const MODE_DISPLAY = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode 
 /** The line apply prints when the `mode` hunk failed (D-106). */
 const MODE_FAILED = `warning: the .planning/config.json change mode failed: run it yourself: ${MODE_DISPLAY}`
 
+/** The line apply prints for the accepted `mode` hunk it did not run, as a repo-local GSD gives its command. */
+const MODE_NOT_RUN =
+  'warning: the .planning/config.json change mode was not run by cadre: run this yourself: ' +
+  'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+
 /** The banner ROLE.md carries under the framework line of an attended role. */
 const ATTENDED_BANNER =
   'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.'
@@ -4997,6 +5002,32 @@ describe('init apply hunks (D-120)', () => {
     const lines = reply.split('\n').map(line => line.trim())
     expect(lines).toContain('run: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo')
     expect(reply).not.toContain('failed: run it yourself')
+  })
+
+  test('after a project GSD install with no proven user-level GSD the accepted hunk is named, not run', async () => {
+    const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+    const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(world, answers).io, { dryRun: false, host: host.io })
+    const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+    expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect(reply.split('\n')).toContain(MODE_NOT_RUN)
+  })
+
+  test('a hunk cadre ran, one that failed and one declined get no not-run line', async () => {
+    const failed = { exitCode: 1, stdout: '', stderr: 'denied' }
+    const cases: readonly (readonly [Readonly<Record<string, string>>, readonly HostRunRule[]])[] = [
+      [INIT_ANSWERS, []],
+      [INIT_ANSWERS, [{ argv: MODE_RUN, result: failed }]],
+      [{ ...INIT_ANSWERS, '.planning/config.json:': 'Decline' }, []],
+    ]
+    for (const [answers, runs] of cases) {
+      const host = memHost(hostWorld({ runs }))
+      const reply = await runInit(memIo(modeWorld(), answers).io, { dryRun: false, host: host.io })
+      expect(reply).not.toContain('was not run by cadre')
+    }
   })
 
   test(
@@ -7255,6 +7286,18 @@ describe('the file plan and apply of /cadre frameworks', () => {
     expect([writes.at(-1), result.kind]).toEqual(['write /repo/.cadre/manifest.json', 'accepted'])
     expect(host.writes.filter(write => !write.path.startsWith('/repo/.cadre/'))).toEqual([])
     expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
+  })
+
+  test('a hunk with no proven user-level GSD is not run and is in the outcome as not run', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect([outcome?.hunkFailures, outcome?.hunksNotRun]).toEqual([[], [gsdHunk()]])
   })
 
   test('a parts-flow role whose role.json is written again keeps its instructionParts', async () => {

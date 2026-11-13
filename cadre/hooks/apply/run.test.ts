@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FrameworkId, HostRun, ProjectInstall } from '../../types'
+import type { DesiredFile, FrameworkId, HostRun, HunkOp, ProjectInstall } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { attendedNote } from '../framework/gsd/hunks'
 import { untrackedPartsWarning } from '../generate/gittrack'
@@ -18,7 +18,7 @@ import {
   USER_DIR_LISTED,
 } from '../testkit'
 import type { MemWorld } from '../testkit'
-import { hunkFailureLine } from './hunks'
+import { hunkFailureLine, hunkNotRunLine } from './hunks'
 import type { HunkRun } from './hunks'
 import { improverArgv } from './improver'
 import type { BuiltFile } from './improver'
@@ -210,6 +210,34 @@ describe('init apply (D-105)', () => {
     ])
     expect(appliedLines(outcomeOf())).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
     expect(appliedLines(outcomeOf({ failed: ['.cadre/INDEX.md'] }))[0]).toBe('Applied: wrote 0 files (0 executable).')
+  })
+
+  test('appliedLines: each accepted hunk not run is a warning line right after the hunk failure lines', () => {
+    const run: HunkRun = { key: 'mode', file: '.planning/config.json', argv: ['node'], display: 'node ~/x mode yolo' }
+    const hunk: HunkOp = {
+      kind: 'hunk',
+      file: '.planning/config.json',
+      key: 'hooks.context_warnings',
+      before: 'not set (GSD default)',
+      after: 'false',
+      isRequired: false,
+      isAccepted: true,
+      isRunnable: true,
+      command: 'node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false',
+    }
+    const outcome = outcomeOf({ hunkFailures: [run], hunksNotRun: [hunk], attended: ['mode'] })
+    expect(appliedLines(outcome)).toEqual([
+      APPLIED_NONE_NOTE,
+      `warning: ${hunkFailureLine(run)}`,
+      `warning: ${hunkNotRunLine(hunk)}`,
+      `warning: ${attendedNote(['mode'])}`,
+      NEXT_STEP_NOTE,
+    ])
+    expect(appliedLines(outcomeOf({ hunkFailures: [run] }))).toEqual([
+      APPLIED_NONE_NOTE,
+      `warning: ${hunkFailureLine(run)}`,
+      NEXT_STEP_NOTE,
+    ])
   })
 
   test('appliedLines: the untracked-parts warnings come right after the install problems (02-GAPS-B2 M3)', () => {
