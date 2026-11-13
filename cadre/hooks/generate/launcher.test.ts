@@ -291,6 +291,7 @@ const VERDICT_LINES: readonly string[] = [
   '      tool-present) case ",$tools," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
   '      command-present) case ",$commands," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
   '      skill-present) case ",$skills," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+  '      skill-absent) case ",$skills," in *",\\"$token\\","*) ok=0 ;; esac ;;',
   '      permission-mode) [ "$mode" = "$token" ] || ok=0 ;;',
   '      memory-path) [ "$memory" = "$token" ] || [ "$memory" = "$token/" ] || ok=0 ;;',
   '      note) echo "note         $text"; continue ;;',
