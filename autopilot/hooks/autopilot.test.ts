@@ -876,6 +876,34 @@ describe('refusals while autopilot drives', () => {
     expect(isPermissionDeny('The cadre inbox tools work only in a cadre role session.')).toBe(false)
     expect(isPermissionDeny('')).toBe(false)
   })
+
+  test('every engine permission refusal shape is deferred', async () => {
+    const texts = [
+      "Permission to use Bash has been denied because Claude Code is running in don't ask mode.",
+      'Permission to edit /repo/a.ts has been denied.',
+      'Permission to read /etc/hosts has been denied.',
+      'Permission for this action was denied by the Claude Code auto mode classifier. Reason: pushes to main',
+      'Permission for this action has been denied. Reason: outside the role',
+      'Permission for this tool use was denied. It requires approval, and this session has no approval surface',
+      'Permission for this tool use was denied: it requires interactive approval',
+      'Permission for this command was denied by a built-in Claude Code safety check, not by the user.',
+      'Permission denied for: git push origin main',
+    ]
+    for (const text of texts) expect(isPermissionDeny(text)).toBe(true)
+  })
+
+  test("a hook's or a tool's own deny is not a permission refusal", async () => {
+    const texts = [
+      'Permission denied by hook',
+      'Permission denied for Bash: blocked by a hook',
+      'The cadre inbox tool failed. Try again.',
+      'Autopilot could not record the wait. Continue your work.',
+      ' Permission to use Bash has been denied.',
+      'permission to use Bash has been denied.',
+      'Permission to use',
+    ]
+    for (const text of texts) expect(isPermissionDeny(text)).toBe(false)
+  })
 })
 
 describe('AskUserQuestion while asking is on', () => {
