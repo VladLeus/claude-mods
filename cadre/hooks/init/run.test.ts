@@ -26,6 +26,7 @@ import type {
   PluginFlag,
   PortEntry,
   RawGsdCandidate,
+  RepoEntry,
   RoleSpec,
   SetupScan,
   Sizing,
@@ -40,7 +41,13 @@ import {
   improverNoChangeNote,
   otherChangesWarning,
 } from '../apply/improver'
-import { installedLine, installFailureText, MARKETPLACE_ADD_ARGV } from '../apply/installs'
+import {
+  installedLine,
+  installFailureText,
+  MARKETPLACE_ADD_ARGV,
+  projectInstallFailureText,
+  projectInstallOf,
+} from '../apply/installs'
 import {
   instructionsRecordPath,
   instructionsRecordText,
@@ -5171,14 +5178,18 @@ describe('a consented framework install after Confirm', () => {
     })
   }
 
+  /** `.planning/` at the repo root, which puts GSD in use. */
+  const PLANNING: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+
   /**
    * The apply of the confirmed draft, each host run and write and each facts read recorded in one list, in order; the
-   * facts read after the installs show the frameworks `found`.
+   * facts read after the installs show the frameworks `found` and the repo-root entries `inUse`.
    */
   async function applied(
     draft: Draft,
     runs: readonly HostRunRule[] = [],
     found: readonly FrameworkId[] = [],
+    inUse: readonly RepoEntry[] = [],
   ): Promise<{
     readonly host: MemHost
     readonly events: string[]
@@ -5192,8 +5203,10 @@ describe('a consented framework install after Confirm', () => {
       ...run.io,
       facts: async locations => {
         recorded.events.push('facts')
+        const shown = showing(await run.io.facts(locations), found)
+        const repoEntries = [...shown.facts.repoEntries, ...inUse]
 
-        return showing(await run.io.facts(locations), found)
+        return { ...shown, facts: { ...shown.facts, repoEntries } }
       },
     }
     const reviewed = { draft, planned: await plannedOf(draft) }
@@ -5265,6 +5278,19 @@ describe('a consented framework install after Confirm', () => {
       'Framework: GSD.',
       '@opengsd/gsd-core',
     ])
+  })
+
+  test('a kept GSD in use whose install did not land gives its command; be and the default stay on GSD', async () => {
+    const { host, problems, installed } = await applied(gsdDraft(['gsd', 'none'], 'gsd'), [], [], [PLANNING])
+    const install = projectInstallOf('gsd')
+    const failure = install === null ? [] : [projectInstallFailureText(install)]
+    expect([failure.length, problems, installed]).toEqual([1, failure, []])
+    expect(['be', 'tl'].map(id => frameworkLineOf(host, id))).toEqual(['Framework: GSD.', 'Framework: GSD.'])
+  })
+
+  test('a kept GSD in use whose install landed is named among the installed, with no problem line', async () => {
+    const { problems, installed } = await applied(gsdDraft(['gsd', 'none'], 'gsd'), [], ['gsd'], [PLANNING])
+    expect([problems, installed]).toEqual([[], ['@opengsd/gsd-core']])
   })
 
   test('the fallback line names the role and the repo default on it, and what they fell back to', async () => {
@@ -7250,6 +7276,21 @@ describe('the file plan and apply of /cadre frameworks', () => {
         'from the repo root, then /cadre frameworks again',
     ])
     expect(parseRoleJson(written)?.framework).toBe('none')
+  })
+
+  test('a kept GSD in use whose install did not land gives its command, and its roles stay on GSD', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { repoDefault: 'none', frameworkInstalls: ['gsd'] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const install = projectInstallOf('gsd')
+    const failure = install === null ? [] : [projectInstallFailureText(install)]
+    const written = host.writes.find(write => write.path === BE_ROLE_JSON)?.text ?? ''
+    expect([failure.length, outcome?.installProblems, outcome?.installed]).toEqual([1, failure, []])
+    expect(parseRoleJson(written)?.framework).toBe('gsd')
   })
 })
 
