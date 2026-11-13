@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { test } from 'node:test'
+import { SEEDS } from '../agent/seeds.ts'
 import {
   agentSidecar,
   answerRefusal,
@@ -29,8 +32,10 @@ import {
 } from './agent.ts'
 import type { RunState, WsState } from './agent.ts'
 import type { TopEntry } from './config-state.ts'
+import { isRecord } from './filter.ts'
 import type { FilterContext } from './filter.ts'
 import type { GuardSnapshot } from './guard.ts'
+import { removeTree, scratchRoot } from './scratch.ts'
 import type { Sidecar } from './summary.ts'
 
 const RUN = '261113-090000-abcd'
@@ -827,5 +832,20 @@ test('seedRefusal refuses user-claude-md outside an exclusive workspace and allo
   assert.equal(seedRefusal('user-claude-md', true), null)
   for (const name of ['sources', 'planning-x', 'subfolder-settings', 'security-change', 'bypass']) {
     assert.equal(seedRefusal(name, false), null, name)
+  }
+})
+
+test('the subfolder-settings seed denies denied.txt by ./denied.txt and by src/denied.txt', async () => {
+  const seed = SEEDS.get('subfolder-settings')
+  const repo = await mkdtemp(join(scratchRoot(), 'unit-agent-seed-'))
+  try {
+    assert.ok(seed)
+    await seed({ repo, e2eDir: repo })
+    const settings: unknown = JSON.parse(await readFile(join(repo, 'src', '.claude', 'settings.json'), 'utf8'))
+    const permissions = isRecord(settings) ? settings.permissions : undefined
+
+    assert.deepEqual(isRecord(permissions) ? permissions.deny : undefined, ['Read(./denied.txt)', 'Read(src/denied.txt)'])
+  } finally {
+    await removeTree(repo, scratchRoot())
   }
 })
