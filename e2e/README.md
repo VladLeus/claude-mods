@@ -150,7 +150,7 @@ node e2e/agent/cli.ts end --token <token>           # after the Workflow
 | `keys <ws> <window> <key...>` | presses keys from a fixed list |
 | `answer`, `other <ws> <window> <label or text>` | answers the question on the screen |
 | `capture <ws> <window> [--history] [--lines <n>]` | prints the last lines of a window |
-| `wait <ws> <window> <regex> [--timeout <s>]` | waits until the screen matches, at most 540 s per call |
+| `wait <ws> <window> <regex> [--timeout <s>]` | waits until the screen matches, at most 540 s per call; after a `send`, only the lines below the sent text's echo count |
 | `idle`, `stop <ws> <window>` | waits for a still screen; exits the session |
 | `cadre <ws> <args...> [--wt <worktree>]` | runs `/cadre <args>` in print mode in the copy |
 | `probe <ws> <role> [--wt <worktree>]` | runs a role launcher with `--probe` |
