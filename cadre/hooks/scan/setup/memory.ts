@@ -1,13 +1,12 @@
 /**
  * The memory part of the setup scan, a layer 3 module: the `.md` file names of this repo's auto-memory folders, of the
  * root as resolved and as given, once each (D-57). No memory text is read. It imports core, paths, the facts name
- * warnings, port-read, the setup readers and settings, and the types, so the setup scan lists the memory files here.
+ * warnings, the setup readers and settings, and the types, so the setup scan lists the memory files here.
  */
 import type { InitIo } from '../../../types'
 import { sortedUnique } from '../../core/text'
-import { markdownFileNames, MAX_FILE_NAME_CHARS, projectFolderOf } from '../../paths'
+import { markdownFileNames, MAX_FILE_NAME_CHARS, memoryFolderOf } from '../../paths'
 import { hiddenNameWarnings } from '../facts/normalize'
-import { followedProjectFolder, readsStartCwd } from '../port-read'
 import { listFolder } from './read'
 import type { SetupContext } from './read'
 import { stableNames } from './settings'
@@ -24,11 +23,7 @@ export async function memoryFileNames(
   warnings: string[],
 ): Promise<string[]> {
   if (userDir === null) return []
-  const folders = new Set<string>()
-  for (const root of new Set([ctx.root, ctx.givenRoot])) {
-    const folder = await followedProjectFolder(io, projectFolderOf(userDir, root), readsStartCwd(io, root))
-    folders.add(`${folder}/memory`)
-  }
+  const folders = new Set([ctx.root, ctx.givenRoot].map(root => memoryFolderOf(userDir, root)))
   const names: string[] = []
   for (const folder of folders) names.push(...markdownFileNames(await listFolder(io, ctx, folder, warnings)))
   warnings.push(...hiddenNameWarnings(names, 'memoryFileName', MAX_FILE_NAME_CHARS))

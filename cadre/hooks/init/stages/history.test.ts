@@ -149,7 +149,7 @@ function scanAskContext(total: number): unknown {
 function historyCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
   return async call => {
     if (call.id === 'list-sessions') {
-      return { id: 'list-sessions', result: await listSessions(io, call.dir, call.startFolder) }
+      return { id: 'list-sessions', result: await listSessions(io, call.dir) }
     }
     if (call.id !== 'scan-history') throw new Error(`the history stage does not set ${call.id}`)
 

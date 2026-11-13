@@ -87,15 +87,13 @@ function newestFirst(a: PortEntry, b: PortEntry): number {
  * This repo's session transcripts (D-59): the regular `.jsonl` files of the folder, newest first, at most
  * HISTORY_MAX_SESSIONS of them, with the number of all of them. A folder, a link or another name is not a session. A
  * folder that is not there has no sessions, and one that cannot be listed gives null (listingState), because unknown
- * is not absent. Only the listing is read, and for a shortened folder the start folder check (readsStartCwd).
+ * is not absent. Only the listing is read, never a transcript.
  */
 export async function listSessions(
   io: InitIo,
   dir: string,
-  startFolder: string,
 ): Promise<{ readonly sessions: readonly PortEntry[]; readonly total: number } | null> {
-  const folder = await followedProjectFolder(io, dir, readsStartCwd(io, startFolder))
-  const listing = await listingState(io, folder)
+  const listing = await listingState(io, dir)
   if (listing.state === 'unknown') return null
   const files = listing.state === 'present' ? listing.entries.filter(isSession) : []
 

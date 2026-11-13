@@ -847,7 +847,7 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'scan', result, tools: await scanIo.tools() }
     }
     case 'list-sessions':
-      return { id: 'list-sessions', result: await listSessions(io, call.dir, call.startFolder) }
+      return { id: 'list-sessions', result: await listSessions(io, call.dir) }
     case 'scan-history':
       await io.progress(HISTORY_PROGRESS, countsText([['sessions', call.sessions.length]]))
 
