@@ -6,6 +6,22 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { HarnessError } from '../lib/errors.ts'
 import { variantClosure } from '../lib/fixture.ts'
+import {
+  FRAMEWORK_SET_QUESTION,
+  FRAMEWORKS_ADD_GSD_SCRIPT,
+  GSD_DIR_SCRIPT,
+  GSD_HERE_SCRIPT,
+  GSD_IGNOREALL_SCRIPT,
+  GSD_INSTALL_QUESTION,
+  GSD_SCRIPT,
+  MCP_SCRIPT,
+  SP_GSD_INSTALL_SCRIPT,
+  SP_GSD_SCRIPT,
+  SP_INSTALL_QUESTION,
+  SP_INSTALLED_SCRIPT,
+  V050_SCRIPT,
+} from './fixtures/answers.ts'
+import type { DialogEntry } from './fixtures/answers.ts'
 import { VARIANTS } from './fixtures/index.ts'
 import { ROWS } from './rows.ts'
 import type { RowEntry } from './rows.ts'
@@ -239,4 +255,56 @@ test('every variant a live entry names has a builder', () => {
     .flatMap(row => row.fixture.filter(name => VARIANTS[name] === undefined).map(name => `${key(row)}: ${name}`))
 
   assert.deepEqual(missing, [])
+})
+
+const INSTALL_YES = 'Yes, install it'
+
+function entryIndex(script: readonly DialogEntry[], question: string, answer: string): number {
+  return script.findIndex(entry => entry.question === question && entry.answer === answer)
+}
+
+test('the installed variants build alone from none-team and sp-pre', () => {
+  assert.deepEqual(VARIANTS['gsd-installed']?.from, ['none-team'])
+  assert.equal(VARIANTS['gsd-installed']?.exclusive, true)
+  assert.deepEqual(VARIANTS['sp-installed']?.from, ['sp-pre'])
+  assert.equal(VARIANTS['sp-installed']?.exclusive, true)
+  assert.deepEqual(variantClosure(['gsd-installed'], builderFrom), ['bare', 'none-team', 'gsd-installed'])
+  assert.deepEqual(variantClosure(['sp-installed'], builderFrom), ['sp-pre', 'sp-installed'])
+})
+
+test('SP_INSTALLED_SCRIPT keeps superpowers, installs it, installs no GSD and answers policy and launch as GSD_SCRIPT', () => {
+  const keep = entryIndex(SP_INSTALLED_SCRIPT, FRAMEWORK_SET_QUESTION, 'Keep superpowers')
+  const install = entryIndex(SP_INSTALLED_SCRIPT, SP_INSTALL_QUESTION, INSTALL_YES)
+
+  assert.ok(keep >= 0, 'no Keep superpowers entry')
+  assert.ok(install > keep, 'no superpowers install entry after Keep superpowers')
+  assert.equal(entryIndex(SP_INSTALLED_SCRIPT, GSD_INSTALL_QUESTION, INSTALL_YES), -1)
+  for (const answer of ['Commit definitions', 'Git root of this repo']) {
+    const ours = SP_INSTALLED_SCRIPT.find(entry => entry.answer === answer)
+    assert.ok(ours, `no ${answer} entry`)
+    assert.deepEqual(ours, GSD_SCRIPT.find(entry => entry.answer === answer), answer)
+  }
+})
+
+test('every gsd-pre init script declines the GSD install after Keep GSD', () => {
+  const scripts = { GSD_SCRIPT, GSD_HERE_SCRIPT, GSD_DIR_SCRIPT, GSD_IGNOREALL_SCRIPT, MCP_SCRIPT, V050_SCRIPT }
+  for (const [name, script] of Object.entries(scripts)) {
+    const keep = entryIndex(script, FRAMEWORK_SET_QUESTION, 'Keep GSD')
+    assert.ok(keep >= 0, `${name}: no Keep GSD entry`)
+    assert.ok(entryIndex(script, GSD_INSTALL_QUESTION, 'No') > keep, `${name}: no GSD install No after Keep GSD`)
+  }
+})
+
+test('the sp-gsd init scripts install GSD and then decline the superpowers install on every ask', () => {
+  for (const [name, script] of Object.entries({ SP_GSD_SCRIPT, SP_GSD_INSTALL_SCRIPT })) {
+    const gsd = entryIndex(script, GSD_INSTALL_QUESTION, INSTALL_YES)
+    const sp = entryIndex(script, SP_INSTALL_QUESTION, 'No')
+    assert.ok(gsd >= 0, `${name}: no GSD install Yes`)
+    assert.ok(sp > gsd, `${name}: no superpowers install No after the GSD install`)
+    assert.equal(script[sp]?.repeat, true, `${name}: the superpowers install No does not repeat`)
+  }
+})
+
+test('FRAMEWORKS_ADD_GSD_SCRIPT installs GSD', () => {
+  assert.ok(entryIndex(FRAMEWORKS_ADD_GSD_SCRIPT, GSD_INSTALL_QUESTION, INSTALL_YES) >= 0)
 })
