@@ -22,7 +22,7 @@ import { redactedText } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { chooseFramework } from '../../framework/contract'
 import { needsGsdCheck, withGsdIdentity } from '../../framework/gsd/identity'
-import { detectAll } from '../../framework/registry'
+import { adapterOf, detectAll } from '../../framework/registry'
 import { t } from '../../locales/t'
 import { standsFor } from '../../roles/template'
 import {
@@ -366,9 +366,24 @@ function setInstallNext(state: InitState, set: readonly FrameworkId[], rest: rea
 }
 
 /**
- * The answer to the set question (choiceAnswer): the frameworks found that it keeps, then each missing one it names
- * asked about (setInstallNext). An answer it cannot read is asked again with why on top; a dismissal cancels with
- * FRAMEWORK_DISMISSED_REASON and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON (A1).
+ * The kept frameworks, in order, that are in use but not installed for the repo and have a project install not yet
+ * consented to: the set answer asks their install question before the added frameworks'.
+ */
+function uninstalledKept(state: InitState, kept: readonly FrameworkId[]): FrameworkId[] {
+  const facts = state.draft.gathered?.facts.facts
+  if (facts === undefined) return []
+  const { frameworkInstalls = [] } = state.draft
+
+  return kept.filter(
+    id => !adapterOf(id).isInstalled(facts) && projectInstallOf(id) !== null && !frameworkInstalls.includes(id),
+  )
+}
+
+/**
+ * The answer to the set question (choiceAnswer): the frameworks found that it keeps, then each kept one that is not
+ * installed (uninstalledKept) and each missing one it names asked about (setInstallNext). An answer it cannot read is
+ * asked again with why on top; a dismissal cancels with FRAMEWORK_DISMISSED_REASON and MAX_ASKS answers it cannot
+ * read with NO_USABLE_ANSWER_REASON (A1).
  */
 function afterSet(state: InitState, sub: { readonly tries: number }, answer: string | null): InitState {
   const set = setAskOf(state)
@@ -377,13 +392,15 @@ function afterSet(state: InitState, sub: { readonly tries: number }, answer: str
   if (next.kind === 'again') return setAsked(state, next.sub.tries, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   const kept = next.value.filter(id => set.found.includes(id))
+  const added = next.value.filter(id => !set.found.includes(id))
 
-  return setInstallNext(state, kept, next.value.filter(id => !set.found.includes(id)))
+  return setInstallNext(state, kept, [...uninstalledKept(state, kept), ...added])
 }
 
 /**
- * The answer to the install question a set answer asked: Yes adds the framework to the set, to the frameworks to
- * install and, before none, to the installed ones; No or a dismissal leaves it out and records no install. An answer
+ * The answer to the install question a set answer asked: Yes adds the framework to the set when it is not there yet,
+ * to the frameworks to install and, before none, to the installed ones; No or a dismissal records no install and
+ * leaves the set as it is, so a kept framework stays in it. An answer
  * that is neither is asked again with why on top.
  */
 function afterSetInstall(state: InitState, sub: SetInstall, answer: string | null): InitState {
@@ -396,8 +413,9 @@ function afterSetInstall(state: InitState, sub: SetInstall, answer: string | nul
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return setInstallNext(state, set, rest)
   const draft = withConsentedInstall(state.draft, sub.framework)
+  const grown = set.includes(sub.framework) ? set : [...set, sub.framework]
 
-  return setInstallNext({ ...state, draft }, [...set, sub.framework], rest)
+  return setInstallNext({ ...state, draft }, grown, rest)
 }
 
 /** The choice the mode questions ask about: the two or more frameworks the set keeps; null with fewer. */

@@ -474,6 +474,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.",
           "Nothing is installed before you confirm the final review, and a --dry-run installs nothing."
         ],
@@ -686,6 +698,30 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
         "options": [
           "Keep GSD and superpowers (Recommended)",
           "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install GSD for this repo?",
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
         ],
         "multiSelect": false
       },

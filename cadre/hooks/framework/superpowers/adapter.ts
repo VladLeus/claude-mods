@@ -229,6 +229,7 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
   detectRule:
     t('framework.superpowers.adapter.superpowersAdapter'),
   detect: detectSuperpowers,
+  isInstalled: (facts: Facts): boolean => facts.enabledPlugins.some(isEnabledSuperpowers),
   startWork: Object.freeze([
     t('framework.superpowers.adapter.superpowersAdapter2'),
     t('framework.superpowers.adapter.superpowersAdapter3'),

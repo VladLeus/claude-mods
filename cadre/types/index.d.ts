@@ -352,6 +352,8 @@ export type FrameworkAdapter = {
   /** One line, shown by `--adapters`, on how this framework is detected. */
   readonly detectRule: string
   readonly detect: (facts: Facts) => Detection
+  /** Whether the framework is installed for the repo, apart from being in use. */
+  readonly isInstalled: (facts: Facts) => boolean
   /** The exact commands or skills the role line names to start the work. */
   readonly startWork: readonly string[]
   /** Where specs and plans live, relative to the repo root. */

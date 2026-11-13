@@ -98,9 +98,18 @@ const SET_END = 'Adding one installs it at project scope after Confirm.'
 const GSD_SET_QUESTION = `Which frameworks does this team use? Found: GSD. ${SET_END}`
 const BOTH_SET_QUESTION = `Which frameworks does this team use? Found: GSD and superpowers. ${SET_END}`
 
+/** The state after each answer in turn. */
+function answered(state: InitState, texts: readonly string[]): InitState {
+  return texts.reduce((at, text) => nextStage(at, { kind: 'answer', text }), state)
+}
+
 /** The Keep answers of those two set questions. */
 const KEEP_GSD = 'Keep GSD (Recommended)'
 const KEEP_BOTH = 'Keep GSD and superpowers (Recommended)'
+
+/** The first lines of the install questions a kept framework that is not installed asks. */
+const GSD_INSTALL = 'Install GSD for this repo?'
+const SUPERPOWERS_INSTALL = 'Install superpowers for this repo?'
 
 describe('frameworkStep', () => {
   /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
@@ -133,50 +142,59 @@ describe('frameworkStep', () => {
     const chosen: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
     const overridden = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
     for (const team of [overridden, roles]) {
-      const run = driven(frameworksAt(chosen, team), [KEEP_GSD])
+      const run = driven(frameworksAt(chosen, team), [KEEP_GSD, 'No'])
       const { draft } = run.state
       expect([draft.roles, draft.repoDefault, draft.frameworkSet]).toEqual([team, 'gsd', ['gsd']])
-      expect([firstLines(run.asked), run.outputs]).toEqual([[GSD_SET_QUESTION], []])
+      expect([firstLines(run.asked), run.outputs]).toEqual([[GSD_SET_QUESTION, GSD_INSTALL], []])
     }
   })
 
   test('ambiguous: Same for all roles asks once more and gives every role but PM that framework, no default', () => {
-    const run = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Same for all roles', 'superpowers'])
+    const answers = [KEEP_BOTH, 'No', 'No', 'Same for all roles', 'superpowers']
+    const run = driven(frameworksAt(ambiguous, roles), answers)
     expect(run.state.draft.roles).toEqual(
       roles.map(role => (role.id === 'pm' ? withFramework(role, 'none') : withFramework(role, 'superpowers'))),
     )
     expect(run.state.draft.repoDefault).toBeNull()
-    expect(firstLines(run.asked)).toEqual([BOTH_SET_QUESTION, AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
-    expect(run.specs.slice(1)).toEqual([
-      { options: ['Same for all roles', 'Per role'], header: 'Framework', context: detectedFor(run.asked[1]) },
-      { options: BOTH_OPTIONS, header: 'Framework', context: detectedFor(run.asked[2]), acceptsTyped: true },
+    expect(firstLines(run.asked)).toEqual([
+      BOTH_SET_QUESTION,
+      GSD_INSTALL,
+      SUPERPOWERS_INSTALL,
+      AMBIGUOUS_QUESTION,
+      FRAMEWORK_ALL_QUESTION,
+    ])
+    expect(run.specs.slice(3)).toEqual([
+      { options: ['Same for all roles', 'Per role'], header: 'Framework', context: detectedFor(run.asked[3]) },
+      { options: BOTH_OPTIONS, header: 'Framework', context: detectedFor(run.asked[4]), acceptsTyped: true },
     ])
   })
 
   test('ambiguous: Per role asks each role but PM by title and id, in role order, with the frameworks and none', () => {
-    const answers = [KEEP_BOTH, 'Per role', 'none (built-in)', 'superpowers']
+    const answers = [KEEP_BOTH, 'No', 'No', 'Per role', 'none (built-in)', 'superpowers']
     const run = driven(frameworksAt(ambiguous, roles), answers)
     expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'none', 'superpowers'])
     expect(run.state.draft.repoDefault).toBeNull()
     expect(firstLines(run.asked)).toEqual([
       BOTH_SET_QUESTION,
+      GSD_INSTALL,
+      SUPERPOWERS_INSTALL,
       AMBIGUOUS_QUESTION,
       'Framework for Team Lead (tl)?',
       'Framework for Security (security)?',
     ])
-    const each = run.asked.slice(2).map(asked => ({
+    const each = run.asked.slice(4).map(asked => ({
       options: BOTH_OPTIONS,
       header: 'Framework',
       context: detectedFor(asked),
       acceptsTyped: true,
     }))
-    expect(run.specs.slice(2)).toEqual(each)
+    expect(run.specs.slice(4)).toEqual(each)
   })
 
   test('installed-only asks the set question; Keep puts every role on the installed framework as the default', () => {
-    const run = driven(frameworksAt(installedOnly, roles), [KEEP_GSD])
+    const run = driven(frameworksAt(installedOnly, roles), [KEEP_GSD, 'No'])
     expect([run.state.draft.roles, run.state.draft.repoDefault]).toEqual([roles, 'gsd'])
-    expect(firstLines(run.asked)).toEqual([GSD_SET_QUESTION])
+    expect(firstLines(run.asked)).toEqual([GSD_SET_QUESTION, GSD_INSTALL])
     const options = [KEEP_GSD, 'Add superpowers too', 'None (built-in)']
     const context = detectedFor(run.asked[0])
     expect(run.specs[0]).toEqual({ options, header: 'Framework', context, acceptsTyped: true })
@@ -217,12 +235,13 @@ describe('frameworkStep', () => {
   })
 
   test('a typed framework that is not offered is asked again with why on top; an offered id counts', () => {
-    const run = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Same for all roles', 'aidlc', ' NONE '])
+    const answers = [KEEP_BOTH, 'No', 'No', 'Same for all roles', 'aidlc', ' NONE ']
+    const run = driven(frameworksAt(ambiguous, roles), answers)
     expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'none', 'none'])
     const refusal = "'aidlc' isn't one of: GSD, superpowers, none - a role runs one framework."
     const all = withContext(FRAMEWORK_ALL_QUESTION, teamContextLine(roles))
-    expect(firstLines(run.asked)[1]).toBe(AMBIGUOUS_QUESTION)
-    expect(run.asked.slice(2)).toEqual([all, `${refusal}\n${all}`])
+    expect(firstLines(run.asked)[3]).toBe(AMBIGUOUS_QUESTION)
+    expect(run.asked.slice(4)).toEqual([all, `${refusal}\n${all}`])
   })
 
   test('a dismissed or unread framework question is never a choice: the step is cancelled (A1)', () => {
@@ -253,14 +272,14 @@ describe('frameworkStep', () => {
 
   test('options keep SUPPORTED_IDS order then none for each role, 2 to 4 of them, in any choice order', () => {
     const reversed: Choice = { kind: 'ambiguous', ids: ['superpowers', 'gsd'] }
-    const run = driven(frameworksAt(reversed, roles), [KEEP_BOTH, 'Per role', 'GSD', 'GSD', 'GSD'])
-    const each = run.asked.slice(2).map(asked => ({
+    const run = driven(frameworksAt(reversed, roles), [KEEP_BOTH, 'No', 'No', 'Per role', 'GSD', 'GSD', 'GSD'])
+    const each = run.asked.slice(4).map(asked => ({
       options: BOTH_OPTIONS,
       header: 'Framework',
       context: detectedFor(asked),
       acceptsTyped: true,
     }))
-    expect(run.specs.slice(2)).toEqual(each)
+    expect(run.specs.slice(4)).toEqual(each)
     for (const spec of run.specs) {
       expect(spec.options.length).toBeGreaterThanOrEqual(2)
       expect(spec.options.length).toBeLessThanOrEqual(4)
@@ -304,12 +323,12 @@ describe('PM on its own framework none', () => {
   })
 
   test('the same-for-all answer superpowers leaves PM on none; the per-role question asks every role but PM', () => {
-    const all = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Same for all roles', 'superpowers'])
-    const each = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Per role', 'GSD', 'GSD'])
+    const all = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'No', 'No', 'Same for all roles', 'superpowers'])
+    const each = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'No', 'No', 'Per role', 'GSD', 'GSD'])
 
     expect(all.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'superpowers', 'superpowers'])
     expect(each.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'gsd', 'gsd'])
-    expect(firstLines(each.asked).slice(2)).toEqual([
+    expect(firstLines(each.asked).slice(4)).toEqual([
       'Framework for Team Lead (tl)?',
       'Framework for Security (security)?',
     ])
@@ -318,12 +337,13 @@ describe('PM on its own framework none', () => {
   test('an Adjust line moving PM off none is kept with one framework, and a later answer for all roles wins', () => {
     const adjusted = adjustedToGsd()
     const kept = driven(frameworksAt(chosen, adjusted), [KEEP_GSD])
-    const all = driven(frameworksAt(ambiguous, adjusted), [KEEP_BOTH, 'Same for all roles', 'superpowers'])
-    const each = driven(frameworksAt(ambiguous, adjusted), [KEEP_BOTH, 'Per role', 'superpowers', 'GSD', 'GSD'])
+    const declined = [KEEP_BOTH, 'No', 'No']
+    const all = driven(frameworksAt(ambiguous, adjusted), [...declined, 'Same for all roles', 'superpowers'])
+    const each = driven(frameworksAt(ambiguous, adjusted), [...declined, 'Per role', 'superpowers', 'GSD', 'GSD'])
 
     expect(kept.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', undefined, undefined])
     expect(all.state.draft.roles?.map(role => role.framework)).toEqual(['superpowers', 'superpowers', 'superpowers'])
-    expect(firstLines(each.asked)[2]).toBe('Framework for PM (pm)?')
+    expect(firstLines(each.asked)[4]).toBe('Framework for PM (pm)?')
     expect(each.state.draft.roles?.map(role => role.framework)).toEqual(['superpowers', 'gsd', 'gsd'])
   })
 })
@@ -335,8 +355,8 @@ describe('question context lines (G-02-1)', () => {
   test('the framework question for all roles carries the team too', () => {
     const ambiguous: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
     const roles = proposeRoles(repoScan()).roles
-    const run = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'Same for all roles', 'GSD'])
-    expect(run.asked[2]).toBe(`${FRAMEWORK_ALL_QUESTION}\nRoles: ${TEAM}.`)
+    const run = driven(frameworksAt(ambiguous, roles), [KEEP_BOTH, 'No', 'No', 'Same for all roles', 'GSD'])
+    expect(run.asked[4]).toBe(`${FRAMEWORK_ALL_QUESTION}\nRoles: ${TEAM}.`)
   })
 })
 
@@ -377,7 +397,7 @@ describe('the frameworks stage (D-230)', () => {
   test('an ambiguous choice asks the set, then Same for all roles or Per role with the team ids', () => {
     const choice: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
     const entered = frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles })))
-    const state = nextStage(entered, { kind: 'answer', text: KEEP_BOTH })
+    const state = answered(entered, [KEEP_BOTH, 'No', 'No'])
     const prefix = `${FRAMEWORK_QUESTION_PREFIX} (asked because more than one framework is in use)`
     const question = withContext(prefix, 'Roles: pm, tl, security.')
     const spec = { options: ['Same for all roles', 'Per role'], header: 'Framework', context: detectedFor(question) }
@@ -738,9 +758,9 @@ describe('the framework set question', () => {
     return frameworksStage.enter(stateAt('frameworks', draft))
   }
 
-  /** The install question of superpowers, asked after the Add answer. */
+  /** The install question of superpowers, asked after the Add answer and a No to the install of GSD. */
   function addAsked(): InitState {
-    return nextStage(gsdInUse(), { kind: 'answer', text: 'Add superpowers too' })
+    return answered(gsdInUse(), ['Add superpowers too', 'No'])
   }
 
   /** What a framework answer leaves in the draft: the set, the installs, the installed ones, the default, the roles. */
@@ -802,7 +822,7 @@ describe('the framework set question', () => {
   })
 
   test('a typed name that is missing asks its install question too', () => {
-    const typed = nextStage(gsdInUse(), { kind: 'answer', text: 'gsd superpowers' })
+    const typed = answered(gsdInUse(), ['gsd superpowers', 'No'])
     const ask = frameworkInstallAsk('superpowers')
     expect([typed.sub.kind, typed.openQuestion?.question]).toEqual(['set-install', ask.question])
   })
@@ -1077,7 +1097,7 @@ describe('the stored framework answer and the set question', () => {
 
   test("' GSD , superpowers ' typed reads both; aidlc typed is asked again with the answers and names it takes", () => {
     const state = enteredWith(BOTH_IN_USE, ['gsd', 'superpowers', 'none'])
-    const both = nextStage(state, { kind: 'answer', text: ' GSD , superpowers ' })
+    const both = answered(state, [' GSD , superpowers ', 'No', 'No'])
     const refused = nextStage(state, { kind: 'answer', text: 'aidlc' })
     const accepts = `"${KEEP_BOTH}", "None (built-in)", or the frameworks by name: GSD, superpowers, none`
     expect([both.draft.frameworkSet, both.sub]).toEqual([['gsd', 'superpowers'], { kind: 'mode', tries: 1 }])
@@ -1123,7 +1143,7 @@ describe('the framework step of /cadre frameworks', () => {
   })
 
   test('one framework kept is the repo default, and no role gains a framework of its own', () => {
-    const kept = nextStage(enteredIn(GSD_CHOSEN, ['gsd', 'none']), { kind: 'answer', text: KEEP_GSD })
+    const kept = answered(enteredIn(GSD_CHOSEN, ['gsd', 'none']), [KEEP_GSD, 'No'])
     const frameworks = (kept.draft.roles ?? []).map(role => role.framework)
     expect([kept.draft.repoDefault, kept.draft.frameworkSet]).toEqual(['gsd', ['gsd']])
     expect(frameworks).toEqual(roles.map(role => (role.framework === 'none' ? 'none' : undefined)))
@@ -1131,7 +1151,7 @@ describe('the framework step of /cadre frameworks', () => {
 
   test('two frameworks kept ask whether one serves all roles or each picks its own', () => {
     const both: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
-    const asked = nextStage(enteredIn(both, ['gsd', 'superpowers', 'none']), { kind: 'answer', text: KEEP_BOTH })
+    const asked = answered(enteredIn(both, ['gsd', 'superpowers', 'none']), [KEEP_BOTH, 'No', 'No'])
     expect([asked.sub, asked.draft.frameworkSet]).toEqual([{ kind: 'mode', tries: 1 }, ['gsd', 'superpowers']])
   })
 })

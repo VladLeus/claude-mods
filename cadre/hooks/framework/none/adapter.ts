@@ -105,6 +105,7 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   name: 'built-in',
   detectRule: t('framework.none.adapter.builtinAdapterDetectRule'),
   detect: detectBuiltin,
+  isInstalled: (): boolean => true,
   startWork: Object.freeze([
     t('framework.none.adapter.builtinAdapter'),
     t('framework.none.adapter.builtinAdapter2'),

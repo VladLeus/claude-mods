@@ -318,6 +318,7 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   detectRule:
     t('framework.gsd.adapter.gsdAdapter'),
   detect: detectGsd,
+  isInstalled: (facts: Facts): boolean => facts.gsd.some(fact => fact.identity === 'proven'),
   startWork: Object.freeze([
     t('framework.gsd.adapter.gsdAdapter2'),
     t('framework.gsd.adapter.gsdAdapter3'),

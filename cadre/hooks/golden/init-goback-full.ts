@@ -51,6 +51,30 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install GSD for this repo?",
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Which framework do the roles use? (asked because more than one framework is in use)",
           "Roles: pm, tl, security."
         ],
@@ -459,6 +483,30 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
         "options": [
           "Keep GSD and superpowers (Recommended)",
           "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install GSD for this repo?",
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
         ],
         "multiSelect": false
       },
@@ -876,6 +924,30 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install GSD for this repo?",
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Which framework do the roles use? (asked because more than one framework is in use)",
           "Roles: pm, tl, security."
         ],
@@ -1259,6 +1331,30 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
         "options": [
           "Keep GSD and superpowers (Recommended)",
           "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install GSD for this repo?",
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
         ],
         "multiSelect": false
       },

@@ -1699,6 +1699,40 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "acceptsTyped": true
     },
     {
+      "header": "Framework",
+      "context": {
+        "title": "Install superpowers",
+        "lines": [
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "It writes enabledPlugins in .claude/settings.json."
+        ],
+        "kind": "consent",
+        "summary": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+        "pane": {
+          "asked": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "text": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "It writes enabledPlugins in .claude/settings.json.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
+      },
+      "acceptsTyped": false
+    },
+    {
       "header": "Security",
       "context": {
         "title": "Security plugins",
@@ -2430,6 +2464,74 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Framework",
+      "context": {
+        "title": "Install GSD",
+        "lines": [
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, .claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json."
+        ],
+        "kind": "consent",
+        "summary": "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+        "pane": {
+          "asked": "Install GSD for this repo?\ncadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "text": "Install GSD for this repo?\ncadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, .claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
+      },
+      "acceptsTyped": false
+    },
+    {
+      "header": "Framework",
+      "context": {
+        "title": "Install superpowers",
+        "lines": [
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "It writes enabledPlugins in .claude/settings.json."
+        ],
+        "kind": "consent",
+        "summary": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+        "pane": {
+          "asked": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "text": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "It writes enabledPlugins in .claude/settings.json.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Framework",

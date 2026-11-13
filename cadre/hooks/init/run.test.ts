@@ -3163,7 +3163,11 @@ describe('refusal re-ask (G-02-6b)', () => {
       ],
       [
         'framework mode',
-        () => driven(frameworksStage.enter(stateAt('frameworks', frameworksDraft)), [KEEP_BOTH, 'zzz']).asked.slice(1),
+        () => {
+          const entered = frameworksStage.enter(stateAt('frameworks', frameworksDraft))
+
+          return driven(entered, [KEEP_BOTH, 'No', 'No', 'zzz']).asked.slice(3)
+        },
         '"Same for all roles", "Per role"',
       ],
       [
@@ -4097,9 +4101,12 @@ describe('reviewStep', () => {
     expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
     expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
     expect(firstPass.some(question => question.startsWith(SET_QUESTION_START))).toBe(true)
-    // The set the team keeps stays in the draft across the go-back, so only its per-role questions come again.
+    // The set the team keeps and its install answers stay in the draft across the go-back, so only its per-role
+    // questions come again.
     const isAskedAgain = (question: string): boolean =>
-      question !== DURATION_QUESTION && !question.startsWith(SET_QUESTION_START)
+      question !== DURATION_QUESTION &&
+      !question.startsWith(SET_QUESTION_START) &&
+      !/^Install (GSD|superpowers) for this repo\?$/.test(question)
     const again = firstPass.filter(isAskedAgain)
     expect(between(run.asked, REVIEW_QUESTION)).toEqual(again)
     const folded = run.specs.filter(spec => spec.context?.lines[0] === t('ui.recommendations.recommendationsHeading'))
