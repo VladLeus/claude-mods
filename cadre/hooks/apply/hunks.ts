@@ -77,3 +77,20 @@ export function hunkFailureLine(run: HunkRun): string {
 
   return t('apply.hunks.hunkFailureLine2', { change, display: reportText(run.display) })
 }
+
+/** The accepted hunks no run has, in hunk order: those cadre did not run, for the person to run themselves. */
+export function hunksNotRun(hunks: readonly HunkOp[], runs: readonly HunkRun[]): HunkOp[] {
+  const ran = new Set(runs.map(run => run.key))
+
+  return hunks.filter(hunk => hunk.isAccepted && !ran.has(hunk.key))
+}
+
+/**
+ * The line init prints for an accepted hunk cadre did not run: the file and the key it changes, and its command for
+ * the person to run themselves. Every value is cleaned and capped as a report cell is.
+ */
+export function hunkNotRunLine(hunk: HunkOp): string {
+  const change = t('apply.hunks.hunkFailureLine', { file: reportText(hunk.file), key: reportText(hunk.key) })
+
+  return t('apply.hunks.hunkNotRunLine', { change, display: reportText(hunk.command) })
+}

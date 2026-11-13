@@ -35,7 +35,7 @@ import {
   parseConflictAnswer,
 } from '../apply/conflict'
 import type { ConflictChoice } from '../apply/conflict'
-import { hunkRuns, hunksAfterRuns } from '../apply/hunks'
+import { hunkRuns, hunksAfterRuns, hunksNotRun } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
 import {
@@ -526,13 +526,17 @@ async function projectInstalled(
 
 /**
  * Runs each accepted hunk cadre can run, in hunk order from the repo root, through a proven user-level GSD only, and
- * gives the failed runs and the hunks after them, a failed one no longer runnable.
+ * gives the failed runs, the hunks after them, a failed one no longer runnable, and the accepted hunks not run.
  */
 async function hunksRan(
   io: InitIo,
   host: HostIo,
   draft: Pick<Draft, 'locations' | 'gathered' | 'hunks'>,
-): Promise<{ readonly failures: readonly HunkRun[]; readonly hunks: readonly HunkOp[] }> {
+): Promise<{
+  readonly failures: readonly HunkRun[]
+  readonly hunks: readonly HunkOp[]
+  readonly notRun: readonly HunkOp[]
+}> {
   const { locations, gathered } = draft
   const gsd = {
     userDir: provenUserDir(gathered.facts),
@@ -549,7 +553,7 @@ async function hunksRan(
   }
   const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
 
-  return { failures, hunks }
+  return { failures, hunks, notRun: hunksNotRun(draft.hunks, runs) }
 }
 
 /** The scopes compiled again from the setup after the installs, with attended judged again from the config on disk. */
@@ -663,7 +667,7 @@ async function applyConfirmed(
   const choices = asked.value
   const ran = await projectInstalled(io, host, draft)
   const { scanned, failed, unlanded, roles, repoDefault, landedPlugins, failedPlugins } = ran
-  const { failures, hunks } = await hunksRan(io, host, draft)
+  const { failures, hunks, notRun } = await hunksRan(io, host, draft)
   const installCount = countsText([['plugins', draft.pluginInstalls.length]])
   if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
   const installs =
@@ -715,6 +719,7 @@ async function applyConfirmed(
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
+    hunksNotRun: notRun,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...landedKeys, ...installs.installed],
     installProblems: [
@@ -744,7 +749,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
   const asked = await askedConflicts(io, locations.root, reframed.planned)
   if (asked.kind === 'cancelled') return asked
   const { scanned, failed, unlanded, roles, repoDefault } = await projectInstalled(io, host, draft)
-  const { failures, hunks } = await hunksRan(io, host, draft)
+  const { failures, hunks, notRun } = await hunksRan(io, host, draft)
   const setup = setupAfterInstalls(gathered.setup, consentedPluginKeys(draft, failed))
   const recorded = initFrameworks(draft, failed)
   const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
@@ -772,6 +777,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
+    hunksNotRun: notRun,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: landed.flatMap(id => projectInstallOf(id)?.id ?? []),
     installProblems: [...fallbackProblems(draft, failed, 'frameworks'), ...unlandedProblems],

@@ -5,7 +5,16 @@
  * imports apply, core, the GSD hunks, git, host, paths, roles/infra, scan/facts/normalize and the types, so init and
  * regen run their writes here.
  */
-import type { HostIo, InitIo, InitLocations, PortEntry, ProjectInstall, RoleSpec, WriteStat } from '../../types'
+import type {
+  HostIo,
+  HunkOp,
+  InitIo,
+  InitLocations,
+  PortEntry,
+  ProjectInstall,
+  RoleSpec,
+  WriteStat,
+} from '../../types'
 import { reportText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
 import { gitCommonDirOf } from '../git/common-dir'
@@ -14,7 +23,7 @@ import { t, tn } from '../locales/t'
 import { displayPath, foldersAbove, roleMemoryDir, trimSlash, userDirOf } from '../paths'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
-import { hunkFailureLine } from './hunks'
+import { hunkFailureLine, hunkNotRunLine } from './hunks'
 import type { HunkRun } from './hunks'
 import { improveBuiltFiles, improverLine, restoreSteps } from './improver'
 import type { BuiltFile, ImproverTally } from './improver'
@@ -89,6 +98,7 @@ export type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories' | 'parts
  * - `notExecutable`: each launcher whose chmod ran but did not exit 0, or could not run;
  * - `chmodRefusals`: the chmodProblem text of each chmod that was not run, because the write of its path did not land;
  * - `hunkFailures`: each framework command that failed (D-106);
+ * - `hunksNotRun`: each accepted hunk cadre did not run, for the person to run themselves; absent is none;
  * - `attended`: the required keys whose failed command made roles attended (D-106);
  * - `installed`: each framework install init's detection shows, by its install id, then each plugin key, a security
  *   plugin or claude-md-management, whose install ran after Confirm and exited 0;
@@ -116,6 +126,7 @@ export type ApplyOutcome = {
   readonly notExecutable: readonly string[]
   readonly chmodRefusals: readonly string[]
   readonly hunkFailures: readonly HunkRun[]
+  readonly hunksNotRun?: readonly HunkOp[]
   readonly attended: readonly string[]
   readonly installed: readonly string[]
   readonly installProblems: readonly string[]
@@ -423,7 +434,8 @@ export async function writeWithImprover(
  * private files included) and m the launchers made executable, or APPLIED_NONE_NOTE when nothing was written and no
  * write failed or was refused. Then one `warning: ` line for each write writeProblem refused (its text), each write
  * the host failed, each chmod not run (the chmodProblem text), each chmod that did not exit 0 (with the command to run
- * by hand), each framework command that failed (hunkFailureLine), the attended note when a failure made roles
+ * by hand), each framework command that failed (hunkFailureLine), each accepted hunk cadre did not run
+ * (hunkNotRunLine), the attended note when a failure made roles
  * attended, each plugin that was not installed (its installProblems text, decision #39), each source file
  * whose repo parts were left out because git does not track it, or that git could not be asked (untrackedParts,
  * 02-GAPS-B2 M3), each private file that was not written, or the roles whose role memory folders could not be named
@@ -447,6 +459,7 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
       return t('apply.run.appliedLines2', { pathText })
     }),
     ...outcome.hunkFailures.map(hunkFailureLine),
+    ...(outcome.hunksNotRun ?? []).map(hunkNotRunLine),
     ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
     ...outcome.installProblems,
     ...outcome.untrackedParts,
