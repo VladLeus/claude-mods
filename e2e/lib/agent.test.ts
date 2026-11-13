@@ -1030,11 +1030,17 @@ test('commitCadre runs no git hook', async () => {
     const hook = join(repo, '.git', 'hooks', 'pre-commit')
     await writeIn(repo, '.git/hooks/pre-commit', '#!/bin/sh\nexit 1\n')
     await chmod(hook, 0o755)
+    const marker = join(repo, '..', 'hook-ran')
+    for (const name of ['post-commit', 'prepare-commit-msg', 'post-index-change', 'reference-transaction']) {
+      await writeIn(repo, `.git/hooks/${name}`, `#!/bin/sh\necho ${name} >> '${marker}'\n`)
+      await chmod(join(repo, '.git', 'hooks', name), 0o755)
+    }
     await writeIn(repo, '.cadre/pm/ROLE.md', 'changed\n')
     const before = await git(repo, env, ['rev-parse', 'HEAD'])
 
     await commitCadre(repo, env)
 
+    assert.equal(await readFile(marker, 'utf8').catch(() => null), null)
     assert.notEqual(await git(repo, env, ['rev-parse', 'HEAD']), before)
     assert.deepEqual(lines(await git(repo, env, ['status', '--porcelain'])), [])
   })
