@@ -10,7 +10,7 @@ export const CADRE_COMMIT_MESSAGE = 'e2e: commit .cadre/'
 const GIT_MS = 60_000
 const HASH_CHARS = 12
 const ADD_ARGV: readonly string[] = ['git', 'add', '-A', '--', CADRE_DIR]
-// --only keeps other staged changes out of the commit and staged; --no-verify runs no hook.
+// --only keeps other staged changes out of the commit and staged.
 const COMMIT_ARGV: readonly string[] = [
   'git', 'commit', '--no-verify', '-q', '-m', CADRE_COMMIT_MESSAGE, '--only', '--', CADRE_DIR,
 ]
@@ -19,8 +19,15 @@ const HEAD_ARGV: readonly string[] = ['git', 'rev-parse', 'HEAD']
 
 export const CADRE_GIT_ARGVS: readonly (readonly string[])[] = [ADD_ARGV, COMMIT_ARGV, NAMES_ARGV, HEAD_ARGV]
 
+// Set through the env so the argv stays free of -c; --no-verify alone still runs the other hooks.
+const NO_HOOKS_ENV: ChildEnv = {
+  GIT_CONFIG_COUNT: '1',
+  GIT_CONFIG_KEY_0: 'core.hooksPath',
+  GIT_CONFIG_VALUE_0: '/dev/null',
+}
+
 async function git(repo: string, env: ChildEnv, argv: readonly string[]): Promise<string> {
-  const result = await run(argv, { cwd: repo, env, timeoutMs: GIT_MS })
+  const result = await run(argv, { cwd: repo, env: { ...env, ...NO_HOOKS_ENV }, timeoutMs: GIT_MS })
   if (result.code === 0) return result.stdout
   const output = `${result.stdout}\n${result.stderr}`.trim()
 

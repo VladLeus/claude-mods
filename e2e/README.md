@@ -155,7 +155,7 @@ node e2e/agent/cli.ts end --token <token>           # after the Workflow
 | `cadre <ws> <args...> [--wt <worktree>]` | runs `/cadre <args>` in print mode in the copy |
 | `probe <ws> <role> [--wt <worktree>]` | runs a role launcher with `--probe` |
 | `run <ws> [--wt <worktree>] git <subcommand> [args...]` | runs read-only git in the copy, the argv as given |
-| `commit <ws> .cadre/` | stages and commits only `.cadre/` in the main copy; refuses any other path or flag, runs no git hook |
+| `commit <ws> .cadre/` | stages and commits only `.cadre/` in the main copy; refuses any other path or flag, runs no git hook (`core.hooksPath` is `/dev/null` for its git calls) |
 | `files`, `read <ws> <location>` | lists a folder, or prints a file of at most 200000 bytes |
 | `seed <ws> <name> [<role>]` | writes one fixed seed |
 | `finish <ws>` | reads the result JSON on stdin, writes the row, closes the workspace |
