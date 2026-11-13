@@ -808,6 +808,112 @@ describe('the framework set question', () => {
   })
 })
 
+describe('the install offer for a kept framework that is not installed', () => {
+  /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
+  const roles = proposeRoles(repoScan()).roles
+  const GSD_CHOSEN: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
+  const PLANNING: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+  const PROVEN: GsdFact = {
+    location: 'user',
+    dir: '~/.claude/gsd-core',
+    version: '1.16.0',
+    identity: 'proven',
+    runtimeIdentityTried: false,
+  }
+
+  /** The frameworks stage entered for `choice` over `scanned`, with `installed` read from it. */
+  function keptAt(choice: Choice, scanned: Facts, installed: readonly FrameworkId[]): InitState {
+    const gathered = { facts: { facts: scanned, gsdUserDir: null }, repo: repoScan(), setup: emptySetupScan() }
+
+    return frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles, installed, gathered })))
+  }
+
+  /** GSD in use from `.planning/` with no proven install. */
+  function gsdUninstalled(): InitState {
+    return keptAt(GSD_CHOSEN, facts({ repoEntries: [PLANNING] }), ['gsd', 'none'])
+  }
+
+  test('Keep GSD asks the GSD install question next, No first, naming the project install command', () => {
+    const asked = nextStage(gsdUninstalled(), { kind: 'answer', text: KEEP_GSD })
+    const ask = frameworkInstallAsk('gsd')
+    expect([asked.sub.kind, asked.openQuestion?.question, asked.openQuestion?.spec]).toEqual([
+      'set-install',
+      ask.question,
+      ask.spec,
+    ])
+    expect(ask.spec.options[0]).toBe('No')
+    expect(ask.spec.context?.summary).toContain('npx -y @opengsd/gsd-core@latest --claude --local')
+  })
+
+  test('Yes records the GSD install; No or a dismissal keeps GSD in the set and records no install', () => {
+    const asked = nextStage(gsdUninstalled(), { kind: 'answer', text: KEEP_GSD })
+    const yes = frameworksStage.answer(asked, { kind: 'answer', text: 'Yes, install it' })
+    expect([yes.sub, yes.draft.frameworkSet, yes.draft.frameworkInstalls, yes.draft.repoDefault]).toEqual([
+      { kind: 'done' },
+      ['gsd'],
+      ['gsd'],
+      'gsd',
+    ])
+    for (const text of ['No', null]) {
+      const declined = frameworksStage.answer(asked, { kind: 'answer', text })
+      expect([declined.sub, declined.draft.frameworkSet, declined.draft.frameworkInstalls]).toEqual([
+        { kind: 'done' },
+        ['gsd'],
+        undefined,
+      ])
+    }
+  })
+
+  test('a proven GSD in use is never offered an install', () => {
+    const proven = keptAt(GSD_CHOSEN, facts({ repoEntries: [PLANNING], gsd: [PROVEN] }), ['gsd', 'none'])
+    const kept = frameworksStage.answer(proven, { kind: 'answer', text: KEEP_GSD })
+    expect([kept.sub, kept.draft.frameworkSet, kept.draft.frameworkInstalls]).toEqual([
+      { kind: 'done' },
+      ['gsd'],
+      undefined,
+    ])
+  })
+
+  test('Add superpowers asks the GSD install first, then superpowers; No, Yes record superpowers alone', () => {
+    const added = nextStage(gsdUninstalled(), { kind: 'answer', text: 'Add superpowers too' })
+    const gsdNo = nextStage(added, { kind: 'answer', text: 'No' })
+    const spYes = nextStage(gsdNo, { kind: 'answer', text: 'Yes, install it' })
+    expect([added.openQuestion?.question, gsdNo.openQuestion?.question]).toEqual([
+      frameworkInstallAsk('gsd').question,
+      frameworkInstallAsk('superpowers').question,
+    ])
+    expect([spYes.sub.kind, spYes.draft.frameworkSet, spYes.draft.frameworkInstalls]).toEqual([
+      'mode',
+      ['gsd', 'superpowers'],
+      ['superpowers'],
+    ])
+  })
+
+  test('Keep superpowers with docs/superpowers/ and no enabled superpowers@ key asks the superpowers install', () => {
+    const docs: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
+    const chosen: Choice = {
+      kind: 'chosen',
+      id: 'superpowers',
+      pickedBy: 'only-one-in-use',
+      reason: 'only superpowers is in use',
+    }
+    const entered = keptAt(chosen, facts({ docsEntries: [docs] }), ['superpowers', 'none'])
+    const asked = nextStage(entered, { kind: 'answer', text: 'Keep superpowers (Recommended)' })
+    expect([asked.sub.kind, asked.openQuestion?.question]).toEqual([
+      'set-install',
+      frameworkInstallAsk('superpowers').question,
+    ])
+  })
+
+  test('a dismissal of the set question cancels and asks no install question', () => {
+    const dismissed = frameworksStage.answer(gsdUninstalled(), { kind: 'answer', text: null })
+    expect([dismissed.sub, dismissed.draft.frameworkInstalls]).toEqual([
+      { kind: 'cancelled', reason: FRAMEWORK_DISMISSED_REASON },
+      undefined,
+    ])
+  })
+})
+
 describe('the set question for a framework consented from Adjust', () => {
   /** PM, Team Lead and Security, Team Lead set to superpowers by an Adjust whose install was consented. */
   const team = proposeRoles(repoScan()).roles.map(role =>

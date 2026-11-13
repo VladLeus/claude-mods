@@ -783,6 +783,20 @@ describe('runInit framework and recommendations', () => {
     expect(run.logged).not.toContain(refusal)
   })
 
+  test('GSD in use, not installed: Keep GSD and Yes put its install command in the review', async () => {
+    const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+    const run = memIo(gitWorld({ facts: { facts: gsdOnly, gsdUserDir: null } }), {
+      ...INIT_ANSWERS,
+      'Install GSD for this repo?': 'Yes, install it',
+    })
+    await runInit(pagedIo(run), { dryRun: true })
+    const command = 'npx -y @opengsd/gsd-core@latest --claude --local'
+    const installAt = run.asked.findIndex(question => question.startsWith('Install GSD for this repo?'))
+    const reviewAt = run.asked.findIndex(question => question.startsWith('Review the plan'))
+    expect([installAt >= 0, installAt < reviewAt]).toEqual([true, true])
+    expect(lastReview(run).some(line => line.startsWith('Framework install') && line.includes(command))).toBe(true)
+  })
+
   test('a dismissed framework question cancels init and prints why (A1)', async () => {
     const kept = Object.entries(INIT_ANSWERS).filter(([key]) => !key.startsWith('Which framework'))
     const answers = Object.fromEntries(kept)

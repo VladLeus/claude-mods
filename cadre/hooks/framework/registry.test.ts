@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { EMPTY_FACTS } from '../testkit'
 import { isDecisionType } from './contract'
 import { GSD_ADAPTER } from './gsd/adapter'
 import { BUILTIN_ADAPTER } from './none/adapter'
@@ -64,7 +65,14 @@ describe('adapter contract (DET-04)', () => {
       const { doneSignal, locations } = adapter
       const texts = [adapter.name, adapter.detectRule, doneSignal.artifact, doneSignal.check]
       const lists = [adapter.startWork, locations.spec, locations.plan, adapter.verify, adapter.humanGates]
-      const calls = [adapter.detect, adapter.kickoffText, adapter.autonomyHunks, adapter.ownsSkill, adapter.roleStart]
+      const calls = [
+        adapter.detect,
+        adapter.kickoffText,
+        adapter.autonomyHunks,
+        adapter.ownsSkill,
+        adapter.roleStart,
+        adapter.isInstalled,
+      ]
       const named = [...adapter.startSkills, ...adapter.pluginsToEnable]
       const optional = [adapter.agentPrefix, adapter.install, adapter.factsHeading]
 
@@ -147,5 +155,11 @@ describe('safety net: kickoff names startWork (A8)', () => {
       ['superpowers', [false, true]],
       ['none', [false, false]],
     ])
+  })
+})
+
+describe('the built-in fallback install', () => {
+  test('is always installed: it has nothing to install', () => {
+    expect(BUILTIN_ADAPTER.isInstalled(EMPTY_FACTS)).toBe(true)
   })
 })

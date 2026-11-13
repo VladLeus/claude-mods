@@ -797,3 +797,19 @@ describe('the GSD start steps of a role', () => {
     }
   })
 })
+
+describe('GSD_ADAPTER.isInstalled', () => {
+  test('is true only with a proven install; unknown, absent or .planning/ alone is not installed', () => {
+    const unknown: GsdFact = { ...PROVEN_USER_INSTALL, identity: 'unknown' }
+    const absent: GsdFact = { ...PROVEN_USER_INSTALL, identity: 'absent' }
+    const cases = [
+      facts({ gsd: [PROVEN_USER_INSTALL] }),
+      facts({ repoEntries: [PLANNING_DIR], gsd: [unknown, PROVEN_USER_INSTALL] }),
+      facts({ repoEntries: [PLANNING_DIR] }),
+      facts({ repoEntries: [PLANNING_DIR], gsd: [unknown, absent] }),
+      facts({}),
+    ]
+
+    expect(cases.map(GSD_ADAPTER.isInstalled)).toEqual([true, true, false, false, false])
+  })
+})

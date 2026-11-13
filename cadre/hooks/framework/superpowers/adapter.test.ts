@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, RepoEntry } from '../../../types'
+import type { Detection, PluginFlag, RepoEntry } from '../../../types'
 import { parseEnabledPlugins } from '../../scan/facts/settings'
 import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 import { isDecisionType } from '../contract'
@@ -537,5 +537,22 @@ describe('the superpowers start steps of a role', () => {
     expect(text).toContain('docs/superpowers/specs/tl-<ticket>.md')
     expect(text).toContain('docs/superpowers/plans/tl-<ticket>.md')
     expect(text).toContain('superpowers:subagent-driven-development')
+  })
+})
+
+describe('SUPERPOWERS_ADAPTER.isInstalled', () => {
+  test('is true only with an enabled superpowers@ key; docs/superpowers/ or a disabled key is not', () => {
+    const docs: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
+    const enabled: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: true }]
+    const disabled: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: false }]
+    const cases = [
+      facts({ enabledPlugins: enabled }),
+      facts({ docsEntries: [docs], enabledPlugins: enabled }),
+      facts({ docsEntries: [docs] }),
+      facts({ docsEntries: [docs], enabledPlugins: disabled }),
+      facts({}),
+    ]
+
+    expect(cases.map(SUPERPOWERS_ADAPTER.isInstalled)).toEqual([true, true, false, false, false])
   })
 })
