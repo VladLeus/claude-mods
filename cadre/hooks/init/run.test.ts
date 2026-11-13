@@ -3062,6 +3062,64 @@ describe('launchStartStep', () => {
   })
 })
 
+/** A start folder settings file whose one hook runs guard.sh. */
+const GUARD_SETTINGS = JSON.stringify({
+  hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node .claude/hooks/guard.sh' }] }] },
+})
+
+/** A repo with code in src/ and a src/.claude/settings.json holding the guard.sh hook. */
+function startSettingsWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return gitWorld({
+    dirs: {
+      '/repo/.git': [],
+      '/repo': [entry('src', 'dir')],
+      '/repo/src': [entry('a.ts'), entry('.claude', 'dir')],
+      '/repo/src/.claude': [entry('settings.json')],
+    },
+    files: { '/repo/src/.claude/settings.json': GUARD_SETTINGS },
+    ...over,
+  })
+}
+
+describe('the start folder settings of a dir start', () => {
+  const answers = {
+    ...INIT_ANSWERS,
+    'Where should the role launchers start': 'Another folder in this repo',
+    'Type the folder the launchers start in': 'src',
+  }
+  const settingsLine =
+    '    [none] <git root>/src/.claude/settings.json loads: its hooks run and its permission rules apply'
+
+  test('the init review card of a dir start names the start folder settings and lists its hook', async () => {
+    const run = memIo(startSettingsWorld(), answers)
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
+    const at = review.indexOf('Scope card: BE (be)')
+    const card = review.slice(at, review.indexOf('  decisions:', at))
+
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(run.reads).toContain('/repo/src/.claude/settings.json')
+    expect(card).toContain(settingsLine)
+    expect(card).toContain('  hooks loaded by project settings: guard.sh')
+  })
+
+  test('the ROLE.md a plain init writes for a dir start is the one /cadre regen be would write', async () => {
+    const world = startSettingsWorld()
+    const host = memHost(hostWorld({}))
+    await runInit(memIo(world, answers).io, { dryRun: false, host: host.io })
+    const written = Object.fromEntries(host.writes.map(write => [write.path, write.text]))
+    const role = written['/repo/.cadre/be/ROLE.md'] ?? ''
+    const regen = await runRegen(memIo({ ...world, files: { ...world.files, ...written } }, {}).io, {
+      id: 'be',
+      dryRun: true,
+    })
+
+    expect(role).toContain(settingsLine)
+    expect(role).toContain('guard.sh')
+    expect(opKinds(regen).get('.cadre/be/ROLE.md')).toBe('leave')
+  })
+})
+
 /** One init step a dismissal cancels: the world and answers that dismiss it, its question and its reason. */
 type CancelCase = {
   readonly world: MemWorld
@@ -7419,6 +7477,16 @@ describe('runFrameworks', () => {
     expect([lines[0], host.writes.at(-1)?.path]).toEqual([t('frameworks.reply.head'), '/repo/.cadre/manifest.json'])
     expect(lines.some(line => line.startsWith('Applied: wrote '))).toBe(true)
     expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
+  })
+
+  test('a team with a dir start reads the start folder settings, as regen does', async () => {
+    const base = startSettingsWorld({ facts: GSD_IN_USE })
+    const stored: Partial<CadreState> = { framework: 'none', frameworks: [], launchStart: { kind: 'dir', path: 'src' } }
+    const world = await regenWorld(TEAM, stored, base)
+    const run = memIo(world, ANSWERS)
+    await runFrameworks(run.io, { dryRun: true })
+
+    expect(run.reads).toContain('/repo/src/.claude/settings.json')
   })
 
   test('a dismissal at the set question or at the review replies with the frameworks cancel text', async () => {
