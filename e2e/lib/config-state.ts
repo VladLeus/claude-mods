@@ -13,7 +13,7 @@ export type TopEntry = {
   readonly mtimeMs: number
 }
 
-const STATE_NAMES = ['plugins', 'settings.json', 'gsd-core'] as const
+const STATE_NAMES = ['plugins', 'settings.json', 'gsd-core', 'CLAUDE.md'] as const
 const UNWATCHED_NAMES: ReadonlySet<string> = new Set(['.claude.json', 'projects', ...STATE_NAMES])
 const ABSENT_SUFFIX = '.absent'
 

@@ -168,6 +168,8 @@ export const MCP_SCRIPT = initScript({
 })
 // A repo with no framework found is not asked for one; the entry only keeps None if a flow ever asks.
 export const NONE_TEAM_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-root', framework: 'none' })
+// A built-in team whose launchers start in src.
+export const NONE_DIR_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'dir', framework: 'none' })
 // A superpowers repo that adds GSD, whose install the row has fail or do nothing.
 export const SP_GSD_SCRIPT = initScript({ policy: POLICY_DEFINITIONS, launch: 'git-root', framework: 'add-gsd' })
 // The same with every install offer answered Yes, for a --dry-run, which installs none of them.
