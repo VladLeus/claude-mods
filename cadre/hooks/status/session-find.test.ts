@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { entryAt } from '../testkit'
-import { beatSessionOf, MAX_TRANSCRIPTS, transcriptCandidates } from './session-find'
+import { mangledProjectDir } from '../paths'
+import { DEFAULT_LOCATIONS, entry, entryAt, hostWorld, memHost, memIo, memWorld } from '../testkit'
+import { beatSessionOf, MAX_TRANSCRIPTS, sessionOf, titleGrepArgv, transcriptCandidates } from './session-find'
 
 /** A fleet beat of agent-fleet's on-disk shape, for the session `id`; `over` changes the fields it names. */
 function beat(id: string, over: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
@@ -55,5 +56,24 @@ describe('status discovery (D-131)', () => {
     expect(beatSessionOf(values, 'be', '/repo', ['/repo'])).toEqual({ sessionId: 's-new', cwd: '/repo' })
     expect(beatSessionOf([], 'be', '/repo', ['/repo'])).toBeNull()
     expect(beatSessionOf([beat('s-pm', { name: 'cadre-pm' })], 'be', '/repo', ['/repo'])).toBeNull()
+  })
+})
+
+describe('the shortened transcript folder', () => {
+  const projects = '/home/u/.claude/projects'
+  const startFolder = `/repo/${'w'.repeat(103)}/${Array.from({ length: 5 }, (_, at) => `${at}`.repeat(50)).join('/')}`
+  const shortened = `${mangledProjectDir(startFolder).slice(0, 200)}-x1y2z3`
+  const titleRow = `${JSON.stringify({ type: 'custom-title', customTitle: 'cadre-be', sessionId: 'x' })}\n`
+
+  test('sessionOf greps the transcripts of the one shortened folder under projects/', async () => {
+    const folder = `${projects}/${shortened}`
+    const dirs = { [projects]: [entry(shortened, 'dir')], [folder]: [entryAt('s9.jsonl', 'file', 5)] }
+    const run = memIo(memWorld({ dirs }), {})
+    const result = { exitCode: 0, stdout: titleRow, stderr: '' }
+    const host = memHost(hostWorld({ runs: [{ argv: titleGrepArgv(`${folder}/s9.jsonl`), result }] }))
+
+    const found = await sessionOf(run.io, host.io, { locations: DEFAULT_LOCATIONS, id: 'be', startFolder })
+
+    expect(found).toEqual({ sessionId: 's9', foundBy: 'title', folder: startFolder })
   })
 })

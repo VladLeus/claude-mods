@@ -7,6 +7,7 @@ import {
   cadreStatePath,
   claudeJsonPathOf,
   displayPath,
+  ENGINE_FOLDER_NAME_MAX_CHARS,
   handoffFolderOf,
   INBOX_ARCHIVE_GLOB,
   inboxArchiveFile,
@@ -33,9 +34,10 @@ import {
   runtimeDirOf,
   screenPath,
   SESSION_FILE,
+  shortenedProjectDir,
   trimSlash,
 } from './paths'
-import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry } from './testkit'
+import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry, link } from './testkit'
 
 describe('isSafeConfigDir', () => {
   test('an absolute path with no .. segment is safe', () => {
@@ -148,6 +150,36 @@ describe('projectFolderOf', () => {
   test('projectFolderOf: <userDir>/projects/<the root mangled>, with the user folder as given (no trim)', () => {
     expect(projectFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo')
     expect(projectFolderOf('/cfg/', '/a b')).toBe('/cfg//projects/-a-b')
+  })
+})
+
+describe('shortenedProjectDir', () => {
+  const long = `-repo-${'w'.repeat(300)}`
+  const prefix = long.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
+
+  test('a name of 200 characters or fewer is the name, whatever the listing holds', () => {
+    expect(ENGINE_FOLDER_NAME_MAX_CHARS).toBe(200)
+    const short = 'w'.repeat(200)
+    expect(shortenedProjectDir(short, [entry(`${short}-x1`, 'dir')])).toBe(short)
+  })
+
+  test('a longer name is kept when its own folder is listed, even beside a shortened one', () => {
+    expect(shortenedProjectDir(long, [entry(long, 'dir'), entry(`${prefix}-x1y2z3`, 'dir')])).toBe(long)
+  })
+
+  test('the one folder that starts with the first 200 characters and is not the name is the shortened name', () => {
+    const entries = [entry('-other', 'dir'), entry(`${prefix}-x1y2z3`, 'dir'), entry(prefix.slice(0, 199), 'dir')]
+    expect(shortenedProjectDir(long, entries)).toBe(`${prefix}-x1y2z3`)
+  })
+
+  test('no candidate or two candidates give the full name, so none is guessed', () => {
+    expect(shortenedProjectDir(long, [])).toBe(long)
+    expect(shortenedProjectDir(long, [entry(`${prefix}-a`, 'dir'), entry(`${prefix}-b`, 'dir')])).toBe(long)
+  })
+
+  test('a file or a link with the prefix is never taken', () => {
+    expect(shortenedProjectDir(long, [entry(`${prefix}-f`), link(`${prefix}-l`)])).toBe(long)
+    expect(shortenedProjectDir(long, [entry(`${prefix}-d`, 'dir', true)])).toBe(long)
   })
 })
 

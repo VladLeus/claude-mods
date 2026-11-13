@@ -3,7 +3,15 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InitIo, PortStat } from '../../types'
 import { entry, memIo, memWorld } from '../testkit'
 import { MAX_READ_BYTES } from './facts/normalize'
-import { listingState, missingState, pluginVersionOf, portProbeOf, portTextOf, readRepoFile } from './port-read'
+import {
+  followedProjectFolder,
+  listingState,
+  missingState,
+  pluginVersionOf,
+  portProbeOf,
+  portTextOf,
+  readRepoFile,
+} from './port-read'
 
 describe('readRepoFile', () => {
   test('reads a regular file whose real path is inside the root', async () => {
@@ -224,5 +232,35 @@ describe('init helpers', () => {
       expect(portTextOf('€€€', MAX)).toEqual({ state: 'text', text: '€€€' })
       expect(portTextOf('abcdefghij', MAX)).toEqual({ state: 'text', text: 'abcdefghij' })
     })
+  })
+})
+
+describe('followedProjectFolder', () => {
+  const projects = '/home/u/.claude/projects'
+  const long = `-repo-${'w'.repeat(300)}`
+  const shortened = `${long.slice(0, 200)}-x1y2z3`
+
+  test('a folder whose name is 200 characters or fewer is returned with no port call', async () => {
+    const name = 'w'.repeat(200)
+    const run = memIo(memWorld({ dirs: { [projects]: [entry(`${name}-x`, 'dir')] } }), [])
+
+    expect(await followedProjectFolder(run.io, `${projects}/${name}`)).toBe(`${projects}/${name}`)
+    expect(run.listed).toEqual([])
+    expect(run.reads).toEqual([])
+  })
+
+  test('a longer name lists its parent once and follows the one shortened folder there', async () => {
+    const run = memIo(memWorld({ dirs: { [projects]: [entry(shortened, 'dir')] } }), [])
+
+    expect(await followedProjectFolder(run.io, `${projects}/${long}`)).toBe(`${projects}/${shortened}`)
+    expect(run.listed).toEqual([projects])
+    expect(run.reads).toEqual([])
+  })
+
+  test('a parent that cannot be listed gives the folder as given', async () => {
+    const run = memIo(memWorld({ unknownPaths: [projects] }), [])
+
+    expect(await followedProjectFolder(run.io, `${projects}/${long}`)).toBe(`${projects}/${long}`)
+    expect(run.reads).toEqual([])
   })
 })

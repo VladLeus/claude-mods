@@ -3,9 +3,10 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { FrameworkId, HostRun, InitLocations, LaunchStart, PortEntry, RoleSpec } from '../../types'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { CHECKOUT_ARGV } from '../git/checkout'
+import { mangledProjectDir } from '../paths'
 import { autopilotLogPath, autopilotStatusPath } from '../scan/autopilot'
 import { noStateReply, regenNoRole } from '../team'
-import { DEFAULT_LOCATIONS, entryAt, hostWorld, memHost, memIo, memWorld, templateRole } from '../testkit'
+import { DEFAULT_LOCATIONS, entry, entryAt, hostWorld, memHost, memIo, memWorld, templateRole } from '../testkit'
 import type { HostRunRule, HostWrite, MemWorld } from '../testkit'
 import { LOG_MAX_BYTES, runOutcomeOf } from './autopilot-files'
 import { newestHandoff } from './report'
@@ -170,6 +171,42 @@ describe('status discovery (D-131)', () => {
     expect(startFolderOf('/repo', { kind: 'dir', path: 'apps/web' })).toBe('/repo/apps/web')
     expect(status.listed).toContain(folder)
     expect(status.listed).not.toContain(TRANSCRIPTS)
+    expect(status.greps).toEqual([`${folder}/s9.jsonl`])
+    expect(status.lines[2]).toBe('session: s9 (found by its name cadre-be)')
+  })
+
+  test('a start folder whose encoded name is over 200 characters is searched in the shortened folder', async () => {
+    const path = `${'w'.repeat(103)}/${Array.from({ length: 5 }, (_, at) => `${at}`.repeat(50)).join('/')}`
+    const full = mangledProjectDir(`/repo/${path}`)
+    const name = `${full.slice(0, 200)}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const world = statusWorld({
+      start: { kind: 'dir', path },
+      dirs: {
+        '/home/u/.claude/projects': [entry('-repo', 'dir'), entry(name, 'dir')],
+        [shortened]: [entryAt('s9.jsonl', 'file', 5)],
+      },
+      files: doneFiles('s9'),
+    })
+    const status = await statusBe(world, [titled(`${shortened}/s9.jsonl`, 'cadre-be')])
+    expect(full.length).toBe(364)
+    expect(status.greps).toEqual([`${shortened}/s9.jsonl`])
+    expect(status.lines[2]).toBe('session: s9 (found by its name cadre-be)')
+  })
+
+  test('a long start folder name the engine kept in full is still searched under that name', async () => {
+    const path = `${'w'.repeat(103)}/${Array.from({ length: 5 }, (_, at) => `${at}`.repeat(50)).join('/')}`
+    const full = mangledProjectDir(`/repo/${path}`)
+    const folder = `/home/u/.claude/projects/${full}`
+    const world = statusWorld({
+      start: { kind: 'dir', path },
+      dirs: {
+        '/home/u/.claude/projects': [entry(full, 'dir'), entry(`${full.slice(0, 200)}-x1y2z3`, 'dir')],
+        [folder]: [entryAt('s9.jsonl', 'file', 5)],
+      },
+      files: doneFiles('s9'),
+    })
+    const status = await statusBe(world, [titled(`${folder}/s9.jsonl`, 'cadre-be')])
     expect(status.greps).toEqual([`${folder}/s9.jsonl`])
     expect(status.lines[2]).toBe('session: s9 (found by its name cadre-be)')
   })
