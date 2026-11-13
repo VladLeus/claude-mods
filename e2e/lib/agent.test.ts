@@ -698,6 +698,56 @@ test('runRefusal allows read-only git subcommands and refuses options before the
   for (const argv of allowed) assert.equal(runRefusal(argv), null, argv.join(' '))
 })
 
+function runRefused(argvs: readonly (readonly string[])[]): void {
+  for (const argv of argvs) assert.notEqual(runRefusal(argv), null, argv.join(' '))
+}
+
+test('runRefusal refuses any argument that starts with --output', () => {
+  runRefused([
+    ['git', 'diff', '--output=out.txt'],
+    ['git', 'log', '-p', '--output', 'out.txt'],
+    ['git', 'show', '--output-indicator-new=+'],
+  ])
+})
+
+test('runRefusal refuses any argument that starts with --no-index', () => {
+  runRefused([
+    ['git', 'diff', '--no-index', 'a.txt', 'b.txt'],
+    ['git', 'diff', 'HEAD', '--no-index'],
+    ['git', 'diff', '--no-index=x'],
+  ])
+})
+
+test('runRefusal refuses -c and its = form after the subcommand', () => {
+  runRefused([
+    ['git', 'log', '-c'],
+    ['git', 'show', 'HEAD', '-c', 'core.pager=sh'],
+    ['git', 'log', '-c=core.pager=sh'],
+  ])
+})
+
+test('runRefusal refuses -C and its = form after the subcommand', () => {
+  runRefused([
+    ['git', 'status', '-C', '..'],
+    ['git', 'worktree', 'list', '-C', '..'],
+    ['git', 'diff', '-C=..'],
+  ])
+})
+
+test('runRefusal refuses --git-dir and its = form after the subcommand', () => {
+  runRefused([
+    ['git', 'log', '--git-dir', '../other/.git'],
+    ['git', 'status', '--git-dir=../other/.git'],
+  ])
+})
+
+test('runRefusal refuses --work-tree and its = form after the subcommand', () => {
+  runRefused([
+    ['git', 'status', '--work-tree', '..'],
+    ['git', 'diff', '--work-tree=..'],
+  ])
+})
+
 test('cadreRefusal refuses an epic open and allows epic done and the other subcommands', () => {
   const refusals: readonly (readonly string[])[] = [
     ['epic', 'PROJ-1', 'Add', 'retry'],
