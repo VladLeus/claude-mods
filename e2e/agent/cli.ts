@@ -1,0 +1,651 @@
+import { spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
+import { cadrePrint, firstLineOf, printedCommand, replyOf } from '../cadre/lib/session.ts'
+import { agentSidecar, filterLines, HISTORY_LINES_DEFAULT, HISTORY_LINES_MAX, parseCommand } from '../lib/agent.ts'
+import { parseGuardSnapshot, parseRunState, parseWsState, RESULT_MAX_BYTES, ROOT_ROLE } from '../lib/agent.ts'
+import { tokenHash, tokenRefusal, windowNameFor, wsIdOf } from '../lib/agent.ts'
+import type { AgentCommand, RunState, WsState } from '../lib/agent.ts'
+import { e2eConfigDir, e2eConfigPath, writeFilterFile } from '../lib/auth.ts'
+import { authPreflight, passTrust, startTui } from '../lib/claude.ts'
+import type { PreflightStage } from '../lib/claude.ts'
+import { hostUser, liveEnv, SYSTEM_PATH, writeClaudeFence } from '../lib/env.ts'
+import type { ChildEnv } from '../lib/env.ts'
+import { LeakError } from '../lib/errors.ts'
+import { filterContext, isRecord } from '../lib/filter.ts'
+import type { FilterContext } from '../lib/filter.ts'
+import { copyTree, fixtureDir } from '../lib/fixture.ts'
+import { guardSnapshot, needlesOf } from '../lib/guard.ts'
+import type { GuardResult } from '../lib/guard.ts'
+import { checkGuard, claudeVersion, cleanupSessions, e2eDirReason, guardItems, isGlobalAway } from '../lib/live.ts'
+import { keychainState, releaseLock, removeLeftovers, resolveOnPath, takeLock } from '../lib/live.ts'
+import type { LiveScope } from '../lib/live.ts'
+import { pollUntil } from '../lib/poll.ts'
+import { makeRunRoot, PRUNE_AGE_MS, removeTree, RUN_ID_RE, scratchBase, scratchRoot } from '../lib/scratch.ts'
+import { parseSidecar, rowFileName, SIDECAR_SCHEMA, summaryText, writeRowResult, writeSummary } from '../lib/summary.ts'
+import type { Note, Sidecar, SuiteVersion } from '../lib/summary.ts'
+import { capture, killServer, listWindows, newWindow, runSocketPrefix, socketName, startServer } from '../lib/tmux.ts'
+import { sweepServers } from '../lib/tmux.ts'
+import type { Pane, Server } from '../lib/tmux.ts'
+
+const CLI_PATH = fileURLToPath(import.meta.url)
+const REPO_DIR = dirname(dirname(dirname(CLI_PATH)))
+const RESULTS_DIR = join(REPO_DIR, 'e2e', 'results')
+const MIN_NODE_MAJOR = 24
+const BASELINE_PLUGINS = ['cadre', 'autopilot', 'agent-fleet'] as const
+const POINTER_FILE = 'agent-run.json'
+const TMUX_SESSION = 'e2e'
+const TOKEN_BYTES = 32
+const HOLDER_WAIT_MS = 10_000
+const LOCK_WAIT_MS = 10_000
+const WAIT_TICK_MS = 200
+const HOLD_TICK_MS = 60_000
+const SCREEN_LINES = 60
+const REFUSED = 2
+const FAILED = 1
+const GUARD_FAILED = 3
+const NOT_FINISHED = 'not finished: the agent did not call finish'
+
+type Command<V extends AgentCommand['verb']> = Extract<AgentCommand, { readonly verb: V }>
+
+type Holder = {
+  readonly pid: number
+  readonly ok: boolean
+}
+
+type BeginSetup = {
+  readonly run: string
+  readonly root: string
+  readonly fixtures: string
+  readonly claudeBin: string
+  readonly scope: LiveScope
+  readonly token: string
+  readonly holderPid: number
+}
+
+let identities: readonly string[] = []
+let uuids = new Map<string, number>()
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function outputContext(): FilterContext {
+  const ctx = filterContext({ ...process.env, E2E_SCRATCH: scratchBase() }, { identities })
+
+  return { ...ctx, uuids }
+}
+
+function say(text: string, stream: NodeJS.WriteStream = process.stdout): void {
+  stream.write(`${filterLines(text, outputContext())}\n`)
+}
+
+function refuse(message: string): number {
+  say(`agent: ${message}`, process.stderr)
+
+  return REFUSED
+}
+
+function fail(message: string): number {
+  say(`agent: ${message}`, process.stderr)
+
+  return FAILED
+}
+
+async function readJson(path: string): Promise<unknown> {
+  const text = await readFile(path, 'utf8').catch(() => null)
+  if (text === null) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+// Written through a rename, so a parallel CLI call never reads a half-written state file.
+async function writeJson(path: string, value: unknown): Promise<void> {
+  const tmp = `${path}.tmp-${process.pid}`
+  await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
+  await rename(tmp, path)
+}
+
+function pointerPath(): string {
+  return join(scratchBase(), POINTER_FILE)
+}
+
+function agentDir(root: string): string {
+  return join(root, 'agent')
+}
+
+function runFile(root: string): string {
+  return join(agentDir(root), 'run.json')
+}
+
+function wsDir(root: string, id: string): string {
+  return join(root, 'ws', id)
+}
+
+function wsFile(root: string, id: string): string {
+  return join(wsDir(root, id), 'state.json')
+}
+
+function resultsDirOf(run: string): string {
+  return join(RESULTS_DIR, run)
+}
+
+function makeRunId(now: number, hex: string): string {
+  const at = new Date(now)
+  const two = (value: number): string => String(value).padStart(2, '0')
+  const date = `${two(at.getUTCFullYear() % 100)}${two(at.getUTCMonth() + 1)}${two(at.getUTCDate())}`
+  const time = `${two(at.getUTCHours())}${two(at.getUTCMinutes())}${two(at.getUTCSeconds())}`
+
+  return `${date}-${time}-${hex}`
+}
+
+function preflightLines(stage: PreflightStage, reason: string): readonly string[] {
+  if (stage === 'plugins') return [`e2e dir plugin baseline failed: ${reason}`]
+
+  return [reason, `log in again: CLAUDE_CONFIG_DIR=${e2eConfigPath()} claude auth login`]
+}
+
+function scopeOf(e2eDir: string): LiveScope {
+  return { host: hostUser(), e2eDir, needles: needlesOf(scratchBase(), e2eDir) }
+}
+
+function lastLines(text: string, count: number): string {
+  return text.split('\n').slice(-count).join('\n')
+}
+
+function useRun(state: RunState): void {
+  process.env.E2E_SCRATCH = state.root
+  process.env.E2E_FIXTURES = join(state.fixtures, 'fixtures')
+  process.env.E2E_CONFIG_DIR = state.e2eDir
+  process.env.E2E_CLAUDE_BIN = state.claudeBin
+  process.env.E2E_FILTER_FILE = state.filterFile
+  process.env.E2E_RUN = state.run
+  process.env.E2E_TIER = 'live'
+}
+
+async function activeRun(): Promise<string | null> {
+  const value = await readJson(pointerPath())
+  if (!isRecord(value) || typeof value.run !== 'string' || !RUN_ID_RE.test(value.run)) return null
+
+  return value.run
+}
+
+async function loadRun(): Promise<RunState | string> {
+  const run = await activeRun()
+  if (run === null) return 'no agent run: run begin first'
+  const state = parseRunState(await readJson(runFile(join(scratchBase(), run))))
+  if (!state || state.run !== run) return `the agent run ${run} has no readable state`
+  useRun(state)
+
+  return state
+}
+
+async function loadLiveWs(run: RunState, id: string): Promise<WsState | string> {
+  const ws = parseWsState(await readJson(wsFile(run.root, id)))
+  if (!ws || ws.id !== id) return `no workspace ${id} in this agent run`
+  if (ws.status !== 'live') return `the workspace ${id} is finished`
+  uuids = new Map(ws.uuids)
+
+  return ws
+}
+
+async function saveWs(run: RunState, ws: WsState): Promise<void> {
+  await writeJson(wsFile(run.root, ws.id), ws)
+}
+
+async function saveUuids(run: RunState, id: string): Promise<void> {
+  const current = parseWsState(await readJson(wsFile(run.root, id)))
+  if (!current) return
+
+  await saveWs(run, { ...current, uuids: [...uuids.entries()] })
+}
+
+async function workspaces(run: RunState): Promise<readonly WsState[]> {
+  const names = await readdir(join(run.root, 'ws')).catch(() => [])
+  const states = await Promise.all(names.map(async name => parseWsState(await readJson(wsFile(run.root, name)))))
+
+  return states.filter(state => state !== null)
+}
+
+function serverOf(ws: WsState): Server {
+  return { socket: ws.socket, env: liveEnv(), session: TMUX_SESSION, cwd: scratchRoot() }
+}
+
+async function isServerUp(server: Server): Promise<boolean> {
+  return listWindows(server).then(() => true, () => false)
+}
+
+async function paneOf(server: Server, window: string): Promise<Pane | null> {
+  const found = (await listWindows(server).catch(() => [])).find(item => item.name === window)
+
+  return found ? { server, id: found.pane } : null
+}
+
+function stopHolder(pid: number | undefined): void {
+  if (pid === undefined) return
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch (error) {
+    if (!isRecord(error) || error.code !== 'ESRCH') throw error
+  }
+}
+
+function spawnHolder(run: string, root: string, token: string): number | undefined {
+  const env = { ...process.env, E2E_AGENT_TOKEN: token }
+  const child = spawn(process.execPath, [CLI_PATH, 'hold', run], { cwd: root, env, detached: true, stdio: 'ignore' })
+  // A holder that cannot start writes no holder.json, so begin refuses once the wait runs out.
+  child.on('error', () => {})
+  child.unref()
+
+  return child.pid
+}
+
+function holderOf(value: unknown): Holder | null {
+  if (!isRecord(value) || typeof value.pid !== 'number' || typeof value.ok !== 'boolean') return null
+
+  return { pid: value.pid, ok: value.ok }
+}
+
+async function waitHolder(root: string): Promise<Holder | null> {
+  const opts = { timeoutMs: HOLDER_WAIT_MS, intervalMs: WAIT_TICK_MS, now: Date.now, sleep: delay, label: 'the holder' }
+  const read = async (): Promise<Holder | null> => holderOf(await readJson(join(agentDir(root), 'holder.json')))
+
+  return pollUntil(read, holder => holder !== null, opts).catch(() => null)
+}
+
+async function waitLockGone(lock: string): Promise<boolean> {
+  const opts = { timeoutMs: LOCK_WAIT_MS, intervalMs: WAIT_TICK_MS, now: Date.now, sleep: delay, label: 'the lock' }
+
+  return pollUntil(async () => existsSync(lock), held => !held, opts).then(() => true, () => false)
+}
+
+async function stayAlive(ms: number): Promise<void> {
+  const until = Date.now() + ms
+  await new Promise<void>(resolve => {
+    const timer = setInterval(() => {
+      if (Date.now() < until) return
+      clearInterval(timer)
+      resolve()
+    }, HOLD_TICK_MS)
+    process.once('SIGTERM', () => {
+      clearInterval(timer)
+      resolve()
+    })
+  })
+}
+
+function helpText(): string {
+  return `fixture <variant> --row <row>: copy a built fixture into a new workspace and print its id
+start <ws> root|<role> [--cwd <folder>] [--wt <worktree>] [--raw]: open the root window or a role window (--raw starts the launcher without /cadre start)
+capture <ws> <window> [--history] [--lines <n>]: print the last lines of a window (${HISTORY_LINES_DEFAULT} by default, at most ${HISTORY_LINES_MAX})
+finish <ws>: read the result JSON on stdin, write the row and close the workspace
+help: print this list`
+}
+
+function help(): number {
+  say(helpText())
+
+  return 0
+}
+
+async function openRun(setup: BeginSetup): Promise<number> {
+  const { run, root, scope, claudeBin } = setup
+  if (await isGlobalAway(scope.host.home, Date.now())) {
+    return refuse('global away is on: run /back --global, or wait until it ends')
+  }
+  const leftovers = await removeLeftovers(scope)
+  say(`removed ${leftovers.removed} leftover files of earlier test sessions`)
+  const before = await guardSnapshot(scope.host.home, scope.needles, await keychainState(scope.host, REPO_DIR))
+  await writeJson(join(agentDir(root), 'guard-before.json'), before)
+  await writeClaudeFence(root, claudeBin, scope.e2eDir)
+  const cwd = join(root, 'preflight')
+  await mkdir(cwd)
+  const preflight = await authPreflight({ cwd, marketplaceRoot: REPO_DIR, plugins: BASELINE_PLUGINS, now: Date.now() })
+  identities = preflight.identities
+  if (!preflight.ok) {
+    for (const line of preflightLines(preflight.stage, preflight.reason)) say(`agent: ${line}`, process.stderr)
+    return REFUSED
+  }
+  const filterFile = await writeFilterFile(root, preflight.identities)
+  process.env.E2E_FILTER_FILE = filterFile
+  const claude = await claudeVersion(claudeBin, root)
+  await mkdir(resultsDirOf(run), { recursive: true })
+  const state: RunState = {
+    run,
+    root,
+    e2eDir: scope.e2eDir,
+    claudeBin,
+    claude,
+    fixtures: setup.fixtures,
+    filterFile,
+    startedAt: Date.now(),
+    holderPid: setup.holderPid,
+    tokenHash: tokenHash(setup.token),
+  }
+  await writeJson(runFile(root), state)
+  await writeJson(pointerPath(), { run })
+  say(`agent run ${run} ready, claude ${claude}`)
+  say(`orchestrator token ${setup.token}`)
+
+  return 0
+}
+
+async function begin(cmd: Command<'begin'>): Promise<number> {
+  if (existsSync(pointerPath())) return refuse('an agent run is active')
+  if (process.env.CI !== undefined) return refuse('the agent UAT does not run in CI (CI is set)')
+  const major = Number(process.versions.node.split('.')[0])
+  if (major < MIN_NODE_MAJOR) return refuse(`needs Node ${MIN_NODE_MAJOR} or newer, this is ${process.version}`)
+  if (!await resolveOnPath('tmux', SYSTEM_PATH)) return refuse(`tmux is not in ${SYSTEM_PATH}`)
+  const claudeBin = await resolveOnPath('claude', process.env.PATH ?? '')
+  if (!claudeBin) return refuse('claude is not on PATH')
+  let e2eDir: string
+  try {
+    e2eDir = e2eConfigDir()
+  } catch (error) {
+    return refuse(messageOf(error))
+  }
+  const scope = scopeOf(e2eDir)
+  const why = e2eDirReason(e2eDir, scope.host, REPO_DIR)
+  if (why) return refuse(why)
+  const fixtures = join(scratchBase(), cmd.fixtures)
+  if (!existsSync(join(fixtures, 'fixtures'))) return refuse(`the run ${cmd.fixtures} has no fixtures folder`)
+
+  const run = makeRunId(Date.now(), randomBytes(2).toString('hex'))
+  const root = await makeRunRoot(scratchBase(), run)
+  process.env.E2E_SCRATCH = root
+  process.env.E2E_FIXTURES = join(fixtures, 'fixtures')
+  process.env.E2E_CONFIG_DIR = e2eDir
+  process.env.E2E_CLAUDE_BIN = claudeBin
+  process.env.E2E_TIER = 'live'
+  await mkdir(agentDir(root), { mode: 0o700 })
+  const token = randomBytes(TOKEN_BYTES).toString('hex')
+  const spawned = spawnHolder(run, root, token)
+  const holder = await waitHolder(root)
+  if (!holder) stopHolder(spawned)
+  if (!holder?.ok) return refuse('another live run holds the e2e dir lock')
+  try {
+    const code = await openRun({ run, root, fixtures, claudeBin, scope, token, holderPid: holder.pid })
+    if (code !== 0) stopHolder(holder.pid)
+    return code
+  } catch (error) {
+    stopHolder(holder.pid)
+    throw error
+  }
+}
+
+async function hold(cmd: Command<'hold'>): Promise<number> {
+  const token = process.env.E2E_AGENT_TOKEN
+  if (!token) return refuse('hold needs the orchestrator token in E2E_AGENT_TOKEN')
+  const root = join(scratchBase(), cmd.run)
+  if (!existsSync(agentDir(root))) return refuse(`no agent run ${cmd.run}`)
+  if (existsSync(runFile(root))) {
+    const why = tokenRefusal(token, parseRunState(await readJson(runFile(root)))?.tokenHash)
+    if (why) return refuse(why)
+  }
+  const lock = `${e2eConfigDir()}.lock`
+  const ok = await takeLock(lock)
+  await writeJson(join(agentDir(root), 'holder.json'), { pid: process.pid, ok })
+  if (!ok) return refuse('another live run holds the e2e dir lock')
+  await stayAlive(PRUNE_AGE_MS)
+  await releaseLock(lock)
+
+  return 0
+}
+
+function errorRow(id: string, title: string, reason: string, durationMs: number): Sidecar {
+  return {
+    schema: SIDECAR_SCHEMA,
+    id,
+    half: '',
+    title,
+    tier: 'live',
+    kind: 'pass',
+    verdict: 'error',
+    reason,
+    checks: [],
+    observations: [],
+    evidence: [],
+    screens: [],
+    notAutomated: [],
+    cassette: 'agent',
+    durationMs,
+  }
+}
+
+async function collectRows(dir: string): Promise<readonly Sidecar[]> {
+  const rows: Sidecar[] = []
+  for (const name of (await readdir(dir)).filter(item => item.endsWith('.json')).sort()) {
+    const row = parseSidecar(await readFile(join(dir, name), 'utf8'))
+    const id = name.slice(0, -'.json'.length)
+    rows.push(row ?? errorRow(id, 'unreadable result', 'the row result file is not a valid sidecar', 0))
+  }
+
+  return rows
+}
+
+async function pluginVersion(name: string): Promise<string> {
+  const value = await readJson(join(REPO_DIR, name, '.claude-plugin', 'plugin.json'))
+
+  return isRecord(value) && typeof value.version === 'string' ? value.version : 'unknown'
+}
+
+async function pluginVersions(): Promise<readonly SuiteVersion[]> {
+  return Promise.all(BASELINE_PLUGINS.map(async name => ({ name, version: await pluginVersion(name) })))
+}
+
+async function sweepRun(run: RunState): Promise<void> {
+  const opts = { env: { PATH: SYSTEM_PATH }, cwd: REPO_DIR, host: true }
+  try {
+    const swept = await sweepServers(runSocketPrefix(run.run), opts)
+    say(`removed ${swept.length} tmux server sockets of this run`)
+  } catch (error) {
+    say(`agent: ${messageOf(error)}`, process.stderr)
+  }
+}
+
+async function writeRunSummary(path: string, text: string): Promise<boolean> {
+  try {
+    await writeSummary(path, text, outputContext())
+    return true
+  } catch (error) {
+    if (!(error instanceof LeakError)) throw error
+    say(`agent: SUMMARY.md not written: ${error.message}`, process.stderr)
+    return false
+  }
+}
+
+function endExit(guard: GuardResult, notRemoved: readonly string[], isWritten: boolean): number {
+  if (guard.failures.length > 0) return GUARD_FAILED
+  if (notRemoved.length > 0 || !isWritten) return FAILED
+
+  return 0
+}
+
+async function end(cmd: Command<'end'>, run: RunState): Promise<number> {
+  const why = tokenRefusal(cmd.token, run.tokenHash)
+  if (why) return refuse(why)
+  const before = parseGuardSnapshot(await readJson(join(agentDir(run.root), 'guard-before.json')))
+  if (!before) return fail('the guard snapshot taken at begin is unreadable')
+  const results = resultsDirOf(run.run)
+  await mkdir(results, { recursive: true })
+  for (const ws of (await workspaces(run)).filter(item => item.status === 'live')) {
+    const row = errorRow(ws.row, `workspace ${ws.id}`, NOT_FINISHED, Date.now() - ws.startedAt)
+    await writeRowResult(results, row, outputContext())
+  }
+  await sweepRun(run)
+  const scope = scopeOf(run.e2eDir)
+  const cleanup = await cleanupSessions(scope, before)
+  stopHolder(run.holderPid)
+  if (!await waitLockGone(`${run.e2eDir}.lock`)) say('agent: the e2e dir lock is still held', process.stderr)
+  const guard = await checkGuard(scope, run.root, before, cleanup.recorded, REPO_DIR)
+  const items = guardItems(cleanup.failures, cleanup, guard)
+  for (const item of items) say(item)
+  const versions = await pluginVersions()
+  const rows = await collectRows(results)
+  const text = summaryText({ run: run.run, tier: 'live', claude: run.claude, versions, rows, guard: items })
+  const isWritten = await writeRunSummary(join(results, 'SUMMARY.md'), text)
+  const isFilterRemoved = await removeTree(run.filterFile, run.root).then(() => true, () => false)
+  if (!isFilterRemoved) say('agent: the filter values file was not removed', process.stderr)
+  await rm(pointerPath(), { force: true })
+  const code = endExit(guard, cleanup.failures, isWritten)
+  say(`agent run ${run.run} exit ${code} summary e2e/results/${run.run}/SUMMARY.md`)
+
+  return code
+}
+
+async function fixture(cmd: Command<'fixture'>, run: RunState): Promise<number> {
+  const source = fixtureDir(cmd.variant)
+  if (!existsSync(source)) return refuse(`the fixture ${cmd.variant} is not built in run ${basename(run.fixtures)}`)
+  const id = wsIdOf(cmd.row, randomBytes(2).toString('hex'))
+  if (id === null) return refuse(`not a row id: ${cmd.row}`)
+  const dir = wsDir(run.root, id)
+  await mkdir(dirname(dir), { recursive: true, mode: 0o700 })
+  await mkdir(dir)
+  await copyTree(source, join(dir, 'repo'))
+  const ws: WsState = {
+    id,
+    row: cmd.row,
+    variant: cmd.variant,
+    exclusive: false,
+    socket: socketName(),
+    startedAt: Date.now(),
+    status: 'live',
+    windows: [],
+    claims: [],
+    uuids: [],
+  }
+  await saveWs(run, ws)
+  say(`ws ${id}`)
+
+  return 0
+}
+
+async function launchRefusal(copy: string, role: string, raw: boolean, env: ChildEnv): Promise<string | null> {
+  if (raw) return existsSync(join(copy, '.cadre', 'bin', role)) ? null : `the copy has no launcher for ${role}`
+  const reply = replyOf(await cadrePrint({ repo: copy, env }, `start ${role}`))
+  if (printedCommand(reply, role) !== null) return null
+
+  return `/cadre start ${role} printed no launcher command: ${firstLineOf(reply)}`
+}
+
+async function openWindow(server: Server, name: string, cwd: string, launcher: string | null): Promise<void> {
+  if (launcher === null) {
+    await startTui(server, cwd, [])
+    return
+  }
+  await newWindow(server, name, cwd, [launcher])
+  await passTrust(server, name)
+}
+
+async function start(cmd: Command<'start'>, run: RunState, ws: WsState): Promise<number> {
+  const repo = join(wsDir(run.root, ws.id), 'repo')
+  const copy = cmd.wt === null ? repo : join(repo, '.claude', 'worktrees', cmd.wt)
+  const cwd = cmd.cwd === null ? copy : join(copy, cmd.cwd)
+  if (cmd.wt !== null && !existsSync(copy)) return refuse(`no worktree ${cmd.wt} in ${ws.id}`)
+  if (cmd.cwd !== null && !existsSync(cwd)) return refuse(`no folder ${cmd.cwd} in the copy`)
+  const isRoot = cmd.role === ROOT_ROLE
+  if (isRoot && ws.windows.some(item => item.kind === 'root')) return refuse(`${ws.id} has a root window already`)
+  const server = serverOf(ws)
+  const refusal = isRoot ? null : await launchRefusal(copy, cmd.role, cmd.raw, server.env)
+  if (refusal) return refuse(refusal)
+  if (ws.windows.length === 0 && !await isServerUp(server)) await startServer(ws.socket, server.env)
+  const name = windowNameFor(cmd.role, (await listWindows(server)).map(item => item.name))
+  if (name === null) return refuse(`no free window name for ${cmd.role}`)
+  await openWindow(server, name, cwd, isRoot ? null : join(copy, '.cadre', 'bin', cmd.role))
+  await saveWs(run, { ...ws, windows: [...ws.windows, { name, kind: isRoot ? 'root' : 'role' }] })
+  say(`window ${name}`)
+
+  return 0
+}
+
+async function captureWindow(cmd: Command<'capture'>, ws: WsState): Promise<number> {
+  const pane = await paneOf(serverOf(ws), cmd.window)
+  if (!pane) return refuse(`no window ${cmd.window} in ${ws.id}`)
+  say(lastLines(await capture(pane, { history: cmd.history }), cmd.lines))
+
+  return 0
+}
+
+async function readStdin(): Promise<string | null> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))
+    size += buffer.length
+    if (size > RESULT_MAX_BYTES) return null
+    chunks.push(buffer)
+  }
+
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+async function screensOf(server: Server): Promise<readonly Note[]> {
+  const screens: Note[] = []
+  for (const window of await listWindows(server).catch(() => [])) {
+    const text = await capture({ server, id: window.pane }, { history: true }).catch(() => '')
+    screens.push({ label: window.name, text: filterLines(lastLines(text, SCREEN_LINES), outputContext()) })
+  }
+
+  return screens
+}
+
+async function finish(run: RunState, ws: WsState): Promise<number> {
+  if (process.stdin.isTTY) return refuse('finish reads the result JSON on stdin')
+  const text = await readStdin()
+  if (text === null) return refuse(`the result is over ${RESULT_MAX_BYTES} bytes`)
+  let input: unknown
+  try {
+    input = JSON.parse(text)
+  } catch (error) {
+    return refuse(`the result is not valid JSON: ${messageOf(error)}`)
+  }
+  const server = serverOf(ws)
+  const screens = await screensOf(server)
+  const row = agentSidecar(input, { row: ws.row, durationMs: Date.now() - ws.startedAt, screens })
+  if (typeof row === 'string') return refuse(row)
+  await killServer(server)
+  await writeRowResult(resultsDirOf(run.run), row, outputContext())
+  await saveWs(run, { ...ws, status: 'finished' })
+  say(`wrote ${rowFileName(row.id, row.half)}`)
+
+  return 0
+}
+
+async function wsVerb(cmd: Command<'start' | 'capture' | 'finish'>, run: RunState): Promise<number> {
+  const ws = await loadLiveWs(run, cmd.ws)
+  if (typeof ws === 'string') return refuse(ws)
+  try {
+    if (cmd.verb === 'start') return await start(cmd, run, ws)
+    if (cmd.verb === 'capture') return await captureWindow(cmd, ws)
+    return await finish(run, ws)
+  } finally {
+    await saveUuids(run, ws.id)
+  }
+}
+
+async function main(argv: readonly string[]): Promise<number> {
+  const cmd = parseCommand(argv)
+  if (typeof cmd === 'string') return refuse(cmd)
+  if (cmd.verb === 'help') return help()
+  if (cmd.verb === 'begin') return begin(cmd)
+  if (cmd.verb === 'hold') return hold(cmd)
+  const run = await loadRun()
+  if (typeof run === 'string') return refuse(run)
+  if (cmd.verb === 'end') return end(cmd, run)
+  if (cmd.verb === 'fixture') return fixture(cmd, run)
+
+  return wsVerb(cmd, run)
+}
+
+try {
+  process.exitCode = await main(process.argv.slice(2))
+} catch (error) {
+  process.exitCode = fail(messageOf(error))
+}

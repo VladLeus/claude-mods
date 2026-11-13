@@ -296,7 +296,7 @@ test('agentSidecar turns a valid result into a live agent sidecar', () => {
   assert.deepEqual(agentSidecar(result(), META), expected)
 })
 
-test('agentSidecar refuses an unknown verdict or kind, a missing reason or checks, another row and a non-JSON value', () => {
+test('agentSidecar refuses a bad verdict or kind, a missing reason or checks, another row and a non-JSON value', () => {
   const recorded = result({ kind: 'recorded', verdict: 'recorded', reason: 'the prompt shows', checks: [] })
   const refusedInputs: readonly unknown[] = [
     result({ verdict: 'maybe' }),
