@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { basename, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { startTui } from '../../lib/claude.ts'
+import { startTui, submitTui } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { pollUntil } from '../../lib/poll.ts'
 import { rowTest } from '../../lib/row.ts'
@@ -13,8 +13,6 @@ import {
   paneCommand,
   paneCwd,
   POLL_MS,
-  sendKeys,
-  sendText,
   setOption,
   socketName,
   startServer,
@@ -81,8 +79,7 @@ async function checkWindow(ctx: RowContext, half: Half): Promise<void> {
   ctx.after(() => killServer(server))
   if (half.shell !== null) await setOption(server, 'default-shell', half.shell)
   const root = await startTui(server, copy.repo, [])
-  await sendText(root, `/cadre start ${ROLE} --terminal=tmux`)
-  await sendKeys(root, 'Enter')
+  await submitTui(root, `/cadre start ${ROLE} --terminal=tmux`)
   const opened = await waitForWindow(server)
   const seen = opened === null ? null : await readWindow(ctx, prefix, { server, id: opened.pane })
   ctx.screen(`${prefix} the root session after the command`, await capture(root))

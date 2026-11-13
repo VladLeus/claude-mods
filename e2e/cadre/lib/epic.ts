@@ -9,6 +9,7 @@ import {
   isAppDialog,
   isDialogScreen,
   startTui,
+  submitTui,
   waitTui,
 } from '../../lib/claude.ts'
 import { scratchEnv } from '../../lib/env.ts'
@@ -24,8 +25,6 @@ import {
   paneCwd,
   paneState,
   POLL_MS,
-  sendKeys,
-  sendText,
   WAIT_MS,
 } from '../../lib/tmux.ts'
 import type { Pane, Server } from '../../lib/tmux.ts'
@@ -262,8 +261,7 @@ export async function openEpic(
   const pick = opts.pick ?? ALL_ROLES
   const pane = opts.pane ?? await startTui(server, copy.repo, [])
   const before = linkedLines(await capture(pane, { history: true }))
-  await sendText(pane, `/cadre epic ${key} ${title} ${terminal}`)
-  await sendKeys(pane, 'Enter')
+  await submitTui(pane, `/cadre epic ${key} ${title} ${terminal}`)
   await waitTui(pane, isAppDialog, WAIT_MS, 'the Epic roles question')
   const dialog = await idleTui(pane)
   await answerRoles(pane, pick)
@@ -328,8 +326,7 @@ function hasReply(history: string, command: string): boolean {
 
 // A slash command typed into a root session either asks a question or replies, and the reply starts with `cadre: `.
 export async function typeCommand(pane: Pane, command: string): Promise<CommandSeen> {
-  await sendText(pane, command)
-  await sendKeys(pane, 'Enter')
+  await submitTui(pane, command)
   const opts = {
     timeoutMs: WAIT_MS,
     intervalMs: POLL_MS,

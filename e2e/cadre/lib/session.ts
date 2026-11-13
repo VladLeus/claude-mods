@@ -14,6 +14,7 @@ import {
   isDialogScreen,
   printMode,
   startTuiUntil,
+  submitTui,
   TUI_READY,
   waitTui,
 } from '../../lib/claude.ts'
@@ -30,7 +31,7 @@ import type { RowContext } from '../../lib/row.ts'
 import { scratchRoot } from '../../lib/scratch.ts'
 import { shellQuote } from '../../lib/shims.ts'
 import { importSource } from '../../lib/source.ts'
-import { killServer, matches, sendKeys, sendText, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
+import { killServer, matches, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
 import type { Matcher, Pane, Server } from '../../lib/tmux.ts'
 import type { DialogAnswer, DialogEntry } from '../fixtures/answers.ts'
 
@@ -590,8 +591,7 @@ export async function buildByInit(
   try {
     const pane = await cadreTui(server, copy, '/cadre init')
     await driveDialogs(pane, script, APPLIED_REPLY)
-    await sendText(pane, EXIT_COMMAND)
-    await sendKeys(pane, 'Enter')
+    await submitTui(pane, EXIT_COMMAND)
     await waitDead(pane)
   } finally {
     await killServer(server)

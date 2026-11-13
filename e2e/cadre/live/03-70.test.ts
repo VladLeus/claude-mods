@@ -1,12 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { idleTui, SETTINGS_WARNING, startTui } from '../../lib/claude.ts'
+import { idleTui, SETTINGS_WARNING, startTui, submitTui } from '../../lib/claude.ts'
 import type { TuiStep } from '../../lib/claude.ts'
 import { liveEnv } from '../../lib/env.ts'
 import { copyTree, fixtureDir } from '../../lib/fixture.ts'
 import { rowTest } from '../../lib/row.ts'
 import { shellQuote } from '../../lib/shims.ts'
-import { killServer, sendKeys, sendText, socketName, startServer, waitDead } from '../../lib/tmux.ts'
+import { killServer, socketName, startServer, waitDead } from '../../lib/tmux.ts'
 import { rowEntry } from '../rows.ts'
 
 const EXIT_COMMAND = '/exit'
@@ -40,7 +40,6 @@ rowTest(rowEntry('03#70'), async ctx => {
   const ran = await readFile(marker, 'utf8').catch(() => null)
   ctx.observe('untypedHookRan', ran !== null, ran === null ? 'the marker file was not written' : `marker: ${ran}`)
 
-  await sendText(pane, EXIT_COMMAND)
-  await sendKeys(pane, 'Enter')
+  await submitTui(pane, EXIT_COMMAND)
   await waitDead(pane)
 })

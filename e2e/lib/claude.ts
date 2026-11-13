@@ -240,6 +240,8 @@ const GAP_RE = /\s{3,}/
 const WRAPPED_MIN_CHARS = 6
 const CURSOR_MS = 5_000
 const TUI_ROUNDS = 8
+// A long typed answer wraps on the Other row, so only its start is compared.
+const OTHER_ECHO_CHARS = 40
 
 export type ScreenTest = (screen: string) => boolean
 export type StepSeen = (step: TuiStep, screen: string) => void
@@ -264,6 +266,20 @@ function isReadyScreen(screen: string): boolean {
   return TUI_READY.test(screen)
 }
 
+export function isInputShowing(screen: string, text: string): boolean {
+  const lines = screen.split('\n')
+  const typed = `❯ ${text}`
+
+  return lines.some((line, index) => {
+    if (line.trimEnd() !== typed) return false
+    const above = lines[index - 1]
+    const below = lines[index + 1]
+    if (above === undefined || below === undefined) return false
+
+    return above.startsWith('─') && below.startsWith('─')
+  })
+}
+
 function authChecked(screen: string): string {
   if (isLoginPrompt(screen)) throw new HarnessError('auth lost mid-run')
 
@@ -283,6 +299,19 @@ export async function waitTui(
 
 export async function idleTui(pane: Pane, quietMs?: number, timeoutMs?: number): Promise<string> {
   return authChecked(await waitIdle(pane, quietMs, timeoutMs))
+}
+
+// The engine takes an Enter sent while it still draws the typed text as a newline.
+export async function submitTui(pane: Pane, text: string): Promise<void> {
+  await sendText(pane, text)
+  await waitTui(
+    pane,
+    screen => isInputShowing(screen, text),
+    WAIT_MS,
+    `the typed ${JSON.stringify(text)} in the input box`,
+  )
+  await idleTui(pane)
+  await sendKeys(pane, 'Enter')
 }
 
 function textColumn(line: string): number {
@@ -331,14 +360,13 @@ function cursorLabel(screen: string): string | null {
   return optionLines(screen).find(option => option.cursor)?.label ?? null
 }
 
-async function select(pane: Pane, screen: string, pick: Pick, name: string): Promise<void> {
+async function moveCursor(pane: Pane, screen: string, pick: Pick, name: string): Promise<void> {
   const options = optionLines(screen)
   const target = pick(options)
   if (!target) throw new HarnessError(`no option ${name} on the screen:\n${screen}`)
   const steps = options.indexOf(target) - options.findIndex(option => option.cursor)
   await sendKeys(pane, ...Array.from({ length: Math.abs(steps) }, () => (steps > 0 ? 'Down' : 'Up')))
   await waitTui(pane, current => cursorLabel(current) === target.label, CURSOR_MS, `the cursor on ${name}`)
-  await sendKeys(pane, 'Enter')
 }
 
 // The left column of a previewed dialog is narrow, so a long label wraps and only its first line is the option's text.
@@ -355,7 +383,8 @@ function labelPick(label: string): Pick {
 
 // A dialog takes keys only once its screen has settled; keys sent while it still draws are lost.
 export async function answer(pane: Pane, label: string): Promise<void> {
-  await select(pane, await idleTui(pane), labelPick(label), JSON.stringify(label))
+  await moveCursor(pane, await idleTui(pane), labelPick(label), JSON.stringify(label))
+  await sendKeys(pane, 'Enter')
 }
 
 // Beside an option preview the engine draws no Other row: a note typed after n is the answer.
@@ -368,8 +397,14 @@ export async function answerOther(pane: Pane, text: string): Promise<void> {
     await sendKeys(pane, 'Enter')
     return
   }
-  await select(pane, screen, pick, 'Other')
+  await moveCursor(pane, screen, pick, 'Other')
   await sendText(pane, text)
+  await waitTui(
+    pane,
+    current => cursorLabel(current)?.startsWith(text.slice(0, OTHER_ECHO_CHARS)) === true,
+    CURSOR_MS,
+    'the typed answer on the Other row',
+  )
 
   await sendKeys(pane, 'Enter')
 }
@@ -398,8 +433,8 @@ async function passTrustIn(pane: Pane, until: ScreenTest, seen?: StepSeen): Prom
     const step = stepOf(screen)
     if (!step) continue
     seen?.(step, screen)
-    if (step.label === null) await sendKeys(pane, 'Enter')
-    else await select(pane, screen, labelPick(step.label), JSON.stringify(step.label))
+    if (step.label !== null) await moveCursor(pane, screen, labelPick(step.label), JSON.stringify(step.label))
+    await sendKeys(pane, 'Enter')
   }
 
   throw new HarnessError(`claude did not reach the ready prompt in ${TUI_ROUNDS} rounds`)
