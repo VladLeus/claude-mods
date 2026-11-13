@@ -98,7 +98,8 @@ Flags (`node e2e/run.ts`):
 - `--rows <id,...>`: ids such as `03#45` or `03.2#15c`; `03#68` selects both halves. The offline unit specs always run.
 - `--build <variant,...>`: live only; also build these fixture variants. With no `--rows` it builds and runs no row.
 - `--allow-product-fail`: exit 0 when rows end `fail` but none ends `error`.
-- `--publish <dir>`: copy the summary to `<dir>/<suite>-E2E-SUMMARY-<run>.md`.
+- `--publish <dir>`: copy the summary to `<dir>/<suite>-E2E-SUMMARY-<run>.md`; a run refused at preflight (exit 2)
+  publishes nothing.
 - `--leak-check <file,...>`: check files for leaks (home paths, user and host names, emails, uuids, `sk-ant-`
   tokens, env secret values and the e2e login's identity values); prints file and line of a residue, never the value;
   exits 1 on a residue, 2 when the identity values cannot be read. Run it on every notes file and summary before a
