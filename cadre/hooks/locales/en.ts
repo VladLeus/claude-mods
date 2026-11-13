@@ -1009,7 +1009,8 @@ export const EN = Object.freeze({
     ''}the regenerated .cadre/bin/{role} and .cadre/manifest.json to the branch and run /cadre epic with ${
     ''}the same key again.`,
   'epic.launcher.epicWorktreeLauncherChangedLine':
-    "not opened: the worktree's .cadre/bin/{role} is not the launcher cadre checked in the main checkout.",
+    `not opened: the worktree's .cadre/bin/{role} is not the launcher cadre checked in the ${
+    ''}main checkout. Commit .cadre/ first.`,
 
   'epic.mirrorRun.globalExcludesWarning':
     `cadre epic could not read your global git excludes file {path}, so the worktree's excludes file ${
