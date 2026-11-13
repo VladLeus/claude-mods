@@ -7,7 +7,7 @@
 import type { InitIo, PortEntry } from '../../types'
 import { asciiLower, compareText } from '../core/text'
 import { projectFolderOf } from '../paths'
-import { listingState } from './port-read'
+import { followedProjectFolder, listingState } from './port-read'
 
 /** The most sessions the history scan reads: the newest by modification time (D-59). */
 export const HISTORY_MAX_SESSIONS = 50
@@ -93,7 +93,8 @@ export async function listSessions(
   io: InitIo,
   dir: string,
 ): Promise<{ readonly sessions: readonly PortEntry[]; readonly total: number } | null> {
-  const listing = await listingState(io, dir)
+  const folder = await followedProjectFolder(io, dir)
+  const listing = await listingState(io, folder)
   if (listing.state === 'unknown') return null
   const files = listing.state === 'present' ? listing.entries.filter(isSession) : []
 
@@ -166,6 +167,7 @@ export function busiestFirst(a: NameCount, b: NameCount): number {
  * when sessions are left (Pitfall 5). No text, path or file name is kept.
  */
 export async function scanHistory(io: InitIo, dir: string, sessions: readonly PortEntry[]): Promise<HistoryScan> {
+  const folder = await followedProjectFolder(io, dir)
   const counts = new Map<string, number>()
   let bytes = 0
   let scanned = 0
@@ -173,7 +175,7 @@ export async function scanHistory(io: InitIo, dir: string, sessions: readonly Po
   let skippedUnknown = 0
   for (const session of sessions) {
     if (bytes >= HISTORY_MAX_TOTAL_BYTES) break
-    const read = await io.read(`${dir}/${session.name}`, HISTORY_MAX_FILE_BYTES)
+    const read = await io.read(`${folder}/${session.name}`, HISTORY_MAX_FILE_BYTES)
     if (read.state === 'too-large') {
       skippedLarge += 1
       continue
