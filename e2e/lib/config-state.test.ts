@@ -83,6 +83,29 @@ test('a dir with no settings.json restores to none', async () => {
   assert.equal(existsSync(join(root, 'plugins', 'known_marketplaces.json')), true)
 })
 
+test('a CLAUDE.md there at the snapshot gets its text back after a change in the window', async () => {
+  const root = await e2eLike('claude-md', true)
+  const snap = join(dir, 'claude-md-snap')
+  await writeFile(join(root, 'CLAUDE.md'), 'marker: before\n')
+
+  await snapshotState(root, snap)
+  await writeFile(join(root, 'CLAUDE.md'), 'marker: user-claude-md\n')
+  await restoreState(root, snap)
+
+  assert.equal(await readFile(join(root, 'CLAUDE.md'), 'utf8'), 'marker: before\n')
+})
+
+test('a CLAUDE.md written in a window with none at the snapshot is removed at restore', async () => {
+  const root = await e2eLike('claude-md-absent', true)
+  const snap = join(dir, 'claude-md-absent-snap')
+
+  await snapshotState(root, snap)
+  await writeFile(join(root, 'CLAUDE.md'), 'marker: user-claude-md\n')
+  await restoreState(root, snap)
+
+  assert.equal(existsSync(join(root, 'CLAUDE.md')), false)
+})
+
 test('snapshotState lists the other top-level entries and one made in the window shows after restore', async () => {
   const root = await e2eLike('window', true)
   const before = await snapshotState(root, join(dir, 'window-snap'))
@@ -109,7 +132,7 @@ test('restoreState refuses an incomplete snapshot and removes nothing', async ()
   assert.equal(existsSync(join(root, 'settings.json')), true)
 })
 
-test('otherEntryChanges names appeared, disappeared and mtime-changed entries and ignores the four kept names', () => {
+test('otherEntryChanges names appeared, disappeared and mtime-changed entries and ignores the five kept names', () => {
   const before: readonly TopEntry[] = [
     { name: 'sessions', kind: 'dir', mtimeMs: 1 },
     { name: 'todos', kind: 'dir', mtimeMs: 1 },
@@ -118,6 +141,7 @@ test('otherEntryChanges names appeared, disappeared and mtime-changed entries an
     { name: 'projects', kind: 'dir', mtimeMs: 1 },
     { name: 'plugins', kind: 'dir', mtimeMs: 1 },
     { name: 'settings.json', kind: 'file', mtimeMs: 1 },
+    { name: 'CLAUDE.md', kind: 'file', mtimeMs: 1 },
   ]
   const after: readonly TopEntry[] = [
     { name: 'sessions', kind: 'dir', mtimeMs: 2 },
@@ -126,6 +150,7 @@ test('otherEntryChanges names appeared, disappeared and mtime-changed entries an
     { name: '.claude.json', kind: 'file', mtimeMs: 2 },
     { name: 'projects', kind: 'dir', mtimeMs: 2 },
     { name: 'plugins', kind: 'link', mtimeMs: 2 },
+    { name: 'CLAUDE.md', kind: 'file', mtimeMs: 2 },
   ]
 
   assert.deepEqual(otherEntryChanges(before, after), ['cache', 'old-entry', 'sessions'])
