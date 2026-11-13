@@ -1425,6 +1425,12 @@ export const DEFERRED_NOTE =
 // The deny texts the engine's permission system writes; any other deny is a hook's or a tool's own.
 const PERMISSION_DENY_PREFIXES: readonly string[] = [
   'Permission to use ',
+  'Permission to edit ',
+  'Permission to read ',
+  'Permission for this action ',
+  'Permission for this tool use was denied',
+  'Permission for this command was denied by a built-in Claude Code safety check',
+  'Permission denied for: ',
 ]
 
 /** Whether a deny comes from the permission mode rather than a hook or a tool. */
