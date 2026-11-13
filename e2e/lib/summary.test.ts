@@ -7,6 +7,7 @@ import { LeakError } from './errors.ts'
 import { filterContext, leakCheck } from './filter.ts'
 import { removeTree, scratchRoot } from './scratch.ts'
 import { compareRowIds, parseSidecar, publishSummary, summaryText, writeRowResult, writeSummary } from './summary.ts'
+import { isRefusedRun } from './summary.ts'
 import type { Sidecar, SummaryInput } from './summary.ts'
 
 const HOME = '/Users/unitperson'
@@ -166,4 +167,11 @@ test('compareRowIds orders by phase, then row number, then suffix', () => {
   const ordered = ['03#57', '03#68a', '03#68b', '03#100', '03.1#3', '03.1#12', '03.2#3', '03.2#15c']
 
   assert.deepEqual(ids.sort(compareRowIds), ordered)
+})
+
+test('isRefusedRun is true for the preflight refusal exit code only', () => {
+  assert.equal(isRefusedRun(2), true)
+  assert.equal(isRefusedRun(0), false)
+  assert.equal(isRefusedRun(1), false)
+  assert.equal(isRefusedRun(3), false)
 })

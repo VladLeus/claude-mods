@@ -28,7 +28,7 @@ import type { Env } from './lib/proc.ts'
 import { roleWaves } from './lib/schedule.ts'
 import { isUnder, makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
 import { publishSummary, ROW_KINDS, rowFileName, SIDECAR_SCHEMA, summaryText, TIERS } from './lib/summary.ts'
-import { parseSidecar, writeRowResult, writeSummary } from './lib/summary.ts'
+import { isRefusedRun, parseSidecar, writeRowResult, writeSummary } from './lib/summary.ts'
 import type { FixtureStatus, RowKind, Sidecar, SuiteVersion, Tier } from './lib/summary.ts'
 import { runSocketPrefix, sweepServers } from './lib/tmux.ts'
 
@@ -1117,7 +1117,7 @@ async function finishLive(setup: LiveSetup, info: RunInfo, lock: string, done: L
   ]
   for (const item of items) say(item, ctx)
   const written = await writeRunSummary(summaryPathOf(info), summary(items), ctx)
-  const published = !written || await publishIfAsked(setup.cli, setup.suites, info, ctx)
+  const published = !written || isRefusedRun(result.code) || await publishIfAsked(setup.cli, setup.suites, info, ctx)
 
   return liveExit(result.code, notRemoved, guard, isFilterRemoved && written && published)
 }

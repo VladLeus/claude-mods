@@ -74,6 +74,7 @@ export const SUMMARY_EVIDENCE_CHARS = 160
 export const TIERS: readonly Tier[] = ['offline', 'live']
 export const ROW_KINDS: readonly RowKind[] = ['pass', 'recorded', 'mixed']
 export const VERDICTS: readonly Verdict[] = ['pass', 'fail', 'recorded', 'skipped', 'error']
+export const REFUSED_EXIT = 2
 
 const ROW_ID_RE = /^(\d+(?:\.\d+)*)#(\d+)([a-z]*)$/
 
@@ -360,4 +361,8 @@ export async function publishSummary(src: string, dstDir: string, name: string, 
   await writeFile(dst, out)
 
   return dst
+}
+
+export function isRefusedRun(code: number): boolean {
+  return code === REFUSED_EXIT
 }
