@@ -489,16 +489,19 @@ function splitRow(row: ContextRow, fitsRow: (piece: ContextRow) => boolean): Con
  * MAX_PANE_FRAME_CHARS, else pages filled in order, each as large as fits with the title, the summary and the page
  * marker row reserved (frameSize). An item and the rows under it stay together on a page, and a page that goes on with
  * a section repeats that section's title. A unit that does not fit a page alone is split into one unit per row, and a
- * row that does not fit alone into pieces (splitRow), so no frame exceeds either cap (N-04).
+ * row that does not fit alone into pieces (splitRow), so no frame exceeds either cap (N-04). Given `fitsPage`, it
+ * alone decides whether the context with those rows, and its page unless whole, fits, in place of both caps.
  */
 export function contextPages(
   context: AskContext,
   columns: number | null,
   maxRows: number = MAX_PANE_FRAME_ROWS,
+  fitsPage?: (page: AskContext) => boolean,
 ): (readonly ContextSection[])[] {
   const sections = context.rows ?? []
   const block = { title: context.title, summary: context.summary, lines: [] }
   const fits = (rows: readonly ContextSection[], page: PaneBlock['page']): boolean => {
+    if (fitsPage !== undefined) return fitsPage(page === undefined ? { ...context, rows } : { ...context, rows, page })
     const size = frameSize(page === undefined ? { ...block, rows } : { ...block, rows, page }, columns)
 
     return size.rows <= maxRows && size.chars <= MAX_PANE_FRAME_CHARS

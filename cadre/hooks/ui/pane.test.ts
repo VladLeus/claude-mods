@@ -700,6 +700,25 @@ describe('contextPages (D-305, D-306, D-308)', () => {
     expect(contextPages(contextOf(sections), null)).toEqual([sections])
   })
 
+  test('a given page fit decides the pages in place of both caps, the whole context checked first with no page', () => {
+    const rows = itemsOf(40, 3)
+    const context = contextOf([{ title: 'Skills', rows }])
+    const checked: AskContext[] = []
+    const fitsPage = (page: AskContext): boolean => {
+      checked.push(page)
+
+      return (page.rows ?? []).every(section => section.rows.length <= 30)
+    }
+    const pages = contextPages(context, null, MAX_PANE_FRAME_ROWS, fitsPage)
+    expect(pages.map(page => page.flatMap(section => section.rows).length)).toEqual([30, 30, 30, 30])
+    expect([checked[0]?.rows, checked[0]?.page, checked.at(-1)?.page]).toEqual([
+      context.rows,
+      undefined,
+      { index: 39, count: 40 },
+    ])
+    expect(contextPages(context, null, MAX_PANE_FRAME_ROWS, () => true)).toEqual([context.rows])
+  })
+
   test('a context over the row cap is pages that fit both caps with their marker, every row on one in order', () => {
     // 40 items of three rows each: 120 rows and the title, summary and section title.
     const rows = itemsOf(40, 3)

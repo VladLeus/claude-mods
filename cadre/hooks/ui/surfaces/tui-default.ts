@@ -10,7 +10,7 @@
 import type { AskContext, InitIo, OpenQuestion } from '../../../types'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { withPagedAsks } from '../paging'
-import { PREVIEW_LINE_ROWS, PREVIEW_ROWS, previewedPlan, tuiTranscriptEntries } from '../preview'
+import { PREVIEW_LINE_ROWS, PREVIEW_ROWS, previewedPlan, previewFits, tuiTranscriptEntries } from '../preview'
 import type { DialogPlan } from '../preview'
 import type { PageView, PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
 
@@ -28,12 +28,13 @@ function tuiFolds<T>(_bound: readonly T[]): readonly T[] {
 }
 
 /**
- * The TUI default pages only the conflict question: a diff longer than the preview is asked a page at a time of
- * PREVIEW_LINE_ROWS at the view's columns, each preview showing its page. Every other question is asked as given, its
- * context fitted to the preview's rows.
+ * The TUI default pages only the conflict question: a diff the preview does not show whole at the view's columns is
+ * asked a page at a time, each page as much as its preview shows whole (previewFits), so no line is cut or left out.
+ * Every other question is asked as given, its context fitted to the preview's rows.
  */
 function tuiPagedPort(io: InitIo, view: PageView): InitIo {
-  const paged = withPagedAsks(io, view.columns, () => false, () => PREVIEW_LINE_ROWS)
+  const fitsPage = (page: AskContext): boolean => previewFits(page, PREVIEW_LINE_ROWS, view.columns())
+  const paged = withPagedAsks(io, view.columns, () => false, () => PREVIEW_LINE_ROWS, fitsPage)
 
   return {
     ...io,

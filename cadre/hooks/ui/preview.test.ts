@@ -12,6 +12,7 @@ import {
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
   previewColumns,
+  previewFits,
   previewMarkdown,
   PREVIEW_LINE_ROWS,
   PREVIEW_ROWS,
@@ -557,6 +558,30 @@ describe('fitPreview (D-228)', () => {
     expect(optionPreviews(askRewrite([PICK_QUESTION], review, true, true, null, 21)?.questions)).toEqual([
       [whole, whole, whole],
     ])
+  })
+})
+
+describe('previewFits', () => {
+  /** A conflict-like context of `lines`, each one plain row, on page 1 of 2 when `isPaged`. */
+  function rowsContext(lines: readonly string[], isPaged: boolean): AskContext {
+    const rows = [{ title: null, rows: lines.map((text): ContextRow => ({ role: 'plain', text, indent: 0 })) }]
+    const context: AskContext = { title: 'Diff', lines: ['other'], kind: 'conflict-diff', summary: 'diff', rows }
+
+    return isPaged ? { ...context, page: { index: 0, count: 2 } } : context
+  }
+
+  test('a whole context fits by its lines; a page by its rows, its title row counted', () => {
+    const rows = Array.from({ length: PREVIEW_LINE_ROWS - 1 }, (_, at) => `line ${at + 1}`)
+    expect(previewFits(rowsContext(rows, false), PREVIEW_LINE_ROWS, 80)).toBe(true)
+    expect(previewFits(rowsContext(rows, true), PREVIEW_LINE_ROWS, 80)).toBe(true)
+    expect(previewFits(rowsContext([...rows, 'one more'], true), PREVIEW_LINE_ROWS, 80)).toBe(false)
+  })
+
+  test('a page whose rows fit but whose preview passes MAX_PREVIEW_CHARS does not fit', () => {
+    const rows = Array.from({ length: 10 }, (_, at) => `${at}`.padEnd(230, 'x'))
+    expect(previewMarkdown([{ title: 'Diff', lines: rows }], 122).endsWith('\n…')).toBe(true)
+    expect(previewFits(rowsContext(rows, true), PREVIEW_LINE_ROWS, 122)).toBe(false)
+    expect(previewFits(rowsContext(rows.slice(0, 5), true), PREVIEW_LINE_ROWS, 122)).toBe(true)
   })
 })
 

@@ -155,6 +155,22 @@ describe('withPagedAsks (D-305, D-306, D-307, D-308)', () => {
     expect(inner.specs).toEqual([fitting])
   })
 
+  test('a given page fit decides the pages in place of the frame caps', async () => {
+    const entry = await oversizeEntry()
+    const context = entryContext(entry.spec)
+    const pagedBy = (run: MemRun, fits: (page: AskContext) => boolean) =>
+      withPagedAsks(run.io, () => null, () => false, () => MAX_PANE_FRAME_ROWS, fits)
+    const whole = memIo(memWorld({}), ['Go one by one'])
+    await pagedBy(whole, () => true).ask(entry.question, entry.spec)
+    expect(whole.specs).toEqual([entry.spec])
+    const twoRows = (page: AskContext): boolean => (page.rows ?? []).flatMap(section => section.rows).length <= 2
+    const pages = contextPages(context, null, MAX_PANE_FRAME_ROWS, twoRows)
+    const paged = memIo(memWorld({}), ['Whole group'])
+    await pagedBy(paged, twoRows).ask(entry.question, entry.spec)
+    expect([paged.specs[0]?.context?.rows, paged.specs[0]?.context?.page?.count]).toEqual([pages[0], pages.length])
+    expect(pages.length > 3).toBe(true)
+  })
+
   test('a pane seated inline asks an over-cap context once, unpaged; else it pages as before (N-02)', async () => {
     const entry = await oversizeEntry()
     const inline = memIo(memWorld({}), ['Go one by one'])

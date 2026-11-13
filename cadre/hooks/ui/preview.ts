@@ -362,6 +362,17 @@ function shownLines(context: AskContext): readonly string[] {
 }
 
 /**
+ * Whether the TUI-default preview of `context`, a paged one's page rows (shownLines), shows it whole at `rows` and
+ * `columns`: it neither overflows the rows (fitPreview) nor is cut at MAX_PREVIEW_CHARS (previewMarkdown).
+ */
+export function previewFits(context: AskContext, rows: number, columns: number | null): boolean {
+  const shown = { ...context, lines: shownLines(context) }
+  if (fitPreview(shown, rows, columns).isOverflow) return false
+
+  return !previewMarkdown([shown], columns).endsWith(`\n${CUT_LINE}`)
+}
+
+/**
  * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
  * D3, R3, R4); null, so the call passes through unchanged and the dialog keeps its Other row, when the open question
  * has no context of its own (D-203) or withPreviews does not rewrite the questions. Each option of each single-select

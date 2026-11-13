@@ -200,7 +200,7 @@ describe('the TUI-default paged conflict question', () => {
     }
   })
 
-  test('a diff whose counts line and lines fill the preview rows exactly is asked once; one line more pages', async () => {
+  test('a diff that fills the preview rows exactly is asked once; one line more pages', async () => {
     const short = (count: number): string[] => Array.from({ length: count }, (_, at) => `line ${at + 1}`)
     const exact = addedSpec(short(PREVIEW_LINE_ROWS - 2))
     const once = recordingIo('Keep mine')
