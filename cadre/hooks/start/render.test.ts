@@ -125,4 +125,16 @@ describe('the per-skill probe lines of a render', () => {
       'best-effort',
     ])
   })
+  test("PM's epic render reads the main checkout's install and writes the same skill lines", async () => {
+    const worktree = '/repo/.claude/worktrees/proj-1'
+    const locations: InitLocations = { ...DEFAULT_LOCATIONS, root: worktree, givenRoot: worktree }
+    const dirs = { '/repo/.git': [], [`${worktree}/.cadre`]: [entry('pm', 'dir')], [`${worktree}/.cadre/pm`]: [] }
+    const world = memWorld({ dirs, files: mattInstall({ scope: 'project', projectPath: '/repo' }) })
+    const rules = await renderedPm(world, locations, { mainRoot: '/repo', kickoff: 'kickoff' })
+
+    expect(rules.slice(-4, -1)).toEqual([...PM_SKILL_LINES])
+    expect(rules.filter(rule => rule.token === 'mattpocock-skills:tdd').map(rule => rule.check)).toEqual([
+      'skill-absent',
+    ])
+  })
 })

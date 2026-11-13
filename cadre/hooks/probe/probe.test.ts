@@ -190,4 +190,21 @@ describe('the per-skill probe lines', () => {
       token: '',
     })
   })
+  test('a Security role given claude-security with the plugin enabled gets it present and never absent', () => {
+    const security = templateRole('security', { skills: [CLAUDE_SECURITY_SKILL] })
+    const scanned = [skillRef(CLAUDE_SECURITY_SKILL, CLAUDE_SECURITY_PLUGIN)]
+    const setup = emptySetupScan({ plugins: [CLAUDE_SECURITY_PLUGIN], skills: scanned })
+    const scope = compileScope(security, context({ setup, roles: ['security'] }))
+    const lines = skillLines(expectationsFor(scope, BE_MEMORY))
+
+    expect(scope.settings.enabledPlugins[CLAUDE_SECURITY_PLUGIN]).toBe(true)
+    expect(lines.filter(line => line.token === CLAUDE_SECURITY_SKILL)).toEqual([
+      {
+        check: 'skill-present',
+        enforcement: 'best-effort',
+        text: `${GIVEN} [skill ${CLAUDE_SECURITY_SKILL} present]`,
+        token: CLAUDE_SECURITY_SKILL,
+      },
+    ])
+  })
 })
