@@ -44,6 +44,10 @@ const INBOX_HEAD_RE = /^inbox(?::(.+))?$/
 const TERMINAL_FLAG = '--terminal'
 const SAFE_TERMINALS: readonly string[] = ['--terminal=tmux', '--terminal=none']
 const CONFIG_READS: readonly string[] = ['--get', '--get-all', '--list']
+// Whatever the subcommand, these write or read files outside the copy, set config or point git at another repo.
+const GIT_REFUSED_PREFIXES: readonly string[] = ['--output', '--no-index']
+const GIT_REFUSED_OPTIONS: readonly string[] = ['-c', '-C', '--git-dir', '--work-tree']
+const GIT_REFUSED_TEXT = [...GIT_REFUSED_PREFIXES, ...GIT_REFUSED_OPTIONS].join(', ')
 const EXCLUSIVE_SEEDS: readonly string[] = ['user-claude-md']
 const LOCATION_USAGE = 'use repo/<path>, inbox/<role>/<path>, inbox:<worktree>/<role>/<path> or projects/<path>'
 const RUN_USAGE = 'run needs a command: run <ws> [--wt <worktree>] git <subcommand> [args...]'
@@ -909,12 +913,20 @@ export function parseLocation(text: string): Location | null {
   return { root: 'inbox', worktree, role, path: inner.join('/') }
 }
 
+function isRefusedGitArg(arg: string): boolean {
+  if (GIT_REFUSED_PREFIXES.some(prefix => arg.startsWith(prefix))) return true
+
+  return GIT_REFUSED_OPTIONS.some(option => arg === option || arg.startsWith(`${option}=`))
+}
+
 export function runRefusal(argv: readonly string[]): string | null {
   const [program, sub = '', ...args] = argv
   if (program === undefined) return RUN_USAGE
   if (program !== 'git') return `only git runs here, not ${program}`
   if (sub === '') return 'git needs a subcommand'
   if (sub.startsWith('-')) return `git takes no option before its subcommand: ${sub}`
+  const refused = args.find(isRefusedGitArg)
+  if (refused !== undefined) return `the git argument ${refused} is refused: run takes no ${GIT_REFUSED_TEXT}`
   if (GIT_READS.includes(sub)) return null
   if (sub === 'worktree') return args[0] === 'list' ? null : 'git worktree runs only as git worktree list'
   if (sub !== 'config') return `git ${sub} is refused: use ${GIT_READS.join(', ')}, worktree list or config`
