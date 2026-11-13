@@ -112,6 +112,98 @@ Exit codes: 0 ok; 1 a row ended `error` (or `fail` without `--allow-product-fail
 session-file removal failed, or a summary failed its leak check; 2 a preflight refusal (CI, login, lock, global away);
 3 a guard failure.
 
+## Agent UAT CLI
+
+`e2e/agent/cli.ts` drives live claude sessions for the UAT rows that need judgement rather than a script. A Workflow
+agent runs `node e2e/agent/cli.ts <verb> ...` and nothing else: it never starts claude or tmux, never runs git or a
+shell, and never writes a file itself. Every claude the CLI starts runs on the e2e config dir through the claude fence,
+with the real HOME and USER, as in the live tier.
+
+An orchestrator brackets the Workflow:
+
+```sh
+npm run e2e:live -- --build <variant,...>           # earlier: build the fixtures
+node e2e/agent/cli.ts begin --fixtures <build run>  # prints the agent run id and a one-time orchestrator token
+node e2e/agent/cli.ts end --token <token>           # after the Workflow
+```
+
+- `begin` refuses while another agent run is active. It takes the e2e dir lock through a detached holder process
+  (held until `end`, at most 24 h), removes leftover test-session files, snapshots the guard, writes the claude fence,
+  passes the auth preflight and prints the token once. The run keeps only the token's sha256; `end` and the holder
+  need the token, and no agent prompt may hold it.
+- The fixtures come from an earlier `--build` run: `begin --fixtures <run>` copies from that run's scratch folder,
+  which is pruned after 24 h, so build, begin and end on the same day.
+- `end` writes an `error` row for each workspace that never called `finish`, kills the run's tmux servers, restores an
+  open exclusive workspace, removes the run's session files, releases the lock, compares the guard once for the whole
+  run and writes the summary.
+
+`node e2e/agent/cli.ts help` lists the agent verbs with their arguments:
+
+| Verb | What it does |
+|---|---|
+| `fixture <variant> --row <row> [--exclusive]` | copies a built fixture into a new workspace and prints its id |
+| `claim <ws> <role...> [--wait <s>]` | claims roles before the workspace starts them |
+| `start <ws> root\|<role> [--cwd <folder>] [--wt <worktree>] [--raw]` | opens `claude` or a claimed role window |
+| `windows <ws>` | lists the windows, live or dead, with their folder |
+| `trust <ws> <window>` | passes the trust screens of a window cadre opened, such as `cadre-<role>` |
+| `send <ws> <window> <text>` | types one line into a window and submits it |
+| `keys <ws> <window> <key...>` | presses keys from a fixed list |
+| `answer`, `other <ws> <window> <label or text>` | answers the question on the screen |
+| `capture <ws> <window> [--history] [--lines <n>]` | prints the last lines of a window |
+| `wait <ws> <window> <regex> [--timeout <s>]` | waits until the screen matches, at most 540 s per call |
+| `idle`, `stop <ws> <window>` | waits for a still screen; exits the session |
+| `cadre <ws> <args...> [--wt <worktree>]` | runs `/cadre <args>` in print mode in the copy |
+| `probe <ws> <role> [--wt <worktree>]` | runs a role launcher with `--probe` |
+| `run <ws> [--wt <worktree>] git <subcommand> [args...]` | runs read-only git in the copy, the argv as given |
+| `files`, `read <ws> <location>` | lists a folder, or prints a file of at most 200000 bytes |
+| `seed <ws> <name> [<role>]` | writes one fixed seed |
+| `finish <ws>` | reads the result JSON on stdin, writes the row, closes the workspace |
+
+The root window is `claude`. A role window is `role-<role>`, started through `/cadre start` (`--raw` runs the launcher
+without cadre, as a role started outside cadre); cadre's own epic windows keep their `cadre-<role>` names. Seeds write
+fixed text into the copy, except `user-claude-md`, which writes the e2e dir's `CLAUDE.md`.
+
+A location is `repo/<path>` (the workspace copy), `inbox/<role>/<path>` or `inbox:<worktree>/<role>/<path>` (a role's
+cadre inbox for the repo or one of its worktrees), or `projects/<folder>/<path>`: `projects/` lists the e2e dir's
+project folders of sessions started in the workspace, each named by the part after the workspace path (such as `repo`
+or `repo--claude-worktrees-proj-1-add-retry`).
+
+Workspaces and claims:
+
+- Each workspace has its own copy of the fixture and its own tmux server, and its state persists between CLI calls.
+- A role is claimed by one live workspace at a time, as the runner runs one role session per role. `start` of a role
+  needs the workspace's claim; `finish` drops it; `claim --wait` retries a busy role.
+- `fixture --exclusive` opens only while no other workspace is live, and no other workspace opens while it is open.
+  It snapshots the e2e dir's plugin state as the runner's exclusive window does, and `finish` restores it and adds
+  `e2e dir state restored` and each changed top-level entry to the row's evidence. A failed restore ends the row
+  `error`, keeps every new workspace refused and exits 1; `end` tries the restore again.
+
+Refusals (exit 2):
+
+- `send` refuses shell mode (`!`), `/login`, `/logout`, any text with `--global`, `/plugin` outside an exclusive
+  workspace, a `/cadre epic` open without `--terminal=tmux` or `--terminal=none`, and text into a root window that does
+  not start with `/`. Every text is one line with no control characters.
+- `answer` refuses an `Install` or `Yes, install` option, and `seed` the `user-claude-md` seed, outside an exclusive
+  workspace.
+- `send`, `keys`, `answer`, `other` and `stop` act only on windows the workspace started or trusted.
+- `cadre` opens no epic (`epic done` is allowed): an epic opens through `send` in a root window, inside the workspace's
+  tmux server.
+- `run` takes only `git` with `status`, `log`, `diff`, `show`, `branch`, `ls-files`, `rev-parse`, `check-ignore`,
+  `worktree list`, or `config` with `--get`, `--get-all` or `--list`, and no option before the subcommand.
+- `files` and `read` refuse a location that is absolute, holds `..` or leads out of its root through a symlink.
+- `end` refuses without the orchestrator token.
+
+Every line the CLI prints passes the run's filter (identity values, home and scratch paths, uuids numbered per
+workspace) and then the leak check. A line that still holds a residue prints as
+`[line withheld: it failed the leak check]` and the other lines print; a withheld line is not evidence.
+
+Results go to the git-ignored `e2e/results/<agent run>/`: one `<row>.md` with its JSON sidecar per `finish`, and
+`SUMMARY.md` at `end`.
+
+Exit codes: 0 ok; 1 a verb failed (such as a `wait` timeout, a busy claim, a missing file or a failed restore), or at
+`end` a session file was not removed, a restore failed or the summary was not written; 2 a refusal; 3 a guard failure
+at `end`.
+
 ## Verdicts, results, cassettes
 
 Each row ends `pass`, `fail`, `recorded`, `skipped` or `error` (a harness fault, never a product verdict). Results go
