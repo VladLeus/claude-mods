@@ -159,7 +159,21 @@ describe('history scan', () => {
     expect(await listSessions(memIo(memWorld({}), {}).io, DIR, '/repo')).toEqual({ sessions: [], total: 0 })
   })
 
-  test('a session folder over 200 characters is listed and read in the verified shortened folder', async () => {
+  test('a session folder over 200 characters is listed by its full name, and no transcript is read', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const long = `/home/u/.claude/projects/${mangledProjectDir(root)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const world = memWorld({
+      dirs: { '/home/u/.claude/projects': [entry(name, 'dir')], [shortened]: [transcript('a.jsonl', 1)] },
+      files: { [`${shortened}/a.jsonl`]: `${JSON.stringify({ type: 'user', cwd: root })}\n` },
+    })
+    const run = memIo(world, {})
+    expect(await listSessions(run.io, long, root)).toEqual({ sessions: [], total: 0 })
+    expect([run.listed, run.reads.filter(path => path.endsWith('.jsonl'))]).toEqual([[long], []])
+  })
+
+  test('the consented scan of a session folder over 200 characters reads the verified shortened folder', async () => {
     const root = `/repo/${'w'.repeat(300)}`
     const long = `/home/u/.claude/projects/${mangledProjectDir(root)}`
     const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
@@ -174,9 +188,7 @@ describe('history scan', () => {
       files: { [`${shortened}/old.jsonl`]: cadre, [`${shortened}/new.jsonl`]: held },
     })
     const run = memIo(world, {})
-    const listed = await listSessions(run.io, long, root)
-    expect(listed).toEqual({ sessions: [transcript('new.jsonl', 2), transcript('old.jsonl', 1)], total: 2 })
-    const scan = await scanHistory(run.io, long, root, listed?.sessions ?? [])
+    const scan = await scanHistory(run.io, long, root, [transcript('new.jsonl', 2), transcript('old.jsonl', 1)])
     expect([scan.scanned, scan.counts]).toEqual([2, [{ name: 'cadre', count: 2 }]])
     expect(run.reads.slice(-2)).toEqual([`${shortened}/new.jsonl`, `${shortened}/old.jsonl`])
   })

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, InitLocations, PortEntry } from '../../../types'
 import { PANE_LIST_WORDS } from '../../locales/t'
+import { mangledProjectDir } from '../../paths'
 import { proposeRoles } from '../../roles/propose'
 import { listSessions, scanHistory } from '../../scan/history'
 import type { HistoryScan } from '../../scan/history'
@@ -269,6 +270,21 @@ describe('history scan', () => {
     expect(drive.state.draft.hints).toEqual(new Map())
     expect(drive.asked).toEqual([])
     expect(drive.outputs).toEqual([{ kind: 'log', text: UNLISTED_HISTORY_NOTE }, scanFoldAt(DEFAULT_LOCATIONS)])
+    expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
+  })
+
+  test('historyStage: a root encoded over 200 characters has no transcript read before the answer', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const world = memWorld({
+      dirs: { '/home/u/.claude/projects': [entry(name, 'dir')], [shortened]: [transcript('a.jsonl', 1)] },
+      files: { [`${shortened}/a.jsonl`]: `${JSON.stringify({ type: 'user', cwd: root })}\n${EXAMPLE}` },
+    })
+    const run = memIo(world, [])
+    const locations = { ...DEFAULT_LOCATIONS, root, givenRoot: root }
+    const drive = await drivenWith(historyAt(locations), ['Yes, scan names and counts'], historyCalls(run.io))
+    expect(drive.asked).toEqual([])
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
   })
 
