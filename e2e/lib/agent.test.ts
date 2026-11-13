@@ -843,8 +843,9 @@ test('the subfolder-settings seed denies denied.txt by ./denied.txt and by src/d
     await seed({ repo, e2eDir: repo })
     const settings: unknown = JSON.parse(await readFile(join(repo, 'src', '.claude', 'settings.json'), 'utf8'))
     const permissions = isRecord(settings) ? settings.permissions : undefined
+    const deny = isRecord(permissions) ? permissions.deny : undefined
 
-    assert.deepEqual(isRecord(permissions) ? permissions.deny : undefined, ['Read(./denied.txt)', 'Read(src/denied.txt)'])
+    assert.deepEqual(deny, ['Read(./denied.txt)', 'Read(src/denied.txt)'])
   } finally {
     await removeTree(repo, scratchRoot())
   }

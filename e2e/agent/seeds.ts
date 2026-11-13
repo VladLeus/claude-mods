@@ -28,6 +28,8 @@ const HOOK_LOG = 'src/.e2e-subfolder-hook.log'
 const HOOK_LINE = 'SessionStart'
 const DENIED_FILE = 'src/denied.txt'
 const DENIED_TEXT = 'marker: denied-file\n'
+// The file named from the session's folder (src) and from the git root, so the row can record which rule holds.
+const DENY_RULES: readonly string[] = ['Read(./denied.txt)', `Read(${DENIED_FILE})`]
 const APP_FILE = 'src/app.ts'
 const SECURITY_LINE = 'export const retryLimit = 3\n'
 const BYPASS_MODE = 'bypassPermissions'
@@ -65,7 +67,7 @@ async function subfolderSettings(ws: SeedTarget): Promise<string> {
   const command = `/bin/sh -c ${shellQuote(`echo ${HOOK_LINE} >> ${shellQuote(join(ws.repo, HOOK_LOG))}`)}`
   const settings = {
     hooks: { SessionStart: [{ hooks: [{ type: 'command', command }] }] },
-    permissions: { deny: [`Read(${DENIED_FILE})`] },
+    permissions: { deny: [...DENY_RULES] },
   }
   await writeIn(ws.repo, SUBFOLDER_SETTINGS, `${JSON.stringify(settings, null, 2)}\n`)
   await writeIn(ws.repo, DENIED_FILE, DENIED_TEXT)
