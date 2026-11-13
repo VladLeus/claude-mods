@@ -7544,14 +7544,20 @@ describe('runFrameworks', () => {
     expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
   })
 
-  test('a team with a dir start reads the start folder settings, as regen does', async () => {
+  test('a team with a dir start reads the start folder settings, as regen does, and its hooks reach ROLE.md', async () => {
     const base = startSettingsWorld({ facts: GSD_IN_USE })
     const stored: Partial<CadreState> = { framework: 'none', frameworks: [], launchStart: { kind: 'dir', path: 'src' } }
     const world = await regenWorld(TEAM, stored, base)
     const run = memIo(world, ANSWERS)
-    await runFrameworks(run.io, { dryRun: true })
+    const host = memHost(hostWorld({}))
+    await runFrameworks(run.io, { dryRun: false, host: host.io })
+    const role = host.writes.find(write => write.path === '/repo/.cadre/be/ROLE.md')?.text ?? ''
 
     expect(run.reads).toContain('/repo/src/.claude/settings.json')
+    expect(role).toContain(
+      '    [none] <git root>/src/.claude/settings.json loads: its hooks run and its permission rules apply',
+    )
+    expect(role).toContain('guard.sh')
   })
 
   test('a dismissal at the set question or at the review replies with the frameworks cancel text', async () => {
