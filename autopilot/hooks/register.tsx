@@ -53,6 +53,7 @@ import {
   isGraceEligible,
   isGraceLive,
   isLiveFinishedValue,
+  isPermissionDeny,
   isValidHandoffPath,
   kickoffPrompt,
   limitAction,
@@ -1620,6 +1621,7 @@ export const register: Register = on => {
     const ran = await next(e)
     if (ran.deny !== undefined) {
       if (!isAway) return ran
+      if (!isPermissionDeny(ran.deny)) return ran
       await log($, `deferred (refused by the permission mode): ${e.tool}: ${ran.deny.slice(0, 300)}`)
       return { deny: `${ran.deny}\n\n${DEFERRED_NOTE}` }
     }

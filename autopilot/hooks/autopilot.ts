@@ -1422,6 +1422,16 @@ export function askAnswer(mode: Mode): string {
 export const DEFERRED_NOTE =
   'Autopilot: this action was refused by the permission mode. Do not try to get around it. It is logged as deferred until the person returns; put it in your handoff and continue with other work.'
 
+// The deny texts the engine's permission system writes; any other deny is a hook's or a tool's own.
+const PERMISSION_DENY_PREFIXES: readonly string[] = [
+  'Permission to use ',
+]
+
+/** Whether a deny comes from the permission mode rather than a hook or a tool. */
+export function isPermissionDeny(deny: string): boolean {
+  return PERMISSION_DENY_PREFIXES.some(prefix => deny.startsWith(prefix))
+}
+
 /** How far ahead of now a record's `setAt` may lie (two processes' clocks differ a little); further is a broken or forged write. */
 const MAX_SET_AT_AHEAD_MS = 5 * 60_000
 
