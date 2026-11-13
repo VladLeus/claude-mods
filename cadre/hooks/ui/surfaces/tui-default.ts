@@ -9,9 +9,10 @@
  */
 import type { AskContext, InitIo, OpenQuestion } from '../../../types'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
+import { withPagedAsks } from '../paging'
 import { PREVIEW_LINE_ROWS, PREVIEW_ROWS, previewedPlan, tuiTranscriptEntries } from '../preview'
 import type { DialogPlan } from '../preview'
-import type { PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
+import type { PageView, PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
 
 /** The Review pages of the TUI default (D-233, ASKED #19): PREVIEW_ROWS rows, any number of code points. */
 const TUI_REVIEW_PAGING: ReviewPaging = Object.freeze({ rows: PREVIEW_ROWS, maxChars: Number.POSITIVE_INFINITY })
@@ -27,11 +28,18 @@ function tuiFolds<T>(_bound: readonly T[]): readonly T[] {
 }
 
 /**
- * The TUI default pages no question, so a run asks through its port as it is: the preview carries the context, fitted
- * to its rows (D-228, D-306).
+ * The TUI default pages only the conflict question: a diff longer than the preview is asked a page at a time of
+ * PREVIEW_LINE_ROWS at the view's columns, each preview showing its page. Every other question is asked as given, its
+ * context fitted to the preview's rows.
  */
-function tuiPagedPort(io: InitIo): InitIo {
-  return io
+function tuiPagedPort(io: InitIo, view: PageView): InitIo {
+  const paged = withPagedAsks(io, view.columns, () => false, () => PREVIEW_LINE_ROWS)
+
+  return {
+    ...io,
+    ask: async (question, spec) =>
+      spec.context?.kind === 'conflict-diff' ? paged.ask(question, spec) : io.ask(question, spec),
+  }
 }
 
 /** The columns a page is drawn at on the TUI default: the dialog preview's, whatever the seat (D-292, U-15). */

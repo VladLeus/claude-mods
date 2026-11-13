@@ -351,6 +351,16 @@ export type AskRewrite = {
   readonly asked: readonly AskedQuestion[]
 }
 
+/** The lines a preview fits of a context: a paged one's page rows, a section title first; else its lines. */
+function shownLines(context: AskContext): readonly string[] {
+  if (context.page === undefined || context.rows === undefined || context.kind === 'review') return context.lines
+
+  return context.rows.flatMap(section => [
+    ...(section.title === null ? [] : [section.title]),
+    ...section.rows.map(row => row.text),
+  ])
+}
+
 /**
  * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
  * D3, R3, R4); null, so the call passes through unchanged and the dialog keeps its Other row, when the open question
@@ -361,8 +371,8 @@ export type AskRewrite = {
  * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
  * that pairs its text as asked with the text the dialog shows (A3), with the labels of its options as asked and
  * `takesNote`, whether a note typed in it is its answer (D-270); a multi-select question is copied unchanged,
- * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context fitted to
- * them at `columns` (fitPreview, D-228, D-260); with none it shows every line.
+ * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context, a paged
+ * one's page rows (shownLines), fitted to them at `columns` (fitPreview, D-228, D-260); with none it shows every line.
  */
 export function askRewrite(
   questions: unknown,
@@ -373,7 +383,8 @@ export function askRewrite(
   rows: number | null = null,
 ): AskRewrite | null {
   if (context === null) return null
-  const shown = rows === null ? context : { ...context, lines: fitPreview(context, rows, columns).lines }
+  const page = { ...context, lines: shownLines(context) }
+  const shown = rows === null ? context : { ...context, lines: fitPreview(page, rows, columns).lines }
   const preview = previewMarkdown([shown], columns)
   const previewed = withPreviews(questions, () => preview)
   if (previewed === null) return null

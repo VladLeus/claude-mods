@@ -69,10 +69,9 @@ describe('the list words of each module (D-256, D-353)', () => {
 })
 
 describe('the paged port of the modules that never page (D-306, D-353)', () => {
-  test('the TUI default and a surface that shows no context are given the port as it is', () => {
+  test('a surface that shows no context is given the port as it is', () => {
     const { io } = memIo(memWorld({}), [])
     const view: PageView = { columns: () => null, seat: () => null, rows: () => null }
-    expect(TUI_DEFAULT.pagedPort(io, view)).toBe(io)
     expect(NO_SURFACE.pagedPort(io, view)).toBe(io)
   })
 })
