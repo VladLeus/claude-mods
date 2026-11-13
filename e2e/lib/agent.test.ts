@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { SEEDS } from '../agent/seeds.ts'
 import {
+  afterEcho,
   agentSidecar,
   answerRefusal,
   cadreRefusal,
@@ -28,6 +29,8 @@ import {
   tokenHash,
   tokenRefusal,
   windowNameFor,
+  withLastSent,
+  withWindow,
   wsIdOf,
 } from './agent.ts'
 import type { RunState, WsState } from './agent.ts'
@@ -44,6 +47,8 @@ const UUID_A = '0f8fad5b-d9cb-469f-a165-70867728950e'
 const UUID_B = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
 const SCREENS = [{ label: 'claude', text: '❯ ready' }]
 const META = { row: '03#10', durationMs: 1234, screens: SCREENS }
+const SMOKE_TEXT = 'Reply with exactly: smoke ok'
+const INPUT_BOX: readonly string[] = ['─'.repeat(30), '❯', '─'.repeat(30)]
 
 function without(value: object, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
@@ -454,6 +459,38 @@ test('parseWsState keeps the snapshot of an exclusive workspace, adds none when 
   assert.equal(parseWsState({ ...state, snapshot: null }), null)
 })
 
+test('parseWsState round-trips a window lastSent, omits it when absent and refuses one that is not a string', () => {
+  const state: WsState = {
+    ...wsState(),
+    windows: [{ name: 'claude', kind: 'root' }, { name: 'cadre-qa', kind: 'role', lastSent: 'hello' }],
+  }
+  const plain = parseWsState(JSON.parse(JSON.stringify(wsState())))
+
+  assert.deepEqual(parseWsState(JSON.parse(JSON.stringify(state))), state)
+  assert.equal(plain?.windows.some(item => Object.hasOwn(item, 'lastSent')), false)
+  for (const lastSent of [1, null]) {
+    assert.equal(parseWsState({ ...state, windows: [{ name: 'cadre-qa', kind: 'role', lastSent }] }), null)
+  }
+})
+
+test('withWindow appends a window and leaves the windows unchanged for a name already recorded', () => {
+  const ws = wsState()
+  const added = withWindow(ws, { name: 'role-be', kind: 'role' })
+
+  assert.deepEqual(added.windows, [...ws.windows, { name: 'role-be', kind: 'role' }])
+  assert.deepEqual(withWindow(added, { name: 'role-be', kind: 'role' }).windows, added.windows)
+})
+
+test('withLastSent sets lastSent on the named window only and changes no window for an unknown name', () => {
+  const ws = wsState()
+
+  assert.deepEqual(withLastSent(ws, 'cadre-qa', 'hello').windows, [
+    { name: 'claude', kind: 'root' },
+    { name: 'cadre-qa', kind: 'role', lastSent: 'hello' },
+  ])
+  assert.deepEqual(withLastSent(ws, 'role-be', 'hello').windows, ws.windows)
+})
+
 function snapshot(keychain: GuardSnapshot['keychain']): GuardSnapshot {
   return {
     top: [{ name: 'projects', kind: 'dir', mtimeMs: 1_763_024_400_123.5 }],
@@ -581,6 +618,42 @@ test('filterLines withholds each line the leak check names and prints the other 
   const expected = 'home ~/work\n[line withheld: it failed the leak check]\nscratch <scratch>/ws'
 
   assert.equal(filterLines(text, filterCtx()), expected)
+})
+
+test('afterEcho gives the whole screen as unsent when no text was sent', () => {
+  const screen = ['⏺ earlier', `❯ ${SMOKE_TEXT}`, '⏺ smoke ok', ...INPUT_BOX].join('\n')
+
+  assert.deepEqual(afterEcho(screen, undefined), { text: screen, echo: 'unsent' })
+})
+
+test('afterEcho gives the lines below the echo of the sent text, so the echo itself never matches', () => {
+  const reply = ['⏺ smoke ok', ...INPUT_BOX]
+  const answered = ['⏺ earlier', `❯ ${SMOKE_TEXT}`, ...reply].join('\n')
+  const unanswered = ['⏺ earlier', `❯ ${SMOKE_TEXT}`, ...INPUT_BOX].join('\n')
+
+  assert.deepEqual(afterEcho(answered, SMOKE_TEXT), { text: reply.join('\n'), echo: 'found' })
+  assert.doesNotMatch(afterEcho(unanswered, SMOKE_TEXT).text, /smoke ok/)
+})
+
+test('afterEcho starts below the last echo when the same text was sent twice', () => {
+  const screen = [`❯ ${SMOKE_TEXT}`, '⏺ smoke ok', `❯ ${SMOKE_TEXT}`, ...INPUT_BOX].join('\n')
+
+  assert.doesNotMatch(afterEcho(screen, SMOKE_TEXT).text, /smoke ok/)
+})
+
+test('afterEcho finds an echo the engine wrapped onto indented lines, also inside a word', () => {
+  const reply = ['⏺ smoke ok', ...INPUT_BOX]
+  const wrapped = ['⏺ earlier', '❯ Reply with exactly: smoke', '  ok', ...reply].join('\n')
+  const midWord = ['⏺ earlier', '❯ Reply with exactly: smo', '  ke ok', ...reply].join('\n')
+
+  assert.deepEqual(afterEcho(wrapped, SMOKE_TEXT), { text: reply.join('\n'), echo: 'found' })
+  assert.deepEqual(afterEcho(midWord, SMOKE_TEXT), { text: reply.join('\n'), echo: 'found' })
+})
+
+test('afterEcho gives the whole screen as missing when the sent text has no echo on it', () => {
+  const screen = ['❯ Other text', '⏺ smoke ok'].join('\n')
+
+  assert.deepEqual(afterEcho(screen, SMOKE_TEXT), { text: screen, echo: 'missing' })
 })
 
 test('sendRefusal refuses !, /login, --global, /plugin, an unsafe epic and root free text and allows the rest', () => {
