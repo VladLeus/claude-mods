@@ -5375,6 +5375,18 @@ describe('a consented framework install after Confirm', () => {
     expect(['be', 'tl'].map(id => frameworkLineOf(host, id))).toEqual(['Framework: GSD.', 'Framework: GSD.'])
   })
 
+  test('a kept superpowers in use whose install did not land keeps its plugin key enabled for its role', async () => {
+    const inUse: RepoEntry = { name: '.superpowers', kind: 'dir', isLink: false }
+    const key = 'superpowers@claude-plugins-official'
+    const { host, problems, installed } = await applied(superpowersDraft(['superpowers']), [], [], [inUse])
+    const install = projectInstallOf('superpowers')
+    const failure = install === null ? [] : [projectInstallFailureText(install)]
+    const settings = host.writes.find(write => write.path === '/repo/.cadre/be/settings.json')?.text ?? ''
+    expect([failure.length, problems, installed]).toEqual([1, failure, []])
+    const enabled = settings.includes(`"${key}": true`)
+    expect([enabled, frameworkLineOf(host, 'be')]).toEqual([true, 'Framework: superpowers.'])
+  })
+
   test('a kept GSD in use whose install landed is named among the installed, with no problem line', async () => {
     const { problems, installed } = await applied(gsdDraft(['gsd', 'none'], 'gsd'), [], ['gsd'], [PLANNING])
     expect([problems, installed]).toEqual([[], ['@opengsd/gsd-core']])

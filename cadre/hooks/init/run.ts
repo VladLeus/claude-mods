@@ -675,6 +675,8 @@ async function applyConfirmed(
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
       : await installPlugins(host, locations.home, draft.pluginInstalls)
   const landedKeys = landedPlugins.map(install => install.id)
+  // A consented framework install that has not landed keeps its key enabled, so the roles load the plugin once the
+  // person runs the printed install command.
   const setup = setupAfterInstalls(gathered.setup, [
     ...installs.installed,
     ...consentedPluginKeys(draft, failed),
@@ -750,6 +752,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
   if (asked.kind === 'cancelled') return asked
   const { scanned, failed, unlanded, roles, repoDefault } = await projectInstalled(io, host, draft)
   const { failures, hunks, notRun } = await hunksRan(io, host, draft)
+  // A consented framework install that has not landed keeps its key enabled, as in applyConfirmed.
   const setup = setupAfterInstalls(gathered.setup, consentedPluginKeys(draft, failed))
   const recorded = initFrameworks(draft, failed)
   const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
