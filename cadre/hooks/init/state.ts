@@ -143,8 +143,13 @@ export type SessionListing = {
 export type IoCall =
   | { readonly id: 'guard' }
   | { readonly id: 'scan'; readonly locations: InitLocations; readonly readUserMcp: boolean }
-  | { readonly id: 'list-sessions'; readonly dir: string }
-  | { readonly id: 'scan-history'; readonly dir: string; readonly sessions: readonly PortEntry[] }
+  | { readonly id: 'list-sessions'; readonly dir: string; readonly startFolder: string }
+  | {
+      readonly id: 'scan-history'
+      readonly dir: string
+      readonly startFolder: string
+      readonly sessions: readonly PortEntry[]
+    }
   | { readonly id: 'read-repo-file'; readonly root: string; readonly path: string; readonly maxBytes: number }
   | { readonly id: 'repo-instruction-names'; readonly root: string }
   | { readonly id: 'read-instruction-files'; readonly sources: InstructionSources }

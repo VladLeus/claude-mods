@@ -206,16 +206,23 @@ export function mangledProjectDir(path: string): string {
 /** Follows the engine's shortened project folder name: a longer name keeps this many characters plus a suffix. */
 export const ENGINE_FOLDER_NAME_MAX_CHARS = 200
 
-/** The name itself, else the one listed folder (never a link) with its shortened name; none or several give it. */
-export function shortenedProjectDir(name: string, entries: readonly PortEntry[]): string {
-  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return name
+/**
+ * The listed folders (never a link) that may be the engine's shortened folder for `name`: those that start with
+ * its first ENGINE_FOLDER_NAME_MAX_CHARS characters; none when the name is no longer than that or its own folder is
+ * listed.
+ */
+export function shortenedProjectDirs(name: string, entries: readonly PortEntry[]): string[] {
+  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return []
   const folders = entries.filter(entry => entry.kind === 'dir' && !entry.isLink)
-  if (folders.some(entry => entry.name === name)) return name
+  if (folders.some(entry => entry.name === name)) return []
   const prefix = name.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
-  const candidates = folders.filter(entry => entry.name !== name && entry.name.startsWith(prefix))
-  if (candidates.length !== 1) return name
 
-  return candidates[0]?.name ?? name
+  return folders.filter(entry => entry.name.startsWith(prefix)).map(entry => entry.name)
+}
+
+/** The bytes a transcript row holds when its session ran in `startFolder`, closing quote included. */
+export function startCwdNeedle(startFolder: string): string {
+  return `"cwd":${JSON.stringify(startFolder)}`
 }
 
 /**

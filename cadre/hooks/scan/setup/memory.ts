@@ -7,7 +7,7 @@ import type { InitIo } from '../../../types'
 import { sortedUnique } from '../../core/text'
 import { markdownFileNames, MAX_FILE_NAME_CHARS, projectFolderOf } from '../../paths'
 import { hiddenNameWarnings } from '../facts/normalize'
-import { followedProjectFolder } from '../port-read'
+import { followedProjectFolder, readsStartCwd } from '../port-read'
 import { listFolder } from './read'
 import type { SetupContext } from './read'
 import { stableNames } from './settings'
@@ -26,7 +26,8 @@ export async function memoryFileNames(
   if (userDir === null) return []
   const folders = new Set<string>()
   for (const root of new Set([ctx.root, ctx.givenRoot])) {
-    folders.add(`${await followedProjectFolder(io, projectFolderOf(userDir, root))}/memory`)
+    const folder = await followedProjectFolder(io, projectFolderOf(userDir, root), readsStartCwd(io, root))
+    folders.add(`${folder}/memory`)
   }
   const names: string[] = []
   for (const folder of folders) names.push(...markdownFileNames(await listFolder(io, ctx, folder, warnings)))

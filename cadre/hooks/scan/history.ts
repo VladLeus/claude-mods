@@ -7,7 +7,7 @@
 import type { InitIo, PortEntry } from '../../types'
 import { asciiLower, compareText } from '../core/text'
 import { projectFolderOf } from '../paths'
-import { followedProjectFolder, listingState } from './port-read'
+import { followedProjectFolder, listingState, readsStartCwd } from './port-read'
 
 /** The most sessions the history scan reads: the newest by modification time (D-59). */
 export const HISTORY_MAX_SESSIONS = 50
@@ -87,13 +87,14 @@ function newestFirst(a: PortEntry, b: PortEntry): number {
  * This repo's session transcripts (D-59): the regular `.jsonl` files of the folder, newest first, at most
  * HISTORY_MAX_SESSIONS of them, with the number of all of them. A folder, a link or another name is not a session. A
  * folder that is not there has no sessions, and one that cannot be listed gives null (listingState), because unknown
- * is not absent. Only the listing is read, never a transcript.
+ * is not absent. Only the listing is read, and for a shortened folder the start folder check (readsStartCwd).
  */
 export async function listSessions(
   io: InitIo,
   dir: string,
+  startFolder: string,
 ): Promise<{ readonly sessions: readonly PortEntry[]; readonly total: number } | null> {
-  const folder = await followedProjectFolder(io, dir)
+  const folder = await followedProjectFolder(io, dir, readsStartCwd(io, startFolder))
   const listing = await listingState(io, folder)
   if (listing.state === 'unknown') return null
   const files = listing.state === 'present' ? listing.entries.filter(isSession) : []
@@ -166,8 +167,13 @@ export function busiestFirst(a: NameCount, b: NameCount): number {
  * listed size of each session read; once it reaches HISTORY_MAX_TOTAL_BYTES the scan reads no more, and it is partial
  * when sessions are left (Pitfall 5). No text, path or file name is kept.
  */
-export async function scanHistory(io: InitIo, dir: string, sessions: readonly PortEntry[]): Promise<HistoryScan> {
-  const folder = await followedProjectFolder(io, dir)
+export async function scanHistory(
+  io: InitIo,
+  dir: string,
+  startFolder: string,
+  sessions: readonly PortEntry[],
+): Promise<HistoryScan> {
+  const folder = await followedProjectFolder(io, dir, readsStartCwd(io, startFolder))
   const counts = new Map<string, number>()
   let bytes = 0
   let scanned = 0

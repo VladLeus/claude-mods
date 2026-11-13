@@ -6,8 +6,14 @@
  */
 import type { InitIo, PortEntry, PortRead, PortStat } from '../../types'
 import { isObject } from '../core/json'
-import { utf8Bytes } from '../core/text'
-import { ENGINE_FOLDER_NAME_MAX_CHARS, isFileInsideRoot, shortenedProjectDir, trimSlash } from '../paths'
+import { compareText, utf8Bytes } from '../core/text'
+import {
+  ENGINE_FOLDER_NAME_MAX_CHARS,
+  isFileInsideRoot,
+  shortenedProjectDirs,
+  startCwdNeedle,
+  trimSlash,
+} from '../paths'
 import { MAX_READ_BYTES } from './facts/normalize'
 
 /**
@@ -40,16 +46,57 @@ export async function listingState(io: InitIo, path: string): Promise<Listing> {
   return { state: await missingState(io, path) }
 }
 
-/** The project folder the engine uses for `folder`; only a long name lists the parent, an unlisted one stays. */
-export async function followedProjectFolder(io: InitIo, folder: string): Promise<string> {
+/**
+ * The project folder the engine uses for `folder`. Only a name over ENGINE_FOLDER_NAME_MAX_CHARS lists the parent; a
+ * shortened candidate there is followed only when it is the one `holdsStart` verifies, else the name stays as given.
+ */
+export async function followedProjectFolder(
+  io: InitIo,
+  folder: string,
+  holdsStart: (candidate: string) => Promise<boolean>,
+): Promise<string> {
   const cut = folder.lastIndexOf('/')
   const name = folder.slice(cut + 1)
   if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return folder
   const parent = folder.slice(0, cut)
   const entries = await io.list(parent)
   if (entries === null) return folder
+  const verified: string[] = []
+  for (const candidate of shortenedProjectDirs(name, entries)) {
+    if (await holdsStart(`${parent}/${candidate}`)) verified.push(candidate)
+  }
+  if (verified.length !== 1) return folder
 
-  return `${parent}/${shortenedProjectDir(name, entries)}`
+  return `${parent}/${verified[0] ?? name}`
+}
+
+/** The most transcripts of one candidate folder readsStartCwd reads: the newest ones. */
+const CWD_CHECK_MAX_TRANSCRIPTS = 5
+
+/** The most UTF-8 bytes of one transcript readsStartCwd reads; a bigger one is not read. */
+const CWD_CHECK_MAX_BYTES = 4 * 1024 * 1024
+
+/**
+ * A check for followedProjectFolder through the port's reads: a folder passes when one of its newest regular `.jsonl`
+ * files holds a row whose cwd is `startFolder` (startCwdNeedle).
+ */
+export function readsStartCwd(io: InitIo, startFolder: string): (folder: string) => Promise<boolean> {
+  const needle = startCwdNeedle(startFolder)
+
+  return async folder => {
+    const entries = await io.list(folder)
+    if (entries === null) return false
+    const transcripts = entries
+      .filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith('.jsonl'))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs || compareText(a.name, b.name))
+      .slice(0, CWD_CHECK_MAX_TRANSCRIPTS)
+    for (const transcript of transcripts) {
+      const read = await io.read(`${folder}/${transcript.name}`, CWD_CHECK_MAX_BYTES)
+      if (read.state === 'text' && read.text.includes(needle)) return true
+    }
+
+    return false
+  }
 }
 
 /**
