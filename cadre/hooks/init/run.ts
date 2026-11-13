@@ -60,7 +60,7 @@ import { applySteps, planMismatchProblem } from '../apply/steps'
 import { repoFrameworks } from '../core/framework-id'
 import { sha256Hex } from '../core/hash'
 import { needsGsdCheck, provenUserDir, withGsdIdentity } from '../framework/gsd/identity'
-import { detectAll } from '../framework/registry'
+import { adapterOf, detectAll } from '../framework/registry'
 import { roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { trackedParts } from '../generate/gittrack'
@@ -473,7 +473,8 @@ async function askedConflicts(
 
 /**
  * Runs the consented framework installs, then the consented project plugin installs, in one project-scope call, and
- * reads the facts again when a framework install ran, since only they tell whether it worked.
+ * reads the facts again when a framework install ran, since only they tell whether it worked: `failed` holds those
+ * the facts do not show, and `unlanded` those the facts show in use but still not installed, which stay recorded.
  */
 async function projectInstalled(
   io: InitIo,
@@ -492,6 +493,7 @@ async function projectInstalled(
 ): Promise<{
   readonly scanned: Gathered
   readonly failed: readonly FrameworkId[]
+  readonly unlanded: readonly FrameworkId[]
   readonly roles: readonly RoleSpec[]
   readonly repoDefault: FrameworkId | null
   readonly landedPlugins: readonly ProjectInstall[]
@@ -511,12 +513,15 @@ async function projectInstalled(
   const scanned = frameworkInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
   const found = installedFrameworks(detectAll(scanned.facts.facts))
   const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
+  const unlanded = (draft.frameworkInstalls ?? []).filter(
+    id => found.includes(id) && !adapterOf(id).isInstalled(scanned.facts.facts),
+  )
   const landedPlugins = pluginInstalls.filter(install => projected.installed.includes(install.id))
   const failedPlugins = pluginInstalls.filter(install => !projected.installed.includes(install.id))
   const fallen = withoutFailedInstalls(draft, failed)
   const roles = withoutFailedGrill(fallen.roles, failedPlugins)
 
-  return { scanned, failed, roles, repoDefault: fallen.repoDefault, landedPlugins, failedPlugins }
+  return { scanned, failed, unlanded, roles, repoDefault: fallen.repoDefault, landedPlugins, failedPlugins }
 }
 
 /**
@@ -639,8 +644,9 @@ async function compiledAfter(
  *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
  *    offered, its label is set before the writes and again before each improver run (IMPROVER_PROGRESS, D-284, S-02).
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
- *    framework installs the facts show by install id and then the plugins installed (installed), the fallback line of
- *    each framework install they do not show and the problems of step 4 (installProblems), the untracked-parts
+ *    framework installs the facts show installed by install id and then the plugins installed (installed), the
+ *    fallback line of each framework install they do not show, the command of each they show in use but not installed
+ *    and the problems of step 4 (installProblems), the untracked-parts
  *    warnings of 5a (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and
  *    tally of 6a (improverWarnings, improved), which the reply prints, each failure with the command to run.
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
@@ -655,7 +661,8 @@ async function applyConfirmed(
   const asked = await askedConflicts(io, locations.root, reviewed.planned)
   if (asked.kind === 'cancelled') return asked
   const choices = asked.value
-  const { scanned, failed, roles, repoDefault, landedPlugins, failedPlugins } = await projectInstalled(io, host, draft)
+  const ran = await projectInstalled(io, host, draft)
+  const { scanned, failed, unlanded, roles, repoDefault, landedPlugins, failedPlugins } = ran
   const { failures, hunks } = await hunksRan(io, host, draft)
   const installCount = countsText([['plugins', draft.pluginInstalls.length]])
   if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
@@ -703,7 +710,8 @@ async function applyConfirmed(
       ? await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
       : { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
-  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id))
+  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id) && !unlanded.includes(id))
+  const unlandedProblems = unlanded.flatMap(id => projectInstallOf(id) ?? []).map(projectInstallFailureText)
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
@@ -711,6 +719,7 @@ async function applyConfirmed(
     installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...landedKeys, ...installs.installed],
     installProblems: [
       ...fallbackProblems(draft, failed, 'init'),
+      ...unlandedProblems,
       ...failedPlugins.map(projectInstallFailureText),
       ...installs.installProblems,
     ],
@@ -724,16 +733,17 @@ async function applyConfirmed(
 /**
  * Writes the plan of /cadre frameworks the person confirmed, in this order: the Keep mine or Take new question of
  * each conflicted file, the consented framework installs with the facts read again (a role or the repo default on one
- * that failed falls back), the accepted hunks, the scopes compiled again from the setup after the installs, and the
- * plan made again from the disk (reframePlan), written through the host with the manifest last; a plan whose ops and
- * files disagree writes nothing. No private file is written, no improver and no git command runs.
+ * that failed falls back; one in use but still not installed keeps its roles and is reported), the accepted hunks,
+ * the scopes compiled again from the setup after the installs, and the plan made again from the disk (reframePlan),
+ * written through the host with the manifest last; a plan whose ops and files disagree writes nothing. No private
+ * file is written, no improver and no git command runs.
  */
 export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframed): Promise<StepResult<Applied>> {
   const { draft } = reframed
   const { locations, gathered, launchStart } = draft
   const asked = await askedConflicts(io, locations.root, reframed.planned)
   if (asked.kind === 'cancelled') return asked
-  const { scanned, failed, roles, repoDefault } = await projectInstalled(io, host, draft)
+  const { scanned, failed, unlanded, roles, repoDefault } = await projectInstalled(io, host, draft)
   const { failures, hunks } = await hunksRan(io, host, draft)
   const setup = setupAfterInstalls(gathered.setup, consentedPluginKeys(draft, failed))
   const recorded = initFrameworks(draft, failed)
@@ -757,13 +767,14 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
       ? await writeSteps(io, host, locations, steps, new Set())
       : { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
-  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id))
+  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id) && !unlanded.includes(id))
+  const unlandedProblems = unlanded.flatMap(id => projectInstallOf(id) ?? []).map(projectInstallFailureText)
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: landed.flatMap(id => projectInstallOf(id)?.id ?? []),
-    installProblems: fallbackProblems(draft, failed, 'frameworks'),
+    installProblems: [...fallbackProblems(draft, failed, 'frameworks'), ...unlandedProblems],
   }
 
   return accepted({ planned, outcome })
