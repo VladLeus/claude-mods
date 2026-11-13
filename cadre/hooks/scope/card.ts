@@ -38,6 +38,9 @@ import {
 } from './lint'
 import type { Refusal } from './lint'
 
+/** The enforcement of the card's Skills rule, which each per-skill probe line carries too. */
+export const SKILLS_RULE_ENFORCEMENT: Enforcement = 'best-effort'
+
 /**
  * The words of a scope card or INDEX.md list (core/text cardList): generated-file text, so ARTIFACT words (D-221), and
  * the MAX_CARD_LIST cap on every surface (D-256: only pane blocks lose it).
@@ -350,7 +353,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     rule(ARTIFACT.cardSecrets, 'best-effort'),
     ...mcpRules(deny, ctx.mcpRoute),
     ...partialMcpRules(ctx.setup),
-    rule(ARTIFACT.cardSkills, 'best-effort'),
+    rule(ARTIFACT.cardSkills, SKILLS_RULE_ENFORCEMENT),
     rule(fill(ARTIFACT.cardLoads, { id: role.id }), 'none'),
     checkedRule(ARTIFACT.cardInfra, 'hard', INFRA_CHECKS),
     ...inboxRules(role, ctx),

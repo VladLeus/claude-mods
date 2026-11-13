@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { CompiledScope, ProbeExpectation, ScopeContext } from '../../types'
+import { ARTIFACT } from '../locales/artifact'
 import { CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from '../roles/infra'
+import { SKILLS_RULE_ENFORCEMENT } from '../scope/card'
 import { compileScope } from '../scope/compile'
 import { emptySetupScan, skillRef, templateRole } from '../testkit'
 import { probeVerdicts } from './oracle'
@@ -190,6 +192,20 @@ describe('the per-skill probe lines', () => {
       token: '',
     })
   })
+  test('every per-skill line carries the enforcement of the Skills rule on the card', () => {
+    const scope = beScope(['x:y'], [skillRef(CLAUDE_SECURITY_SKILL, CLAUDE_SECURITY_PLUGIN)])
+    const skills = scope.card.rules.find(item => item.text === ARTIFACT.cardSkills)
+    const lines = skillLines(expectationsFor(scope, BE_MEMORY, ['z:a']))
+
+    expect(skills?.enforcement).toBe(SKILLS_RULE_ENFORCEMENT)
+    expect(lines.length).toBe(3)
+    expect(lines.map(line => line.enforcement)).toEqual([
+      SKILLS_RULE_ENFORCEMENT,
+      SKILLS_RULE_ENFORCEMENT,
+      SKILLS_RULE_ENFORCEMENT,
+    ])
+  })
+
   test('a Security role given claude-security with the plugin enabled gets it present and never absent', () => {
     const security = templateRole('security', { skills: [CLAUDE_SECURITY_SKILL] })
     const scanned = [skillRef(CLAUDE_SECURITY_SKILL, CLAUDE_SECURITY_PLUGIN)]

@@ -24,7 +24,7 @@ import {
   skillRef,
   templateRole,
 } from '../testkit'
-import { mcpToolName, scopeCardLines } from './card'
+import { mcpToolName, scopeCardLines, SKILLS_RULE_ENFORCEMENT } from './card'
 import { compileScope } from './compile'
 
 /** The card rule with exactly this text, or undefined when the card has none. */
@@ -603,6 +603,13 @@ describe('probe checks (D-112)', () => {
     for (const role of [templateRole('pm'), templateRole('be')]) {
       expect(ruleOf(compileScope(role, context()), AVAILABLE_RULE)?.checks).toEqual(AVAILABLE_CHECKS)
     }
+  })
+
+  test('the Skills rule carries SKILLS_RULE_ENFORCEMENT, best-effort, in every role', () => {
+    for (const role of [templateRole('pm'), templateRole('be')]) {
+      expect(ruleOf(compileScope(role, context()), ARTIFACT.cardSkills)?.enforcement).toBe(SKILLS_RULE_ENFORCEMENT)
+    }
+    expect(SKILLS_RULE_ENFORCEMENT).toBe('best-effort')
   })
 
   test('the permission rule checks the mode, and manual as the engine reports it: default', () => {

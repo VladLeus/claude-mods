@@ -11,6 +11,7 @@ import { asciiLine } from '../generate/kickoff'
 import { CONTRACTS } from '../locales/contracts'
 import { fill } from '../locales/t'
 import { INFRA_SKILLS } from '../roles/infra'
+import { SKILLS_RULE_ENFORCEMENT } from '../scope/card'
 import { pluginName, skillPlugin } from '../scope/lint'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
@@ -113,11 +114,11 @@ export function deniedSkillNames(entries: readonly string[]): string[] {
   })
 }
 
-/** One best-effort expectation of a single skill, written as a card rule's check is. */
+/** One expectation of a single skill with the Skills rule's enforcement, written as a card rule's check is. */
 function skillExpectation(kind: 'skill-present' | 'skill-absent', text: string, token: string): ProbeExpectation {
   const checked = fill(CONTRACTS.probeChecked, { text, label: checkLabel({ kind, token }) })
 
-  return written({ check: kind, enforcement: 'best-effort', text: probeText(checked), token })
+  return written({ check: kind, enforcement: SKILLS_RULE_ENFORCEMENT, text: probeText(checked), token })
 }
 
 /**
