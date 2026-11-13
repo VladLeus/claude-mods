@@ -2,16 +2,21 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   agentSidecar,
+  answerRefusal,
+  claimRefusal,
+  claimsTaken,
   filterLines,
   HISTORY_LINES_DEFAULT,
   HISTORY_LINES_MAX,
   isWsId,
+  keysRefusal,
   NOTE_MAX_CHARS,
   NOTES_MAX,
   parseCommand,
   parseGuardSnapshot,
   parseRunState,
   parseWsState,
+  sendRefusal,
   tokenHash,
   tokenRefusal,
   windowNameFor,
@@ -136,6 +141,104 @@ test('parseCommand reads finish and help and refuses extra arguments', () => {
   refused(['finish'])
   refused(['finish', '03#10'])
   refused(['help', 'me'])
+})
+
+test('parseCommand reads claim with its roles and --wait from 0 to 540 seconds, and refuses a bad role or wait', () => {
+  assert.deepEqual(parseCommand(['claim', WS, 'be', 'tl']), { verb: 'claim', ws: WS, roles: ['be', 'tl'], waitMs: 0 })
+  assert.deepEqual(parseCommand(['claim', WS, '--wait', '540', 'qa']), {
+    verb: 'claim',
+    ws: WS,
+    roles: ['qa'],
+    waitMs: 540_000,
+  })
+  assert.deepEqual(parseCommand(['claim', WS, 'pm', '--wait', '0']), { verb: 'claim', ws: WS, roles: ['pm'], waitMs: 0 })
+  for (const wait of ['541', '-1', '1.5', 'soon', '']) refused(['claim', WS, 'be', '--wait', wait])
+  refused(['claim', WS])
+  refused(['claim', WS, 'BE'])
+  refused(['claim', WS, 'root'])
+  refused(['claim', WS, 'be', 'be'])
+  refused(['claim', '03#10', 'be'])
+})
+
+test('parseCommand reads windows, trust, idle and stop and refuses a bad workspace or window', () => {
+  assert.deepEqual(parseCommand(['windows', WS]), { verb: 'windows', ws: WS })
+  for (const verb of ['trust', 'idle', 'stop']) {
+    assert.deepEqual(parseCommand([verb, WS, 'cadre-be-2']), { verb, ws: WS, window: 'cadre-be-2' })
+    refused([verb, WS])
+    refused([verb, WS, 'cadre be'])
+    refused([verb, '03#10', 'claude'])
+    refused([verb, WS, 'claude', 'extra'])
+  }
+  refused(['windows'])
+  refused(['windows', WS, 'claude'])
+})
+
+test('parseCommand reads send, answer and other text as one argument and refuses an empty or multi-line text', () => {
+  const epic = '/cadre epic PROJ-1 Add retry --terminal=tmux'
+
+  assert.deepEqual(parseCommand(['send', WS, 'claude', epic]), { verb: 'send', ws: WS, window: 'claude', text: epic })
+  assert.deepEqual(parseCommand(['send', WS, 'cadre-be', '--global']), {
+    verb: 'send',
+    ws: WS,
+    window: 'cadre-be',
+    text: '--global',
+  })
+  assert.deepEqual(parseCommand(['answer', WS, 'claude', 'Yes, install']), {
+    verb: 'answer',
+    ws: WS,
+    window: 'claude',
+    label: 'Yes, install',
+  })
+  assert.deepEqual(parseCommand(['other', WS, 'claude', 'FE']), { verb: 'other', ws: WS, window: 'claude', text: 'FE' })
+  for (const verb of ['send', 'answer', 'other']) {
+    refused([verb, WS, 'claude'])
+    refused([verb, WS, 'claude', '/cadre', 'init'])
+    refused([verb, WS, 'claude', ''])
+    refused([verb, WS, 'claude', '   '])
+    refused([verb, WS, 'claude', 'hi\r/login'])
+    refused([verb, WS, 'claude', 'line one\nline two'])
+    refused([verb, WS, 'claude', 'up \u001b[A'])
+    refused([verb, '03#10', 'claude', 'hi'])
+    refused([verb, WS, 'two words', 'hi'])
+  }
+})
+
+test('parseCommand reads keys with at least one key', () => {
+  assert.deepEqual(parseCommand(['keys', WS, 'claude', 'Down', 'Down', 'Enter']), {
+    verb: 'keys',
+    ws: WS,
+    window: 'claude',
+    keys: ['Down', 'Down', 'Enter'],
+  })
+  refused(['keys', WS, 'claude'])
+  refused(['keys', '03#10', 'claude', 'Enter'])
+})
+
+test('parseCommand reads wait with a regex and --timeout from 1 to 540 seconds, 60 by default', () => {
+  assert.deepEqual(parseCommand(['wait', WS, 'cadre-be', 'Saved|DONE']), {
+    verb: 'wait',
+    ws: WS,
+    window: 'cadre-be',
+    pattern: /Saved|DONE/m,
+    timeoutMs: 60_000,
+  })
+  assert.deepEqual(parseCommand(['wait', WS, 'claude', '^❯', '--timeout', '540']), {
+    verb: 'wait',
+    ws: WS,
+    window: 'claude',
+    pattern: /^❯/m,
+    timeoutMs: 540_000,
+  })
+  assert.deepEqual(parseCommand(['wait', WS, 'claude', 'ready', '--timeout', '1']), {
+    verb: 'wait',
+    ws: WS,
+    window: 'claude',
+    pattern: /ready/m,
+    timeoutMs: 1000,
+  })
+  for (const timeout of ['0', '541', '1.5', 'soon']) refused(['wait', WS, 'claude', 'ready', '--timeout', timeout])
+  for (const source of ['(unclosed', '[z-a]', '']) refused(['wait', WS, 'claude', source])
+  refused(['wait', WS, 'claude'])
 })
 
 test('tokenRefusal accepts only the token whose sha256 hex is stored', () => {
@@ -361,4 +464,82 @@ test('filterLines withholds each line the leak check names and prints the other 
   const expected = 'home ~/work\n[line withheld: it failed the leak check]\nscratch <scratch>/ws'
 
   assert.equal(filterLines(text, filterCtx()), expected)
+})
+
+test('sendRefusal refuses shell mode, login, --global, /plugin, an unsafe epic and root free text, allows the rest', () => {
+  const refusals: readonly (readonly [string, boolean])[] = [
+    ['!ls', false],
+    ['  !ls', true],
+    ['/login', true],
+    ['/logout', false],
+    ['/away --global', false],
+    ['/back --global', true],
+    ['/plugin install superpowers@claude-plugins-official', true],
+    ['/plugin marketplace add anthropics/claude-plugins-official', false],
+    ['/cadre epic PROJ-1 Add retry', true],
+    ['/cadre epic PROJ-1 Add retry --terminal=terminal', true],
+    ['/cadre epic PROJ-1 Add retry --terminal=tmux --terminal=terminal', true],
+    ['/cadre epic PROJ-1 Add retry --terminal tmux', true],
+    ['Add a retry to the client', true],
+    [' /cadre init', true],
+  ]
+  const allowed: readonly (readonly [string, boolean])[] = [
+    ['/cadre init', true],
+    ['/cadre epic PROJ-1 Add retry --terminal=tmux', true],
+    ['/cadre epic PROJ-1 Add retry --terminal=none', true],
+    ['/cadre epic done PROJ-1', true],
+    ['/reload-plugins', true],
+    ['Save a memory that the retry limit is 3', false],
+  ]
+
+  for (const [text, root] of refusals) assert.notEqual(sendRefusal(text, { exclusive: false, root }), null, text)
+  for (const [text, root] of allowed) assert.equal(sendRefusal(text, { exclusive: false, root }), null, text)
+  assert.equal(sendRefusal('/plugin marketplace add x', { exclusive: true, root: true }), null)
+  assert.notEqual(sendRefusal('/login', { exclusive: true, root: true }), null)
+  assert.notEqual(sendRefusal('/plugin install x --global', { exclusive: true, root: true }), null)
+})
+
+test('answerRefusal refuses an Install or Yes, install answer outside an exclusive workspace', () => {
+  for (const label of ['Install', 'install superpowers', 'INSTALL', 'Yes, install', 'yes, install claude-security']) {
+    assert.notEqual(answerRefusal(label, false), null, label)
+    assert.equal(answerRefusal(label, true), null, label)
+  }
+  for (const label of ['Yes', 'Confirm', 'No, skip the install', 'Yes, I trust this folder', 'FE']) {
+    assert.equal(answerRefusal(label, false), null, label)
+  }
+})
+
+test('keysRefusal allows only Enter, Escape, the arrows, Tab, BTab, Space, BSpace, the page keys and C-c', () => {
+  const keyLists: readonly (readonly string[])[] = [
+    [],
+    ['C-d'],
+    ['enter'],
+    ['Enter', 'q'],
+    ['M-x'],
+    ['C-z'],
+    ['F1'],
+    ['C-c', 'C-\\'],
+  ]
+  const safe = ['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BTab', 'Space', 'BSpace', 'PageUp', 'PageDown']
+
+  for (const keys of keyLists) assert.notEqual(keysRefusal(keys), null, keys.join(' '))
+  assert.equal(keysRefusal([...safe, 'C-c']), null)
+})
+
+test('claimsTaken maps each role a live workspace claims to its id and skips finished workspaces', () => {
+  const live: WsState = { ...wsState(), claims: ['qa', 'be'] }
+  const other: WsState = { ...wsState(), id: '03.2-8-cd34', row: '03.2#8', claims: ['tl'] }
+  const done: WsState = { ...wsState(), id: '03-11-ef56', row: '03#11', status: 'finished', claims: ['fe'] }
+
+  assert.deepEqual(claimsTaken([live, other, done]), new Map([['qa', WS], ['be', WS], ['tl', '03.2-8-cd34']]))
+  assert.deepEqual(claimsTaken([]), new Map())
+})
+
+test('claimRefusal names the workspace that holds the role and is null for a free role or its own claim', () => {
+  const taken = new Map([['qa', WS], ['tl', '03.2-8-cd34']])
+
+  assert.equal(claimRefusal('tl', WS, taken), 'busy: tl held by 03.2-8-cd34')
+  assert.equal(claimRefusal('qa', WS, taken), null)
+  assert.equal(claimRefusal('be', WS, taken), null)
+  assert.equal(claimRefusal('qa', '03.2-8-cd34', taken), `busy: qa held by ${WS}`)
 })

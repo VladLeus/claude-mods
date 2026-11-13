@@ -522,3 +522,28 @@ export function filterLines(text: string, ctx: FilterContext): string {
     return filtered.split('\n').map((line, index) => (withheld.has(index + 1) ? WITHHELD_LINE : line)).join('\n')
   }
 }
+
+type SendTarget = {
+  readonly exclusive: boolean
+  readonly root: boolean
+}
+
+export function sendRefusal(_text: string, _target: SendTarget): string | null {
+  return null
+}
+
+export function answerRefusal(_label: string, _exclusive: boolean): string | null {
+  return null
+}
+
+export function keysRefusal(_keys: readonly string[]): string | null {
+  return null
+}
+
+export function claimsTaken(_workspaces: readonly WsState[]): ReadonlyMap<string, string> {
+  return new Map()
+}
+
+export function claimRefusal(_role: string, _wsId: string, _taken: ReadonlyMap<string, string>): string | null {
+  return null
+}
