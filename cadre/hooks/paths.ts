@@ -203,6 +203,21 @@ export function mangledProjectDir(path: string): string {
   return path.replace(/[^A-Za-z0-9]/g, '-')
 }
 
+/** Follows the engine's shortened project folder name: a longer name keeps this many characters plus a suffix. */
+export const ENGINE_FOLDER_NAME_MAX_CHARS = 200
+
+/** The name itself, else the one listed folder (never a link) with its shortened name; none or several give it. */
+export function shortenedProjectDir(name: string, entries: readonly PortEntry[]): string {
+  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return name
+  const folders = entries.filter(entry => entry.kind === 'dir' && !entry.isLink)
+  if (folders.some(entry => entry.name === name)) return name
+  const prefix = name.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
+  const candidates = folders.filter(entry => entry.name !== name && entry.name.startsWith(prefix))
+  if (candidates.length !== 1) return name
+
+  return candidates[0]?.name ?? name
+}
+
 /**
  * The user folder, where the user-level sources and the session history live: CLAUDE_CONFIG_DIR when it is set, an
  * absolute path with no empty, `.` or `..` segment and outside every root in `roots` (the repo root, and for a launch

@@ -7,7 +7,7 @@
 import type { InitIo, PortEntry, PortRead, PortStat } from '../../types'
 import { isObject } from '../core/json'
 import { utf8Bytes } from '../core/text'
-import { isFileInsideRoot, trimSlash } from '../paths'
+import { ENGINE_FOLDER_NAME_MAX_CHARS, isFileInsideRoot, shortenedProjectDir, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from './facts/normalize'
 
 /**
@@ -38,6 +38,18 @@ export async function listingState(io: InitIo, path: string): Promise<Listing> {
   if (entries !== null) return { state: 'present', entries }
 
   return { state: await missingState(io, path) }
+}
+
+/** The project folder the engine uses for `folder`; only a long name lists the parent, an unlisted one stays. */
+export async function followedProjectFolder(io: InitIo, folder: string): Promise<string> {
+  const cut = folder.lastIndexOf('/')
+  const name = folder.slice(cut + 1)
+  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return folder
+  const parent = folder.slice(0, cut)
+  const entries = await io.list(parent)
+  if (entries === null) return folder
+
+  return `${parent}/${shortenedProjectDir(name, entries)}`
 }
 
 /**

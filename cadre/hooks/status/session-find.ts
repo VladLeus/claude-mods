@@ -11,6 +11,7 @@ import { isObject, parseJsonValue } from '../core/json'
 import { compareText } from '../core/text'
 import { mangledProjectDir, trimSlash, userDirOf } from '../paths'
 import { autopilotStatusPath } from '../scan/autopilot'
+import { followedProjectFolder } from '../scan/port-read'
 
 /** The most transcripts of the start folder the title search greps: the newest ones (D-131). */
 export const MAX_TRANSCRIPTS = 20
@@ -131,10 +132,11 @@ async function titledSession(
   id: string,
 ): Promise<string | null> {
   if (folder === null) return null
-  const entries = await io.list(folder)
+  const followed = await followedProjectFolder(io, folder)
+  const entries = await io.list(followed)
   if (entries === null) return null
   for (const name of transcriptCandidates(entries)) {
-    const run = await host.run(titleGrepArgv(`${folder}/${name}`), { timeoutMs: TITLE_GREP_TIMEOUT_MS })
+    const run = await host.run(titleGrepArgv(`${followed}/${name}`), { timeoutMs: TITLE_GREP_TIMEOUT_MS })
     if (run === null || run.exitCode !== 0) continue
     if (customTitleOf(run.stdout) === sessionName(id)) return name.slice(0, -TRANSCRIPT_SUFFIX.length)
   }
