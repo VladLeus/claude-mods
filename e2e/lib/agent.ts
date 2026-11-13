@@ -41,6 +41,7 @@ const CONTROL_RE = /\p{Cc}/u
 const INSTALL_LABEL_RE = /^(?:install|yes, install)/i
 const SEED_NAME_RE = /^[a-z][a-z0-9-]*$/
 const INBOX_HEAD_RE = /^inbox(?::(.+))?$/
+const ECHO_PROMPT_RE = /^\s*❯ /
 const TERMINAL_FLAG = '--terminal'
 const SAFE_TERMINALS: readonly string[] = ['--terminal=tmux', '--terminal=none']
 const CONFIG_READS: readonly string[] = ['--get', '--get-all', '--list']
@@ -222,6 +223,7 @@ export type RunState = {
 type WsWindow = {
   readonly name: string
   readonly kind: 'root' | 'role'
+  readonly lastSent?: string
 }
 
 export type WsState = {
@@ -243,6 +245,11 @@ export type Location = {
   readonly worktree: string | null
   readonly role: string | null
   readonly path: string
+}
+
+export type EchoView = {
+  readonly text: string
+  readonly echo: 'found' | 'missing' | 'unsent'
 }
 
 type AgentCheck = {
@@ -643,6 +650,16 @@ export function windowNameFor(role: string, taken: readonly string[]): string | 
   }
 }
 
+export function withWindow(ws: WsState, window: WsWindow): WsState {
+  if (ws.windows.some(item => item.name === window.name)) return ws
+
+  return { ...ws, windows: [...ws.windows, window] }
+}
+
+export function withLastSent(ws: WsState, name: string, text: string): WsState {
+  return { ...ws, windows: ws.windows.map(item => (item.name === name ? { ...item, lastSent: text } : item)) }
+}
+
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
@@ -653,6 +670,7 @@ function isListOf<T>(value: unknown, guard: (item: unknown) => item is T): value
 
 function isWsWindow(item: unknown): item is WsWindow {
   if (!isRecord(item) || typeof item.name !== 'string') return false
+  if (item.lastSent !== undefined && typeof item.lastSent !== 'string') return false
   const { kind } = item
 
   return WINDOW_KINDS.some(known => known === kind)
@@ -698,7 +716,11 @@ export function parseWsState(value: unknown): WsState | null {
     socket,
     startedAt,
     status: wsStatus,
-    windows: windows.map(item => ({ name: item.name, kind: item.kind })),
+    windows: windows.map(item => ({
+      name: item.name,
+      kind: item.kind,
+      ...(typeof item.lastSent === 'string' ? { lastSent: item.lastSent } : {}),
+    })),
     claims,
     uuids: uuids.map(([uuid, number]) => [uuid, number] as const),
     ...snapshot,
@@ -835,6 +857,30 @@ export function filterLines(text: string, ctx: FilterContext): string {
     const withheld = new Set(error.lines)
     return filtered.split('\n').map((line, index) => (withheld.has(index + 1) ? WITHHELD_LINE : line)).join('\n')
   }
+}
+
+function squeeze(text: string): string {
+  return text.replace(/\s+/g, '')
+}
+
+// The engine echoes a submitted prompt as `❯ <text>` and wraps it onto indented lines.
+export function afterEcho(screen: string, sent: string | undefined): EchoView {
+  const want = squeeze(sent ?? '')
+  if (want === '') return { text: screen, echo: 'unsent' }
+  const lines = screen.split('\n')
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index] ?? ''
+    if (!ECHO_PROMPT_RE.test(line)) continue
+    let echoed = squeeze(line.replace(ECHO_PROMPT_RE, ''))
+    let last = index
+    while (echoed.length < want.length && want.startsWith(echoed) && last + 1 < lines.length) {
+      last += 1
+      echoed += squeeze(lines[last] ?? '')
+    }
+    if (echoed === want) return { text: lines.slice(last + 1).join('\n'), echo: 'found' }
+  }
+
+  return { text: screen, echo: 'missing' }
 }
 
 type SendTarget = {

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { cadrePrint, firstLineOf, inboxDirOf, printedCommand, replyOf, runProbe } from '../cadre/lib/session.ts'
 import { agentSidecar, filterLines, HISTORY_LINES_DEFAULT, HISTORY_LINES_MAX, parseCommand } from '../lib/agent.ts'
 import { parseGuardSnapshot, parseRunState, parseWsState, RESULT_MAX_BYTES, ROOT_ROLE } from '../lib/agent.ts'
-import { tokenHash, tokenRefusal, windowNameFor, wsIdOf } from '../lib/agent.ts'
+import { afterEcho, tokenHash, tokenRefusal, windowNameFor, withLastSent, withWindow, wsIdOf } from '../lib/agent.ts'
 import { answerRefusal, claimRefusal, claimsTaken, keysRefusal, SAFE_KEYS, sendRefusal } from '../lib/agent.ts'
 import { cadreRefusal, exclusiveRefusal, GIT_READS, isWsId, runRefusal, seedRefusal } from '../lib/agent.ts'
 import { WAIT_MAX_S, WAIT_TIMEOUT_DEFAULT_S } from '../lib/agent.ts'
@@ -37,7 +37,7 @@ import { isUnder, makeRunRoot, PRUNE_AGE_MS, removeTree, RUN_ID_RE, scratchBase,
 import { parseSidecar, rowFileName, SIDECAR_SCHEMA, summaryText, writeRowResult, writeSummary } from '../lib/summary.ts'
 import type { Note, Sidecar, SuiteVersion } from '../lib/summary.ts'
 import { capture, killServer, listWindows, newWindow, runSocketPrefix, socketName, startServer } from '../lib/tmux.ts'
-import { paneState, sendKeys, sweepServers, waitDead, waitFor } from '../lib/tmux.ts'
+import { matches, paneState, sendKeys, sweepServers, waitDead, waitFor } from '../lib/tmux.ts'
 import type { Pane, Server, WindowInfo } from '../lib/tmux.ts'
 import { SEEDS } from './seeds.ts'
 
@@ -61,6 +61,7 @@ const REFUSED = 2
 const FAILED = 1
 const GUARD_FAILED = 3
 const NOT_FINISHED = 'not finished: the agent did not call finish'
+const NO_ECHO_LINE = 'no echo of the last sent text on the screen: matched against every line'
 const CLAIMS_LOCK = 'claims.lock'
 const EXCLUSIVE_DIR = 'exclusive'
 const EXCLUSIVE_HOLDER_FILE = 'ws'
@@ -374,7 +375,7 @@ keys <ws> <window> <key...>: press keys in a window: ${SAFE_KEYS.join(', ')}
 answer <ws> <window> <label>: pick the option with this label in the question on the screen
 other <ws> <window> <text>: answer the question on the screen with typed text
 capture <ws> <window> [--history] [--lines <n>]: print the last lines of a window (${HISTORY_LINES_DEFAULT} by default, at most ${HISTORY_LINES_MAX})
-wait <ws> <window> <regex> [--timeout <s>]: wait until the screen matches, ^ and $ at each line (${WAIT_TIMEOUT_DEFAULT_S} s by default, at most ${WAIT_MAX_S})
+wait <ws> <window> <regex> [--timeout <s>]: wait until the screen matches, ^ and $ at each line; after a send only the lines below its echo count (${WAIT_TIMEOUT_DEFAULT_S} s by default, at most ${WAIT_MAX_S})
 idle <ws> <window>: wait until the screen stops changing and print it
 stop <ws> <window>: exit the session in a window and print its exit status
 cadre <ws> <args...> [--wt <worktree>]: run /cadre <args> in print mode in the copy and print the reply (opens no epic)
@@ -754,8 +755,12 @@ async function start(cmd: Command<'start'>, run: RunState, ws: WsState): Promise
   if (ws.windows.length === 0 && !await isServerUp(server)) await startServer(ws.socket, server.env)
   const name = windowNameFor(cmd.role, (await listWindows(server)).map(item => item.name))
   if (name === null) return refuse(`no free window name for ${cmd.role}`)
-  await openWindow(server, name, cwd, isRoot ? null : launcherOf(copy, cmd.role))
-  await saveWs(run, { ...ws, windows: [...ws.windows, { name, kind: isRoot ? 'root' : 'role' }] })
+  await saveWs(run, withWindow(ws, { name, kind: isRoot ? 'root' : 'role' }))
+  try {
+    await openWindow(server, name, cwd, isRoot ? null : launcherOf(copy, cmd.role))
+  } catch (error) {
+    return fail(`${name} is recorded but did not start: ${messageOf(error)}; capture it, then stop it`)
+  }
   say(`window ${name}`)
 
   return 0
@@ -785,19 +790,19 @@ async function showWindows(run: RunState, ws: WsState): Promise<number> {
 async function trust(cmd: Command<'trust'>, run: RunState, ws: WsState): Promise<number> {
   const server = serverOf(ws)
   if (!await isServerUp(server)) return refuse(`${ws.id} has no windows yet: run start first`)
-  const isRecorded = ws.windows.some(item => item.name === cmd.window)
   await passTrust(server, cmd.window)
-  if (!isRecorded) await saveWs(run, { ...ws, windows: [...ws.windows, { name: cmd.window, kind: 'role' }] })
+  await saveWs(run, withWindow(ws, { name: cmd.window, kind: 'role' }))
   say(`trusted ${cmd.window}`)
 
   return 0
 }
 
-async function send(cmd: Command<'send'>, ws: WsState): Promise<number> {
+async function send(cmd: Command<'send'>, run: RunState, ws: WsState): Promise<number> {
   const target = await inputTarget(ws, cmd.window)
   if (typeof target === 'string') return refuse(target)
   const why = sendRefusal(cmd.text, { exclusive: ws.exclusive, root: target.kind === 'root' })
   if (why) return refuse(why)
+  await saveWs(run, withLastSent(ws, cmd.window, cmd.text))
   await submitTui(target.pane, cmd.text)
   say(`sent to ${cmd.window}`)
 
@@ -841,12 +846,15 @@ async function waitWindow(cmd: Command<'wait'>, ws: WsState): Promise<number> {
   const server = serverOf(ws)
   const pane = await paneOf(server, cmd.window)
   if (!pane) return refuse(`no window ${cmd.window} in ${ws.id}`)
-  const screen = await waitFor(pane, cmd.pattern, cmd.timeoutMs).catch((error: unknown) => {
+  const sent = ws.windows.find(item => item.name === cmd.window)?.lastSent
+  const isMatch = (shown: string): boolean => matches(cmd.pattern, afterEcho(shown, sent).text)
+  const screen = await waitFor(pane, isMatch, cmd.timeoutMs, String(cmd.pattern)).catch((error: unknown) => {
     if (error instanceof HarnessError) return null
     throw error
   })
   if (screen !== null) {
-    say(`matched\n${screen}`)
+    const isEchoMissing = afterEcho(screen, sent).echo === 'missing'
+    say(isEchoMissing ? `matched\n${NO_ECHO_LINE}\n${screen}` : `matched\n${screen}`)
     return 0
   }
   const isExited = (await windowOf(server, cmd.window))?.dead === true
@@ -1086,7 +1094,7 @@ async function runWsVerb(cmd: WsCommand, run: RunState, ws: WsState): Promise<nu
   if (cmd.verb === 'start') return start(cmd, run, ws)
   if (cmd.verb === 'windows') return showWindows(run, ws)
   if (cmd.verb === 'trust') return trust(cmd, run, ws)
-  if (cmd.verb === 'send') return send(cmd, ws)
+  if (cmd.verb === 'send') return send(cmd, run, ws)
   if (cmd.verb === 'keys') return pressKeys(cmd, ws)
   if (cmd.verb === 'answer') return answerWindow(cmd, ws)
   if (cmd.verb === 'other') return answerOtherWindow(cmd, ws)
