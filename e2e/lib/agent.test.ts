@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
+import { CADRE_GIT_ARGVS, commitCadre } from '../agent/commit.ts'
 import { SEEDS } from '../agent/seeds.ts'
 import {
   afterEcho,
@@ -35,9 +36,13 @@ import {
 } from './agent.ts'
 import type { RunState, WsState } from './agent.ts'
 import type { TopEntry } from './config-state.ts'
+import { scratchEnv } from './env.ts'
+import type { ChildEnv } from './env.ts'
+import { HarnessError } from './errors.ts'
 import { isRecord } from './filter.ts'
 import type { FilterContext } from './filter.ts'
 import type { GuardSnapshot } from './guard.ts'
+import { run } from './proc.ts'
 import { removeTree, scratchRoot } from './scratch.ts'
 import type { Sidecar } from './summary.ts'
 
@@ -922,4 +927,137 @@ test('the subfolder-settings seed denies denied.txt by ./denied.txt and by src/d
   } finally {
     await removeTree(repo, scratchRoot())
   }
+})
+
+test('parseCommand reads commit with .cadre/ or .cadre and refuses any other path, flag or extra argument', () => {
+  assert.deepEqual(parseCommand(['commit', WS, '.cadre/']), { verb: 'commit', ws: WS })
+  assert.deepEqual(parseCommand(['commit', WS, '.cadre']), { verb: 'commit', ws: WS })
+  const refusals: readonly (readonly string[])[] = [
+    ['commit', WS],
+    ['commit', WS, 'src/app.ts'],
+    ['commit', WS, '.cadre/pm'],
+    ['commit', WS, '.cadre/../src'],
+    ['commit', WS, '/tmp/x/.cadre'],
+    ['commit', WS, '.'],
+    ['commit', WS, '.cadre/', 'src/app.ts'],
+    ['commit', WS, '-c'],
+    ['commit', WS, '.cadre/', '--wt', 'proj-1-add-retry'],
+    ['commit', WS, '--git-dir=/tmp/x'],
+    ['commit', WS, '.cadre/', '--work-tree=/tmp'],
+    ['commit', 'not-a-ws', '.cadre/'],
+  ]
+  for (const argv of refusals) refused(argv)
+})
+
+test('runRefusal still refuses git add and git commit of .cadre', () => {
+  runRefused([
+    ['git', 'add', '-A', '--', '.cadre'],
+    ['git', 'commit', '-m', 'x', '--', '.cadre'],
+  ])
+})
+
+test('the commit verb runs no git argv that names another repo, config or output and stages only .cadre', () => {
+  const refusedExact = ['-c', '-C', '--git-dir', '--work-tree']
+  const refusedPrefixes = ['-c=', '-C=', '--git-dir=', '--work-tree=', '--output', '--no-index']
+  for (const argv of CADRE_GIT_ARGVS) {
+    for (const arg of argv) {
+      assert.ok(!refusedExact.includes(arg), `${argv.join(' ')}: ${arg}`)
+      assert.ok(!refusedPrefixes.some(prefix => arg.startsWith(prefix)), `${argv.join(' ')}: ${arg}`)
+    }
+    const dashes = argv.indexOf('--')
+    if (dashes === -1) continue
+    assert.deepEqual(argv.slice(dashes + 1), ['.cadre'], argv.join(' '))
+  }
+})
+
+async function git(repo: string, env: ChildEnv, args: readonly string[]): Promise<string> {
+  const result = await run(['git', ...args], { cwd: repo, env, timeoutMs: 30_000 })
+  assert.equal(result.code, 0, `git ${args.join(' ')}: ${result.stderr}`)
+
+  return result.stdout
+}
+
+async function writeIn(repo: string, path: string, text: string): Promise<void> {
+  await mkdir(dirname(join(repo, path)), { recursive: true })
+  await writeFile(join(repo, path), text)
+}
+
+async function withCommittedRepo(body: (repo: string, env: ChildEnv) => Promise<void>): Promise<void> {
+  const tmp = await mkdtemp(join(scratchRoot(), 'unit-agent-commit-'))
+  try {
+    const env = await scratchEnv(join(tmp, 'env'))
+    const repo = join(tmp, 'repo')
+    await mkdir(repo)
+    await git(repo, env, ['init', '-q'])
+    for (const path of ['src/app.ts', 'README.md', '.cadre/pm/ROLE.md', '.cadre/tl/ROLE.md']) {
+      await writeIn(repo, path, `${path}\n`)
+    }
+    await git(repo, env, ['add', '-A'])
+    await git(repo, env, ['commit', '-q', '-m', 'base'])
+    await body(repo, env)
+  } finally {
+    await removeTree(tmp, scratchRoot())
+  }
+}
+
+function lines(text: string): readonly string[] {
+  return text.split('\n').filter(line => line !== '')
+}
+
+test('commitCadre commits added, changed and deleted files under .cadre/ and leaves other changes as they were', async () => {
+  await withCommittedRepo(async (repo, env) => {
+    await writeIn(repo, '.cadre/pm/ROLE.md', 'changed\n')
+    await rm(join(repo, '.cadre', 'tl'), { recursive: true })
+    await writeIn(repo, '.cadre/be/ROLE.md', 'added\n')
+    await writeIn(repo, 'src/app.ts', 'changed\n')
+    await writeIn(repo, 'README.md', 'changed\n')
+    await git(repo, env, ['add', 'README.md'])
+
+    const summary = await commitCadre(repo, env)
+
+    assert.match(summary, /^committed 3 paths under \.cadre\/: [0-9a-f]{12}$/)
+    assert.deepEqual(lines(await git(repo, env, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'])), [
+      '.cadre/be/ROLE.md',
+      '.cadre/pm/ROLE.md',
+      '.cadre/tl/ROLE.md',
+    ])
+    assert.deepEqual(lines(await git(repo, env, ['status', '--porcelain'])), ['M  README.md', ' M src/app.ts'])
+  })
+})
+
+test('commitCadre runs no git hook', async () => {
+  await withCommittedRepo(async (repo, env) => {
+    const hook = join(repo, '.git', 'hooks', 'pre-commit')
+    await writeIn(repo, '.git/hooks/pre-commit', '#!/bin/sh\nexit 1\n')
+    await chmod(hook, 0o755)
+    await writeIn(repo, '.cadre/pm/ROLE.md', 'changed\n')
+    const before = await git(repo, env, ['rev-parse', 'HEAD'])
+
+    await commitCadre(repo, env)
+
+    assert.notEqual(await git(repo, env, ['rev-parse', 'HEAD']), before)
+    assert.deepEqual(lines(await git(repo, env, ['status', '--porcelain'])), [])
+  })
+})
+
+async function rejectsKeepingHead(repo: string, env: ChildEnv, pattern: RegExp): Promise<void> {
+  const before = await git(repo, env, ['rev-parse', 'HEAD'])
+  await assert.rejects(commitCadre(repo, env), (error: unknown) => {
+    assert.ok(error instanceof HarnessError)
+    assert.match(error.message, pattern)
+
+    return true
+  })
+  assert.equal(await git(repo, env, ['rev-parse', 'HEAD']), before)
+}
+
+test('commitCadre refuses a missing .cadre, a symlinked .cadre and a .cadre with no change', async () => {
+  await withCommittedRepo(async (repo, env) => {
+    await rejectsKeepingHead(repo, env, /nothing to commit|no changes added/)
+    await rm(join(repo, '.cadre'), { recursive: true })
+    await rejectsKeepingHead(repo, env, /no \.cadre\/ folder/)
+    await mkdir(join(repo, 'elsewhere'))
+    await symlink(join(repo, 'elsewhere'), join(repo, '.cadre'))
+    await rejectsKeepingHead(repo, env, /symlink/)
+  })
 })
