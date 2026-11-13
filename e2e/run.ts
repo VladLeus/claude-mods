@@ -1,9 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { constants as fsConstants, existsSync, realpathSync } from 'node:fs'
-import { access, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readdir, readFile, stat } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
-import { delimiter, dirname, isAbsolute, join, relative } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { e2eConfigDir, e2eConfigPath, writeFilterFile } from './lib/auth.ts'
@@ -13,20 +12,21 @@ import { authPreflight, authStatus } from './lib/claude.ts'
 import type { PreflightStage } from './lib/claude.ts'
 import { otherEntryChanges, restoreState, snapshotState } from './lib/config-state.ts'
 import type { TopEntry } from './lib/config-state.ts'
-import { hostUser, isRealConfig, liveEnv, SYSTEM_PATH, writeClaudeFence } from './lib/env.ts'
+import { hostUser, liveEnv, SYSTEM_PATH, writeClaudeFence } from './lib/env.ts'
 import type { ChildEnv, HostUser } from './lib/env.ts'
 import { HarnessError, LeakError } from './lib/errors.ts'
 import { filterContext, filterText, isRecord, isStringList, leakCheck } from './lib/filter.ts'
 import type { FilterContext } from './lib/filter.ts'
 import { fixtureDir, variantClosure } from './lib/fixture.ts'
 import type { BuildContext, Builder } from './lib/fixture.ts'
-import { compareGuard, fenceRefusals, fleetBeats, globalAwayActive, guardSnapshot } from './lib/guard.ts'
-import { keychainDigest, needlesOf, projectTranscripts, removeSessionFiles, testSessionIds } from './lib/guard.ts'
-import type { GuardResult, GuardSnapshot, KeychainDigest, Needles, Removal } from './lib/guard.ts'
+import { guardSnapshot, needlesOf } from './lib/guard.ts'
+import type { GuardResult, GuardSnapshot, Needles, Removal } from './lib/guard.ts'
+import { checkGuard, claudeVersion, cleanupSessions, e2eDirReason, guardItems, isGlobalAway } from './lib/live.ts'
+import { keychainNote, keychainState, releaseLock, removeLeftovers, resolveOnPath, takeLock } from './lib/live.ts'
 import { run, spawn } from './lib/proc.ts'
 import type { Env } from './lib/proc.ts'
 import { roleWaves } from './lib/schedule.ts'
-import { isUnder, makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
+import { makeRunRoot, pruneRuns, removeTree, scratchBase } from './lib/scratch.ts'
 import { publishSummary, ROW_KINDS, rowFileName, SIDECAR_SCHEMA, summaryText, TIERS } from './lib/summary.ts'
 import { isRefusedRun, parseSidecar, writeRowResult, writeSummary } from './lib/summary.ts'
 import type { FixtureStatus, RowKind, Sidecar, SuiteVersion, Tier } from './lib/summary.ts'
@@ -35,17 +35,12 @@ import { runSocketPrefix, sweepServers } from './lib/tmux.ts'
 const E2E_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_DIR = dirname(E2E_DIR)
 const MIN_NODE_MAJOR = 24
-const CLAUDE_VERSION_MS = 30_000
 const LIVE_CONCURRENCY = 2
-const SESSION_SETTLE_MS = 5_000
-const KEYCHAIN_LIST_MS = 30_000
 const BASELINE_PLUGINS = ['cadre', 'autopilot', 'agent-fleet'] as const
-const LOCK_PID_FILE = 'pid'
 const GUARD_PENDING = 'the guard check runs after the session cleanup'
 const POSITIVE_WHOLE_RE = /^[1-9][0-9]*$/
 const CLIPBOARD_MS = 10_000
 const BUILT = 'built'
-const KEYCHAIN_LIST_ARGV = ['/usr/bin/security', 'dump-keychain'] as const
 
 const OPTIONS = {
   tier: { type: 'string' },
@@ -155,17 +150,6 @@ type LiveDone = {
   readonly start: Removal
   readonly claude: string
   readonly result: LiveResult
-}
-
-type SessionPass = {
-  readonly ids: readonly string[]
-  readonly removal: Removal
-}
-
-type SessionCleanup = {
-  readonly removed: number
-  readonly failures: readonly string[]
-  readonly recorded: ReadonlySet<string>
 }
 
 function emptyLog(): WorkLog {
@@ -427,30 +411,6 @@ function makeRunId(now: number, hex: string): string {
   return `${date}-${time}-${hex}`
 }
 
-async function resolveOnPath(name: string, pathValue: string): Promise<string | null> {
-  for (const dir of pathValue.split(delimiter)) {
-    if (!isAbsolute(dir)) continue
-    const candidate = join(dir, name)
-    const usable = await access(candidate, fsConstants.X_OK).then(() => stat(candidate)).then(
-      stats => stats.isFile(),
-      () => false,
-    )
-    if (usable) return candidate
-  }
-
-  return null
-}
-
-async function claudeVersion(bin: string, scratch: string): Promise<string> {
-  const home = join(scratch, 'claude-version')
-  await mkdir(home, { recursive: true })
-  const env = { PATH: [dirname(bin), dirname(process.execPath), SYSTEM_PATH].join(':'), HOME: home }
-  const result = await run([bin, '--version'], { cwd: home, env, timeoutMs: CLAUDE_VERSION_MS }).catch(() => null)
-  const line = result?.code === 0 ? result.stdout.trim().split('\n')[0] : undefined
-
-  return line || 'absent (claude --version failed)'
-}
-
 async function pluginVersion(suite: string): Promise<string> {
   const text = await readFile(join(REPO_DIR, suite, '.claude-plugin', 'plugin.json'), 'utf8').catch(() => null)
   if (text === null) return 'unknown'
@@ -673,135 +633,6 @@ function liveConcurrency(value: string | undefined): number | null {
   if (value === undefined || value === '') return LIVE_CONCURRENCY
 
   return POSITIVE_WHOLE_RE.test(value) ? Number(value) : null
-}
-
-function e2eDirReason(dir: string, host: HostUser): string | null {
-  if (isRealConfig(dir, host, process.env)) return 'the e2e config dir is the real config dir or lies under it'
-  const repo = realpathSync(REPO_DIR)
-  if (dir === repo || isUnder(dir, repo)) return 'the e2e config dir is inside the repo'
-
-  return null
-}
-
-function errorCode(error: unknown): unknown {
-  return isRecord(error) ? error.code : undefined
-}
-
-function isAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return errorCode(error) === 'EPERM'
-  }
-}
-
-async function lockPid(lock: string): Promise<number> {
-  return Number((await readFile(join(lock, LOCK_PID_FILE), 'utf8').catch(() => '')).trim())
-}
-
-async function makeLock(lock: string): Promise<boolean> {
-  try {
-    await mkdir(lock, { mode: 0o700 })
-  } catch (error) {
-    if (errorCode(error) === 'EEXIST') return false
-    throw error
-  }
-  await writeFile(join(lock, LOCK_PID_FILE), `${process.pid}\n`)
-
-  return true
-}
-
-async function takeLock(lock: string): Promise<boolean> {
-  if (await makeLock(lock)) return true
-  if (isAlive(await lockPid(lock))) return false
-  const stats = await lstat(lock).catch(() => null)
-  if (stats?.isSymbolicLink()) throw new HarnessError(`the run lock is a symlink: ${lock}`)
-  await rm(lock, { recursive: true, force: true })
-
-  return makeLock(lock)
-}
-
-async function releaseLock(lock: string): Promise<void> {
-  if (await lockPid(lock) !== process.pid) return
-
-  await rm(lock, { recursive: true, force: true })
-}
-
-async function isGlobalAway(home: string, now: number): Promise<boolean> {
-  const text = await readFile(join(home, '.claude', 'autopilot', 'status', 'global.json'), 'utf8').catch(() => '')
-
-  return globalAwayActive(text, now)
-}
-
-async function keychainState(host: HostUser): Promise<KeychainDigest | null | undefined> {
-  if (process.platform !== 'darwin') return undefined
-  const env = { PATH: SYSTEM_PATH, HOME: host.home, USER: host.user }
-  const opts = { cwd: REPO_DIR, env, timeoutMs: KEYCHAIN_LIST_MS, host: true }
-  const result = await run(KEYCHAIN_LIST_ARGV, opts).catch(() => null)
-
-  return result?.code === 0 ? keychainDigest(result.stdout) : null
-}
-
-function keychainNote(digest: KeychainDigest | null | undefined): string {
-  if (digest === undefined) return 'no keychain listing off macOS'
-  if (digest === null) return 'keychain listing unavailable'
-
-  return `keychain: ${digest.count} Claude Code items`
-}
-
-async function removeLeftovers(setup: LiveSetup): Promise<Removal> {
-  const transcripts = await projectTranscripts(setup.e2eDir)
-  const ids = testSessionIds(transcripts, await fleetBeats(setup.host.home), scratchBase(), setup.e2eDir)
-  const removal = await removeSessionFiles(setup.host.home, ids)
-  process.stdout.write(`e2e: removed ${removal.removed} leftover files of earlier test sessions\n`)
-
-  return removal
-}
-
-async function removeRunSessions(setup: LiveSetup, before: GuardSnapshot): Promise<SessionPass> {
-  const existed = new Set(before.sessionFiles)
-  const beats = (await fleetBeats(setup.host.home)).filter(beat => !existed.has(`fleet/${beat.id}.json`))
-  const ids = testSessionIds(await projectTranscripts(setup.e2eDir), beats, scratchBase(), setup.e2eDir)
-
-  return { ids, removal: await removeSessionFiles(setup.host.home, ids) }
-}
-
-async function cleanupSessions(setup: LiveSetup, before: GuardSnapshot): Promise<SessionCleanup> {
-  const first = await removeRunSessions(setup, before)
-  // A session that dies with its tmux server can still write one last beat after the first pass.
-  await delay(SESSION_SETTLE_MS)
-  const second = await removeRunSessions(setup, before)
-
-  return {
-    removed: first.removal.removed + second.removal.removed,
-    failures: [...new Set([...first.removal.failures, ...second.removal.failures])],
-    recorded: new Set([...first.ids, ...second.ids]),
-  }
-}
-
-async function checkGuard(
-  setup: LiveSetup,
-  info: RunInfo,
-  before: GuardSnapshot,
-  recorded: ReadonlySet<string>,
-): Promise<GuardResult> {
-  const after = await guardSnapshot(setup.host.home, setup.needles, await keychainState(setup.host))
-  const beats = await fleetBeats(setup.host.home)
-  const beatCwds = new Map(beats.flatMap(beat => (beat.cwd === null ? [] : [[beat.id, beat.cwd] as const])))
-  const refusals = await fenceRefusals(info.scratch)
-
-  return compareGuard(before, after, { needles: setup.needles, refusals, recorded, beatCwds })
-}
-
-function guardItems(notRemoved: readonly string[], cleanup: SessionCleanup, guard: GuardResult): readonly string[] {
-  return [
-    ...guard.failures.map(line => `failure: ${line}`),
-    ...notRemoved.map(rel => `session files not removed: ${rel}`),
-    `removed ${cleanup.removed} files of ${cleanup.recorded.size} test sessions`,
-    ...guard.warnings.map(line => `warning: ${line}`),
-  ]
 }
 
 function preflightLines(stage: PreflightStage, reason: string): readonly string[] {
@@ -1109,7 +940,7 @@ async function finishLive(setup: LiveSetup, info: RunInfo, lock: string, done: L
   const isFilterRemoved = await removeFilterFile(result.filterFile, info.scratch)
   const cleanup = await cleanupSessions(setup, done.before)
   await releaseLock(lock)
-  const guard = await checkGuard(setup, info, done.before, cleanup.recorded)
+  const guard = await checkGuard(setup, info.scratch, done.before, cleanup.recorded, REPO_DIR)
   const notRemoved = [...new Set([...done.start.failures, ...cleanup.failures])]
   const items = [
     ...(isFilterRemoved ? [] : ['the filter values file was not removed']),
@@ -1127,7 +958,8 @@ async function runLocked(setup: LiveSetup, lock: string): Promise<number> {
     return refuse('global away is on: run /back --global, or wait until it ends')
   }
   const start = await removeLeftovers(setup)
-  const before = await guardSnapshot(setup.host.home, setup.needles, await keychainState(setup.host))
+  process.stdout.write(`e2e: removed ${start.removed} leftover files of earlier test sessions\n`)
+  const before = await guardSnapshot(setup.host.home, setup.needles, await keychainState(setup.host, REPO_DIR))
   process.stdout.write(`e2e: guard snapshot taken (${keychainNote(before.keychain)})\n`)
   const info = await startRun('live', setup.selection)
   const claude = await claudeVersion(setup.claudeBin, info.scratch)
@@ -1170,7 +1002,7 @@ async function runLive(cli: RunCli, suites: readonly Suite[], selection: Selecti
   } catch (error) {
     return refuse(messageOf(error))
   }
-  const why = e2eDirReason(e2eDir, host)
+  const why = e2eDirReason(e2eDir, host, REPO_DIR)
   if (why) return refuse(why)
   const variants = await variantsOf(cli, suites, selection)
   if (typeof variants === 'string') return refuse(variants)
