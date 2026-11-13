@@ -5060,7 +5060,34 @@ describe('init apply hunks (D-120)', () => {
     expect(reply).not.toContain('failed: run it yourself')
   })
 
-  test('after a project GSD install with no proven user-level GSD the accepted hunk is named, not run', async () => {
+  test('a landed project GSD install with no proven user-level GSD names the hunk as not run', async () => {
+    const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+    const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+    const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+    const host = memHost(hostWorld({}))
+    const isInstalled = (): boolean => host.calls.some(call => call.argv.join(' ') === install.join(' '))
+    const projectGsd: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    const run = memIo(world, answers)
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        const read = await run.io.facts(locations)
+        if (!isInstalled()) return read
+
+        return { ...read, facts: { ...read.facts, gsd: [...read.facts.gsd, projectGsd] } }
+      },
+    }
+    const reply = await runInit(io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect(lines).toContain(MODE_NOT_RUN)
+    expect(lines).toContain(installedLine([projectInstallOf('gsd')?.id ?? '']))
+    expect(reply).not.toContain('could not install')
+  })
+
+  test('after a project GSD install that does not land the accepted hunk is named, not run', async () => {
     const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
     const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
     const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
@@ -7368,6 +7395,31 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const { host, result } = await appliedIn(world, await reframedOf(world, draft))
     const outcome = result.kind === 'accepted' ? result.value.outcome : null
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect([outcome?.hunkFailures, outcome?.hunksNotRun]).toEqual([[], [gsdHunk()]])
+  })
+
+  test('a hunk after a project GSD install that lands, with no proven user-level GSD, is not run', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const reframed = await reframedOf(world, draft)
+    const host = memHost(hostWorld({}))
+    const run = memIo(world, {})
+    const projectGsd: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        const read = await run.io.facts(locations)
+
+        return { ...read, facts: { ...read.facts, gsd: [...read.facts.gsd, projectGsd] } }
+      },
+    }
+    const result = await reframeApplied(io, host.io, reframed)
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect([outcome?.installed, outcome?.installProblems]).toEqual([[projectInstallOf('gsd')?.id], []])
     expect([outcome?.hunkFailures, outcome?.hunksNotRun]).toEqual([[], [gsdHunk()]])
   })
 
