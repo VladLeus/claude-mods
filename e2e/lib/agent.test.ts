@@ -3,8 +3,10 @@ import { test } from 'node:test'
 import {
   agentSidecar,
   answerRefusal,
+  cadreRefusal,
   claimRefusal,
   claimsTaken,
+  exclusiveRefusal,
   filterLines,
   HISTORY_LINES_DEFAULT,
   HISTORY_LINES_MAX,
@@ -14,8 +16,11 @@ import {
   NOTES_MAX,
   parseCommand,
   parseGuardSnapshot,
+  parseLocation,
   parseRunState,
   parseWsState,
+  runRefusal,
+  seedRefusal,
   sendRefusal,
   tokenHash,
   tokenRefusal,
@@ -23,6 +28,7 @@ import {
   wsIdOf,
 } from './agent.ts'
 import type { RunState, WsState } from './agent.ts'
+import type { TopEntry } from './config-state.ts'
 import type { FilterContext } from './filter.ts'
 import type { GuardSnapshot } from './guard.ts'
 import type { Sidecar } from './summary.ts'
@@ -62,13 +68,20 @@ test('parseCommand refuses a bad run id, a missing value, an unknown verb and an
   refused(['begin', '--fixtures', RUN, '--fixtures', RUN])
 })
 
-test('parseCommand reads fixture and refuses --exclusive, a missing row, a bad variant and a bad row id', () => {
+test('parseCommand reads fixture with --exclusive and refuses a missing row, a bad variant and a bad row id', () => {
   assert.deepEqual(parseCommand(['fixture', 'gsd-dir', '--row', '03.2#15b']), {
     verb: 'fixture',
     variant: 'gsd-dir',
     row: '03.2#15b',
+    exclusive: false,
   })
-  refused(['fixture', 'gsd', '--row', '03#10', '--exclusive'])
+  assert.deepEqual(parseCommand(['fixture', 'sp-pre', '--exclusive', '--row', '03.2#16']), {
+    verb: 'fixture',
+    variant: 'sp-pre',
+    row: '03.2#16',
+    exclusive: true,
+  })
+  refused(['fixture', 'gsd', '--row', '03#10', '--exclusive', '--exclusive'])
   refused(['fixture', 'gsd'])
   refused(['fixture', 'GSD', '--row', '03#10'])
   refused(['fixture', 'gsd', '--row', '03-10'])
@@ -246,6 +259,84 @@ test('parseCommand reads wait with a regex and --timeout from 1 to 540 seconds, 
   refused(['wait', WS, 'claude'])
 })
 
+test('parseCommand reads cadre with its args and --wt, probe with a role and run with its argv as given', () => {
+  assert.deepEqual(parseCommand(['cadre', WS, 'status', 'qa']), {
+    verb: 'cadre',
+    ws: WS,
+    args: ['status', 'qa'],
+    wt: null,
+  })
+  assert.deepEqual(parseCommand(['cadre', WS, 'epic', 'done', 'PROJ-1', '--wt', 'proj-1-add-retry']), {
+    verb: 'cadre',
+    ws: WS,
+    args: ['epic', 'done', 'PROJ-1'],
+    wt: 'proj-1-add-retry',
+  })
+  assert.deepEqual(parseCommand(['probe', WS, 'qa']), { verb: 'probe', ws: WS, role: 'qa', wt: null })
+  assert.deepEqual(parseCommand(['probe', WS, 'qa', '--wt', 'proj-1-add-retry']), {
+    verb: 'probe',
+    ws: WS,
+    role: 'qa',
+    wt: 'proj-1-add-retry',
+  })
+  assert.deepEqual(parseCommand(['run', WS, 'git', 'log', '--oneline', '-5']), {
+    verb: 'run',
+    ws: WS,
+    wt: null,
+    argv: ['git', 'log', '--oneline', '-5'],
+  })
+  assert.deepEqual(parseCommand(['run', WS, '--wt', 'proj-1-add-retry', 'git', 'status', '--porcelain']), {
+    verb: 'run',
+    ws: WS,
+    wt: 'proj-1-add-retry',
+    argv: ['git', 'status', '--porcelain'],
+  })
+})
+
+test('parseCommand refuses cadre, probe and run with a bad workspace, role, worktree, flag or no command', () => {
+  refused(['cadre', WS])
+  refused(['cadre', '03#10', 'status', 'qa'])
+  refused(['cadre', WS, 'regen', 'qa', '--dry-run'])
+  refused(['cadre', WS, 'status', 'qa', '--wt', '../x'])
+  refused(['probe', WS])
+  refused(['probe', WS, 'root'])
+  refused(['probe', WS, 'QA'])
+  refused(['probe', WS, 'qa', 'be'])
+  refused(['probe', WS, 'qa', '--wt', 'a/b'])
+  refused(['run', WS])
+  refused(['run', WS, '--wt'])
+  refused(['run', WS, '--wt', 'proj-1-add-retry'])
+  refused(['run', WS, '--wt', '../x', 'git', 'status'])
+  refused(['run', '03#10', 'git', 'status'])
+})
+
+test('parseCommand reads files and read with a location and seed with a name and an optional role', () => {
+  assert.deepEqual(parseCommand(['files', WS, 'repo/docs/superpowers/plans/']), {
+    verb: 'files',
+    ws: WS,
+    location: { root: 'repo', worktree: null, role: null, path: 'docs/superpowers/plans' },
+  })
+  assert.deepEqual(parseCommand(['read', WS, 'inbox:proj-1-add-retry/tl/inbox.jsonl']), {
+    verb: 'read',
+    ws: WS,
+    location: { root: 'inbox', worktree: 'proj-1-add-retry', role: 'tl', path: 'inbox.jsonl' },
+  })
+  assert.deepEqual(parseCommand(['seed', WS, 'sources']), { verb: 'seed', ws: WS, name: 'sources', role: null })
+  assert.deepEqual(parseCommand(['seed', WS, 'bypass', 'qa']), { verb: 'seed', ws: WS, name: 'bypass', role: 'qa' })
+  for (const verb of ['files', 'read']) {
+    refused([verb, WS])
+    refused([verb, WS, '../repo'])
+    refused([verb, WS, 'home/x'])
+    refused([verb, '03#10', 'repo/'])
+    refused([verb, WS, 'repo/', 'projects/'])
+  }
+  refused(['seed', WS])
+  refused(['seed', WS, 'Sources'])
+  refused(['seed', WS, 'bypass', 'QA'])
+  refused(['seed', WS, 'bypass', 'root'])
+  refused(['seed', WS, 'bypass', 'qa', 'be'])
+})
+
 test('tokenRefusal accepts only the token whose sha256 hex is stored', () => {
   const stored = tokenHash('f00d')
   const cases: readonly (readonly [string | null | undefined, string | null | undefined])[] = [
@@ -276,10 +367,11 @@ test('wsIdOf joins the row id and the hex, and isWsId accepts only that shape', 
   }
 })
 
-test('windowNameFor numbers a taken role window and names the root window claude', () => {
-  assert.equal(windowNameFor('be', []), 'cadre-be')
-  assert.equal(windowNameFor('be', ['cadre-be']), 'cadre-be-2')
-  assert.equal(windowNameFor('be', ['cadre-be', 'cadre-be-2']), 'cadre-be-3')
+test('windowNameFor names a role window role-<role>, numbers a taken one and names the root window claude', () => {
+  assert.equal(windowNameFor('be', []), 'role-be')
+  assert.equal(windowNameFor('be', ['cadre-be']), 'role-be')
+  assert.equal(windowNameFor('be', ['role-be', 'cadre-be']), 'role-be-2')
+  assert.equal(windowNameFor('be', ['role-be', 'role-be-2']), 'role-be-3')
   assert.equal(windowNameFor('root', []), 'claude')
   assert.equal(windowNameFor('root', ['claude']), null)
   for (const role of ['Be', '1be', 'b e', '', '-be']) assert.equal(windowNameFor(role, []), null, role)
@@ -340,6 +432,21 @@ test('parseWsState round-trips the uuid list as [uuid, number] pairs and refuses
   assert.equal(parseWsState({ ...state, uuids: [[UUID_A, '1']] }), null)
   assert.equal(parseWsState({ ...state, uuids: [[UUID_A]] }), null)
   assert.equal(parseWsState({ ...state, uuids: [{ uuid: UUID_A, number: 1 }] }), null)
+})
+
+test('parseWsState keeps the snapshot of an exclusive workspace, adds none when absent and refuses a wrong one', () => {
+  const snapshot: readonly TopEntry[] = [
+    { name: 'history.jsonl', kind: 'file', mtimeMs: 1_763_024_400_123.5 },
+    { name: 'todos', kind: 'dir', mtimeMs: 1_763_024_400_000 },
+  ]
+  const state: WsState = { ...wsState(), exclusive: true, snapshot }
+
+  assert.deepEqual(parseWsState(JSON.parse(JSON.stringify(state))), state)
+  assert.equal(Object.hasOwn(parseWsState(JSON.parse(JSON.stringify(wsState()))) ?? {}, 'snapshot'), false)
+  assert.equal(parseWsState({ ...state, snapshot: [{ name: 'x', kind: 'pipe', mtimeMs: 1 }] }), null)
+  assert.equal(parseWsState({ ...state, snapshot: [{ name: 'x', kind: 'file' }] }), null)
+  assert.equal(parseWsState({ ...state, snapshot: 'history.jsonl' }), null)
+  assert.equal(parseWsState({ ...state, snapshot: null }), null)
 })
 
 function snapshot(keychain: GuardSnapshot['keychain']): GuardSnapshot {
@@ -549,4 +656,126 @@ test('claimRefusal names the workspace that holds the role and is null for a fre
   assert.equal(claimRefusal('qa', WS, taken), null)
   assert.equal(claimRefusal('be', WS, taken), null)
   assert.equal(claimRefusal('qa', '03.2-8-cd34', taken), `busy: qa held by ${WS}`)
+})
+
+test('runRefusal allows read-only git subcommands and refuses options before them, other programs and no argv', () => {
+  const allowed: readonly (readonly string[])[] = [
+    ['git', 'status', '--porcelain'],
+    ['git', 'log', '--oneline', '-5'],
+    ['git', 'diff', 'HEAD'],
+    ['git', 'show', 'HEAD:src/app.ts'],
+    ['git', 'branch', '--list'],
+    ['git', 'ls-files'],
+    ['git', 'rev-parse', '--show-toplevel'],
+    ['git', 'check-ignore', '-v', 'CLAUDE-SECURITY-x/CLAUDE-SECURITY-RESULTS.md'],
+    ['git', 'worktree', 'list'],
+    ['git', 'worktree', 'list', '--porcelain'],
+    ['git', 'config', '--get', 'user.name'],
+    ['git', 'config', '--get-all', 'remote.origin.url'],
+    ['git', 'config', '--list'],
+  ]
+  const refusedArgvs: readonly (readonly string[])[] = [
+    [],
+    ['git'],
+    ['git', '-c', 'core.pager=sh', 'log'],
+    ['git', '-C', '..', 'status'],
+    ['git', '--git-dir=/tmp/x', 'log'],
+    ['git', 'commit', '-m', 'x'],
+    ['git', 'push'],
+    ['git', 'worktree'],
+    ['git', 'worktree', 'add', 'x'],
+    ['git', 'config'],
+    ['git', 'config', 'user.name', 'x'],
+    ['git', 'config', '--add', 'user.name', 'x'],
+    ['git', 'config', '--unset', 'user.name'],
+    ['git', 'config', '--get', 'user.name', '--file', 'x'],
+    ['/usr/bin/git', 'status'],
+    ['sh', '-c', 'git status'],
+    ['ls'],
+  ]
+
+  for (const argv of refusedArgvs) assert.notEqual(runRefusal(argv), null, argv.join(' '))
+  for (const argv of allowed) assert.equal(runRefusal(argv), null, argv.join(' '))
+})
+
+test('cadreRefusal refuses an epic open and allows epic done and the other subcommands', () => {
+  const refusals: readonly (readonly string[])[] = [
+    ['epic', 'PROJ-1', 'Add', 'retry'],
+    ['epic'],
+    ['epic PROJ-1 Add retry'],
+    [' epic', 'PROJ-1'],
+    ['EPIC', 'PROJ-1'],
+    ['epic', 'DONE', 'PROJ-1'],
+  ]
+  const allowed: readonly (readonly string[])[] = [
+    ['epic', 'done', 'PROJ-1'],
+    ['epic done PROJ-1'],
+    ['status', 'qa'],
+    ['regen', 'qa'],
+    ['start', 'be'],
+  ]
+
+  for (const args of refusals) assert.notEqual(cadreRefusal(args), null, args.join(' '))
+  for (const args of allowed) assert.equal(cadreRefusal(args), null, args.join(' '))
+})
+
+test('parseLocation reads repo, inbox and projects locations and refuses an absolute path, .., empty, unknown', () => {
+  const repo = { root: 'repo', worktree: null, role: null }
+  const projects = { root: 'projects', worktree: null, role: null }
+  const refusals = [
+    '/etc/passwd',
+    'repo/../x',
+    'repo/./x',
+    'repo//x',
+    '',
+    'home/x',
+    'inbox',
+    'inbox/',
+    'inbox/TL',
+    'inbox/root',
+    'inbox:/tl',
+    'inbox:../x/tl',
+    'repo:wt/x',
+    'projects:x/y',
+  ]
+
+  assert.deepEqual(parseLocation('repo/src/app.ts'), { ...repo, path: 'src/app.ts' })
+  assert.deepEqual(parseLocation('repo/'), { ...repo, path: '' })
+  assert.deepEqual(parseLocation('inbox/tl/inbox.jsonl'), {
+    root: 'inbox',
+    worktree: null,
+    role: 'tl',
+    path: 'inbox.jsonl',
+  })
+  assert.deepEqual(parseLocation('inbox:proj-1-add-retry/tl'), {
+    root: 'inbox',
+    worktree: 'proj-1-add-retry',
+    role: 'tl',
+    path: '',
+  })
+  assert.deepEqual(parseLocation('projects/memory'), { ...projects, path: 'memory' })
+  assert.deepEqual(parseLocation('projects/'), { ...projects, path: '' })
+  for (const text of refusals) assert.equal(parseLocation(text), null, text)
+})
+
+test('exclusiveRefusal refuses an exclusive open beside a live workspace and any open while another holds it', () => {
+  const live = wsState()
+  const done: WsState = { ...wsState(), id: '03-11-ef56', row: '03#11', status: 'finished' }
+  const next = '03.2-16-cd34'
+
+  assert.equal(exclusiveRefusal(next, [], null, true), null)
+  assert.equal(exclusiveRefusal(next, [done], null, true), null)
+  assert.equal(exclusiveRefusal(next, [live, done], null, false), null)
+  assert.equal(exclusiveRefusal(WS, [live], WS, true), null)
+  assert.match(exclusiveRefusal(next, [live, done], null, true) ?? '', /03-10-ab12/)
+  assert.match(exclusiveRefusal(next, [done], WS, false) ?? '', /03-10-ab12/)
+  assert.match(exclusiveRefusal(next, [], WS, true) ?? '', /03-10-ab12/)
+})
+
+test('seedRefusal refuses user-claude-md outside an exclusive workspace and allows the repo seeds anywhere', () => {
+  assert.notEqual(seedRefusal('user-claude-md', false), null)
+  assert.equal(seedRefusal('user-claude-md', true), null)
+  for (const name of ['sources', 'planning-x', 'subfolder-settings', 'security-change', 'bypass']) {
+    assert.equal(seedRefusal(name, false), null, name)
+  }
 })

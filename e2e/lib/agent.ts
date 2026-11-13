@@ -180,6 +180,14 @@ export type WsState = {
   readonly windows: readonly WsWindow[]
   readonly claims: readonly string[]
   readonly uuids: readonly (readonly [string, number])[]
+  readonly snapshot?: readonly TopEntry[]
+}
+
+export type Location = {
+  readonly root: 'repo' | 'inbox' | 'projects'
+  readonly worktree: string | null
+  readonly role: string | null
+  readonly path: string
 }
 
 type AgentCheck = {
@@ -757,4 +765,29 @@ export function claimRefusal(role: string, wsId: string, taken: ReadonlyMap<stri
   if (holder === undefined || holder === wsId) return null
 
   return `busy: ${role} held by ${holder}`
+}
+
+export function parseLocation(_text: string): Location | null {
+  return null
+}
+
+export function runRefusal(_argv: readonly string[]): string | null {
+  return null
+}
+
+export function cadreRefusal(_args: readonly string[]): string | null {
+  return null
+}
+
+export function exclusiveRefusal(
+  _wsId: string,
+  _workspaces: readonly WsState[],
+  _holder: string | null,
+  _exclusive: boolean,
+): string | null {
+  return null
+}
+
+export function seedRefusal(_name: string, _exclusive: boolean): string | null {
+  return null
 }
