@@ -58,6 +58,7 @@ import {
   isGraceEligible,
   isGraceLive,
   isLiveFinishedValue,
+  isPermissionDeny,
   isValidHandoffPath,
   limitAction,
   lockStale,
@@ -866,6 +867,14 @@ describe('questions while the person is in control', () => {
       expect(askAnswer(mode)).not.toContain('wait_for')
       expect(askAnswer(mode)).not.toContain('PushNotification')
     }
+  })
+})
+
+describe('refusals while autopilot drives', () => {
+  test('a permission refusal is deferred and any other deny passes through', async () => {
+    expect(isPermissionDeny('Permission to use Bash with command git push has been denied.')).toBe(true)
+    expect(isPermissionDeny('The cadre inbox tools work only in a cadre role session.')).toBe(false)
+    expect(isPermissionDeny('')).toBe(false)
   })
 })
 
