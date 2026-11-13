@@ -62,7 +62,7 @@ So:
 Rows that install plugins or marketplaces, or stage a user-level GSD, are `exclusive` in the registry: 03#61, 03#80,
 03#82, 03#83 with 03#87, 03.2#3 and 03.2#30 (and the `v050` fixture builder). Each runs alone, after the parallel
 rows, between a snapshot and a restore of the e2e dir's non-credential plugin state (`plugins/`, `settings.json`,
-`gsd-core`). The summary lists `e2e dir state restored after <file>` for each; a failed restore prints `e2e dir state
+`gsd-core`, `CLAUDE.md`). The summary lists `e2e dir state restored after <file>` for each; a failed restore prints `e2e dir state
 not restored after <file>: <reason>` and fails the run. Rows that start a real role session carry `roleSession` and
 run one at a time per role.
 
@@ -190,6 +190,8 @@ Refusals (exit 2):
   tmux server.
 - `run` takes only `git` with `status`, `log`, `diff`, `show`, `branch`, `ls-files`, `rev-parse`, `check-ignore`,
   `worktree list`, or `config` with `--get`, `--get-all` or `--list`, and no option before the subcommand.
+  It refuses any argument that starts with `--output` or `--no-index`, and `-c`, `-C`, `--git-dir` and `--work-tree`
+  in either form, so git never writes or reads outside the copy.
 - `files` and `read` refuse a location that is absolute, holds `..` or leads out of its root through a symlink.
 - `end` refuses without the orchestrator token.
 
