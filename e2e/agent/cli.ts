@@ -39,6 +39,7 @@ import type { Note, Sidecar, SuiteVersion } from '../lib/summary.ts'
 import { capture, killServer, listWindows, newWindow, runSocketPrefix, socketName, startServer } from '../lib/tmux.ts'
 import { matches, paneState, sendKeys, sweepServers, waitDead, waitFor } from '../lib/tmux.ts'
 import type { Pane, Server, WindowInfo } from '../lib/tmux.ts'
+import { commitCadre } from './commit.ts'
 import { SEEDS } from './seeds.ts'
 
 const CLI_PATH = fileURLToPath(import.meta.url)
@@ -381,6 +382,7 @@ stop <ws> <window>: exit the session in a window and print its exit status
 cadre <ws> <args...> [--wt <worktree>]: run /cadre <args> in print mode in the copy and print the reply (opens no epic)
 probe <ws> <role> [--wt <worktree>]: run the role launcher with --probe in the copy and print its output
 run <ws> [--wt <worktree>] git <subcommand> [args...]: run read-only git in the copy: ${GIT_READS.join(', ')}, worktree list, config --get|--get-all|--list
+commit <ws> .cadre/: stage and commit only .cadre/ in the main copy (no other path, no flag, no hook)
 files <ws> <location>: list a folder at repo/<path>, inbox[:<worktree>]/<role>/<path> or projects/[<folder>/<path>]
 read <ws> <location>: print a file of at most ${READ_MAX_BYTES} bytes, at the locations files takes
 seed <ws> <name> [<role>]: write a fixed seed: ${[...SEEDS.keys()].join(', ')} (user-claude-md needs an exclusive workspace, bypass a role)
@@ -1032,6 +1034,19 @@ async function seed(cmd: Command<'seed'>, run: RunState, ws: WsState): Promise<n
   return 0
 }
 
+async function commitCadreVerb(run: RunState, ws: WsState): Promise<number> {
+  let summary: string
+  try {
+    summary = await commitCadre(repoOf(run, ws), liveEnv())
+  } catch (error) {
+    if (!(error instanceof HarnessError)) throw error
+    return refuse(error.message)
+  }
+  say(summary)
+
+  return 0
+}
+
 async function readStdin(): Promise<string | null> {
   const chunks: Buffer[] = []
   let size = 0
@@ -1105,6 +1120,7 @@ async function runWsVerb(cmd: WsCommand, run: RunState, ws: WsState): Promise<nu
   if (cmd.verb === 'cadre') return cadreCommand(cmd, run, ws)
   if (cmd.verb === 'probe') return probe(cmd, run, ws)
   if (cmd.verb === 'run') return runInCopy(cmd, run, ws)
+  if (cmd.verb === 'commit') return commitCadreVerb(run, ws)
   if (cmd.verb === 'files') return listFiles(cmd, run, ws)
   if (cmd.verb === 'read') return readLocation(cmd, run, ws)
   if (cmd.verb === 'seed') return seed(cmd, run, ws)

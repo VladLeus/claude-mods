@@ -51,6 +51,7 @@ const GIT_REFUSED_OPTIONS: readonly string[] = ['-c', '-C', '--git-dir', '--work
 const GIT_REFUSED_TEXT = [...GIT_REFUSED_PREFIXES, ...GIT_REFUSED_OPTIONS].join(', ')
 const EXCLUSIVE_SEEDS: readonly string[] = ['user-claude-md']
 const LOCATION_USAGE = 'use repo/<path>, inbox/<role>/<path>, inbox:<worktree>/<role>/<path> or projects/<path>'
+const COMMIT_PATHS: readonly string[] = ['.cadre', '.cadre/']
 const RUN_USAGE = 'run needs a command: run <ws> [--wt <worktree>] git <subcommand> [args...]'
 const CLAIM_WAIT_DEFAULT_S = 0
 const MS_PER_SECOND = 1000
@@ -164,6 +165,11 @@ type RunCommand = {
   readonly argv: readonly string[]
 }
 
+type CommitCommand = {
+  readonly verb: 'commit'
+  readonly ws: string
+}
+
 type LocationCommand<V extends string> = {
   readonly verb: V
   readonly ws: string
@@ -201,6 +207,7 @@ export type AgentCommand =
   | CadreCommand
   | ProbeCommand
   | RunCommand
+  | CommitCommand
   | LocationCommand<'files'>
   | LocationCommand<'read'>
   | SeedCommand
@@ -551,6 +558,16 @@ function parseRun(argv: readonly string[]): AgentCommand | string {
   return { verb: 'run', ws, wt, argv: command }
 }
 
+function parseCommit(argv: readonly string[]): AgentCommand | string {
+  const args = argsOf('commit', argv, { count: 2 })
+  if (typeof args === 'string') return args
+  const [ws = '', path = ''] = args.positionals
+  if (!isWsId(ws)) return `not a workspace id: ${ws}`
+  if (!COMMIT_PATHS.includes(path)) return `commit takes only .cadre/, not ${path}`
+
+  return { verb: 'commit', ws }
+}
+
 function parseLocated(verb: 'files' | 'read', argv: readonly string[]): AgentCommand | string {
   const args = argsOf(verb, argv, { count: 2 })
   if (typeof args === 'string') return args
@@ -601,6 +618,7 @@ const PARSERS: ReadonlyMap<string, Parser> = new Map<string, Parser>([
   ['cadre', parseCadre],
   ['probe', parseProbe],
   ['run', parseRun],
+  ['commit', parseCommit],
   ['files', argv => parseLocated('files', argv)],
   ['read', argv => parseLocated('read', argv)],
   ['seed', parseSeed],
