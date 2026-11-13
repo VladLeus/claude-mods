@@ -6596,7 +6596,10 @@ describe('performState (WD-S1)', () => {
   })
 
   test('a host operation or a model call gives what perform gives', async () => {
-    const listing = { kind: 'io', call: { id: 'list-sessions', dir: '/repo/sessions' } } satisfies Effect
+    const listing = {
+      kind: 'io',
+      call: { id: 'list-sessions', dir: '/repo/sessions', startFolder: '/repo' },
+    } satisfies Effect
     const scan = { parts: [], files: [], memories: [], warnings: [] }
     const grouping = { kind: 'model', call: { id: 'topics', scan } } satisfies Effect
     for (const effect of [listing, grouping]) {

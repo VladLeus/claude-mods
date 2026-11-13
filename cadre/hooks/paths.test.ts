@@ -34,7 +34,8 @@ import {
   runtimeDirOf,
   screenPath,
   SESSION_FILE,
-  shortenedProjectDir,
+  shortenedProjectDirs,
+  startCwdNeedle,
   trimSlash,
 } from './paths'
 import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry, link } from './testkit'
@@ -153,33 +154,39 @@ describe('projectFolderOf', () => {
   })
 })
 
-describe('shortenedProjectDir', () => {
+describe('shortenedProjectDirs', () => {
   const long = `-repo-${'w'.repeat(300)}`
   const prefix = long.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
 
-  test('a name of 200 characters or fewer is the name, whatever the listing holds', () => {
+  test('a name of 200 characters or fewer has no candidate, whatever the listing holds', () => {
     expect(ENGINE_FOLDER_NAME_MAX_CHARS).toBe(200)
     const short = 'w'.repeat(200)
-    expect(shortenedProjectDir(short, [entry(`${short}-x1`, 'dir')])).toBe(short)
+    expect(shortenedProjectDirs(short, [entry(`${short}-x1`, 'dir')])).toEqual([])
   })
 
-  test('a longer name is kept when its own folder is listed, even beside a shortened one', () => {
-    expect(shortenedProjectDir(long, [entry(long, 'dir'), entry(`${prefix}-x1y2z3`, 'dir')])).toBe(long)
+  test('a longer name has no candidate when its own folder is listed, even beside a shortened one', () => {
+    expect(shortenedProjectDirs(long, [entry(long, 'dir'), entry(`${prefix}-x1y2z3`, 'dir')])).toEqual([])
   })
 
-  test('the one folder that starts with the first 200 characters and is not the name is the shortened name', () => {
-    const entries = [entry('-other', 'dir'), entry(`${prefix}-x1y2z3`, 'dir'), entry(prefix.slice(0, 199), 'dir')]
-    expect(shortenedProjectDir(long, entries)).toBe(`${prefix}-x1y2z3`)
+  test('every folder that starts with the first 200 characters and is not the name is a candidate', () => {
+    const entries = [entry('-other', 'dir'), entry(`${prefix}-a`, 'dir'), entry(prefix.slice(0, 199), 'dir')]
+    expect(shortenedProjectDirs(long, entries)).toEqual([`${prefix}-a`])
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-a`, 'dir'), entry(`${prefix}-b`, 'dir')])).toEqual([
+      `${prefix}-a`,
+      `${prefix}-b`,
+    ])
+    expect(shortenedProjectDirs(long, [])).toEqual([])
   })
 
-  test('no candidate or two candidates give the full name, so none is guessed', () => {
-    expect(shortenedProjectDir(long, [])).toBe(long)
-    expect(shortenedProjectDir(long, [entry(`${prefix}-a`, 'dir'), entry(`${prefix}-b`, 'dir')])).toBe(long)
+  test('a file or a link with the prefix is never a candidate', () => {
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-f`), link(`${prefix}-l`)])).toEqual([])
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-d`, 'dir', true)])).toEqual([])
   })
 
-  test('a file or a link with the prefix is never taken', () => {
-    expect(shortenedProjectDir(long, [entry(`${prefix}-f`), link(`${prefix}-l`)])).toBe(long)
-    expect(shortenedProjectDir(long, [entry(`${prefix}-d`, 'dir', true)])).toBe(long)
+  test('startCwdNeedle is the cwd field with the folder JSON-encoded, closing quote included', () => {
+    expect(startCwdNeedle('/a/b')).toBe('"cwd":"/a/b"')
+    expect(startCwdNeedle('/a/"q"')).toBe('"cwd":"/a/\\"q\\""')
+    expect('{"cwd":"/a/bc"}'.includes(startCwdNeedle('/a/b'))).toBe(false)
   })
 })
 

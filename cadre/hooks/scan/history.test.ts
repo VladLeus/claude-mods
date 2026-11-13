@@ -9,6 +9,7 @@ import {
   NO_HISTORY_NOTE,
   UNLISTED_HISTORY_NOTE,
 } from '../init/stages/history'
+import { mangledProjectDir } from '../paths'
 import { entry, memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
 import {
@@ -129,7 +130,7 @@ describe('history scan', () => {
       transcript('notes.txt', 9),
       transcript('a.jsonl.bak', 9),
     ]
-    const listed = await listSessions(memIo(memWorld({ dirs: { [DIR]: entries } }), {}).io, DIR)
+    const listed = await listSessions(memIo(memWorld({ dirs: { [DIR]: entries } }), {}).io, DIR, '/repo')
     expect(listed).toEqual({
       sessions: [
         transcript('new.jsonl', 3),
@@ -143,7 +144,7 @@ describe('history scan', () => {
 
   test('listSessions keeps the newest 50 and counts every session', async () => {
     const many = Array.from({ length: 60 }, (_, at) => transcript(`s${String(at).padStart(2, '0')}.jsonl`, at))
-    const listed = await listSessions(memIo(memWorld({ dirs: { [DIR]: many } }), {}).io, DIR)
+    const listed = await listSessions(memIo(memWorld({ dirs: { [DIR]: many } }), {}).io, DIR, '/repo')
     expect(listed?.total).toBe(60)
     expect(listed?.sessions.map(session => session.name)).toEqual(
       many
@@ -154,34 +155,49 @@ describe('history scan', () => {
   })
 
   test('listSessions gives null for a folder it cannot list, and no sessions for one that is not there', async () => {
-    expect(await listSessions(memIo(memWorld({ unknownPaths: [DIR] }), {}).io, DIR)).toBeNull()
-    expect(await listSessions(memIo(memWorld({}), {}).io, DIR)).toEqual({ sessions: [], total: 0 })
+    expect(await listSessions(memIo(memWorld({ unknownPaths: [DIR] }), {}).io, DIR, '/repo')).toBeNull()
+    expect(await listSessions(memIo(memWorld({}), {}).io, DIR, '/repo')).toEqual({ sessions: [], total: 0 })
   })
 
-  test('a session folder whose name is over 200 characters is listed and read in the shortened folder', async () => {
-    const long = `/home/u/.claude/projects/-repo-${'w'.repeat(300)}`
-    const name = `${long.split('/').at(-1)?.slice(0, 200) ?? ''}-x1y2z3`
+  test('a session folder over 200 characters is listed and read in the verified shortened folder', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const long = `/home/u/.claude/projects/${mangledProjectDir(root)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
     const shortened = `/home/u/.claude/projects/${name}`
     const cadre = commandLine('<command-name>/cadre</command-name>')
+    const held = `${JSON.stringify({ type: 'user', cwd: root })}\n${cadre}`
     const world = memWorld({
       dirs: {
         '/home/u/.claude/projects': [entry('-repo', 'dir'), entry(name, 'dir')],
         [shortened]: [transcript('old.jsonl', 1), transcript('new.jsonl', 2)],
       },
-      files: { [`${shortened}/old.jsonl`]: cadre, [`${shortened}/new.jsonl`]: cadre },
+      files: { [`${shortened}/old.jsonl`]: cadre, [`${shortened}/new.jsonl`]: held },
     })
     const run = memIo(world, {})
-    const listed = await listSessions(run.io, long)
+    const listed = await listSessions(run.io, long, root)
     expect(listed).toEqual({ sessions: [transcript('new.jsonl', 2), transcript('old.jsonl', 1)], total: 2 })
-    const scan = await scanHistory(run.io, long, listed?.sessions ?? [])
+    const scan = await scanHistory(run.io, long, root, listed?.sessions ?? [])
     expect([scan.scanned, scan.counts]).toEqual([2, [{ name: 'cadre', count: 2 }]])
-    expect(run.reads).toEqual([`${shortened}/new.jsonl`, `${shortened}/old.jsonl`])
+    expect(run.reads.slice(-2)).toEqual([`${shortened}/new.jsonl`, `${shortened}/old.jsonl`])
+  })
+
+  test('a shortened folder whose transcripts hold another start folder is not listed or read', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const long = `/home/u/.claude/projects/${mangledProjectDir(root)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const world = memWorld({
+      dirs: { '/home/u/.claude/projects': [entry(name, 'dir')], [shortened]: [transcript('a.jsonl', 1)] },
+      files: { [`${shortened}/a.jsonl`]: `${JSON.stringify({ type: 'user', cwd: `${root}/.claude/worktrees/k` })}\n` },
+    })
+    const run = memIo(world, {})
+    expect(await listSessions(run.io, long, root)).toEqual({ sessions: [], total: 0 })
   })
 
   test('a session folder of 200 characters or fewer is listed and read with no extra listing', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), {})
-    const listed = await listSessions(run.io, DIR)
-    await scanHistory(run.io, DIR, listed?.sessions ?? [])
+    const listed = await listSessions(run.io, DIR, '/repo')
+    await scanHistory(run.io, DIR, '/repo', listed?.sessions ?? [])
     expect([run.listed, run.reads]).toEqual([[DIR], [`${DIR}/a.jsonl`]])
   })
 
@@ -246,8 +262,8 @@ describe('history scan', () => {
     const cadre = commandLine('<command-name>/cadre</command-name>')
     const world = historyWorld({ 'a.jsonl': cadre, 'big.jsonl': 'x'.repeat(5 * 1024 * 1024), 'c.jsonl': cadre })
     const run = memIo(world, {})
-    const listed = await listSessions(run.io, DIR)
-    const scan = await scanHistory(run.io, DIR, listed?.sessions ?? [])
+    const listed = await listSessions(run.io, DIR, '/repo')
+    const scan = await scanHistory(run.io, DIR, '/repo', listed?.sessions ?? [])
     expect(scan).toEqual({
       counts: [{ name: 'cadre', count: 2 }],
       scanned: 2,
@@ -265,14 +281,14 @@ describe('history scan', () => {
     const cadre = commandLine('<command-name>/cadre</command-name>')
     const files = Object.fromEntries(names.map(name => [`${DIR}/${name}`, cadre]))
     const run = memIo(memWorld({ files }), {})
-    const scan = await scanHistory(run.io, DIR, sessions)
+    const scan = await scanHistory(run.io, DIR, '/repo', sessions)
     expect([scan.scanned, scan.total, scan.isPartial]).toEqual([16, 17, true])
     expect(scan.counts).toEqual([{ name: 'cadre', count: 16 }])
     expect(run.reads).toEqual(names.slice(0, 16).map(name => `${DIR}/${name}`))
     expect(historyLines(scan)).toContain(
       'partial: stopped at 64 MiB in total, 1 of 17 sessions not read (the oldest sessions are not counted)',
     )
-    const whole = await scanHistory(memIo(memWorld({ files }), {}).io, DIR, sessions.slice(0, 16))
+    const whole = await scanHistory(memIo(memWorld({ files }), {}).io, DIR, '/repo', sessions.slice(0, 16))
     expect([whole.scanned, whole.isPartial]).toEqual([16, false])
   })
 
@@ -281,7 +297,7 @@ describe('history scan', () => {
     const world = historyWorld({ 'a.jsonl': cadre, 'b.jsonl': cadre }, { unknownPaths: [`${DIR}/b.jsonl`] })
     const listing = [...(world.dirs[DIR] ?? []), transcript('gone.jsonl', 0)]
     const run = memIo({ ...world, dirs: { [DIR]: listing } }, {})
-    const scan = await scanHistory(run.io, DIR, listing)
+    const scan = await scanHistory(run.io, DIR, '/repo', listing)
     expect([scan.scanned, scan.skippedUnknown, scan.skippedLarge, scan.isPartial]).toEqual([1, 2, 0, false])
     expect(historyLines(scan)).toContain('skipped 2 of 3 sessions that could not be read')
   })

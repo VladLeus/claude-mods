@@ -6,12 +6,22 @@ import { CHECKOUT_ARGV } from '../git/checkout'
 import { mangledProjectDir } from '../paths'
 import { autopilotLogPath, autopilotStatusPath } from '../scan/autopilot'
 import { noStateReply, regenNoRole } from '../team'
-import { DEFAULT_LOCATIONS, entry, entryAt, hostWorld, memHost, memIo, memWorld, templateRole } from '../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  DEFAULT_RUN,
+  entry,
+  entryAt,
+  hostWorld,
+  memHost,
+  memIo,
+  memWorld,
+  templateRole,
+} from '../testkit'
 import type { HostRunRule, HostWrite, MemWorld } from '../testkit'
 import { LOG_MAX_BYTES, runOutcomeOf } from './autopilot-files'
 import { newestHandoff } from './report'
 import { runStatus } from './run'
-import { BEAT_MAX_BYTES, beatSessionOf, startFolderOf, titleGrepArgv } from './session-find'
+import { BEAT_MAX_BYTES, beatSessionOf, cwdGrepArgv, startFolderOf, titleGrepArgv } from './session-find'
 
 /** The git root's transcripts folder under the fixture user folder (D-131). */
 const TRANSCRIPTS = '/home/u/.claude/projects/-repo'
@@ -188,9 +198,10 @@ describe('status discovery (D-131)', () => {
       },
       files: doneFiles('s9'),
     })
-    const status = await statusBe(world, [titled(`${shortened}/s9.jsonl`, 'cadre-be')])
+    const held = { argv: cwdGrepArgv(`${shortened}/s9.jsonl`, `/repo/${path}`), result: DEFAULT_RUN }
+    const status = await statusBe(world, [held, titled(`${shortened}/s9.jsonl`, 'cadre-be')])
     expect(full.length).toBe(364)
-    expect(status.greps).toEqual([`${shortened}/s9.jsonl`])
+    expect(status.greps).toEqual([`${shortened}/s9.jsonl`, `${shortened}/s9.jsonl`])
     expect(status.lines[2]).toBe('session: s9 (found by its name cadre-be)')
   })
 

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, PortStat } from '../../types'
-import { entry, memIo, memWorld } from '../testkit'
+import { mangledProjectDir } from '../paths'
+import { entry, entryAt, link, memIo, memWorld } from '../testkit'
+import type { MemWorld } from '../testkit'
 import { MAX_READ_BYTES } from './facts/normalize'
 import {
   followedProjectFolder,
@@ -11,6 +13,7 @@ import {
   portProbeOf,
   portTextOf,
   readRepoFile,
+  readsStartCwd,
 } from './port-read'
 
 describe('readRepoFile', () => {
@@ -237,30 +240,83 @@ describe('init helpers', () => {
 
 describe('followedProjectFolder', () => {
   const projects = '/home/u/.claude/projects'
-  const long = `-repo-${'w'.repeat(300)}`
+  const start = `/repo/${'w'.repeat(300)}`
+  const long = mangledProjectDir(start)
   const shortened = `${long.slice(0, 200)}-x1y2z3`
+  const other = `${long.slice(0, 200)}-q9`
+  /** A check that records each candidate it is asked about and passes only `verified`. */
+  function checkOf(verified: readonly string[]): {
+    readonly asked: string[]
+    readonly check: (path: string) => Promise<boolean>
+  } {
+    const asked: string[] = []
 
-  test('a folder whose name is 200 characters or fewer is returned with no port call', async () => {
+    return { asked, check: async path => (asked.push(path), verified.includes(path)) }
+  }
+
+  test('a folder whose name is 200 characters or fewer is returned with no port call and no check', async () => {
     const name = 'w'.repeat(200)
     const run = memIo(memWorld({ dirs: { [projects]: [entry(`${name}-x`, 'dir')] } }), [])
+    const { asked, check } = checkOf([`${projects}/${name}-x`])
 
-    expect(await followedProjectFolder(run.io, `${projects}/${name}`)).toBe(`${projects}/${name}`)
-    expect(run.listed).toEqual([])
-    expect(run.reads).toEqual([])
+    expect(await followedProjectFolder(run.io, `${projects}/${name}`, check)).toBe(`${projects}/${name}`)
+    expect([run.listed, run.reads, asked]).toEqual([[], [], []])
   })
 
-  test('a longer name lists its parent once and follows the one shortened folder there', async () => {
-    const run = memIo(memWorld({ dirs: { [projects]: [entry(shortened, 'dir')] } }), [])
+  test('a longer name follows the one candidate the check verifies, and asks about every candidate', async () => {
+    const run = memIo(memWorld({ dirs: { [projects]: [entry(other, 'dir'), entry(shortened, 'dir')] } }), [])
+    const { asked, check } = checkOf([`${projects}/${shortened}`])
 
-    expect(await followedProjectFolder(run.io, `${projects}/${long}`)).toBe(`${projects}/${shortened}`)
-    expect(run.listed).toEqual([projects])
-    expect(run.reads).toEqual([])
+    expect(await followedProjectFolder(run.io, `${projects}/${long}`, check)).toBe(`${projects}/${shortened}`)
+    expect([run.listed, asked.toSorted()]).toEqual([[projects], [`${projects}/${other}`, `${projects}/${shortened}`]])
+  })
+
+  test('a lone candidate the check does not verify, or two verified, keep the full name', async () => {
+    const lone = memIo(memWorld({ dirs: { [projects]: [entry(other, 'dir')] } }), [])
+    const both = memIo(memWorld({ dirs: { [projects]: [entry(other, 'dir'), entry(shortened, 'dir')] } }), [])
+    const all = checkOf([`${projects}/${other}`, `${projects}/${shortened}`])
+
+    const none = checkOf([])
+
+    expect(await followedProjectFolder(lone.io, `${projects}/${long}`, none.check)).toBe(`${projects}/${long}`)
+    expect(await followedProjectFolder(both.io, `${projects}/${long}`, all.check)).toBe(`${projects}/${long}`)
   })
 
   test('a parent that cannot be listed gives the folder as given', async () => {
     const run = memIo(memWorld({ unknownPaths: [projects] }), [])
 
-    expect(await followedProjectFolder(run.io, `${projects}/${long}`)).toBe(`${projects}/${long}`)
+    expect(await followedProjectFolder(run.io, `${projects}/${long}`, checkOf([]).check)).toBe(`${projects}/${long}`)
     expect(run.reads).toEqual([])
+  })
+})
+
+describe('readsStartCwd', () => {
+  const folder = '/home/u/.claude/projects/-x'
+  /** A transcript row whose cwd is `cwd`, as the engine writes it. */
+  function row(cwd: string): string {
+    return `${JSON.stringify({ type: 'user', cwd, sessionId: 's' })}\n`
+  }
+
+  test('a folder holding a transcript with the start folder as its cwd passes; /a/bc does not pass /a/b', async () => {
+    const dirs = { [folder]: [entryAt('a.jsonl', 'file', 1), entryAt('b.jsonl', 'file', 2)] }
+    const worldOf = (cwd: string): MemWorld =>
+      memWorld({ dirs, files: { [`${folder}/a.jsonl`]: row(cwd), [`${folder}/b.jsonl`]: '' } })
+    const held = memIo(worldOf('/a/b'), [])
+    const near = memIo(worldOf('/a/bc'), [])
+
+    expect(await readsStartCwd(held.io, '/a/b')(folder)).toBe(true)
+    expect(held.reads).toEqual([`${folder}/b.jsonl`, `${folder}/a.jsonl`])
+    expect(await readsStartCwd(near.io, '/a/b')(folder)).toBe(false)
+  })
+
+  test('only regular .jsonl files are read, and a folder that cannot be listed does not pass', async () => {
+    const dirs = { [folder]: [entry('a.txt'), link('l.jsonl'), entry('d.jsonl', 'dir')] }
+    const files = { [`${folder}/a.txt`]: row('/a/b') }
+    const run = memIo(memWorld({ dirs, files }), [])
+    const unlisted = memIo(memWorld({ unknownPaths: [folder] }), [])
+
+    expect(await readsStartCwd(run.io, '/a/b')(folder)).toBe(false)
+    expect(run.reads).toEqual([])
+    expect(await readsStartCwd(unlisted.io, '/a/b')(folder)).toBe(false)
   })
 })

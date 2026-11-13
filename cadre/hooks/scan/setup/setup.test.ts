@@ -830,14 +830,24 @@ describe('setup consent and instructions', () => {
     expect(same.listed.filter(path => path === MEMORY_DIR)).toEqual([MEMORY_DIR])
   })
 
-  test('a root whose encoded name is over 200 characters lists the memory of its shortened folder', async () => {
+  test('a root encoded over 200 characters lists the memory of its verified shortened folder', async () => {
     const root = `/repo/${'w'.repeat(300)}`
     const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
-    const memory = `/home/u/.claude/projects/${name}/memory`
-    const dirs = { '/home/u/.claude/projects': [entry(name, 'dir')], [memory]: [entry('long.md'), entry('x.txt')] }
-    const run = memIo(memWorld({ dirs }), [])
+    const folder = `/home/u/.claude/projects/${name}`
+    const memory = `${folder}/memory`
+    const dirs = {
+      '/home/u/.claude/projects': [entry(name, 'dir')],
+      [folder]: [entry('memory', 'dir'), entry('s.jsonl')],
+      [memory]: [entry('long.md'), entry('x.txt')],
+    }
+    const files = { [`${folder}/s.jsonl`]: `${JSON.stringify({ type: 'user', cwd: root })}\n` }
+    const run = memIo(memWorld({ dirs, files }), [])
     const scan = await scanSetup(run.io, { ...CTX, root, givenRoot: root }, false)
     expect(scan.memoryFiles).toEqual(['long.md'])
+    const unheld = { ...files, [`${folder}/s.jsonl`]: `${JSON.stringify({ type: 'user', cwd: `${root}x` })}\n` }
+    const otherRun = memIo(memWorld({ dirs, files: unheld }), [])
+    const other = await scanSetup(otherRun.io, { ...CTX, root, givenRoot: root }, false)
+    expect(other.memoryFiles).toEqual([])
     expect(run.listed.filter(path => path === memory)).toEqual([memory])
     const short = memIo(memWorld({ dirs: { [MEMORY_DIR]: [entry('mine.md')] } }), [])
     await scanSetup(short.io, CTX, false)

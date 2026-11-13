@@ -147,10 +147,12 @@ function scanAskContext(total: number): unknown {
 /** The history stage's host operations as init/run performs them, through `io` (listSessions, scanHistory). */
 function historyCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
   return async call => {
-    if (call.id === 'list-sessions') return { id: 'list-sessions', result: await listSessions(io, call.dir) }
+    if (call.id === 'list-sessions') {
+      return { id: 'list-sessions', result: await listSessions(io, call.dir, call.startFolder) }
+    }
     if (call.id !== 'scan-history') throw new Error(`the history stage does not set ${call.id}`)
 
-    return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
+    return { id: 'scan-history', result: await scanHistory(io, call.dir, call.startFolder, call.sessions) }
   }
 }
 
@@ -307,7 +309,9 @@ describe('history scan', () => {
   test('historyStage: a Yes run folds one Session history section into the roles questions, logging none', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [])
     const drive = await drivenWith(historyAt(), ['Yes, scan names and counts'], historyCalls(run.io))
-    const scan = await scanHistory(memIo(historyWorld({ 'a.jsonl': EXAMPLE }), []).io, DIR, [transcript('a.jsonl', 1)])
+    const scan = await scanHistory(memIo(historyWorld({ 'a.jsonl': EXAMPLE }), []).io, DIR, '/repo', [
+      transcript('a.jsonl', 1),
+    ])
     expect(drive.outputs).toEqual([historyFoldOf(scan)])
     expect(PANE_TITLES.history).toBe('Session history')
     expect(drive.outputs.filter(output => output.kind === 'log' && output.text.includes('\n'))).toEqual([])
@@ -409,7 +413,7 @@ const EXAMPLE_SCAN: HistoryScan = {
 describe('the history stage (D-230)', () => {
   test('historyStage lists the session folder as an io effect, then asks with the scan context line', () => {
     const state = historyAt()
-    expect(state.effect).toEqual({ kind: 'io', call: { id: 'list-sessions', dir: DIR } })
+    expect(state.effect).toEqual({ kind: 'io', call: { id: 'list-sessions', dir: DIR, startFolder: '/repo' } })
     expect(state.openQuestion).toBeNull()
     const asking = nextStage(state, listed(ONE_SESSION))
     const spec = { options: HISTORY_OPTIONS, header: 'History', context: scanAskContext(1) }
@@ -452,7 +456,8 @@ describe('the history stage (D-230)', () => {
   test('Yes scans the listed sessions as an io effect, folds the history block and keeps the names as hints', () => {
     const asking = nextStage(historyAt(), listed(ONE_SESSION))
     const scanning = nextStage(asking, { kind: 'answer', text: 'Yes, scan names and counts' })
-    expect(scanning.effect).toEqual({ kind: 'io', call: { id: 'scan-history', dir: DIR, sessions: ONE_SESSION } })
+    const call = { id: 'scan-history', dir: DIR, startFolder: '/repo', sessions: ONE_SESSION }
+    expect(scanning.effect).toEqual({ kind: 'io', call })
     const done = nextStage(scanning, { kind: 'io', result: { id: 'scan-history', result: EXAMPLE_SCAN } })
     expect(done.stage).toBe('roles')
     expect(done.outputs[0]).toEqual(historyFoldOf(EXAMPLE_SCAN))
