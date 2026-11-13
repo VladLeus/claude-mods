@@ -1,9 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, OpenQuestion } from '../../../types'
+import type { AskContext, AskSpec, ContextRow, InitIo, OpenQuestion } from '../../../types'
+import { CONFLICT_OPTIONS, conflictContext } from '../../apply/conflict'
 import { isObject } from '../../core/json'
+import { memIo, memWorld } from '../../testkit'
+import { lineDiff } from '../diff'
 import { wrapLine } from '../pane'
+import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../paging'
 import { PREVIEW_LINE_ROWS, previewMarkdown } from '../preview'
+import type { PageView } from './contract'
 import { TUI_DEFAULT } from './tui-default'
 
 /** One single-select AskUserQuestion question with two options and no preview, as a model asks it (D3). */
@@ -96,5 +101,89 @@ describe('the TUI-default preview by wrapped rows (D-260)', () => {
       true,
       true,
     ])
+  })
+})
+
+describe('the TUI-default paged conflict question', () => {
+  const VIEW: PageView = { columns: () => 80, seat: () => null, rows: () => null }
+  const QUESTION = 'ROLE.md changed since cadre wrote it. Keep mine or take new?'
+
+  /** The conflict question over a diff of `count` changed lines. */
+  function conflictSpec(count: number): AskSpec {
+    const before = Array.from({ length: count }, (_, at) => `old ${at + 1}`).join('\n')
+    const after = Array.from({ length: count }, (_, at) => `new ${at + 1}`).join('\n')
+    const context = conflictContext('.cadre/roles/be/ROLE.md', lineDiff(before, after))
+
+    return { options: CONFLICT_OPTIONS, header: 'Conflict', context }
+  }
+
+  /** A port that records every ask and answers Next page while a page offers it, then `answer`. */
+  function recordingIo(answer: string): { readonly io: InitIo; readonly specs: AskSpec[] } {
+    const base = memIo(memWorld({}), [])
+    const specs: AskSpec[] = []
+    const io: InitIo = {
+      ...base.io,
+      ask: async (_question, spec) => {
+        specs.push(spec)
+
+        return spec.options.includes(NEXT_PAGE_LABEL) ? NEXT_PAGE_LABEL : answer
+      },
+    }
+
+    return { io, specs }
+  }
+
+  /** The preview the TUI default gives the dialog of one asked page. */
+  function pagePreview(spec: AskSpec): unknown {
+    const options = spec.options.map(label => ({ label, description: label }))
+    const raw = [{ question: QUESTION, header: 'Conflict', multiSelect: false, options }]
+    const open: OpenQuestion = {
+      question: QUESTION,
+      header: 'Conflict',
+      context: spec.context ?? null,
+      acceptsTyped: false,
+      takesNote: false,
+    }
+    const [previews = []] = optionPreviews(TUI_DEFAULT.dialogPlan(raw, open, null, 80)?.questions ?? undefined)
+
+    return previews[0]
+  }
+
+  test('a long conflict diff is asked a page at a time, each preview showing its page and no marker', async () => {
+    const spec = conflictSpec(200)
+    const { io, specs } = recordingIo('Take new')
+    const answer = await TUI_DEFAULT.pagedPort(io, VIEW).ask(QUESTION, spec)
+    expect(answer).toBe('Take new')
+    expect(specs.length).toBeGreaterThan(1)
+    expect(specs[0]?.options[0]).toBe(NEXT_PAGE_LABEL)
+    expect(specs.at(-1)?.options).toEqual([PREVIOUS_PAGE_LABEL, ...CONFLICT_OPTIONS])
+    for (const page of specs) {
+      const context = page.context
+      if (context === undefined) throw new Error('a page has no context')
+      expect(context.lines).toEqual(spec.context?.lines ?? [])
+      const texts = (context.rows ?? []).flatMap(section => section.rows.map(row => row.text))
+      expect(texts.length).toBeGreaterThan(0)
+      const preview = pagePreview(page)
+      expect(preview).toBe(previewMarkdown([{ ...context, lines: texts }], 80))
+      expect(String(preview)).not.toContain('more above')
+    }
+  })
+
+  test('a short conflict diff that fits the preview is asked once, as given', async () => {
+    const spec = conflictSpec(3)
+    const { io, specs } = recordingIo('Keep mine')
+    expect(await TUI_DEFAULT.pagedPort(io, VIEW).ask(QUESTION, spec)).toBe('Keep mine')
+    expect(specs).toEqual([spec])
+  })
+
+  test('a question of another kind with a long context is asked once, as given', async () => {
+    const lines = Array.from({ length: 80 }, (_, at) => `skill ${at + 1}`)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [{ title: null, rows: lines.map(plain) }]
+    const context: AskContext = { title: 'Hand out', lines, kind: 'skills', summary: '80 skills', rows }
+    const spec: AskSpec = { options: ['All', 'None'], context }
+    const { io, specs } = recordingIo('All')
+    expect(await TUI_DEFAULT.pagedPort(io, VIEW).ask('Hand these out?', spec)).toBe('All')
+    expect(specs).toEqual([spec])
   })
 })

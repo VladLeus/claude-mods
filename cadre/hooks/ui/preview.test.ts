@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, PaneKey, ShownBlock } from '../../types'
+import type { AskContext, ContextRow, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { BIDI_OVERRIDE } from '../testkit'
 import { wrapLine } from './pane'
@@ -526,6 +526,37 @@ describe('fitPreview (D-228)', () => {
     ])
     const whole = previewMarkdown([context])
     expect(optionPreviews(askRewrite([PICK_QUESTION], context, true, true)?.questions)).toEqual([[whole, whole, whole]])
+  })
+
+  test('with rows, a paged context previews its page rows, a section title first; unpaged keeps fitting', () => {
+    const context = linesContext(30)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [
+      { title: null, rows: [plain('line 4'), plain('line 5')] },
+      { title: 'More', rows: [plain('line 6')] },
+    ]
+    const paged: AskContext = { ...context, rows, page: { index: 1, count: 3 } }
+    const page = previewMarkdown([{ ...context, lines: ['line 4', 'line 5', 'More', 'line 6'] }])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], paged, true, true, null, 21)?.questions)).toEqual([
+      [page, page, page],
+    ])
+    const fitted = previewMarkdown([{ ...context, lines: fitPreview(context, 21, null).lines }])
+    const unpaged: AskContext = { ...context, rows }
+    expect(optionPreviews(askRewrite([PICK_QUESTION], unpaged, true, true, null, 21)?.questions)).toEqual([
+      [fitted, fitted, fitted],
+    ])
+  })
+
+  test('with rows, a paged Review keeps its own lines', () => {
+    const review: AskContext = {
+      ...linesContext(30, 'review'),
+      rows: [{ title: null, rows: [{ role: 'plain', text: 'line 4', indent: 0 }] }],
+      page: { index: 0, count: 2 },
+    }
+    const whole = previewMarkdown([review])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], review, true, true, null, 21)?.questions)).toEqual([
+      [whole, whole, whole],
+    ])
   })
 })
 
