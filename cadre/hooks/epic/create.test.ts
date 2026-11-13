@@ -1082,6 +1082,13 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
     },
   )
 
+  test('the changed worktree launcher refusal says to commit .cadre/ first', () => {
+    expect(epicWorktreeLauncherChangedLine('pm')).toBe(
+      "not opened: the worktree's .cadre/bin/pm is not the launcher cadre checked in the main checkout. " +
+        'Commit .cadre/ first.',
+    )
+  })
+
   test('a worktree launcher too large to read in full is not opened (03.1-W4 S1)', async () => {
     const world = await renderWorld()
     // 300 KB, over MAX_READ_BYTES (256 KB): the read of it gives too-large.
