@@ -7,6 +7,7 @@
  */
 import type {
   Enforcement,
+  HookScript,
   LaunchStart,
   McpRoute,
   ProbeCheck,
@@ -274,12 +275,22 @@ function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 }
 
 /**
- * The warnings of a GSD context monitor registered in project settings (D-62, A1): it loads in every role that starts
- * at the git root, since the launcher runs --setting-sources project, and cadre's settings cannot remove it; rulesFor
- * gives them for a git-root start only (D-122). One rule per script, sorted; none when no project hook is the monitor.
+ * The hooks the project settings of the start load, which cadre's settings cannot remove: the git root's project hooks
+ * for a git-root start, the start folder's hooks for a dir start, none for a here start.
  */
-function projectMonitorRules(setup: SetupScan): ScopeRule[] {
-  const monitors = setup.hooks.filter(hook => hook.source === 'project' && isContextMonitorScript(hook.script))
+function projectLoadedHooks(ctx: ScopeContext): readonly HookScript[] {
+  if (ctx.launchStart.kind === 'git-root') return ctx.setup.hooks.filter(hook => hook.source === 'project')
+  if (ctx.launchStart.kind === 'dir') return ctx.setup.startHooks ?? []
+
+  return []
+}
+
+/**
+ * The warnings of a GSD context monitor among the given hooks, which load in every role and conflict with the autopilot
+ * handoff. One rule per script, sorted; none when no hook is the monitor.
+ */
+function projectMonitorRules(hooks: readonly HookScript[]): ScopeRule[] {
+  const monitors = hooks.filter(hook => isContextMonitorScript(hook.script))
 
   return sortedUnique(monitors.map(hook => hook.script)).map(script => {
     return rule(fill(ARTIFACT.cardProjectMonitor, { script: shown(script) }), 'none')
@@ -298,16 +309,19 @@ function startFolderText(start: Exclude<LaunchStart, { readonly kind: 'git-root'
 
 /**
  * The notes of a launch start other than the git root, labelled none, in this order: the project settings of the git
- * root do not load, since the session starts in another folder (D-122); the git root is an additional directory
- * (D-127); and the handoffs and GSD's .planning/ follow the start folder (D-113). None for a git-root start.
+ * root do not load, the start folder's `.claude/settings.json` loads, the git root is an additional directory, and the
+ * handoffs and GSD's .planning/ follow the start folder. None for a git-root start.
  */
 function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
   if (start.kind === 'git-root') return []
   const folder = startFolderText(start)
   const handoffs = `${handoffFolderOf(role.id)}/`
+  const settings =
+    start.kind === 'dir' ? fill(ARTIFACT.cardStartSettingsDir, { folder }) : ARTIFACT.cardStartSettingsHere
 
   return [
     rule(fill(ARTIFACT.cardNoProjectSettings, { folder }), 'none'),
+    rule(settings, 'none'),
     rule(fill(ARTIFACT.cardAdditionalDir, { folder }), 'none'),
     rule(fill(ARTIFACT.cardHandoffsFollow, { handoffs, folder }), 'none'),
   ]
@@ -344,21 +358,20 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
       { kind: 'permission-mode', token: mode },
     ]),
     ...attendedRules(role, ctx),
-    ...(ctx.launchStart.kind === 'git-root' ? projectMonitorRules(ctx.setup) : []),
+    ...projectMonitorRules(projectLoadedHooks(ctx)),
     ...startRules(role, ctx.launchStart),
     routeRule(ctx.mcpRoute),
   ]
 }
 
 /**
- * The scope card of a role, from the same inputs as the settings, so the two cannot drift (D-80). The role is attended
- * when the context says so, and also when it runs GSD without Bash (A1). The project hook scripts are loaded by
- * project settings for a git-root start only; for a `here` or `dir` start they are not loaded (D-122).
+ * The scope card of a role, from the same inputs as the settings, so the two cannot drift. The role is attended when
+ * the context says so, and also when it runs GSD without Bash. The hooks loaded by project settings are those the
+ * start's project settings load (projectLoadedHooks).
  */
 export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeCard {
   const loaded = sortedUnique(role.carry.hooks)
-  const projectScripts = ctx.setup.hooks.filter(hook => hook.source === 'project').map(hook => hook.script)
-  const byProject = ctx.launchStart.kind === 'git-root' ? sortedUnique(projectScripts) : []
+  const byProject = sortedUnique(projectLoadedHooks(ctx).map(hook => hook.script))
   const loadedByProject = byProject.filter(script => !loaded.includes(script))
   const notLoaded = sortedUnique(ctx.setup.hooks.map(hook => hook.script)).filter(
     script => !loaded.includes(script) && !byProject.includes(script),

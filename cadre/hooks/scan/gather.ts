@@ -3,8 +3,11 @@
  * of one run, and every warning they gave, each once. It imports scan, setup and the types, so init, team and start
  * gather the scans and list their warnings here with no cycle, and none of them reaches into init for them.
  */
-import type { InitFacts, InitIo, InitLocations, RepoScan, SetupScan } from '../../types'
+import type { InitFacts, InitIo, InitLocations, LaunchStart, RepoScan, SetupScan } from '../../types'
+import { MAX_READ_BYTES } from './facts/normalize'
+import { readRepoFile } from './port-read'
 import { scanRepo } from './repo'
+import { startSettingsHooks } from './setup/settings'
 import { scanSetup } from './setup/setup'
 
 /** What the scans of one run found: the detect facts, the repo scan and the names-only user-setup scan. */
@@ -30,6 +33,23 @@ export async function gatherScans(
   const setup = await scanSetup(io, { root, givenRoot, home, configDir }, isClaudeJsonAllowed)
 
   return { facts, repo, setup }
+}
+
+/**
+ * The scans with the hooks of the start folder's `.claude/settings.json` as `setup.startHooks` for a dir start, read
+ * through readRepoFile; for any other start the scans with no `startHooks`, and no port call.
+ */
+export async function withStartHooks(
+  io: InitIo,
+  gathered: Gathered,
+  root: string,
+  start: LaunchStart,
+): Promise<Gathered> {
+  const { startHooks, ...setup } = gathered.setup
+  if (start.kind !== 'dir') return { ...gathered, setup }
+  const read = await readRepoFile(io, root, `${start.path}/.claude/settings.json`, MAX_READ_BYTES)
+
+  return { ...gathered, setup: { ...setup, startHooks: startSettingsHooks(read) } }
 }
 
 /**

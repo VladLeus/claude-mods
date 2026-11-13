@@ -1317,6 +1317,8 @@ export type SetupScan = {
   readonly memoryFiles: readonly string[]
   readonly settingsKeys: readonly { readonly source: SettingsSource; readonly keys: readonly string[] }[]
   readonly hooks: readonly HookScript[]
+  /** The hook scripts of the start folder's `.claude/settings.json` for a dir start; absent otherwise. */
+  readonly startHooks?: readonly HookScript[]
   readonly carry: CarryFacts
   readonly warnings: readonly string[]
 }

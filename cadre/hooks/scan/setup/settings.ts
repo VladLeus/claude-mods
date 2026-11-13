@@ -5,8 +5,8 @@
  * is kept. It imports core, the facts parsers and read cap, the setup readers and the types, so the setup scan and
  * /cadre start read settings here.
  */
-import type { CarryFacts, HookScript, InitIo, SettingsSource, SetupScan } from '../../../types'
-import { fieldKeysOf, isObject, keysOf } from '../../core/json'
+import type { CarryFacts, HookScript, InitIo, PortRead, SettingsSource, SetupScan } from '../../../types'
+import { fieldKeysOf, isObject, keysOf, parseJsonValue } from '../../core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS } from '../../core/names'
 import { isChangedByClean, sortedUnique } from '../../core/text'
 import { t, tn } from '../../locales/t'
@@ -105,6 +105,15 @@ export function positiveInteger(value: unknown): number | null {
  */
 export function projectHooks(value: unknown, source: SettingsSource): HookScript[] {
   return hookScriptsMatching(value, source, HOOK_SCRIPT_PATTERN).filter(hook => fitsHookCap(hook.script))
+}
+
+/** The hook scripts of a start folder's settings read, as project settings hooks; none unless it is parseable text. */
+export function startSettingsHooks(read: PortRead): HookScript[] {
+  if (read.state !== 'text') return []
+  const parsed = parseJsonValue(read.text)
+  if (parsed === null) return []
+
+  return projectHooks(parsed.value, 'project')
 }
 
 /** One warning per settings source that names hook scripts over the role.json cap, counting them, never naming one. */
