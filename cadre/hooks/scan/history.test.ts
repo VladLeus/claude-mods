@@ -158,6 +158,33 @@ describe('history scan', () => {
     expect(await listSessions(memIo(memWorld({}), {}).io, DIR)).toEqual({ sessions: [], total: 0 })
   })
 
+  test('a session folder whose name is over 200 characters is listed and read in the shortened folder', async () => {
+    const long = `/home/u/.claude/projects/-repo-${'w'.repeat(300)}`
+    const name = `${long.split('/').at(-1)?.slice(0, 200) ?? ''}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const cadre = commandLine('<command-name>/cadre</command-name>')
+    const world = memWorld({
+      dirs: {
+        '/home/u/.claude/projects': [entry('-repo', 'dir'), entry(name, 'dir')],
+        [shortened]: [transcript('old.jsonl', 1), transcript('new.jsonl', 2)],
+      },
+      files: { [`${shortened}/old.jsonl`]: cadre, [`${shortened}/new.jsonl`]: cadre },
+    })
+    const run = memIo(world, {})
+    const listed = await listSessions(run.io, long)
+    expect(listed).toEqual({ sessions: [transcript('new.jsonl', 2), transcript('old.jsonl', 1)], total: 2 })
+    const scan = await scanHistory(run.io, long, listed?.sessions ?? [])
+    expect([scan.scanned, scan.counts]).toEqual([2, [{ name: 'cadre', count: 2 }]])
+    expect(run.reads).toEqual([`${shortened}/new.jsonl`, `${shortened}/old.jsonl`])
+  })
+
+  test('a session folder of 200 characters or fewer is listed and read with no extra listing', async () => {
+    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), {})
+    const listed = await listSessions(run.io, DIR)
+    await scanHistory(run.io, DIR, listed?.sessions ?? [])
+    expect([run.listed, run.reads]).toEqual([[DIR], [`${DIR}/a.jsonl`]])
+  })
+
   test('countNames keeps the slash commands and Skill calls of the example with counts, and nothing else', () => {
     expect(countsOf(EXAMPLE)).toEqual({ 'gsd-plan-phase': 1, 'superpowers:brainstorming': 1, cadre: 1 })
   })

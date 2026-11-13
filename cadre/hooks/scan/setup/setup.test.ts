@@ -830,6 +830,20 @@ describe('setup consent and instructions', () => {
     expect(same.listed.filter(path => path === MEMORY_DIR)).toEqual([MEMORY_DIR])
   })
 
+  test('a root whose encoded name is over 200 characters lists the memory of its shortened folder', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
+    const memory = `/home/u/.claude/projects/${name}/memory`
+    const dirs = { '/home/u/.claude/projects': [entry(name, 'dir')], [memory]: [entry('long.md'), entry('x.txt')] }
+    const run = memIo(memWorld({ dirs }), [])
+    const scan = await scanSetup(run.io, { ...CTX, root, givenRoot: root }, false)
+    expect(scan.memoryFiles).toEqual(['long.md'])
+    expect(run.listed.filter(path => path === memory)).toEqual([memory])
+    const short = memIo(memWorld({ dirs: { [MEMORY_DIR]: [entry('mine.md')] } }), [])
+    await scanSetup(short.io, CTX, false)
+    expect(short.listed).not.toContain('/home/u/.claude/projects')
+  })
+
   test('a memory folder that cannot be listed warns, and one that is not there does not', async () => {
     const unreadable = await scanOf(memWorld({ unknownPaths: [MEMORY_DIR] }))
     expect(unreadable.warnings).toEqual(['could not read ~/.claude/projects/-repo/memory (treated as unknown)'])
