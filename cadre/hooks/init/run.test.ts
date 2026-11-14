@@ -45,7 +45,6 @@ import {
   installedLine,
   installFailureText,
   MARKETPLACE_ADD_ARGV,
-  projectInstallFailureText,
   projectInstallOf,
 } from '../apply/installs'
 import {
@@ -5225,9 +5224,9 @@ describe('a consented framework install after Confirm', () => {
   }
   /** An install run that exited 1. */
   const FAILED_INSTALL: HostRun = { exitCode: 1, stdout: '', stderr: 'npm ERR! network' }
-  /** What GSD's fallback line ends with: its command, then init again. */
-  const GSD_FALLBACK_END = `: run ${GSD_PROJECT_INSTALL.join(' ')} from the repo root, then /cadre init again`
-  /** The problem line of a GSD install that detection does not show, with be alone on GSD. */
+  /** What GSD's fallback line ends with: its command, then /cadre frameworks again. */
+  const GSD_FALLBACK_END = `: run ${GSD_PROJECT_INSTALL.join(' ')} from the repo root, then /cadre frameworks again`
+  /** The problem line of a GSD install that did not land, with be alone on GSD. */
   const GSD_FALLBACK_BE = `GSD did not install, so role be fell back to none (built-in)${GSD_FALLBACK_END}`
   /** The review line of the superpowers install. */
   const SUPERPOWERS_REVIEW_LINE =
@@ -5381,7 +5380,7 @@ describe('a consented framework install after Confirm', () => {
     expect([installed.problems, frameworkLineOf(installed.host, 'be')]).toEqual([[], 'Framework: GSD.'])
   })
 
-  test('detection decides, not the exit code: exit 0 unseen falls back, exit 1 shown is installed', async () => {
+  test('re-read facts decide, not the exit code: exit 0 unseen falls back, exit 1 shown is installed', async () => {
     const unseen = await applied(gsdDraft(['gsd', 'none']))
     const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
     const shown = await applied(gsdDraft(['gsd', 'none']), failing, ['gsd'])
@@ -5394,24 +5393,29 @@ describe('a consented framework install after Confirm', () => {
     ])
   })
 
-  test('a kept GSD in use whose install did not land gives its command; be and the default stay on GSD', async () => {
+  test('a kept GSD in use whose install did not land falls back, be and the default with it', async () => {
     const { host, problems, installed } = await applied(gsdDraft(['gsd', 'none'], 'gsd'), [], [], [PLANNING])
-    const install = projectInstallOf('gsd')
-    const failure = install === null ? [] : [projectInstallFailureText(install)]
-    expect([failure.length, problems, installed]).toEqual([1, failure, []])
-    expect(['be', 'tl'].map(id => frameworkLineOf(host, id))).toEqual(['Framework: GSD.', 'Framework: GSD.'])
+    const line = `GSD did not install, so role be and the repo default fell back to none (built-in)${GSD_FALLBACK_END}`
+    expect([problems, installed]).toEqual([[line], []])
+    expect(['be', 'tl'].map(id => frameworkLineOf(host, id))).toEqual(['Framework: built-in.', 'Framework: built-in.'])
   })
 
-  test('a kept superpowers in use whose install did not land keeps its plugin key enabled for its role', async () => {
+  test('a kept superpowers in use whose install did not land falls back and drops its plugin key', async () => {
     const inUse: RepoEntry = { name: '.superpowers', kind: 'dir', isLink: false }
     const key = 'superpowers@claude-plugins-official'
-    const { host, problems, installed } = await applied(superpowersDraft(['superpowers']), [], [], [inUse])
-    const install = projectInstallOf('superpowers')
-    const failure = install === null ? [] : [projectInstallFailureText(install)]
+    const draft: Draft = { ...superpowersDraft(['superpowers']), frameworkSet: ['superpowers'] }
+    const { host, problems, installed } = await applied(draft, [], [], [inUse])
+    const command = SUPERPOWERS_PROJECT_INSTALL.join(' ')
+    const line =
+      `superpowers did not install, so role be fell back to none (built-in): run ${command} ` +
+      'from the repo root, then /cadre frameworks again'
     const settings = host.writes.find(write => write.path === '/repo/.cadre/be/settings.json')?.text ?? ''
-    expect([failure.length, problems, installed]).toEqual([1, failure, []])
-    const enabled = settings.includes(`"${key}": true`)
-    expect([enabled, frameworkLineOf(host, 'be')]).toEqual([true, 'Framework: superpowers.'])
+    const json = cadreJsonOf(host)
+    const frameworks = typeof json === 'object' && json !== null && 'frameworks' in json ? json.frameworks : undefined
+    expect([problems, installed, frameworkLineOf(host, 'be')]).toEqual([[line], [], 'Framework: built-in.'])
+    expect(settings.length).toBeGreaterThan(0)
+    expect(settings).not.toContain(key)
+    expect(frameworks).toEqual([])
   })
 
   test('a kept GSD in use whose install landed is named among the installed, with no problem line', async () => {
@@ -5427,7 +5431,7 @@ describe('a consented framework install after Confirm', () => {
     expect(problems).toEqual([line])
   })
 
-  test('a framework install that detection shows is named among the installed, with no problem line', async () => {
+  test('a framework install that landed is named among the installed, with no problem line', async () => {
     const { problems, installed } = await applied(superpowersDraft(['superpowers']), [], ['superpowers'])
 
     expect([problems, installed]).toEqual([[], ['superpowers@claude-plugins-official']])
@@ -5443,7 +5447,7 @@ describe('a consented framework install after Confirm', () => {
     expect(keys).toEqual([['superpowers@claude-plugins-official'], [], [], []])
   })
 
-  test('a consented plugin install that detection shows is enabled for its role, whatever its exit code', async () => {
+  test('a consented plugin install that landed is enabled for its role, whatever its exit code', async () => {
     const draft = superpowersDraft(['superpowers'])
     const key = 'superpowers@claude-plugins-official'
     const failing = [{ argv: SUPERPOWERS_PROJECT_INSTALL, result: FAILED_INSTALL }]
@@ -7444,7 +7448,7 @@ describe('the file plan and apply of /cadre frameworks', () => {
     expect(parseRoleJson(written)?.framework).toBe('none')
   })
 
-  test('a kept GSD in use whose install did not land gives its command, and its roles stay on GSD', async () => {
+  test('a kept GSD in use whose install did not land falls back, its line naming /cadre frameworks', async () => {
     const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
     const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
     const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
@@ -7452,11 +7456,12 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const draft = await draftOf(world, roles, { repoDefault: 'none', frameworkInstalls: ['gsd'] })
     const { host, result } = await appliedIn(world, await reframedOf(world, draft))
     const outcome = result.kind === 'accepted' ? result.value.outcome : null
-    const install = projectInstallOf('gsd')
-    const failure = install === null ? [] : [projectInstallFailureText(install)]
     const written = host.writes.find(write => write.path === BE_ROLE_JSON)?.text ?? ''
-    expect([failure.length, outcome?.installProblems, outcome?.installed]).toEqual([1, failure, []])
-    expect(parseRoleJson(written)?.framework).toBe('gsd')
+    expect(outcome?.installProblems).toEqual([
+      `GSD did not install, so role be fell back to none (built-in): run ${GSD_PROJECT_INSTALL.join(' ')} ` +
+        'from the repo root, then /cadre frameworks again',
+    ])
+    expect([outcome?.installed, parseRoleJson(written)?.framework]).toEqual([[], 'none'])
   })
 })
 

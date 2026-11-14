@@ -188,8 +188,8 @@ describe('the fallback line of a framework install', () => {
     fallback: 'none (built-in)',
     rerun: 'init',
   }
-  /** How every fallback line ends: the command to run, then init again. */
-  const END = `: run ${COMMAND} from the repo root, then /cadre init again`
+  /** How every fallback line ends: the command to run, then /cadre frameworks again. */
+  const END = `: run ${COMMAND} from the repo root, then /cadre frameworks again`
 
   test('it names the roles and the repo default that fell back, and to what, then the command to run', () => {
     expect([
