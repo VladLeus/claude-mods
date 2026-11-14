@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { appendFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, idleTui, isDialogScreen, waitTui } from '../../lib/claude.ts'
+import { answer, dialogOptions, dialogText, idleTui, isDialogScreen, waitTui } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { rowTest } from '../../lib/row.ts'
 import { capture, killServer, socketName, startServer, WAIT_MS } from '../../lib/tmux.ts'
@@ -16,15 +16,13 @@ const ADDED_PREFIX = 'e2e hand-added line'
 const KEEP_MINE = 'Keep mine'
 const TAKE_NEW = 'Take new'
 const NEXT_PAGE = 'Next page'
-const PAGE_RE = /page ([0-9]+) of ([0-9]+)/g
-const DIFF_ROW_RE = new RegExp(`[+-] ${ADDED_PREFIX} [0-9]{3}`)
+const PREVIOUS_PAGE = 'Previous page'
+const LAST_PAGE = 'Last page'
+const DIFF_NUMBER_RE = new RegExp(`- ${ADDED_PREFIX} ([0-9]{3})`, 'g')
+const MORE_ABOVE_RE = /\+[0-9]+ more above/
 const MAX_PAGES = 60
+const NAMED_LINES = 5
 const WHITESPACE_RE = /\s+/g
-
-type Page = {
-  readonly page: number
-  readonly count: number
-}
 
 function squashed(text: string): string {
   return text.replace(WHITESPACE_RE, ' ')
@@ -35,16 +33,12 @@ function addedLines(): string {
     .join('')
 }
 
-function isConflictScreen(screen: string): boolean {
-  return isDialogScreen(screen) && squashed(screen).includes(CONFLICT_QUESTION)
+function diffNumbers(dialog: string): readonly string[] {
+  return [...new Set([...dialog.matchAll(DIFF_NUMBER_RE)].flatMap(found => found[1] ?? []))].sort()
 }
 
-// The last page marker on screen is the open question's; a question that is not paged reads as page 1 of 1.
-function pageOf(screen: string): Page {
-  const found = [...screen.matchAll(PAGE_RE)].at(-1)
-  if (found === undefined) return { page: 1, count: 1 }
-
-  return { page: Number(found[1]), count: Number(found[2]) }
+function isConflictScreen(screen: string): boolean {
+  return isDialogScreen(screen) && squashed(dialogText(screen)).includes(CONFLICT_QUESTION)
 }
 
 rowTest(rowEntry('03.2#31'), async ctx => {
@@ -58,31 +52,72 @@ rowTest(rowEntry('03.2#31'), async ctx => {
   ctx.after(() => killServer(server))
   const pane = await cadreTui(server, copy, INIT_COMMAND)
   let screen = (await driveDialogs(pane, GSD_SCRIPT, APPLIED_REPLY, { stopAt: CONFLICT_QUESTION })).final
-  let at = pageOf(screen)
-  ctx.observe('conflictPages', at.count, 'the page count of the Keep mine / Take new question')
+  const isPaged = dialogOptions(screen).includes(NEXT_PAGE)
   await ctx.check('the Keep mine / Take new question is asked a page at a time', () => {
-    assert.ok(at.count > 1, 'the question over the long hand-edited ROLE.md is not paged')
+    assert.ok(isPaged, 'the question over the long hand-edited ROLE.md shows no Next page option')
   })
 
-  for (let seen = 1; ; seen += 1) {
-    if (seen > MAX_PAGES) throw new HarnessError(`the conflict question has more than ${MAX_PAGES} pages`)
-    const page = at
-    const shown = screen
-    ctx.screen(`the conflict question, page ${page.page} of ${page.count}`, shown)
-    await ctx.check(`page ${page.page} of ${page.count} names ${KEEP_MINE} and ${TAKE_NEW}`, () => {
-      assert.ok(shown.includes(KEEP_MINE) && shown.includes(TAKE_NEW), `the page lacks ${KEEP_MINE} or ${TAKE_NEW}`)
+  const firstPageOf = new Map<string, number>()
+  const repeated: string[] = []
+  let pages = 0
+  for (let page = 1; ; page += 1) {
+    if (page > MAX_PAGES) throw new HarnessError(`the conflict question has more than ${MAX_PAGES} pages`)
+    pages = page
+    const dialog = dialogText(screen)
+    const options = dialogOptions(screen)
+    const numbers = diffNumbers(dialog)
+    const isLast = !options.includes(NEXT_PAGE)
+    ctx.screen(`the conflict question, page ${page}`, screen)
+    for (const line of numbers) {
+      if (firstPageOf.has(line)) {
+        repeated.push(line)
+        continue
+      }
+      firstPageOf.set(line, page)
+    }
+    await ctx.check(`page ${page}: the question names ${KEEP_MINE} and ${TAKE_NEW}`, () => {
+      const text = squashed(dialog)
+      assert.ok(text.includes(KEEP_MINE) && text.includes(TAKE_NEW), `the question lacks ${KEEP_MINE} or ${TAKE_NEW}`)
     })
-    await ctx.check(`page ${page.page} of ${page.count} shows diff lines`, () => {
-      assert.match(shown, DIFF_ROW_RE, 'no diff line of the hand-added lines is on the page')
+    const offered = isLast
+      ? `${KEEP_MINE} and ${TAKE_NEW} as options`
+      : `${NEXT_PAGE} and ${LAST_PAGE} as options, not ${KEEP_MINE} or ${TAKE_NEW}`
+    await ctx.check(`page ${page} has ${offered}`, () => {
+      const listed = `the options are: ${options.join(', ')}`
+      if (isLast) {
+        assert.ok(options.includes(KEEP_MINE) && options.includes(TAKE_NEW), listed)
+        return
+      }
+      assert.ok(options.includes(NEXT_PAGE) && options.includes(LAST_PAGE), listed)
+      assert.ok(!options.includes(KEEP_MINE) && !options.includes(TAKE_NEW), listed)
+      if (page === 1) assert.ok(!options.includes(PREVIOUS_PAGE), listed)
     })
-    if (page.page >= page.count) break
-    const next = page.page + 1
+    await ctx.check(`page ${page} shows diff lines`, () => {
+      assert.ok(numbers.length > 0, 'no diff line of the hand-added lines is on the page')
+    })
+    await ctx.check(`page ${page} cuts no line`, () => {
+      assert.ok(!MORE_ABOVE_RE.test(dialog), 'the page shows a +N more above line')
+    })
+    if (isLast) break
+    const shown = numbers.join(',')
     await answer(pane, NEXT_PAGE)
-    const isNext = (current: string): boolean => isConflictScreen(current) && pageOf(current).page === next
-    await waitTui(pane, isNext, WAIT_MS, `page ${next} of the conflict question`)
+    const isNext = (current: string): boolean => {
+      if (!isConflictScreen(current)) return false
+      const next = diffNumbers(dialogText(current))
+
+      return next.length > 0 && next.join(',') !== shown
+    }
+    await waitTui(pane, isNext, WAIT_MS, `page ${page + 1} of the conflict question`)
     screen = await idleTui(pane)
-    at = pageOf(screen)
   }
+
+  ctx.observe('conflictPages', pages, 'the pages walked by Next page; no marker is drawn on the TUI default')
+  await ctx.check('every hand-added line is on exactly one page', () => {
+    const missing = Array.from({ length: ADDED_LINES }, (_, at) => String(at + 1).padStart(3, '0'))
+      .filter(line => !firstPageOf.has(line))
+    assert.equal(missing.length, 0, `lines on no page: ${missing.slice(0, NAMED_LINES).join(', ')}`)
+    assert.equal(repeated.length, 0, `lines on more than one page: ${repeated.slice(0, NAMED_LINES).join(', ')}`)
+  })
 
   await answer(pane, TAKE_NEW)
   await driveDialogs(pane, [], APPLIED_REPLY)
