@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isInputShowing, modelCallReason, STDERR_REASON_CHARS } from './claude.ts'
+import { dialogOptions, dialogText, isInputShowing, modelCallReason, STDERR_REASON_CHARS } from './claude.ts'
 
 const RULE = '─'.repeat(20)
 const COMMAND = '/cadre init'
@@ -8,6 +8,33 @@ const HOME = '/Users/unitperson'
 const SECRET = 'unit-secret-value-123'
 const IDENTITY = 'Unit Display Person'
 const BASE = 'model call failed: claude -p exited 1'
+const ANSWERED: readonly string[] = [
+  '❯ /cadre init',
+  '',
+  ' ☐ Frameworks',
+  '',
+  '⏺ cadre: - e2e hand-added line 001',
+  '⏺ cadre: - e2e hand-added line 002',
+  '',
+  RULE,
+]
+const PAGED_DIALOG: readonly string[] = [
+  ' ☐ Conflict',
+  '',
+  '│ .cadre/be/ROLE.md was changed outside cadre. Keep your version, or take the new one?',
+  '│ Keep mine leaves your edited file as it is; Take new writes the new version over it.',
+  '',
+  '❯ 1. Next page       ┌───────────────────────────────┐',
+  '  2. Last page       │ - e2e hand-added line 001     │',
+  '                     │ - e2e hand-added line 002     │',
+  '                     └───────────────────────────────┘',
+  '',
+  RULE,
+  '  Chat about this',
+  '',
+  'Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel',
+]
+const NO_DIALOG = ['⏺ cadre: done, and a ☐ inside a line is no header', '', RULE, '❯', RULE].join('\n')
 
 test('isInputShowing is true when the input box between two rules holds the typed text', () => {
   const screen = ['⏺ an earlier reply', '', RULE, `❯ ${COMMAND}`, RULE, '  ? for shortcuts'].join('\n')
@@ -68,4 +95,24 @@ test('modelCallReason cuts the stderr line to STDERR_REASON_CHARS after filterin
 
   assert.equal(reason, `${BASE}: ${lead}<secret> y`)
   assert.equal(reason.length, `${BASE}: `.length + STDERR_REASON_CHARS)
+})
+
+test('dialogText is the screen from the start of the last ☐ header line', () => {
+  const screen = [...ANSWERED, ...PAGED_DIALOG].join('\n')
+
+  assert.equal(dialogText(screen), PAGED_DIALOG.join('\n'))
+})
+
+test('dialogText is the whole screen when no line starts with a ☐ header', () => {
+  assert.equal(dialogText(NO_DIALOG), NO_DIALOG)
+})
+
+test('dialogOptions lists the option labels in the cursor column, cut before the preview box beside them', () => {
+  const screen = [...ANSWERED, ...PAGED_DIALOG].join('\n')
+
+  assert.deepEqual(dialogOptions(screen), ['Next page', 'Last page'])
+})
+
+test('dialogOptions is empty for a screen with no cursor row', () => {
+  assert.deepEqual(dialogOptions(NO_DIALOG), [])
 })
