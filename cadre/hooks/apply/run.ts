@@ -100,10 +100,10 @@ export type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories' | 'parts
  * - `hunkFailures`: each framework command that failed (D-106);
  * - `hunksNotRun`: each accepted hunk cadre did not run, for the person to run themselves; absent is none;
  * - `attended`: the required keys whose failed command made roles attended (D-106);
- * - `installed`: each framework install init's detection shows, by its install id, then each plugin key, a security
- *   plugin or claude-md-management, whose install ran after Confirm and exited 0;
- * - `installProblems`: the fallback line of each framework install init's detection does not show, then the text of
- *   each such plugin that was not installed, with the command to run by hand; never fatal to the apply;
+ * - `installed`: each framework install that landed, by its install id, then each plugin key, a security plugin or
+ *   claude-md-management, whose install ran after Confirm and exited 0;
+ * - `installProblems`: the fallback line of each framework install that did not land, then the text of each such
+ *   plugin that was not installed, with the command to run by hand; never fatal to the apply;
  * - `untrackedParts`: the warning of each source file whose repo parts were left out of the built files because git
  *   does not track it, or GIT_TRACKING_UNKNOWN_WARNING when git could not be asked (02-GAPS-B2 M3);
  * - `privateProblems`: the warning of each private file that was not written (G-02-1f): the privateWriteProblem text

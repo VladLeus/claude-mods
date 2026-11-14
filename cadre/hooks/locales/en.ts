@@ -689,9 +689,9 @@ export const EN = Object.freeze({
     'could not install {shown}: run it yourself from the repo root: {command}',
   'apply.installs.frameworkFallback':
     `{name} did not install, so {moved} fell back to {fallback}: run {command} from the repo root, ${
-    ''}then /cadre {rerun} again`,
+    ''}then /cadre frameworks again`,
   'apply.installs.frameworkFallbackNone':
-    '{name} did not install: run {command} from the repo root, then /cadre {rerun} again',
+    '{name} did not install: run {command} from the repo root, then /cadre frameworks again',
   'apply.installs.fallbackRoles.one': 'role {ids}',
   'apply.installs.fallbackRoles.other': 'roles {ids}',
   'apply.installs.fallbackDefault': 'the repo default',

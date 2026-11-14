@@ -186,7 +186,6 @@ describe('the fallback line of a framework install', () => {
     roles: [],
     isRepoDefault: false,
     fallback: 'none (built-in)',
-    rerun: 'init',
   }
   /** How every fallback line ends: the command to run, then /cadre frameworks again. */
   const END = `: run ${COMMAND} from the repo root, then /cadre frameworks again`

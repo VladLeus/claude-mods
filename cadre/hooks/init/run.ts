@@ -60,7 +60,7 @@ import { applySteps, planMismatchProblem } from '../apply/steps'
 import { repoFrameworks } from '../core/framework-id'
 import { sha256Hex } from '../core/hash'
 import { needsGsdCheck, provenUserDir, withGsdIdentity } from '../framework/gsd/identity'
-import { adapterOf, detectAll } from '../framework/registry'
+import { adapterOf } from '../framework/registry'
 import { roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { trackedParts } from '../generate/gittrack'
@@ -111,7 +111,7 @@ import { consentedPluginKeys, initFrameworks, planState, privatesOf, repoPartsOf
 import type { PlanStepInput } from './initplan'
 import { frameworksState, initialState, nextStage } from './machine'
 import { cancelledText, frameworksInEpicReply } from './replies'
-import { FRAMEWORK_LABELS, gsdCheckAsk, installedFrameworks } from './stages/frameworks'
+import { FRAMEWORK_LABELS, gsdCheckAsk } from './stages/frameworks'
 import type {
   Answer,
   Applied,
@@ -415,13 +415,12 @@ function withoutFailedGrill(roles: readonly RoleSpec[], failed: readonly Project
 }
 
 /**
- * One problem line per consented framework install that detection does not show, in `failed` order: the roles and
- * the repo default on it, what they fell back to (fallbackOf), and the command to run before `rerun` runs again.
+ * One problem line per consented framework install that did not land, in `failed` order: the roles and the repo
+ * default on it, what they fell back to (fallbackOf), and the command to run.
  */
 function fallbackProblems(
   draft: Pick<Draft, 'roles' | 'repoDefault' | 'frameworkSet' | 'installed'>,
   failed: readonly FrameworkId[],
-  rerun: 'init' | 'frameworks',
 ): string[] {
   const fallback = FRAMEWORK_LABELS[fallbackOf(draft, failed)]
 
@@ -434,7 +433,6 @@ function fallbackProblems(
       roles: draft.roles.filter(role => role.framework === id).map(role => role.id),
       isRepoDefault: draft.repoDefault === id,
       fallback,
-      rerun,
     }
 
     return [frameworkFallbackText(fallen)]
@@ -473,8 +471,8 @@ async function askedConflicts(
 
 /**
  * Runs the consented framework installs, then the consented project plugin installs, in one project-scope call, and
- * reads the facts again when a framework install ran, since only they tell whether it worked: `failed` holds those
- * the facts do not show, and `unlanded` those the facts show in use but still not installed, which stay recorded.
+ * reads the facts again when a framework install ran, since only they tell whether it worked: `failed` holds the
+ * installs whose framework is still not installed once the facts are read again, and `landed` the others.
  */
 async function projectInstalled(
   io: InitIo,
@@ -493,7 +491,7 @@ async function projectInstalled(
 ): Promise<{
   readonly scanned: Gathered
   readonly failed: readonly FrameworkId[]
-  readonly unlanded: readonly FrameworkId[]
+  readonly landed: readonly FrameworkId[]
   readonly roles: readonly RoleSpec[]
   readonly repoDefault: FrameworkId | null
   readonly landedPlugins: readonly ProjectInstall[]
@@ -511,17 +509,14 @@ async function projectInstalled(
   const projectInstalls = [...frameworkInstalls, ...pluginInstalls]
   const projected = await installProject(host, locations.root, locations.home, projectInstalls)
   const scanned = frameworkInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
-  const found = installedFrameworks(detectAll(scanned.facts.facts))
-  const failed = (draft.frameworkInstalls ?? []).filter(id => !found.includes(id))
-  const unlanded = (draft.frameworkInstalls ?? []).filter(
-    id => found.includes(id) && !adapterOf(id).isInstalled(scanned.facts.facts),
-  )
+  const failed = (draft.frameworkInstalls ?? []).filter(id => !adapterOf(id).isInstalled(scanned.facts.facts))
+  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id))
   const landedPlugins = pluginInstalls.filter(install => projected.installed.includes(install.id))
   const failedPlugins = pluginInstalls.filter(install => !projected.installed.includes(install.id))
   const fallen = withoutFailedInstalls(draft, failed)
   const roles = withoutFailedGrill(fallen.roles, failedPlugins)
 
-  return { scanned, failed, unlanded, roles, repoDefault: fallen.repoDefault, landedPlugins, failedPlugins }
+  return { scanned, failed, landed, roles, repoDefault: fallen.repoDefault, landedPlugins, failedPlugins }
 }
 
 /**
@@ -596,13 +591,13 @@ async function compiledAfter(
  * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
  *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again, and
  *    only they tell whether an install worked, never its exit code. A consented plugin install that the facts show
- *    joins the setup as step 4's plugins do (consentedPluginKeys). An install whose framework the facts do not show
- *    failed: a role or repo default on it falls back (withoutFailedInstalls), cadre.json records the frameworks and
- *    sizing without it (initFrameworks), and the reply names who fell back to what and the command to run
- *    (fallbackProblems). The plugins the person consented to install at project scope (draft.projectPluginInstalls)
- *    run in the same call, after the frameworks; one that installProject does not report installed prints its
- *    command (projectInstallFailureText), and when it is mattpocock-skills every PM loses the grill skills
- *    (withoutFailedGrill); the ones installed join the setup.
+ *    joins the setup as step 4's plugins do (consentedPluginKeys). An install whose framework is still not installed
+ *    when the facts are read again failed: a role or repo default on it falls back (withoutFailedInstalls), cadre.json
+ *    records the frameworks and sizing without it (initFrameworks), and the reply names who fell back to what and the
+ *    command to run (fallbackProblems). The plugins the person consented to install at project scope
+ *    (draft.projectPluginInstalls) run in the same call, after the frameworks; one that installProject does not report
+ *    installed prints its command (projectInstallFailureText), and when it is mattpocock-skills every PM loses the
+ *    grill skills (withoutFailedGrill); the ones installed join the setup.
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -648,9 +643,8 @@ async function compiledAfter(
  *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
  *    offered, its label is set before the writes and again before each improver run (IMPROVER_PROGRESS, D-284, S-02).
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
- *    framework installs the facts show installed by install id and then the plugins installed (installed), the
- *    fallback line of each framework install they do not show, the command of each they show in use but not installed
- *    and the problems of step 4 (installProblems), the untracked-parts
+ *    framework installs that landed by install id and then the plugins installed (installed), the fallback line of
+ *    each that did not and the problems of step 4 (installProblems), the untracked-parts
  *    warnings of 5a (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and
  *    tally of 6a (improverWarnings, improved), which the reply prints, each failure with the command to run.
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
@@ -666,7 +660,7 @@ async function applyConfirmed(
   if (asked.kind === 'cancelled') return asked
   const choices = asked.value
   const ran = await projectInstalled(io, host, draft)
-  const { scanned, failed, unlanded, roles, repoDefault, landedPlugins, failedPlugins } = ran
+  const { scanned, failed, landed, roles, repoDefault, landedPlugins, failedPlugins } = ran
   const { failures, hunks, notRun } = await hunksRan(io, host, draft)
   const installCount = countsText([['plugins', draft.pluginInstalls.length]])
   if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
@@ -675,8 +669,6 @@ async function applyConfirmed(
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
       : await installPlugins(host, locations.home, draft.pluginInstalls)
   const landedKeys = landedPlugins.map(install => install.id)
-  // A consented framework install that has not landed keeps its key enabled, so the roles load the plugin once the
-  // person runs the printed install command.
   const setup = setupAfterInstalls(gathered.setup, [
     ...installs.installed,
     ...consentedPluginKeys(draft, failed),
@@ -716,8 +708,6 @@ async function applyConfirmed(
       ? await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
       : { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
-  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id) && !unlanded.includes(id))
-  const unlandedProblems = unlanded.flatMap(id => projectInstallOf(id) ?? []).map(projectInstallFailureText)
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
@@ -725,8 +715,7 @@ async function applyConfirmed(
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...landedKeys, ...installs.installed],
     installProblems: [
-      ...fallbackProblems(draft, failed, 'init'),
-      ...unlandedProblems,
+      ...fallbackProblems(draft, failed),
       ...failedPlugins.map(projectInstallFailureText),
       ...installs.installProblems,
     ],
@@ -740,19 +729,17 @@ async function applyConfirmed(
 /**
  * Writes the plan of /cadre frameworks the person confirmed, in this order: the Keep mine or Take new question of
  * each conflicted file, the consented framework installs with the facts read again (a role or the repo default on one
- * that failed falls back; one in use but still not installed keeps its roles and is reported), the accepted hunks,
- * the scopes compiled again from the setup after the installs, and the plan made again from the disk (reframePlan),
- * written through the host with the manifest last; a plan whose ops and files disagree writes nothing. No private
- * file is written, no improver and no git command runs.
+ * that failed falls back), the accepted hunks, the scopes compiled again from the setup after the installs, and the
+ * plan made again from the disk (reframePlan), written through the host with the manifest last; a plan whose ops and
+ * files disagree writes nothing. No private file is written, no improver and no git command runs.
  */
 export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframed): Promise<StepResult<Applied>> {
   const { draft } = reframed
   const { locations, gathered, launchStart } = draft
   const asked = await askedConflicts(io, locations.root, reframed.planned)
   if (asked.kind === 'cancelled') return asked
-  const { scanned, failed, unlanded, roles, repoDefault } = await projectInstalled(io, host, draft)
+  const { scanned, failed, landed, roles, repoDefault } = await projectInstalled(io, host, draft)
   const { failures, hunks, notRun } = await hunksRan(io, host, draft)
-  // A consented framework install that has not landed keeps its key enabled, as in applyConfirmed.
   const setup = setupAfterInstalls(gathered.setup, consentedPluginKeys(draft, failed))
   const recorded = initFrameworks(draft, failed)
   const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
@@ -775,15 +762,13 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
       ? await writeSteps(io, host, locations, steps, new Set())
       : { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
-  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id) && !unlanded.includes(id))
-  const unlandedProblems = unlanded.flatMap(id => projectInstallOf(id) ?? []).map(projectInstallFailureText)
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
     hunksNotRun: notRun,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: landed.flatMap(id => projectInstallOf(id)?.id ?? []),
-    installProblems: [...fallbackProblems(draft, failed, 'frameworks'), ...unlandedProblems],
+    installProblems: fallbackProblems(draft, failed),
   }
 
   return accepted({ planned, outcome })
