@@ -13,12 +13,13 @@ import type { LiveRepo } from '../lib/session.ts'
 import { rowEntry } from '../rows.ts'
 
 const EXPECTED_FALLBACK =
-  '{name} did not install, so {moved} fell back to {fallback}: run {command} from the repo root, then /cadre init again'
+  '{name} did not install, so {moved} fell back to {fallback}: run {command} from the repo root, ' +
+  'then /cadre frameworks again'
 const INIT_COMMAND = '/cadre init'
 const GSD_COMMAND = 'npx -y @opengsd/gsd-core@latest --claude --local'
 // The repo has superpowers and adds GSD, so the roles that fall back from GSD land on superpowers.
 const FALLBACK_FRAMEWORK = 'superpowers'
-const FALLBACK_LINE_RE = /GSD did not install, so .*? then \/cadre init again/
+const FALLBACK_LINE_RE = /GSD did not install, so .*? then \/cadre frameworks again/
 const APPLIED_LINE_RE = /Applied: wrote [0-9]+ files?/
 const WHITESPACE_RE = /\s+/g
 
@@ -89,13 +90,16 @@ rowTest(rowEntry('03.2#4'), async ctx => {
 
   const line = FALLBACK_LINE_RE.exec(squashed(reply))?.[0] ?? null
   await ctx.check('the reply holds the fallback line of the failed GSD install', () => {
-    assert.ok(line !== null, 'the reply has no line "GSD did not install, so ... then /cadre init again"')
+    assert.ok(line !== null, 'the reply has no line "GSD did not install, so ... then /cadre frameworks again"')
   })
   if (line === null) return
 
   const fallen = await fallenRoles(copy)
-  await ctx.check('the fallback line prints the command to run from the repo root, then /cadre init again', () => {
-    assert.ok(line.includes(`run ${GSD_COMMAND} from the repo root, then /cadre init again`), `the line is: ${line}`)
+  await ctx.check('the fallback line prints the command to run, then /cadre frameworks again', () => {
+    assert.ok(
+      line.includes(`run ${GSD_COMMAND} from the repo root, then /cadre frameworks again`),
+      `the line is: ${line}`,
+    )
   })
   await ctx.check('the fallback line names the roles that fell back', () => {
     assert.ok(fallen.length > 0, `no role.json names ${FALLBACK_FRAMEWORK}: no role fell back`)

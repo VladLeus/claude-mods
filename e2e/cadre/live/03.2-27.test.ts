@@ -13,12 +13,13 @@ import { npxShim } from '../lib/shims.ts'
 import { rowEntry } from '../rows.ts'
 
 const EXPECTED_FALLBACK =
-  '{name} did not install, so {moved} fell back to {fallback}: run {command} from the repo root, then /cadre init again'
+  '{name} did not install, so {moved} fell back to {fallback}: run {command} from the repo root, ' +
+  'then /cadre frameworks again'
 const INIT_COMMAND = '/cadre init'
 const GSD_COMMAND = 'npx -y @opengsd/gsd-core@latest --claude --local'
 // The repo has superpowers and adds GSD, so the roles that fall back from GSD land on superpowers.
 const FALLBACK_FRAMEWORK = 'superpowers'
-const FALLBACK_LINE_RE = /GSD did not install, so .*? then \/cadre init again/
+const FALLBACK_LINE_RE = /GSD did not install, so .*? then \/cadre frameworks again/
 const INSTALLED_LINE_RE = /Installed [^:]+: run \/reload-plugins to load (?:it|them) in this session\./
 const WHITESPACE_RE = /\s+/g
 
@@ -82,7 +83,7 @@ rowTest(rowEntry('03.2#27'), async ctx => {
 
   const line = FALLBACK_LINE_RE.exec(squashed(reply))?.[0] ?? null
   await ctx.check('the reply holds the fallback line of the GSD install that detection does not show', () => {
-    assert.ok(line !== null, 'the reply has no line "GSD did not install, so ... then /cadre init again"')
+    assert.ok(line !== null, 'the reply has no line "GSD did not install, so ... then /cadre frameworks again"')
   })
   if (line !== null) {
     const fallen = await fallenRoles(copy)
