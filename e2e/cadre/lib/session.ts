@@ -8,6 +8,7 @@ import {
   answerOther,
   claudeBin,
   configDir,
+  dialogText,
   dismiss,
   idleTui,
   isAppDialog,
@@ -46,7 +47,6 @@ const MCP_ADD_MS = 60_000
 const EXIT_COMMAND = '/exit'
 const INIT_COMMAND = '/cadre init'
 const WHITESPACE_RE = /\s+/g
-const HEADER_RE = /^ *☐ /gm
 const HAIKU = 'haiku'
 const MEDIUM = 'medium'
 const REPLY_PREFIX = 'cadre: '
@@ -387,21 +387,14 @@ async function respond(pane: Pane, given: DialogAnswer): Promise<void> {
   await answerOther(pane, given.other)
 }
 
-// The dialog is drawn under its `☐ <header>` line, below the transcript that still holds the answered questions.
-function activeText(screen: string): string {
-  const header = [...screen.matchAll(HEADER_RE)].at(-1)
-
-  return header === undefined ? screen : screen.slice(header.index)
-}
-
 function entryOn(screen: string, script: readonly DialogEntry[], from: number): number {
-  const text = squashed(activeText(screen))
+  const text = squashed(dialogText(screen))
 
   return script.findIndex((entry, index) => index >= from && text.includes(squashed(entry.question)))
 }
 
 function isQuestionOn(screen: string, question: string | undefined): boolean {
-  return question !== undefined && squashed(activeText(screen)).includes(squashed(question))
+  return question !== undefined && squashed(dialogText(screen)).includes(squashed(question))
 }
 
 function budgetLeft(deadline: number, screen: string): number {

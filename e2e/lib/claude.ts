@@ -251,6 +251,7 @@ const NUMBER_RE = /^[0-9]+\.\s+/
 const OTHER_LABELS: readonly string[] = ['Other', 'Type something.']
 const DIALOG_CURSOR_RE = /^\s*❯ +\S/m
 const DIALOG_FOOTER_RE = /Esc to cancel|Enter to (?:select|confirm)|↑\/↓ to navigate/
+const DIALOG_HEADER_RE = /^ *☐ /gm
 const NOTES_KEY = 'n'
 const GAP_RE = /\s{3,}/
 const WRAPPED_MIN_CHARS = 6
@@ -388,6 +389,16 @@ async function moveCursor(pane: Pane, screen: string, pick: Pick, name: string):
 // The left column of a previewed dialog is narrow, so a long label wraps and only its first line is the option's text.
 function visibleLabel(option: OptionLine): string {
   return option.label.split(GAP_RE)[0] ?? ''
+}
+
+export function dialogText(screen: string): string {
+  const header = [...screen.matchAll(DIALOG_HEADER_RE)].at(-1)
+
+  return header === undefined ? screen : screen.slice(header.index)
+}
+
+export function dialogOptions(screen: string): readonly string[] {
+  return optionLines(screen).map(visibleLabel)
 }
 
 function labelPick(label: string): Pick {
