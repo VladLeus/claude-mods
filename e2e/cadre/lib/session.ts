@@ -19,7 +19,7 @@ import {
   TUI_READY,
   waitTui,
 } from '../../lib/claude.ts'
-import { liveEnv, scratchEnv, SYSTEM_PATH } from '../../lib/env.ts'
+import { fenceBin, liveEnv, scratchEnv, SYSTEM_PATH } from '../../lib/env.ts'
 import type { ChildEnv } from '../../lib/env.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
@@ -30,7 +30,7 @@ import { run } from '../../lib/proc.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import type { RowContext } from '../../lib/row.ts'
 import { scratchRoot } from '../../lib/scratch.ts'
-import { shellQuote } from '../../lib/shims.ts'
+import { initEventOf, recordShim, shellQuote } from '../../lib/shims.ts'
 import { importSource } from '../../lib/source.ts'
 import { killServer, matches, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
 import type { Matcher, Pane, Server } from '../../lib/tmux.ts'
@@ -177,6 +177,31 @@ export async function nonPosixShell(): Promise<string | null> {
 // The launcher with --probe, run from the git root in the live env so its claude calls pass the claude fence.
 export async function runProbe(copy: LiveRepo, id: string, env: ChildEnv = copy.env): Promise<RunResult> {
   return run([join(copy.repo, '.cadre', 'bin', id), '--probe'], { cwd: copy.repo, env, timeoutMs: PROBE_MS })
+}
+
+export async function recordedProbe(ctx: RowContext, copy: LiveRepo, id: string): Promise<RunResult> {
+  const dir = join(ctx.scratch, `probe-${id}`)
+  const out = join(dir, 'stdout.jsonl')
+  const shimDir = join(dir, 'bin')
+  try {
+    await recordShim(shimDir, fenceBin(), out)
+  } catch (error) {
+    if (error instanceof HarnessError) throw error
+    ctx.observe(`${id}InitLists`, `not recorded: ${error instanceof Error ? error.name : 'Error'}`)
+    return runProbe(copy, id)
+  }
+  const result = await runProbe(copy, id, { ...copy.env, PATH: `${shimDir}:${copy.env.PATH ?? ''}` })
+  const event = initEventOf(await readFile(out, 'utf8').catch(() => ''))
+  if (event === null) {
+    ctx.observe(`${id}InitLists`, 'not recorded: no init event in the probe output')
+    return result
+  }
+  const evidence = (list: string): string =>
+    `the ${list} list of the init event of the ${id} probe, with the role's per-skill denies in place`
+  ctx.observe(`${id}InitSkills`, [...event.skills], evidence('skills'))
+  ctx.observe(`${id}InitSlashCommands`, [...event.slashCommands], evidence('slash_commands'))
+
+  return result
 }
 
 // A project hook that appends one `SessionStart` line to `logFile` each time a session of the repo starts.
