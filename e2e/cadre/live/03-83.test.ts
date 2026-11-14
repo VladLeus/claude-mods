@@ -220,6 +220,12 @@ rowTest(rowEntry('03#83'), async ctx => {
   })
   const hookLines = verdicts.filter(line => line.includes('security-guidance'))
   ctx.observe('probeNamesSecurityGuidance', hookLines.length > 0, hookLines.join('\n') || 'no probe line names it')
+  ctx.observe(
+    'pmInitLists',
+    'not recorded: no per-skill denies in this row',
+    'PM is not started here and the grill install is declined, so no role has per-skill denies; ' +
+    `PM's init lists are recorded at 03.2#30`,
+  )
 })
 
 rowTest(rowEntry('03#87'), async ctx => {
