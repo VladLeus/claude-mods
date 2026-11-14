@@ -14,9 +14,16 @@ import { rowEntry } from '../rows.ts'
 const INIT_COMMAND = '/cadre init'
 const CONFIG_FILE = join('.planning', 'config.json')
 const ACCEPTED_KEY = 'mode'
-const ACCEPTED_VALUE = 'yolo'
 const DECLINED_KEYS: readonly string[] = ['workflow.text_mode', 'hooks.context_warnings']
 const REQUIRED_HUNKS: readonly string[] = [ACCEPTED_KEY, 'workflow.text_mode']
+const EXPECTED_NOT_RUN_LINE =
+  'warning: the .planning/config.json change mode was not run by cadre: ' +
+  'run this yourself: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+const WHITESPACE_RE = /\s+/g
+
+function squashed(text: string): string {
+  return text.replace(WHITESPACE_RE, ' ')
+}
 
 function parseJson(text: string | null): unknown {
   if (text === null) return null
@@ -70,8 +77,11 @@ rowTest(rowEntry('03.2#22'), async ctx => {
   const text = await readFile(join(copy.repo, CONFIG_FILE), 'utf8').catch(() => null)
   ctx.evidence('.planning/config.json after the init', text ?? 'absent or unreadable')
   const config = parseJson(text)
-  await ctx.check(`the accepted hunk is written: ${ACCEPTED_KEY} = ${ACCEPTED_VALUE}`, () => {
-    assert.equal(configValue(config, ACCEPTED_KEY), ACCEPTED_VALUE, `${ACCEPTED_KEY} is not ${ACCEPTED_VALUE}`)
+  await ctx.check(`the accepted hunk is not written by cadre: ${ACCEPTED_KEY} is not set`, () => {
+    assert.equal(configValue(config, ACCEPTED_KEY), undefined, `.planning/config.json holds ${ACCEPTED_KEY}`)
+  })
+  await ctx.check(`the reply holds the not-run line for the accepted ${ACCEPTED_KEY} hunk`, () => {
+    assert.ok(squashed(reply).includes(EXPECTED_NOT_RUN_LINE), `the reply does not hold: ${EXPECTED_NOT_RUN_LINE}`)
   })
   await ctx.check('the declined hunks are not written', () => {
     const written = DECLINED_KEYS.filter(key => configValue(config, key) !== undefined)
