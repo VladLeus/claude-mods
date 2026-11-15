@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { dialogOptions, dialogText, isInputShowing, modelCallReason, STDERR_REASON_CHARS } from './claude.ts'
+import {
+  dialogOptions,
+  dialogText,
+  initEventOf,
+  initLineOf,
+  isInputShowing,
+  modelCallReason,
+  squashed,
+  STDERR_REASON_CHARS,
+} from './claude.ts'
 
 const RULE = '─'.repeat(20)
 const COMMAND = '/cadre init'
@@ -35,6 +44,10 @@ const PAGED_DIALOG: readonly string[] = [
   'Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel',
 ]
 const NO_DIALOG = ['⏺ cadre: done, and a ☐ inside a line is no header', '', RULE, '❯', RULE].join('\n')
+
+function initLine(fields: Record<string, unknown>): string {
+  return JSON.stringify({ type: 'system', subtype: 'init', ...fields })
+}
 
 test('isInputShowing is true when the input box between two rules holds the typed text', () => {
   const screen = ['⏺ an earlier reply', '', RULE, `❯ ${COMMAND}`, RULE, '  ? for shortcuts'].join('\n')
@@ -107,6 +120,14 @@ test('dialogText is the whole screen when no line starts with a ☐ header', () 
   assert.equal(dialogText(NO_DIALOG), NO_DIALOG)
 })
 
+test('squashed folds each run of spaces, tabs and line breaks into one space', () => {
+  assert.equal(squashed('Keep  mine\n  and\tTake new'), 'Keep mine and Take new')
+})
+
+test('squashed keeps a leading and a trailing run as one space each', () => {
+  assert.equal(squashed('\n  cadre: done \n'), ' cadre: done ')
+})
+
 test('dialogOptions lists the option labels in the cursor column, cut before the preview box beside them', () => {
   const screen = [...ANSWERED, ...PAGED_DIALOG].join('\n')
 
@@ -115,4 +136,49 @@ test('dialogOptions lists the option labels in the cursor column, cut before the
 
 test('dialogOptions is empty for a screen with no cursor row', () => {
   assert.deepEqual(dialogOptions(NO_DIALOG), [])
+})
+
+test('initLineOf gives the first system init line as printed and as parsed, past other events', () => {
+  const first = initLine({ skills: ['p:s'], slash_commands: ['c'] })
+  const text = [
+    JSON.stringify({ type: 'system', subtype: 'hook_started' }),
+    first,
+    initLine({ skills: ['later'], slash_commands: [] }),
+  ].join('\n')
+
+  assert.deepEqual(initLineOf(text), { raw: first, event: JSON.parse(first) })
+})
+
+test('initLineOf skips an init event of another type and a line that is not JSON', () => {
+  const real = initLine({ skills: [] })
+  const text = [
+    JSON.stringify({ type: 'assistant', subtype: 'init', skills: ['wrong'] }),
+    '{"type":"system","subtype":"init",',
+    real,
+  ].join('\n')
+
+  assert.equal(initLineOf(text)?.raw, real)
+})
+
+test('initLineOf is null when no line is a system init event', () => {
+  assert.equal(initLineOf(''), null)
+  assert.equal(initLineOf([JSON.stringify({ type: 'assistant' }), 'not json'].join('\n')), null)
+})
+
+test('initEventOf reads the lists of the first init line, past other events', () => {
+  const text = [
+    JSON.stringify({ type: 'system', subtype: 'hook_started' }),
+    initLine({ skills: ['p:s'], slash_commands: ['c'] }),
+    initLine({ skills: ['later'], slash_commands: [] }),
+  ].join('\n')
+
+  assert.deepEqual(initEventOf(text), { skills: ['p:s'], slashCommands: ['c'] })
+})
+
+test('initEventOf is null with no init line, an init line that is not JSON, or a missing or mixed list', () => {
+  assert.equal(initEventOf(JSON.stringify({ type: 'assistant' })), null)
+  assert.equal(initEventOf('{"type":"system","subtype":"init",'), null)
+  assert.equal(initEventOf(initLine({ slash_commands: ['c'] })), null)
+  assert.equal(initEventOf(initLine({ skills: ['p:s'] })), null)
+  assert.equal(initEventOf(initLine({ skills: ['p:s'], slash_commands: ['c', 1] })), null)
 })
