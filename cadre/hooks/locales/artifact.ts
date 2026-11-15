@@ -170,6 +170,8 @@ export const ARTIFACT = Object.freeze({
     ''}run from are not write-protected: a role that can edit there can change what the next launch loads`,
   cardHerePlugins:
     'plugins that .claude/settings.json of the folder the launcher is run from enables are not switched off',
+  cardStartSettingsKeys: `WARNING: {folder}/.claude/settings.json sets {keys}, which cadre does not scan; ${
+    ''}the folder's own .claude/skills, .claude/agents and .claude/commands also load unscanned`,
   cardAdditionalDir: 'Additional directory: <git root> (start folder is {folder})',
   cardHandoffsFollow: 'Handoffs ({handoffs}) and GSD .planning/ follow the start folder ({folder})',
   cardRouteStrict: 'MCP route: strict (--strict-mcp-config)',
@@ -177,6 +179,7 @@ export const ARTIFACT = Object.freeze({
   // The words of a scope card or INDEX.md list (scope/card CARD_LIST_WORDS): an empty list, and the last item of a
   // capped list.
   cardNone: 'none',
+  cardUnknown: 'unknown',
   cardMore: '+{count} more',
   // The lines of a scope card (scope/card scopeCardLines), as ROLE.md holds it and init shows it.
   cardTitle: 'Scope card: {title} ({id})',

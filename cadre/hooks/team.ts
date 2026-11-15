@@ -25,7 +25,7 @@ import { SCREEN_LIST_WORDS, t } from './locales/t'
 import { cadreStatePath, isRepoFolder, roleJsonPath } from './paths'
 import { parseRoleJson } from './roles/rolejson'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
-import { gatherScans, withStartHooks } from './scan/gather'
+import { gatherScans, withStartSettings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { readRepoFile } from './scan/port-read'
 import { compileScope } from './scope/compile'
@@ -301,7 +301,7 @@ export async function attendedByConfig(
 /**
  * The scans and the compiled scopes of a team, as regen and /cadre start use them (D-68, D-70, D-72): the scans of one
  * run (gatherScans), which read ~/.claude.json only when cadre.json records the consent (readUserMcp, A1), with the
- * start folder's hooks of a dir start (withStartHooks); attended
+ * start folder's settings of a dir start (withStartSettings); attended
  * judged from the config on disk with no question asked (attendedByConfig); and every role compiled on its own
  * framework or the repo default, for cadre.json's launch start, with the frameworks the repo records (repoFrameworks)
  * as what it may also run (compileAll, D-122).
@@ -313,7 +313,7 @@ export async function compileTeam(
   roles: readonly RoleSpec[],
 ): Promise<{ readonly gathered: Gathered; readonly scopes: ReadonlyMap<string, CompiledScope> }> {
   const scanned = await gatherScans(io, locations, state.readUserMcp)
-  const gathered = await withStartHooks(io, scanned, locations.root, state.launchStart)
+  const gathered = await withStartSettings(io, scanned, locations.root, state.launchStart)
   const frameworks = teamFrameworks(roles, state.framework, repoFrameworks(state))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
 

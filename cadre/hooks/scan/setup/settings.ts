@@ -5,7 +5,16 @@
  * is kept. It imports core, the facts parsers and read cap, the setup readers and the types, so the setup scan and
  * /cadre start read settings here.
  */
-import type { CarryFacts, HookScript, InitIo, PortRead, SettingsSource, SetupScan } from '../../../types'
+import type {
+  CarryFacts,
+  HookScript,
+  InitIo,
+  PortRead,
+  SettingsSource,
+  SetupScan,
+  StartSettings,
+  StartSettingsKey,
+} from '../../../types'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from '../../core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS } from '../../core/names'
 import { isChangedByClean, sortedUnique } from '../../core/text'
@@ -107,13 +116,44 @@ export function projectHooks(value: unknown, source: SettingsSource): HookScript
   return hookScriptsMatching(value, source, HOOK_SCRIPT_PATTERN).filter(hook => fitsHookCap(hook.script))
 }
 
-/** The hook scripts of a start folder's settings read, as project settings hooks; none unless it is parseable text. */
-export function startSettingsHooks(read: PortRead): HookScript[] {
-  if (read.state !== 'text') return []
-  const parsed = parseJsonValue(read.text)
-  if (parsed === null) return []
+/** The keys of a start folder's settings that cadre does not scan, in the order a warning names them. */
+export const START_SETTINGS_KEYS: readonly StartSettingsKey[] = Object.freeze([
+  'permissions.allow',
+  'permissions.additionalDirectories',
+  'env',
+  'sandbox',
+  'disableAllHooks',
+])
 
-  return projectHooks(parsed.value, 'project')
+const PERMISSIONS_KEY_PREFIX = 'permissions.'
+
+function startKeysOf(value: Readonly<Record<string, unknown>>): StartSettingsKey[] {
+  const permissions = isObject(value.permissions) ? value.permissions : {}
+
+  return START_SETTINGS_KEYS.filter(key =>
+    key.startsWith(PERMISSIONS_KEY_PREFIX)
+      ? Object.hasOwn(permissions, key.slice(PERMISSIONS_KEY_PREFIX.length))
+      : Object.hasOwn(value, key),
+  )
+}
+
+/**
+ * What the scan reads of a dir start folder's `.claude/settings.json` at `path`: its hooks, as project settings hooks,
+ * and the unscanned keys it sets, with a warning naming them; a file that is there but cannot be read as a JSON object
+ * is unknown, with one warning.
+ */
+export function startSettingsOf(read: PortRead, path: string): StartSettings {
+  if (read.state === 'absent') return { state: 'absent', hooks: [], keys: [], warnings: [] }
+  const value = read.state === 'text' ? parseJsonValue(read.text)?.value : undefined
+  if (!isObject(value)) {
+    const warning = t('scan.unknown', { what: t('scan.startSettings.couldNotRead', { path }) })
+
+    return { state: 'unknown', hooks: [], keys: [], warnings: [warning] }
+  }
+  const keys = startKeysOf(value)
+  const warnings = keys.length === 0 ? [] : [t('scan.startSettings.keys', { path, keys: keys.join(', ') })]
+
+  return { state: 'read', hooks: projectHooks(value, 'project'), keys, warnings }
 }
 
 /** One warning per settings source that names hook scripts over the role.json cap, counting them, never naming one. */

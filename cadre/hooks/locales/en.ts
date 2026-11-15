@@ -1229,6 +1229,9 @@ export const EN = Object.freeze({
   'scan.couldNotParse': 'could not parse {what} as JSON',
   'scan.couldNotList': 'could not list {what}',
   'scan.couldNotReadSettings': 'could not read {source} settings',
+  'scan.startSettings.couldNotRead': 'could not read {path}/.claude/settings.json of the start folder',
+  'scan.startSettings.keys': `{path}/.claude/settings.json sets {keys}, which cadre does not scan: ${
+    ''}they apply in every role started there; {path}/.claude/skills, agents and commands also load unscanned`,
   'scan.notRegularFile': 'skipped {what}: not a regular file inside the repo',
   'scan.notValidCadre': 'ignored {what}: not a valid cadre {noun}',
   'scan.repoRootUnlisted': 'could not list the repo root',

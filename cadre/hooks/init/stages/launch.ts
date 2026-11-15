@@ -15,8 +15,8 @@ import type { ListWords } from '../../core/text'
 import { t } from '../../locales/t'
 import { isSafeRelativePath, startSettingsPath } from '../../paths'
 import { MAX_READ_BYTES } from '../../scan/facts/normalize'
-import { withoutStartHooks } from '../../scan/gather'
-import { startSettingsHooks } from '../../scan/setup/settings'
+import { withoutStartSettings } from '../../scan/gather'
+import { startSettingsOf } from '../../scan/setup/settings'
 import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { launchContext, launchDirContext } from '../../ui/blocks/context'
@@ -214,7 +214,7 @@ function afterStart(state: InitState, answer: string | null): InitState {
   const choice = next.value
   if (choice === 'dir') return dirAsked(state, 1, null)
   const { gathered } = state.draft
-  const draft = gathered === undefined ? state.draft : { ...state.draft, gathered: withoutStartHooks(gathered) }
+  const draft = gathered === undefined ? state.draft : { ...state.draft, gathered: withoutStartSettings(gathered) }
 
   return stageDone({ ...state, draft: { ...draft, launchStart: { kind: choice } } })
 }
@@ -260,11 +260,11 @@ function afterCheck(state: InitState, isFolder: boolean): InitState {
   )
 }
 
-/** After the start folder's settings read: its hooks are the start hooks of the scans, and the stage ends with it. */
+/** After the start folder's settings read: what it read is the start settings of the scans, and the stage ends. */
 function afterSettings(state: InitState, read: PortRead): InitState {
   const { gathered } = state.draft
   if (state.sub.kind !== 'launch-settings' || gathered === undefined) return stageFailed(state)
-  const setup = { ...gathered.setup, startHooks: startSettingsHooks(read) }
+  const setup = { ...gathered.setup, startSettings: startSettingsOf(read, state.sub.path) }
   const launchStart: LaunchStart = { kind: 'dir', path: state.sub.path }
 
   return stageDone({ ...state, draft: { ...state.draft, gathered: { ...gathered, setup }, launchStart } })

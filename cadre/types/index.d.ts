@@ -1317,9 +1317,28 @@ export type SetupScan = {
   readonly memoryFiles: readonly string[]
   readonly settingsKeys: readonly { readonly source: SettingsSource; readonly keys: readonly string[] }[]
   readonly hooks: readonly HookScript[]
-  /** The hook scripts of the start folder's `.claude/settings.json` for a dir start; absent otherwise. */
-  readonly startHooks?: readonly HookScript[]
+  /** The start folder's settings of a dir start; absent otherwise. */
+  readonly startSettings?: StartSettings
   readonly carry: CarryFacts
+  readonly warnings: readonly string[]
+}
+
+/** A key of a start folder's `.claude/settings.json` that cadre does not scan. */
+export type StartSettingsKey =
+  | 'permissions.allow'
+  | 'permissions.additionalDirectories'
+  | 'env'
+  | 'sandbox'
+  | 'disableAllHooks'
+
+/**
+ * What the scan read of a dir start folder's .claude/settings.json: hooks and keys only when it was read, and the
+ * warnings of the read.
+ */
+export type StartSettings = {
+  readonly state: 'absent' | 'unknown' | 'read'
+  readonly hooks: readonly HookScript[]
+  readonly keys: readonly StartSettingsKey[]
   readonly warnings: readonly string[]
 }
 
@@ -1438,15 +1457,14 @@ export type ScopeCard = {
   /** The not-given skills the launch denies per skill at call time, as `plugin:skill`, sorted. */
   readonly callDenied: readonly string[]
   /**
-   * The scanned hook scripts by what loads them in a role session (D-62, A1): `loaded` are the hooks the role carries;
-   * `loadedByProject` are scripts registered in project settings that are not carried, which load because the launcher
-   * runs `--setting-sources project`, and only for a git-root start: a `here` or `dir` start does not load the project
-   * settings of the git root, so the list is empty and those scripts are not loaded (D-122); `notLoaded` are the
-   * scripts that are neither. Each list is sorted, once each.
+   * The scanned hook scripts by what loads them in a role session: `loaded` are the hooks the role carries;
+   * `loadedByProject` are scripts the start's project settings load that are not carried (the git root's for a git-root
+   * start, the start folder's for a dir start, none for here); null when the start folder's settings could not be read;
+   * `notLoaded` are the scripts that are neither. Each list is sorted, once each.
    */
   readonly hooks: {
     readonly loaded: readonly string[]
-    readonly loadedByProject: readonly string[]
+    readonly loadedByProject: readonly string[] | null
     readonly notLoaded: readonly string[]
   }
   readonly rules: readonly ScopeRule[]

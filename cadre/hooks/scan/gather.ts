@@ -8,7 +8,7 @@ import { startSettingsPath } from '../paths'
 import { MAX_READ_BYTES } from './facts/normalize'
 import { readRepoFile } from './port-read'
 import { scanRepo } from './repo'
-import { startSettingsHooks } from './setup/settings'
+import { startSettingsOf } from './setup/settings'
 import { scanSetup } from './setup/setup'
 
 /** What the scans of one run found: the detect facts, the repo scan and the names-only user-setup scan. */
@@ -37,33 +37,33 @@ export async function gatherScans(
 }
 
 /**
- * The scans with the hooks of the start folder's `.claude/settings.json` as `setup.startHooks` for a dir start, read
- * through readRepoFile; for any other start the scans with no `startHooks`, and no port call.
+ * The scans with the start folder's `.claude/settings.json`, read through readRepoFile, as `setup.startSettings` for a
+ * dir start; for any other start the scans with no `startSettings`, and no port call.
  */
-export async function withStartHooks(
+export async function withStartSettings(
   io: InitIo,
   gathered: Gathered,
   root: string,
   start: LaunchStart,
 ): Promise<Gathered> {
-  if (start.kind !== 'dir') return withoutStartHooks(gathered)
+  if (start.kind !== 'dir') return withoutStartSettings(gathered)
   const read = await readRepoFile(io, root, startSettingsPath(start.path), MAX_READ_BYTES)
 
-  return { ...gathered, setup: { ...gathered.setup, startHooks: startSettingsHooks(read) } }
+  return { ...gathered, setup: { ...gathered.setup, startSettings: startSettingsOf(read, start.path) } }
 }
 
-/** The scans with no start folder hooks, so a start other than a dir keeps none from an earlier answer. */
-export function withoutStartHooks(gathered: Gathered): Gathered {
-  const { startHooks, ...setup } = gathered.setup
+/** The scans with no start folder settings, so a start other than a dir keeps none from an earlier answer. */
+export function withoutStartSettings(gathered: Gathered): Gathered {
+  const { startSettings, ...setup } = gathered.setup
 
   return { ...gathered, setup }
 }
 
 /**
- * Every warning the scans of one run gave: those of the locations, of the detect facts, of the repo scan and of the
- * setup scan, in that order, each text once where it first comes. Init shows them right after the scan summary, in its
- * side-pane block, and the final review (reviewStep) shows the same list again next to the plan. A secret read guard
- * registered only in local settings is no warning: launch renders the guard from every settings source (D-103).
+ * Every warning the scans of one run gave: those of the locations, of the detect facts, of the repo scan, of the setup
+ * scan and of the start folder's settings, in that order, each text once where it first comes. Init shows them right
+ * after the scan summary and again in the final review. A secret read guard registered only in local settings is no
+ * warning: launch renders the guard from every settings source.
  */
 export function scanWarnings(locations: InitLocations, gathered: Gathered): string[] {
   const all = [
@@ -71,6 +71,7 @@ export function scanWarnings(locations: InitLocations, gathered: Gathered): stri
     ...gathered.facts.facts.warnings,
     ...gathered.repo.warnings,
     ...gathered.setup.warnings,
+    ...(gathered.setup.startSettings?.warnings ?? []),
   ]
 
   return Array.from(new Set(all))

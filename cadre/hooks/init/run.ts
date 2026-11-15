@@ -76,7 +76,7 @@ import { CLAUDE_MD_PLUGIN, GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infr
 import { parseRoleJson } from '../roles/rolejson'
 import { standsFor } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
-import { gatherScans, withStartHooks } from '../scan/gather'
+import { gatherScans, withStartSettings } from '../scan/gather'
 import type { Gathered } from '../scan/gather'
 import { listSessions, scanHistory } from '../scan/history'
 import { readInstructionFiles, repoInstructionNames } from '../scan/instructions/read'
@@ -1101,9 +1101,9 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
  * initGuard does for this command (`claude -p`, the repo checks, an active autopilot run), in an epic worktree, found
  * from its files so a --dry-run checks too, and as readTeam does (no cadre.json, a bad role.json; a team with no
  * default framework runs). It then scans with the ~/.claude.json consent cadre.json stores, with the start folder's
- * hooks of a dir start (withStartHooks), and runs the frameworks flow from the stored team (frameworksState): the set
- * question, each install offer, the mode questions and GSD's hunks, then the review of the files that change, which a
- * --dry-run ends with the plan and a plain run writes after Confirm.
+ * settings of a dir start (withStartSettings), and runs the frameworks flow from the stored team (frameworksState): the
+ * set question, each install offer, the mode questions and GSD's hunks, then the review of the files that change,
+ * which a --dry-run ends with the plan and a plain run writes after Confirm.
  */
 export async function runFrameworks(io: InitIo, options: InitOptions): Promise<string> {
   const paged = pagedOf(io, options)
@@ -1117,7 +1117,7 @@ export async function runFrameworks(io: InitIo, options: InitOptions): Promise<s
   if (team.kind === 'refuse') return team.text
   await paged.progress(SCAN_PROGRESS, SCAN_SUMMARY)
   const scanned = await gatherScans(paged, locations, team.value.state.readUserMcp)
-  const gathered = await withStartHooks(paged, scanned, locations.root, team.value.state.launchStart)
+  const gathered = await withStartSettings(paged, scanned, locations.root, team.value.state.launchStart)
   const first = frameworksState(options.dryRun, options.surface, { locations, gathered, team: team.value })
 
   return runStates(paged, options, first)

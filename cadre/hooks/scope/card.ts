@@ -308,14 +308,16 @@ function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 }
 
 /**
- * The hooks the project settings of the start load, which cadre's settings cannot remove: the git root's project hooks
- * for a git-root start, the start folder's hooks for a dir start, none for a here start.
+ * The hooks the project settings of the start load, which cadre's settings cannot remove: the git root's for a
+ * git-root start, the start folder's for a dir start (null when its settings could not be read), none for here.
  */
-function projectLoadedHooks(ctx: ScopeContext): readonly HookScript[] {
+function projectLoadedHooks(ctx: ScopeContext): readonly HookScript[] | null {
   if (ctx.launchStart.kind === 'git-root') return ctx.setup.hooks.filter(hook => hook.source === 'project')
-  if (ctx.launchStart.kind === 'dir') return ctx.setup.startHooks ?? []
+  if (ctx.launchStart.kind !== 'dir') return []
+  const settings = ctx.setup.startSettings
+  if (settings?.state === 'unknown') return null
 
-  return []
+  return settings?.state === 'read' ? settings.hooks : []
 }
 
 /**
@@ -342,17 +344,21 @@ function startFolderText(start: Exclude<LaunchStart, { readonly kind: 'git-root'
 
 /**
  * The notes of a launch start other than the git root, labelled none, in this order: the project settings of the git
- * root do not load, the start folder's `.claude/settings.json` loads (a here start adds that its settings files are
- * not write-protected and the plugins they enable are not switched off, as the folder is not known before launch),
- * the git root is an additional directory, and the handoffs and GSD's .planning/ follow the start folder. None for a
- * git-root start.
+ * root do not load; the start folder's `.claude/settings.json` loads, then for a dir start a warning naming the keys
+ * of it cadre does not scan, and for a here start that its settings files are not write-protected and the plugins they
+ * enable are not switched off (the folder is not known before launch); the git root is an additional directory; the
+ * handoffs and GSD's .planning/ follow the start folder.
  */
-function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
+function startRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
+  const start = ctx.launchStart
   if (start.kind === 'git-root') return []
   const folder = startFolderText(start)
   const handoffs = `${handoffFolderOf(role.id)}/`
   const settings =
     start.kind === 'dir' ? fill(ARTIFACT.cardStartSettingsDir, { folder }) : ARTIFACT.cardStartSettingsHere
+  const keys = start.kind === 'dir' ? (ctx.setup.startSettings?.keys ?? []) : []
+  const keysRules =
+    keys.length === 0 ? [] : [rule(fill(ARTIFACT.cardStartSettingsKeys, { folder, keys: keys.join(', ') }), 'none')]
   const hereRules =
     start.kind === 'here'
       ? [rule(ARTIFACT.cardHereSettingsWritable, 'none'), rule(ARTIFACT.cardHerePlugins, 'none')]
@@ -361,6 +367,7 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
   return [
     rule(fill(ARTIFACT.cardNoProjectSettings, { folder }), 'none'),
     rule(settings, 'none'),
+    ...keysRules,
     ...hereRules,
     rule(fill(ARTIFACT.cardAdditionalDir, { folder }), 'none'),
     rule(fill(ARTIFACT.cardHandoffsFollow, { handoffs, folder }), 'none'),
@@ -398,19 +405,23 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
       { kind: 'permission-mode', token: mode },
     ]),
     ...attendedRules(role, ctx),
-    ...projectMonitorRules(projectLoadedHooks(ctx)),
-    ...startRules(role, ctx.launchStart),
+    ...projectMonitorRules(projectLoadedHooks(ctx) ?? []),
+    ...startRules(role, ctx),
     routeRule(ctx.mcpRoute),
   ]
 }
 
-/** The scope card of a role, from the same inputs as the settings so the two cannot drift. */
+/**
+ * The scope card of a role, from the same inputs as the settings so the two cannot drift; the hooks the start's project
+ * settings load are null when the start folder's settings could not be read.
+ */
 export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeCard {
   const loaded = sortedUnique(role.carry.hooks)
-  const byProject = sortedUnique(projectLoadedHooks(ctx).map(hook => hook.script))
-  const loadedByProject = byProject.filter(script => !loaded.includes(script))
+  const projectHooks = projectLoadedHooks(ctx)
+  const byProject = projectHooks === null ? null : sortedUnique(projectHooks.map(hook => hook.script))
+  const loadedByProject = byProject === null ? null : byProject.filter(script => !loaded.includes(script))
   const notLoaded = sortedUnique(ctx.setup.hooks.map(hook => hook.script)).filter(
-    script => !loaded.includes(script) && !byProject.includes(script),
+    script => !loaded.includes(script) && !(byProject ?? []).includes(script),
   )
   const missing = missingSkills(role, ctx, plugins)
 
@@ -447,6 +458,8 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
 export function scopeCardLines(card: ScopeCard): string[] {
   const framework = adapterOf(card.framework).name
   const also = card.alsoRuns.map(id => adapterOf(id).name).join(', ')
+  const { loadedByProject } = card.hooks
+  const byProject = loadedByProject === null ? ARTIFACT.cardUnknown : cardList(loadedByProject, CARD_LIST_WORDS)
   const lines = [
     fill(ARTIFACT.cardTitle, { title: card.title, id: card.roleId }),
     fill(ARTIFACT.cardFramework, { framework, model: card.model, effort: card.effort, mode: card.permissionMode }),
@@ -457,7 +470,7 @@ export function scopeCardLines(card: ScopeCard): string[] {
     ...callDeniedLines(card.callDenied),
     fill(ARTIFACT.cardNotGivenMcp, { servers: cardList(card.notGiven.mcp, CARD_LIST_WORDS) }),
     fill(ARTIFACT.cardHooksLoaded, { hooks: cardList(card.hooks.loaded, CARD_LIST_WORDS) }),
-    fill(ARTIFACT.cardHooksByProject, { hooks: cardList(card.hooks.loadedByProject, CARD_LIST_WORDS) }),
+    fill(ARTIFACT.cardHooksByProject, { hooks: byProject }),
     fill(ARTIFACT.cardHooksNotLoaded, { hooks: cardList(card.hooks.notLoaded, CARD_LIST_WORDS) }),
     ARTIFACT.cardRules,
     ...card.rules.map(item => fill(ARTIFACT.cardRule, { enforcement: item.enforcement, text: item.text })),
