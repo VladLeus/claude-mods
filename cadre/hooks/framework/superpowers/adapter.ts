@@ -21,19 +21,19 @@ import { fill, t } from '../../locales/t'
 
 /**
  * Superpowers' detection from the normalised Facts. A `docs/superpowers/` directory or a `.superpowers` entry at the
- * repo root means superpowers is in use, and in use beats installed (D-01). An install is an `enabledPlugins` key that
- * starts with `superpowers@` and is set to true. The match is by prefix, never one exact key, so a malformed key still
- * counts. The version comes from the first enabled key, in order, that has an installed_plugins entry. The keys are
- * already cleaned and capped by facts.ts, and the evidence is built from fixed templates.
+ * repo root means superpowers is in use, and in use beats installed; installed comes from installedFlags, and an
+ * enabled key with no installed entry is named as not installed. The version comes from the first installed key.
  */
 export function detectSuperpowers(facts: Facts): Detection {
   const inUseLines = [
     ...(hasDirOrLink(facts.docsEntries, 'superpowers') ? ['docs/superpowers/'] : []),
     ...(hasDirOrLink(facts.repoEntries, '.superpowers') ? ['.superpowers/'] : []),
   ]
-  const enabled = facts.enabledPlugins.filter(isEnabledSuperpowers)
-  const installedLines = enabled.map(installedEvidence)
-  const version = enabled.map(flag => versionOf(flag.key, facts.superpowersVersions)).find(v => v !== null) ?? null
+  const installed = installedFlags(facts)
+  const notInstalled = facts.enabledPlugins.filter(flag => isEnabledSuperpowers(flag) && !installed.includes(flag))
+  const installedLines = installed.map(installedEvidence)
+  const notInstalledLines = notInstalled.map(notInstalledEvidence)
+  const version = installed.map(flag => versionOf(flag.key, facts.superpowersVersions)).find(v => v !== null) ?? null
 
   if (inUseLines.length > 0) {
     return {
@@ -41,23 +41,37 @@ export function detectSuperpowers(facts: Facts): Detection {
       name: 'superpowers',
       status: 'in-use',
       version,
-      evidence: [...inUseLines, ...installedLines],
+      evidence: [...inUseLines, ...installedLines, ...notInstalledLines],
     }
   }
-  if (enabled.length > 0) {
-    return { id: 'superpowers', name: 'superpowers', status: 'installed', version, evidence: installedLines }
+  if (installed.length > 0) {
+    return {
+      id: 'superpowers',
+      name: 'superpowers',
+      status: 'installed',
+      version,
+      evidence: [...installedLines, ...notInstalledLines],
+    }
   }
+  const noKey = notInstalledLines.length === 0 ? [t('framework.superpowers.adapter.detectSuperpowers2')] : []
 
   return {
     id: 'superpowers',
     name: 'superpowers',
     status: 'not-found',
     version: null,
-    evidence: [
-      t('framework.superpowers.adapter.detectSuperpowers'),
-      t('framework.superpowers.adapter.detectSuperpowers2'),
-    ],
+    evidence: [t('framework.superpowers.adapter.detectSuperpowers'), ...notInstalledLines, ...noKey],
   }
+}
+
+/**
+ * The enabled superpowers@ flags that have an installed_plugins entry for this repo: the one rule for installed, which
+ * detection and isInstalled both read.
+ */
+function installedFlags(facts: Facts): PluginFlag[] {
+  return facts.enabledPlugins.filter(
+    flag => isEnabledSuperpowers(flag) && versionOf(flag.key, facts.superpowersVersions) !== null,
+  )
 }
 
 /** Whether the entries hold a directory or a symlink with exactly this name. A plain file never counts. */
@@ -73,6 +87,10 @@ function isEnabledSuperpowers(flag: PluginFlag): boolean {
 /** The evidence for one enabled key: the key, its value and the settings file it came from. */
 function installedEvidence(flag: PluginFlag): string {
   return t('framework.superpowers.adapter.installedEvidence', { key: flag.key, source: flag.source })
+}
+
+function notInstalledEvidence(flag: PluginFlag): string {
+  return t('framework.superpowers.adapter.notInstalledEvidence', { key: flag.key, source: flag.source })
 }
 
 /** The installed version recorded for one key, or null when installed_plugins has no entry for that key. */
@@ -229,7 +247,7 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
   detectRule:
     t('framework.superpowers.adapter.superpowersAdapter'),
   detect: detectSuperpowers,
-  isInstalled: (facts: Facts): boolean => facts.enabledPlugins.some(isEnabledSuperpowers),
+  isInstalled: (facts: Facts): boolean => installedFlags(facts).length > 0,
   startWork: Object.freeze([
     t('framework.superpowers.adapter.superpowersAdapter2'),
     t('framework.superpowers.adapter.superpowersAdapter3'),

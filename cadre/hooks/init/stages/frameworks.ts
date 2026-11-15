@@ -341,8 +341,8 @@ function setChosen(state: InitState, set: readonly FrameworkId[]): InitState {
 type SetInstall = Extract<InitState['sub'], { readonly kind: 'set-install' }>
 
 /**
- * The install question of `framework` asked for a set answer (frameworkInstallAsk), asked `tries` times so far, with
- * the set so far and the frameworks still to ask about; `question` is its text after a refusal.
+ * The install question of `framework` for a set answer, asked `tries` times so far, with the set so far and the
+ * frameworks still to ask about; a kept framework's question says why it is asked (inUseReason).
  */
 function setInstallAsked(
   state: InitState,
@@ -351,10 +351,22 @@ function setInstallAsked(
   tries: number,
   question: string | null,
 ): InitState {
-  const ask = frameworkInstallAsk(framework)
+  const ask = frameworkInstallAsk(framework, pending.set.includes(framework) ? inUseReason(state, framework) : null)
   const sub: InitState['sub'] = { kind: 'set-install', tries, framework, pending }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/** Why a kept framework's install is asked: it is in use here, by the first line of its detection; null otherwise. */
+function inUseReason(state: InitState, framework: FrameworkId): string | null {
+  const facts = state.draft.gathered?.facts.facts
+  if (facts === undefined) return null
+  const found = detectAll(facts).find(detection => detection.id === framework)
+  if (found?.status !== 'in-use') return null
+  const [where] = found.evidence
+  if (where === undefined) return null
+
+  return t('init.frameworks.installReasonInUse', { name: FRAMEWORK_LABELS[framework], where })
 }
 
 /** The next missing framework of a set answer asked about, in order; with none left, the set is the answer. */
@@ -365,10 +377,7 @@ function setInstallNext(state: InitState, set: readonly FrameworkId[], rest: rea
   return setInstallAsked(state, { set, rest: rest.slice(1) }, framework, 1, null)
 }
 
-/**
- * The kept frameworks, in order, that are in use but not installed for the repo and have a project install not yet
- * consented to: the set answer asks their install question before the added frameworks'.
- */
+/** The kept frameworks, in order, not installed for the repo, with a project install not yet consented to. */
 function uninstalledKept(state: InitState, kept: readonly FrameworkId[]): FrameworkId[] {
   const facts = state.draft.gathered?.facts.facts
   if (facts === undefined) return []
@@ -515,15 +524,16 @@ export function parseFrameworkInstall(answer: string): boolean | null {
 }
 
 /**
- * The question that offers to install a framework the repo does not have, No first: its context line names the exact
- * command and that it runs from the repo root after Confirm, and its context also lists what the installer writes.
+ * The question that offers to install a framework the repo does not have, No first: its context names the exact
+ * command, run from the repo root after Confirm, and what the installer writes, after `reason` when one is given.
  */
-export function frameworkInstallAsk(fw: FrameworkId): ChoiceAsk<boolean> {
+export function frameworkInstallAsk(fw: FrameworkId, reason: string | null = null): ChoiceAsk<boolean> {
   const install = projectInstallOf(fw)
   const name = FRAMEWORK_LABELS[fw]
   const sentence = t('init.frameworks.installQuestion', { name })
   const command = t('init.frameworks.installCommand', { command: (install?.argv ?? []).join(' ') })
-  const lines = [command, t('init.frameworks.installWrites', { writes: (install?.writes ?? []).join(', ') })]
+  const writes = t('init.frameworks.installWrites', { writes: (install?.writes ?? []).join(', ') })
+  const lines = [...(reason === null ? [] : [reason]), command, writes]
   const pane = paneQuestionOf(sentence, command, command)
   const rows = lines.map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 }))
   const title = t('init.frameworks.installTitle', { name })

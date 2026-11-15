@@ -1703,6 +1703,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Install superpowers",
         "lines": [
+          "superpowers is in use here (docs/superpowers/) but not installed",
           "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
           "It writes enabledPlugins in .claude/settings.json."
         ],
@@ -1716,6 +1717,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           {
             "title": null,
             "rows": [
+              {
+                "role": "plain",
+                "text": "superpowers is in use here (docs/superpowers/) but not installed",
+                "indent": 0
+              },
               {
                 "role": "plain",
                 "text": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
@@ -2470,6 +2476,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Install GSD",
         "lines": [
+          "GSD is in use here (.planning/ (dir)) but not installed",
           "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
           "It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, .claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json."
         ],
@@ -2483,6 +2490,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           {
             "title": null,
             "rows": [
+              {
+                "role": "plain",
+                "text": "GSD is in use here (.planning/ (dir)) but not installed",
+                "indent": 0
+              },
               {
                 "role": "plain",
                 "text": "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
@@ -2504,6 +2516,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Install superpowers",
         "lines": [
+          "superpowers is in use here (docs/superpowers/) but not installed",
           "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
           "It writes enabledPlugins in .claude/settings.json."
         ],
@@ -2517,6 +2530,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           {
             "title": null,
             "rows": [
+              {
+                "role": "plain",
+                "text": "superpowers is in use here (docs/superpowers/) but not installed",
+                "indent": 0
+              },
               {
                 "role": "plain",
                 "text": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",

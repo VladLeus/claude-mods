@@ -486,7 +486,8 @@ describe('SUPERPOWERS_ADAPTER', () => {
     expect(SUPERPOWERS_ADAPTER.name).toBe('superpowers')
     expect(SUPERPOWERS_ADAPTER.detectRule).toBe(
       'in use: docs/superpowers/ or .superpowers/ at the repo root; ' +
-        'installed: an enabledPlugins key starting superpowers@ set to true',
+        'installed: an enabledPlugins key starting superpowers@ set to true ' +
+        'that has an installed_plugins entry for this repo',
     )
     expect(SUPERPOWERS_ADAPTER.startWork).toEqual([
       'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',

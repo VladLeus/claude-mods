@@ -173,6 +173,7 @@ export const EN = Object.freeze({
   'init.frameworks.setAccepts': '{labels}, or the frameworks by name: {words}',
   'init.frameworks.storedNoneNote':
     'Frameworks: None is recorded for this repo, and the scan found {found}. Run /cadre frameworks to choose again.',
+  'init.frameworks.installReasonInUse': '{name} is in use here ({where}) but not installed',
   'init.frameworks.installNo': 'No',
   'init.frameworks.installYes': 'Yes, install it',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',
@@ -1388,9 +1389,11 @@ export const EN = Object.freeze({
   'framework.superpowers.adapter.detectSuperpowers': 'no docs/superpowers/ or .superpowers/',
   'framework.superpowers.adapter.detectSuperpowers2': 'no enabled superpowers@ plugin',
   'framework.superpowers.adapter.installedEvidence': 'enabledPlugins["{key}"]=true ({source})',
+  'framework.superpowers.adapter.notInstalledEvidence':
+    'enabledPlugins["{key}"]=true ({source}), not installed for this repo',
   'framework.superpowers.adapter.superpowersAdapter':
     `in use: docs/superpowers/ or .superpowers/ at the repo root; installed: an enabledPlugins key ${
-    ''}starting superpowers@ set to true`,
+    ''}starting superpowers@ set to true that has an installed_plugins entry for this repo`,
   'framework.superpowers.adapter.superpowersAdapter2': 'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
   'framework.superpowers.adapter.superpowersAdapter3': 'superpowers:brainstorming (TL/PM)',
   'framework.superpowers.adapter.superpowersAdapter4': "the project's test command",

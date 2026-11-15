@@ -73,7 +73,7 @@ export const GOLDEN_DETECT: Readonly<Record<string, readonly string[]>> = {
     "    scope-acceptance            Product        no      Send scope or acceptance questions as a Product decision to PM.",
     "",
     "superpowers (superpowers)",
-    "  detect:       in use: docs/superpowers/ or .superpowers/ at the repo root; installed: an enabledPlugins key starting superpowers@ set to true",
+    "  detect:       in use: docs/superpowers/ or .superpowers/ at the repo root; installed: an enabledPlugins key starting superpowers@ set to true that has an installed_plugins entry for this repo",
     "  start work:   superpowers:writing-plans <spec path> (BE/FE with a TL spec); superpowers:brainstorming (TL/PM)",
     "  spec files:   docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md",
     "  plan files:   docs/superpowers/plans/YYYY-MM-DD-<feature>.md",

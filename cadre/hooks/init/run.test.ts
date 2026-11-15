@@ -750,6 +750,7 @@ describe('runInit framework and recommendations', () => {
       facts: {
         ...EMPTY_FACTS,
         enabledPlugins: [{ key: 'superpowers@claude-plugins-official', source: 'user', value: true }],
+        superpowersVersions: [{ key: 'superpowers@claude-plugins-official', version: '6.4.1' }],
         gsd: [unproven],
       },
       gsdUserDir: '/home/u/.claude/gsd-core',
