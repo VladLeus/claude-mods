@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, InitFacts, InstructionPart, RoleSpec } from '../../types'
+import type { Facts, FrameworkId, InitFacts, InstructionPart, RepoEntry, RoleSpec } from '../../types'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
 import type { GuardResult } from '../guards/repo'
@@ -8,6 +8,7 @@ import type { Gathered } from '../scan/gather'
 import type { TeamState } from '../team'
 import {
   DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
   emptySetupScan,
   gitWorld,
   PROVEN_FACTS,
@@ -30,7 +31,7 @@ import { cancelledReply, INIT_CANCELLED } from './replies'
 import { FLOW_ORDER, STAGE_ORDER } from './state'
 import type { Answer, InitState } from './state'
 import { assignStage } from './stages/assign'
-import { FRAMEWORK_DISMISSED_REASON, installedFrameworks } from './stages/frameworks'
+import { FRAMEWORK_DISMISSED_REASON, frameworksStage, installedFrameworks } from './stages/frameworks'
 import { instructionsStage } from './stages/instructions'
 import { pmPluginStage } from './stages/pm-plugin'
 import { policyStage } from './stages/policy'
@@ -204,6 +205,27 @@ describe('the frameworks flow', () => {
     return frameworksState(true, undefined, seed)
   }
 
+  /** `.planning/` and `docs/` at the repo root, and `superpowers/` in docs: GSD and superpowers in use. */
+  const PLANNING: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+  const DOCS: RepoEntry = { name: 'docs', kind: 'dir', isLink: false }
+  const SUPERPOWERS_DOCS: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
+
+  /** The frameworks stage of a re-init entered over `scanned`, its cadre.json storing the frameworks `stored`. */
+  function reInitAt(scanned: Facts, stored: readonly FrameworkId[]): InitState {
+    const state = stateOf(TEMPLATE_ROLES, { frameworks: stored })
+    const repo = repoScan({ cadre: { ...repoScan().cadre, state } })
+    const gathered = { facts: { facts: scanned, gsdUserDir: null }, repo, setup: emptySetupScan() }
+    const detections = detectAll(scanned)
+    const draft = wholeDraft({
+      roles: TEMPLATE_ROLES,
+      gathered,
+      installed: installedFrameworks(detections),
+      choice: chooseFramework(detections, null),
+    })
+
+    return frameworksStage.enter(stateAt('frameworks', draft))
+  }
+
   /** A plan result that changes BE's ROLE.md. */
   const CHANGED: PlanResult = {
     plan: { ops: [{ kind: 'change', path: '.cadre/be/ROLE.md', mode: 'file', note: null }], warnings: [] },
@@ -257,6 +279,36 @@ describe('the frameworks flow', () => {
         [],
       ])
     }
+  })
+
+  test('a re-init keeps a stored GSD in use but not installed, asks nothing and notes /cadre frameworks', () => {
+    const state = reInitAt({ ...EMPTY_FACTS, repoEntries: [PLANNING] }, ['gsd'])
+    const line =
+      'Frameworks: GSD kept from cadre.json but not installed for this repo. Run /cadre frameworks to install.'
+
+    expect([state.openQuestion, state.draft.frameworkSet, state.outputs]).toEqual([
+      null,
+      ['gsd'],
+      [{ kind: 'note', line }],
+    ])
+  })
+
+  test('a re-init keeping GSD and superpowers in use, neither installed, gives one note naming both', () => {
+    const state = reInitAt({ ...EMPTY_FACTS, repoEntries: [PLANNING, DOCS], docsEntries: [SUPERPOWERS_DOCS] }, [
+      'gsd',
+      'superpowers',
+    ])
+    const line =
+      'Frameworks: GSD and superpowers kept from cadre.json but not installed for this repo. ' +
+      'Run /cadre frameworks to install.'
+
+    expect([state.draft.frameworkSet, state.outputs]).toEqual([['gsd', 'superpowers'], [{ kind: 'note', line }]])
+  })
+
+  test('a re-init keeping a stored GSD with a proven GSD gives no note', () => {
+    const state = reInitAt({ ...PROVEN_FACTS.facts, repoEntries: [PLANNING] }, ['gsd'])
+
+    expect([state.openQuestion, state.draft.frameworkSet, state.outputs]).toEqual([null, ['gsd'], []])
   })
 
   test('the run goes frameworks, hunks, reframe-review; init keeps its own order', () => {

@@ -527,6 +527,9 @@ describe('the GSD check only when it can run and matter (D-269)', () => {
   }
   /** The decline of the GSD check, as its dialog shows it. */
   const NO = 'No, skip the check'
+  /** `.planning/` at the repo root, which puts GSD in use, and the choice of a repo where only GSD is in use. */
+  const PLANNING: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+  const GSD_CHOSEN: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
   /** The template roles with Team Lead set to gsd by an Adjust. */
   const gsdRole = roles.map(role => (role.id === 'tl' ? withFramework(role, 'gsd') : role))
   /** The user-level candidate as GSD's own check reads it: its runtime identity proves it. */
@@ -562,13 +565,42 @@ describe('the GSD check only when it can run and matter (D-269)', () => {
     return [state.draft.gathered, state.draft.choice, state.draft.gathered?.facts.facts.warnings, state.outputs]
   }
 
-  test('isGsdCheckUseful: a gsd role, or a choice that proving GSD changes; never a choice it leaves as it is', () => {
+  test('isGsdCheckUseful: a gsd role, GSD in use, or a choice that proving GSD changes', () => {
     const inUse = facts({ ...SUPERPOWERS_IN_USE, gsd: [UNPROVEN] })
-    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
     expect(isGsdCheckUseful(inUse, roles)).toBe(false)
     expect(isGsdCheckUseful(inUse, gsdRole)).toBe(true)
     expect(isGsdCheckUseful(facts({ gsd: [UNPROVEN] }), roles)).toBe(true)
-    expect(isGsdCheckUseful(facts({ repoEntries: [planning], gsd: [UNPROVEN] }), roles)).toBe(false)
+    expect(isGsdCheckUseful(facts({ repoEntries: [PLANNING], gsd: [UNPROVEN] }), roles)).toBe(true)
+  })
+
+  test('GSD in use with an unproven built user GSD asks the check first; proven, Keep GSD asks no install', () => {
+    const asked = frameworksStage.enter(entryWith([UNPROVEN], { repoEntries: [PLANNING] }, GSD_CHOSEN, roles))
+    const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
+    const merged = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: PROBED } })
+    const kept = frameworksStage.answer(merged, { kind: 'answer', text: KEEP_GSD })
+
+    expect([asked.sub, asked.openQuestion?.question]).toEqual([{ kind: 'ask', tries: 1 }, GSD_CHECK_QUESTION])
+    expect([kept.sub, kept.draft.frameworkSet, kept.draft.frameworkInstalls]).toEqual([
+      { kind: 'done' },
+      ['gsd'],
+      undefined,
+    ])
+  })
+
+  test('GSD in use with an unproven built user GSD: after a No, Keep GSD asks the GSD install', () => {
+    const asked = frameworksStage.enter(entryWith([UNPROVEN], { repoEntries: [PLANNING] }, GSD_CHOSEN, roles))
+    const declined = nextStage(asked, { kind: 'answer', text: NO })
+    const kept = frameworksStage.answer(declined, { kind: 'answer', text: KEEP_GSD })
+
+    expect([kept.sub.kind, firstLines([kept.openQuestion?.question ?? ''])]).toEqual(['set-install', [GSD_INSTALL]])
+  })
+
+  test('GSD in use with a user GSD whose runtime is not built: no check, gsdCheck unset, Keep asks the install', () => {
+    const entered = frameworksStage.enter(entryWith([NOT_BUILT], { repoEntries: [PLANNING] }, GSD_CHOSEN, roles))
+    const kept = frameworksStage.answer(entered, { kind: 'answer', text: KEEP_GSD })
+
+    expect([entered.sub, entered.draft.gsdCheck]).toEqual([{ kind: 'set', tries: 1 }, undefined])
+    expect([kept.sub.kind, firstLines([kept.openQuestion?.question ?? ''])]).toEqual(['set-install', [GSD_INSTALL]])
   })
 
   test('#36: superpowers in use and no gsd role: init asks no GSD check and keeps skipped (D-295)', () => {
