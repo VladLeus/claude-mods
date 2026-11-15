@@ -45,10 +45,13 @@ function foundBy(reply: string): string {
   return 'none'
 }
 
-function memoryKind(memoryFolder: string, encoded: string, full: string): string {
+type MemoryKind = 'full name' | 'shortened name' | 'other'
+
+function memoryKind(memoryFolder: string, encoded: string, full: string): MemoryKind {
   if (basename(memoryFolder) !== 'memory') return 'other'
   const name = basename(dirname(memoryFolder))
   if (name === encoded || name === full) return 'full name'
+  if (basename(dirname(dirname(memoryFolder))) !== 'projects') return 'other'
   if (name.length < encoded.length) return 'shortened name'
 
   return 'other'
@@ -111,11 +114,13 @@ rowTest(rowEntry('03#78'), async ctx => {
   }
   const memoryFolder = memory.replace(/\/+$/, '')
   const name = basename(dirname(memoryFolder))
+  const isPrefixed = [encoded, full].some(root => name.startsWith(root.slice(0, ENGINE_NAME_LIMIT)))
   ctx.observe(
     'engineMemoryFolder',
     memoryKind(memoryFolder, encoded, full),
-    `the project folder of memory_paths.auto has ${name.length} characters; ` +
-    `the whole encoded root has ${encoded.length}`,
+    `the project folder of memory_paths.auto has ${name.length} characters and ` +
+    `${isPrefixed ? 'starts' : 'does not start'} with the first ${ENGINE_NAME_LIMIT} characters of the encoded ` +
+    `root or of its real path; the whole encoded root has ${encoded.length}`,
   )
 
   const settings = await readFile(join(copy.repo, '.cadre', ROLE, '.runtime', 'settings.json'), 'utf8')
