@@ -15,6 +15,7 @@ import {
   isAppDialog,
   isDialogScreen,
   printMode,
+  squashed,
   startTuiUntil,
   submitTui,
   TUI_READY,
@@ -47,7 +48,6 @@ const GIT_MS = 30_000
 const MCP_ADD_MS = 60_000
 const EXIT_COMMAND = '/exit'
 const INIT_COMMAND = '/cadre init'
-const WHITESPACE_RE = /\s+/g
 const HAIKU = 'haiku'
 const MEDIUM = 'medium'
 const REPLY_PREFIX = 'cadre: '
@@ -92,10 +92,6 @@ export type InitBuildSteps = {
   readonly after?: (copy: LiveRepo) => Promise<void>
   // The cadre command the build drives, /cadre init when absent.
   readonly command?: string
-}
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
 }
 
 export async function liveRepo(ctx: RowContext, variant: string, opts: LiveRepoOptions = {}): Promise<LiveRepo> {

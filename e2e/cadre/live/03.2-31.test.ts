@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { appendFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, dialogOptions, dialogText, idleTui, isDialogScreen, waitTui } from '../../lib/claude.ts'
+import { answer, dialogOptions, dialogText, idleTui, isDialogScreen, squashed, waitTui } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { rowTest } from '../../lib/row.ts'
 import { capture, killServer, socketName, startServer, WAIT_MS } from '../../lib/tmux.ts'
@@ -22,11 +22,6 @@ const DIFF_NUMBER_RE = new RegExp(`- ${ADDED_PREFIX} ([0-9]{3})`, 'g')
 const MORE_ABOVE_RE = /\+[0-9]+ more above/
 const MAX_PAGES = 60
 const NAMED_LINES = 5
-const WHITESPACE_RE = /\s+/g
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 function addedLines(): string {
   return Array.from({ length: ADDED_LINES }, (_, at) => `${ADDED_PREFIX} ${String(at + 1).padStart(3, '0')}\n`)

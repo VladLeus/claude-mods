@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { squashed } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { rowTest } from '../../lib/row.ts'
@@ -21,11 +22,6 @@ const GSD_COMMAND = 'npx -y @opengsd/gsd-core@latest --claude --local'
 const FALLBACK_FRAMEWORK = 'superpowers'
 const FALLBACK_LINE_RE = /GSD did not install, so .*? then \/cadre frameworks again/
 const APPLIED_LINE_RE = /Applied: wrote [0-9]+ files?/
-const WHITESPACE_RE = /\s+/g
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 function parseJson(text: string | null): unknown {
   if (text === null) return null

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { squashed } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { rowTest } from '../../lib/row.ts'
@@ -21,11 +22,6 @@ const GSD_COMMAND = 'npx -y @opengsd/gsd-core@latest --claude --local'
 const FALLBACK_FRAMEWORK = 'superpowers'
 const FALLBACK_LINE_RE = /GSD did not install, so .*? then \/cadre frameworks again/
 const INSTALLED_LINE_RE = /Installed [^:]+: run \/reload-plugins to load (?:it|them) in this session\./
-const WHITESPACE_RE = /\s+/g
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 function parseJson(text: string | null): unknown {
   if (text === null) return null

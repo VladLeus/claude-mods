@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { squashed } from '../../lib/claude.ts'
 import { rowTest } from '../../lib/row.ts'
 import { killServer, socketName, startServer } from '../../lib/tmux.ts'
 import { EPIC_KEY, epicBranchesOf, openEpic, roleIdsOf, roleLineIds, worktreesOf } from '../lib/epic.ts'
@@ -12,14 +13,9 @@ const EXPECTED_PM_ONLY = 'PM only'
 const TYPED_ROLE = 'be'
 const PM = 'pm'
 const OPENED_ROLES: readonly string[] = [TYPED_ROLE, PM].sort()
-const WHITESPACE_RE = /\s+/g
 
 function allRolesLabel(count: number): string {
   return `All ${count} roles (Recommended)`
-}
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
 }
 
 // The roles an epic rendered into its worktree each have an epic kickoff in their .runtime folder.

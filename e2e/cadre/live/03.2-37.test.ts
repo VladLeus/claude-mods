@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, idleTui } from '../../lib/claude.ts'
+import { answer, idleTui, squashed } from '../../lib/claude.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { rowTest } from '../../lib/row.ts'
 import { parseShimLog } from '../../lib/shims.ts'
@@ -20,11 +20,6 @@ const EXPECTED_AGAIN = 'then /cadre frameworks again'
 const FALLBACK_LINE_RE = /GSD did not install, so .*? then \/cadre [a-z]+ again/
 const OFFER_RE = new RegExp(`^\\s*(?:❯\\s+)?(?:[0-9]+\\.\\s+)?${EXPECTED_OFFER}(?:\\s|$)`, 'm')
 const CONFIRM = 'Confirm'
-const WHITESPACE_RE = /\s+/g
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 async function npxCalls(log: string): Promise<number> {
   return parseShimLog(await readFile(log, 'utf8').catch(() => '')).filter(call => call.name === 'npx').length

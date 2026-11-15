@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { squashed } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { rowTest } from '../../lib/row.ts'
@@ -19,11 +20,6 @@ const REQUIRED_HUNKS: readonly string[] = [ACCEPTED_KEY, 'workflow.text_mode']
 const EXPECTED_NOT_RUN_LINE =
   'warning: the .planning/config.json change mode was not run by cadre: ' +
   'run this yourself: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
-const WHITESPACE_RE = /\s+/g
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 function parseJson(text: string | null): unknown {
   if (text === null) return null

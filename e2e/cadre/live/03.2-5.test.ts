@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, idleTui, waitTui } from '../../lib/claude.ts'
+import { answer, idleTui, squashed, waitTui } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { rowTest } from '../../lib/row.ts'
 import { parseShimLog } from '../../lib/shims.ts'
@@ -24,7 +24,6 @@ const NEXT_PAGE = 'Next page'
 const CONFIRM = 'Confirm'
 const PAGE_RE = /Review \(page ([0-9]+) of ([0-9]+)\)/
 const MAX_REVIEW_PAGES = 60
-const WHITESPACE_RE = /\s+/g
 const FRAME_TOP_LEFT = '┌'
 const FRAME_TOP_RIGHT = '┐'
 const FRAME_BOTTOM_LEFT = '└'
@@ -54,10 +53,6 @@ const EXPECTED_INSTALL_LINES: readonly InstallLine[] = [
     command: 'claude-security@claude-plugins-official, security-guidance@claude-plugins-official',
   },
 ]
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 // The lines inside the preview box beside the options of a dialog, read between the columns of the box's own frame.
 function previewLines(screen: string): readonly string[] {

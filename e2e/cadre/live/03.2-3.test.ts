@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { squashed } from '../../lib/claude.ts'
 import { run } from '../../lib/proc.ts'
 import { rowTest } from '../../lib/row.ts'
 import { capture, killServer, socketName, startServer } from '../../lib/tmux.ts'
@@ -37,11 +38,6 @@ const VERSION_FILE = '.claude/gsd-core/VERSION'
 const GSD_TOOLS = '.claude/gsd-core/bin/gsd-tools.cjs'
 const WORKSTREAM = 'cadre-be'
 const WORKSTREAM_MS = 60_000
-const WHITESPACE_RE = /\s+/g
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 rowTest(rowEntry('03.2#3'), async ctx => {
   await systemTool('npx')

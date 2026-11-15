@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import { claudeBin, configDir } from '../../lib/claude.ts'
+import { claudeBin, configDir, squashed } from '../../lib/claude.ts'
 import { fenceBin } from '../../lib/env.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
@@ -37,7 +37,6 @@ const EXPECTED_ORDER: readonly string[] = [
 ]
 const PLUGIN_COMMAND_MS = 300_000
 const SHOWN_CALLS = 40
-const WHITESPACE_RE = /\s+/g
 const WRONG_CONFIG_DIR = 'cadre-spawned claude without the e2e config dir'
 const ADD_FAILED_REASON = 'the marketplace add did not fail on this claude'
 
@@ -46,10 +45,6 @@ const row = rowEntry('03#82')
 type InitRun = {
   readonly calls: readonly ShimCall[]
   readonly reply: string
-}
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
 }
 
 function parseJson(text: string): unknown {

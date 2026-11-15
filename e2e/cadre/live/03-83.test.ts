@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { lstat, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answer, idleTui, waitTui } from '../../lib/claude.ts'
+import { answer, idleTui, squashed, waitTui } from '../../lib/claude.ts'
 import { liveEnv } from '../../lib/env.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
@@ -45,7 +45,6 @@ const OTHER_MARKETPLACE_KEY_RE = /(?:security-guidance|claude-security)@([A-Za-z
 const VIOLATED = 'violated'
 const MAX_REVIEW_PAGES = 60
 const MAX_SCANNED_BYTES = 1_000_000
-const WHITESPACE_RE = /\s+/g
 const FRAME_TOP_LEFT = '┌'
 const FRAME_TOP_RIGHT = '┐'
 const FRAME_BOTTOM_LEFT = '└'
@@ -53,10 +52,6 @@ const SCANNED_FOLDERS: readonly string[] = ['.cadre', '.claude']
 
 // 03#87 reads the copy 03#83 initialised; it lives in the run scratch so it outlasts the scratch of 03#83.
 let shared: LiveRepo | null = null
-
-function squashed(text: string): string {
-  return text.replace(WHITESPACE_RE, ' ')
-}
 
 // The lines inside the preview box beside the options of a dialog, read between the columns of the box's own frame.
 function previewLines(screen: string): readonly string[] {
