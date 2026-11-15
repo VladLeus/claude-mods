@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { lstat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { squashed } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
@@ -40,6 +40,20 @@ function configValue(config: unknown, key: string): unknown {
   return current
 }
 
+type ConfigState = 'absent' | 'present but unreadable' | 'present but not JSON' | 'present'
+
+function configState(isPresent: boolean, text: string | null): ConfigState {
+  if (!isPresent) return 'absent'
+  if (text === null) return 'present but unreadable'
+  try {
+    JSON.parse(text)
+  } catch {
+    return 'present but not JSON'
+  }
+
+  return 'present'
+}
+
 rowTest(rowEntry('03.2#22'), async ctx => {
   const shims = join(ctx.scratch, 'shims')
   const log = join(ctx.scratch, 'npx.log')
@@ -70,11 +84,14 @@ rowTest(rowEntry('03.2#22'), async ctx => {
     }
   })
 
-  const text = await readFile(join(copy.repo, CONFIG_FILE), 'utf8').catch(() => null)
-  ctx.evidence('.planning/config.json after the init', text ?? 'absent or unreadable')
+  const file = join(copy.repo, CONFIG_FILE)
+  const isPresent = await lstat(file).then(() => true, () => false)
+  const text = await readFile(file, 'utf8').catch(() => null)
+  const state = configState(isPresent, text)
+  ctx.evidence('.planning/config.json after the init', text === null ? state : `${state}:\n${text}`)
   const config = parseJson(text)
-  await ctx.check(`the accepted hunk is not written by cadre: ${ACCEPTED_KEY} is not set`, () => {
-    assert.equal(configValue(config, ACCEPTED_KEY), undefined, `.planning/config.json holds ${ACCEPTED_KEY}`)
+  await ctx.check(`the accepted hunk is not written by cadre: ${CONFIG_FILE} is absent`, () => {
+    assert.equal(state, 'absent', `${CONFIG_FILE} is ${state} after the init`)
   })
   await ctx.check(`the reply holds the not-run line for the accepted ${ACCEPTED_KEY} hunk`, () => {
     assert.ok(squashed(reply).includes(EXPECTED_NOT_RUN_LINE), `the reply does not hold: ${EXPECTED_NOT_RUN_LINE}`)
