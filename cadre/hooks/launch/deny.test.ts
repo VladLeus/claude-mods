@@ -742,6 +742,40 @@ describe('Edit-only file denies', () => {
   })
 })
 
+describe('the start folder settings deny and the shortened memory folder deny', () => {
+  const BE = templateRole('be')
+  const BE_SCOPE = compileScope(BE, context())
+
+  /** The settings files of the start folder src under each of `roots`, as Edit rules. */
+  function startFolderRules(roots: readonly string[]): string[] {
+    const files = ['.claude/settings.json', '.claude/settings.local.json']
+
+    return roots.flatMap(root => files.map(file => `Edit(/${root}/src/${file})`))
+  }
+
+  test('a dir start denies Edit of its folder settings files under every launch root, and only a dir start', () => {
+    const dir = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src' })).deny
+    const main = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src', mainRoot: '/main' })).deny
+    const plain = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo' })).deny
+
+    expect(startFolderRules(['/repo', '/link/repo']).filter(rule => !dir.includes(rule))).toEqual([])
+    expect(startFolderRules(['/repo', '/link/repo', '/main']).filter(rule => !main.includes(rule))).toEqual([])
+    expect(plain.filter(entry => entry.includes('/src/.claude/'))).toEqual([])
+  })
+
+  test('a root with a long encoded name also gets one glob Edit rule over its shortened memory folder', () => {
+    const root = `/r/${'a'.repeat(250)}`
+    const glob = `Edit(//home/u/.claude/projects/-r-${'a'.repeat(197)}*/memory/**)`
+    const long = settingsDeny(BE, BE_SCOPE, user({ root, givenRoot: root })).deny
+    const short = settingsDeny(BE, BE_SCOPE, user()).deny
+
+    expect(long.filter(entry => entry === glob)).toEqual([glob])
+    expect(long).toContain(`Edit(//home/u/.claude/projects/-r-${'a'.repeat(250)}/memory/**)`)
+    expect(short.filter(entry => entry.includes('*/memory/'))).toEqual([])
+    expect(lintRuntimeDenyPattern(glob)).toBeNull()
+  })
+})
+
 describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
   test('every role denies Edit on the memory folder of the root as resolved and as given, once each', () => {
     const roles = [templateRole('pm'), templateRole('pm', { instructions: ['auto-memory'] }), templateRole('be')]

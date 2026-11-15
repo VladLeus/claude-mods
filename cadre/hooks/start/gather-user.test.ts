@@ -352,6 +352,17 @@ async function gatheredUser(world: MemWorld, launchStart: LaunchStart = GIT_ROOT
   return userOf((await gather(world, [GIT_OK], DEFAULT_LOCATIONS, launchStart)).read)
 }
 
+describe('the start folder of a launch', () => {
+  test('a dir start sets startDir to its folder; a git-root or here start sets none', async () => {
+    const dir = await gatheredUser(repoWorld(), { kind: 'dir', path: 'src' })
+    const root = await gatheredUser(repoWorld())
+    const here = await gatheredUser(repoWorld(), { kind: 'here' })
+
+    expect(dir.startDir).toBe('src')
+    expect(['startDir' in root, 'startDir' in here]).toEqual([false, false])
+  })
+})
+
 describe('launch user settings (D-103)', () => {
   test('launchSettingsOf carries the compact window, the status line and the string env values of the user', () => {
     const settings = secretUserSettings()

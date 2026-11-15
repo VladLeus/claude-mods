@@ -400,6 +400,16 @@ function startNotes(folder: string): ScopeRule[] {
   ].map((text): ScopeRule => ({ text, enforcement: 'none' }))
 }
 
+/** The none rules on the card of BE whose launcher starts where it is run. */
+function hereNotes(): ScopeRule[] {
+  const notes = startNotes(HERE_FOLDER)
+  const writable =
+    '.claude/settings.json and .claude/settings.local.json of the folder the launcher is run from are not ' +
+    'write-protected: a role that can edit there can change what the next launch loads'
+
+  return [...notes.slice(0, 2), { text: writable, enforcement: 'none' }, ...notes.slice(2)]
+}
+
 /** The project monitor warning for `script`. */
 function monitorWarning(script: string): string {
   return (
@@ -435,11 +445,11 @@ describe('launch start card (D-122)', () => {
     expect(scopeCardLines(card)).toContain('  hooks loaded by project settings: guard.sh')
   })
 
-  test('a here start names the folder the launcher is run from in all four notes', () => {
+  test('a here start names the folder the launcher is run from in its start notes', () => {
     const setup = { ...START_SETUP, startHooks: [hook('guard.sh', 'project')] }
     const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup })).card
 
-    expect(card.rules.slice(-5, -1)).toEqual(startNotes(HERE_FOLDER))
+    expect(card.rules.slice(-6, -1)).toEqual(hereNotes())
     expect(card.rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
     expect(card.hooks.loadedByProject).toEqual([])
   })
@@ -448,7 +458,7 @@ describe('launch start card (D-122)', () => {
     const setup = { ...START_SETUP, startHooks: [hook('guard.sh', 'project')] }
     const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup })).card
     const plain = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup: START_SETUP })).card
-    const notes = [...startNotes('<git root>/apps/web'), ...startNotes(HERE_FOLDER)]
+    const notes = [...startNotes('<git root>/apps/web'), ...startNotes(HERE_FOLDER), ...hereNotes()]
 
     expect(card.rules.filter(item => notes.some(note => note.text === item.text))).toEqual([])
     expect(card.rules.filter(item => item.text.includes('<git root>'))).toEqual([])

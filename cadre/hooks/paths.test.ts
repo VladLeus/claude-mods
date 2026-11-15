@@ -35,6 +35,7 @@ import {
   screenPath,
   SESSION_FILE,
   shortenedProjectDirs,
+  shortenedProjectPrefixOf,
   startCwdNeedle,
   startSettingsPath,
   trimSlash,
@@ -177,6 +178,19 @@ describe('shortenedProjectDirs', () => {
       `${prefix}-b`,
     ])
     expect(shortenedProjectDirs(long, [])).toEqual([])
+  })
+})
+
+describe('shortenedProjectPrefixOf', () => {
+  test('a root whose encoded name has 200 characters or fewer keeps its full name: null', () => {
+    expect(shortenedProjectPrefixOf('/home/u/.claude', '/repo')).toBeNull()
+    expect(shortenedProjectPrefixOf('/home/u/.claude', `/${'a'.repeat(199)}`)).toBeNull()
+  })
+
+  test('a longer root gives the projects path and the first 200 characters of its encoded name', () => {
+    expect(shortenedProjectPrefixOf('/home/u/.claude', `/r/${'a'.repeat(250)}`)).toBe(
+      `/home/u/.claude/projects/-r-${'a'.repeat(197)}`,
+    )
   })
 
   test('a file or a link with the prefix is never a candidate', () => {
