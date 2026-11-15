@@ -12,7 +12,7 @@ import { labelled } from '../core/labelled'
 import type { Labelled } from '../core/labelled'
 import { compareText, reportText, sortedUnique } from '../core/text'
 import { builtClaudeMdPath } from '../generate/launcher'
-import { editWriteRules } from '../launch/deny'
+import { editRules } from '../launch/deny'
 import { PROMPTS } from '../locales/prompts'
 import { fill, t, tn } from '../locales/t'
 import { displayPath, isFileInsideRoot, parentOf, trimSlash } from '../paths'
@@ -56,12 +56,11 @@ export function improverArgv(path: string, flags: readonly string[] = []): reado
 export const UNGUARDED_RUN_REASON = t('apply.improver.unguardedRunReason')
 
 /**
- * The flags of a repo file's improver run (02-GAPS-B3 M1 a): settings that deny Edit and Write on
- * `//<root>/.cadre/<id>/.runtime/**`, so the run cannot edit through the links there, and no Bash; null when
- * editWriteRules cannot hold that path, and the run is then not started.
+ * The flags of a repo file's improver run: settings that deny Edit on `//<root>/.cadre/<id>/.runtime/**`, so the run
+ * cannot edit through the links there, and no Bash; null when editRules cannot hold that path.
  */
 export function improverGuardFlags(root: string, id: string): readonly string[] | null {
-  const rules = editWriteRules(`${trimSlash(root)}/.cadre/${id}/.runtime`, '/**')
+  const rules = editRules(`${trimSlash(root)}/.cadre/${id}/.runtime`, '/**')
   if (rules === null) return null
 
   return ['--settings', JSON.stringify({ permissions: { deny: rules } }), '--disallowedTools', 'Bash']

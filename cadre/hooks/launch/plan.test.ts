@@ -81,40 +81,35 @@ function carrier(over: Partial<LaunchUser> = {}): LaunchUser {
 }
 
 /**
- * The deny of a role's private instructions folder under its role memory folder `folder` (02-GAPS-B2 S3): Edit and
- * Write on `<folder>/instructions/**`, written as exact `//` rules.
+ * The deny of a role's private instructions folder under its role memory folder `folder`: Edit on
+ * `<folder>/instructions/**`, written as an exact `//` rule.
  */
 function privateDeny(folder: string): string[] {
-  return [`Edit(/${folder}/instructions/**)`, `Write(/${folder}/instructions/**)`]
+  return [`Edit(/${folder}/instructions/**)`]
 }
 
 /**
- * The deny every role gets beside its private folder deny, for the fixture repo /repo (02-GAPS-B3 C2, C3): Edit and
- * Write on the repo's memory folder under `userDir`, `<userDir>/projects/-repo/memory/**`, and on the hand-out record
- * in the role memory folder `folder`, `<folder>/instructions.json`.
+ * The deny every role gets beside its private folder deny, for the fixture repo /repo: Edit on the repo's memory
+ * folder under `userDir`, `<userDir>/projects/-repo/memory/**`, and on the hand-out record in the role memory folder
+ * `folder`, `<folder>/instructions.json`.
  */
 function memoryAndRecordDeny(userDir: string, folder: string): string[] {
-  return [
-    `Edit(/${userDir}/projects/-repo/memory/**)`,
-    `Write(/${userDir}/projects/-repo/memory/**)`,
-    `Edit(/${folder}/instructions.json)`,
-    `Write(/${folder}/instructions.json)`,
-  ]
+  return [`Edit(/${userDir}/projects/-repo/memory/**)`, `Edit(/${folder}/instructions.json)`]
 }
 
 /**
- * The deny of the launch files under the root `root` (03.1-SEC-S1): Edit and Write on `.claude/settings.json`,
- * `.claude/settings.local.json`, `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
+ * The deny of the launch files under the root `root`: Edit on `.claude/settings.json`, `.claude/settings.local.json`,
+ * `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
  */
 function launchFileRules(root: string): string[] {
   const files = ['.cadre/bin/**', '.cadre/manifest.json', '.claude/settings.json', '.claude/settings.local.json']
 
-  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+  return files.map(file => `Edit(/${root}/${file})`)
 }
 
-/** The deny of the inbox tree in the user folder `userDir`, every role's inbox and session files, as `//` rules. */
+/** The deny of the inbox tree in the user folder `userDir`, every role's inbox and session files, as a `//` rule. */
 function inboxFileRules(userDir: string): string[] {
-  return ['Edit', 'Write'].map(tool => `${tool}(/${userDir}/cadre/inboxes/**)`)
+  return [`Edit(/${userDir}/cadre/inboxes/**)`]
 }
 
 /**
@@ -125,7 +120,7 @@ function teamFileRules(root: string, ids: readonly string[]): string[] {
   const roleFiles = ids.map(id => `.cadre/${id}/role.json`)
   const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**', '.claude/scripts/**']
 
-  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+  return files.map(file => `Edit(/${root}/${file})`)
 }
 
 describe('launch render', () => {
@@ -237,13 +232,6 @@ describe('launch render', () => {
           'Read(//repo/cadre/**)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
-          'Write(//home/u/.claude/projects/-repo/memory/**)',
-          'Write(//repo/.cadre/bin/**)',
-          'Write(//repo/.cadre/manifest.json)',
-          'Write(//repo/.claude/settings.json)',
-          'Write(//repo/.claude/settings.local.json)',
           ...inboxFileRules('/home/u/.claude'),
           ...teamFileRules('/repo', ['pm']),
         ]),
@@ -413,13 +401,6 @@ describe('launch render', () => {
           'Read(//repo/.env.*)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
-          'Write(//home/u/.claude/projects/-repo/memory/**)',
-          'Write(//repo/.cadre/bin/**)',
-          'Write(//repo/.cadre/manifest.json)',
-          'Write(//repo/.claude/settings.json)',
-          'Write(//repo/.claude/settings.local.json)',
           ...inboxFileRules('/home/u/.claude'),
           ...teamFileRules('/repo', ['be']),
         ]),

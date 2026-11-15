@@ -1,6 +1,6 @@
 /**
  * The launch denies, a layer 9 module: a role's runtime deny list at launch with the warnings of what it could not
- * deny, and the Edit and Write rules that keep a role off its private instructions, memory folders, hand-out record,
+ * deny, and the Edit rules that keep a role off its private instructions, memory folders, hand-out record,
  * linked memories, launch and team files and the inbox tree in the user config folder. It imports core, the framework
  * registry, paths, the scope lint, the launch links and the types, so the launch settings and plan, and the improver,
  * read it here.
@@ -48,7 +48,7 @@ const RELATIVE_SECRET_DENY: readonly string[] = Object.freeze(
 )
 
 /** A rule on a tool that takes a path, with an absolute `//` argument. */
-const ABSOLUTE_RULE = /^(?:Edit|NotebookEdit|Read|Write)\((\/\/[\s\S]*)\)$/
+const ABSOLUTE_RULE = /^(?:Edit|NotebookEdit|Read)\((\/\/[\s\S]*)\)$/
 
 /** The lint answer for an absolute pattern with a `..` segment. */
 const DOTDOT_MESSAGE = t('launch.deny.dotdotMessage')
@@ -170,30 +170,25 @@ export const UNDENIED_RECORD_WARNING = t('launch.deny.undeniedRecordWarning')
 const UNDENIED_INBOX_WARNING = t('launch.deny.undeniedInboxWarning')
 
 /**
- * The exact Edit and Write rules of an absolute path, with `suffix` after it (`/**` for a whole folder); null when an
- * exact `//` rule cannot hold the path as it is (isSafeRoot) or the runtime lint refuses either rule. Exported for the
- * improver guard (02-GAPS-B3 M1).
+ * The exact Edit rule of an absolute path, with suffix after it (/** for a whole folder); null when no exact rule can
+ * hold the path. An Edit deny also refuses the Write tool, so no Write rule is written.
  */
-export function editWriteRules(path: string, suffix: string): string[] | null {
+export function editRules(path: string, suffix: string): string[] | null {
   if (!isSafeRoot(path)) return null
-  const rules = [`Edit(/${path}${suffix})`, `Write(/${path}${suffix})`]
+  const rule = `Edit(/${path}${suffix})`
 
-  return rules.every(rule => lintRuntimeDenyPattern(rule) === null) ? rules : null
+  return lintRuntimeDenyPattern(rule) === null ? [rule] : null
 }
 
 /**
- * The best-effort read-only deny of a role's linked memories (G-02-1f, D-140 q3-a, T-02-73): `Edit(//<path>)` and
- * `Write(//<path>)` for each link path in the role memory folder, its leading slash part of the `//`, each passing
- * lintRuntimeDenyPattern. A path an exact rule cannot hold as it is (isSafeRoot: not absolute, a `.` or `..` segment,
- * or a character other than a letter, digit, `.`, `_` or `-`) gets no rule but undeniedMemoryWarning, naming its file:
- * that memory stays editable. A Bash write is never covered. The rules are sorted and once each, the warnings in the
- * order of the paths, once per path.
+ * The best-effort read-only deny of a role's linked memories, `Edit(//<path>)` for each link path. A path no exact rule
+ * can hold gets undeniedMemoryWarning instead and stays editable; a Bash write is never covered.
  */
 export function linkedMemoryDeny(paths: readonly string[]): DenyResult {
   const deny: string[] = []
   const warnings: string[] = []
   for (const path of new Set(paths)) {
-    const rules = editWriteRules(path, '')
+    const rules = editRules(path, '')
     if (rules === null) warnings.push(undeniedMemoryWarning(path.slice(path.lastIndexOf('/') + 1)))
     else deny.push(...rules)
   }
@@ -202,78 +197,67 @@ export function linkedMemoryDeny(paths: readonly string[]): DenyResult {
 }
 
 /**
- * The deny of a role's private instructions folder (02-GAPS-B2 S3): `Edit(//<folder>/**)` and `Write(//<folder>/**)`
- * for privateInstructionsDir, so the role cannot rewrite what its next session loads through the folder its launcher
- * adds (`.runtime/private-instructions`), a working folder git does not see; a deny rule holds for a path that
- * resolves into the folder too. A folder an exact rule cannot hold gets none, with UNDENIED_PRIVATE_WARNING.
+ * The deny of a role's private instructions folder, `Edit(//<folder>/**)`, so the role cannot rewrite what its next
+ * session loads through it; a folder no exact rule can hold gets UNDENIED_PRIVATE_WARNING instead.
  */
 function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
-  const rules = editWriteRules(privateInstructionsDir(user, id), '/**')
+  const rules = editRules(privateInstructionsDir(user, id), '/**')
 
   return rules === null ? { deny: [], warnings: [UNDENIED_PRIVATE_WARNING] } : { deny: rules, warnings: [] }
 }
 
 /**
- * The deny of the repo's memory folders (02-GAPS-B3 C2): `Edit(//<folder>/**)` and `Write(//<folder>/**)` for the
- * memory folder of the root as resolved and as given, and of the main checkout when `mainRoot` is set (03.1-W3 M1),
- * (memoryFolderOf), once each, so no role edits a memory, through the links /cadre start makes or the ones under
- * `.runtime/instructions/memory`. A folder an exact rule cannot hold gets none, and the warning
- * UNDENIED_MEMORY_FOLDER_WARNING comes once.
+ * The deny of the repo's memory folders, `Edit(//<folder>/**)` for the memory folder of every launch root, so no role
+ * edits a memory, through a link or not; a folder no exact rule can hold gets UNDENIED_MEMORY_FOLDER_WARNING, once.
  */
 function memoryFolderDeny(user: LaunchUser): DenyResult {
   const roots = launchRoots(user)
   const folders = sortedUnique(roots.map(root => memoryFolderOf(user.userDir, root)))
-  const rules = folders.map(folder => editWriteRules(folder, '/**'))
+  const rules = folders.map(folder => editRules(folder, '/**'))
   const deny = rules.flatMap(rule => rule ?? [])
 
   return { deny, warnings: rules.includes(null) ? [UNDENIED_MEMORY_FOLDER_WARNING] : [] }
 }
 
 /**
- * The deny of the files a later launch or session runs or trusts, under every launch root: `Edit` and `Write` of
- * `.claude/settings.json` and `.claude/settings.local.json` (their hooks run at the next session start),
- * `.cadre/bin/**`, `.cadre/manifest.json`, `.cadre/cadre.json` and the role.json of each team role, or of the role's
- * own when the team is not known (init and regen write them from the root session, and the inbox tools trust them),
- * and `<dir>/**` for each folder a framework's project install runs code from (a later session runs its hooks and
- * scripts). So an Edit-only role cannot plant a hook, rewrite a launcher or change the team. A path an exact rule
- * cannot hold gets none and no warning: a role without Bash already gets runtimeDeny's root warning, and a Bash role is
- * not held by an Edit deny.
+ * The deny of the files a later launch or session runs or trusts, `Edit(//...)` under every launch root: the two
+ * `.claude` settings files, `.cadre/bin/**`, `.cadre/manifest.json`, `.cadre/cadre.json`, the team's role.json files
+ * and each framework's project install folder, so an Edit-only role cannot plant a hook, rewrite a launcher or change
+ * the team. A path no exact rule can hold gets none and no warning: runtimeDeny already warns about such a root.
  */
 function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
   const roots = sortedUnique(launchRoots(user))
   const ids = user.teamIds ?? [id]
   const runs = ADAPTERS.flatMap(adapter => adapter.projectInstall?.runs ?? [])
   const rules = roots.flatMap(root => [
-    editWriteRules(`${root}/.claude/settings.json`, ''),
-    editWriteRules(`${root}/.claude/settings.local.json`, ''),
-    editWriteRules(`${root}/.cadre/bin`, '/**'),
-    editWriteRules(`${root}/.cadre/manifest.json`, ''),
-    editWriteRules(`${root}/${cadreStatePath()}`, ''),
-    ...ids.map(teamId => editWriteRules(`${root}/${roleJsonPath(teamId)}`, '')),
-    ...runs.map(dir => editWriteRules(`${root}/${dir}`, '/**')),
+    editRules(`${root}/.claude/settings.json`, ''),
+    editRules(`${root}/.claude/settings.local.json`, ''),
+    editRules(`${root}/.cadre/bin`, '/**'),
+    editRules(`${root}/.cadre/manifest.json`, ''),
+    editRules(`${root}/${cadreStatePath()}`, ''),
+    ...ids.map(teamId => editRules(`${root}/${roleJsonPath(teamId)}`, '')),
+    ...runs.map(dir => editRules(`${root}/${dir}`, '/**')),
   ])
 
   return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
 }
 
 /**
- * The deny of the inbox tree in the user config folder, `Edit` and `Write` of `<userDir>/cadre/inboxes/**`, which holds
- * the inbox and session files of every role of every launch root, so only cadre's tools write them. A path an exact
- * rule cannot hold gets none, with UNDENIED_INBOX_WARNING.
+ * The deny of the inbox tree in the user config folder, `Edit(//<userDir>/cadre/inboxes/**)`, so only cadre's tools
+ * write the inbox and session files; a path no exact rule can hold gets UNDENIED_INBOX_WARNING instead.
  */
 function inboxFilesDeny(user: LaunchUser): DenyResult {
-  const rules = editWriteRules(inboxTreeOf(user.userDir), '/**')
+  const rules = editRules(inboxTreeOf(user.userDir), '/**')
 
   return rules === null ? { deny: [], warnings: [UNDENIED_INBOX_WARNING] } : { deny: rules, warnings: [] }
 }
 
 /**
- * The deny of a role's hand-out record (02-GAPS-B3 C3): `Edit(//<role memory folder>/instructions.json)` and
- * `Write(...)`, so the role cannot rewrite which memories its next start links. A path an exact rule cannot hold gets
- * none, with UNDENIED_RECORD_WARNING.
+ * The deny of a role's hand-out record, `Edit(//<role memory folder>/instructions.json)`, so the role cannot rewrite
+ * which memories its next start links; a path no exact rule can hold gets UNDENIED_RECORD_WARNING instead.
  */
 function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
-  const rules = editWriteRules(`${roleMemoryDir(user, id)}/${INSTRUCTIONS_RECORD_FILE}`, '')
+  const rules = editRules(`${roleMemoryDir(user, id)}/${INSTRUCTIONS_RECORD_FILE}`, '')
 
   return rules === null ? { deny: [], warnings: [UNDENIED_RECORD_WARNING] } : { deny: rules, warnings: [] }
 }

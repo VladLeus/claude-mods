@@ -40,7 +40,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/settings.json",
-        "sha256": "cd6b612182921e4c9efd9f02a01df12c5280b055f3d7bcfe49c662ba20fe0a76",
+        "sha256": "5ce07dc894954a116350e43d0a8535f7b2570a0b77893bd9bab31241693dd078",
         "isWritten": true
       },
       {
@@ -65,7 +65,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/settings.json",
-        "sha256": "8fb911cf4f1aa33f0b640dbbd63a4aa46d188e168123a20544fcc83f128d4989",
+        "sha256": "c25724ee9971659615a926adef5c77ee620943c31a022906c5d19761bc486c45",
         "isWritten": true
       },
       {
@@ -216,7 +216,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/settings.json",
-        "sha256": "cd6b612182921e4c9efd9f02a01df12c5280b055f3d7bcfe49c662ba20fe0a76",
+        "sha256": "5ce07dc894954a116350e43d0a8535f7b2570a0b77893bd9bab31241693dd078",
         "isWritten": true
       },
       {
@@ -241,7 +241,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/settings.json",
-        "sha256": "8fb911cf4f1aa33f0b640dbbd63a4aa46d188e168123a20544fcc83f128d4989",
+        "sha256": "c25724ee9971659615a926adef5c77ee620943c31a022906c5d19761bc486c45",
         "isWritten": true
       },
       {

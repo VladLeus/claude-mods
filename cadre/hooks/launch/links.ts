@@ -63,9 +63,9 @@ export type LaunchUser = {
   /** The top-level code dirs to deny with exact patterns; renderRole passes the repo scan's at launch. */
   readonly codeDirs: readonly string[]
   /**
-   * The absolute link paths in the role memory folder of the memories /cadre start links for the role (G-02-1f, D-140
-   * q3-a), from its hand-out record; empty for a whole-files role and for a role given no memory. The role's settings
-   * deny Edit and Write on each of them (linkedMemoryDeny).
+   * The absolute link paths in the role memory folder of the memories /cadre start links for the role, from its
+   * hand-out record; empty for a whole-files role and for a role given no memory. The role's settings deny Edit on each
+   * of them (linkedMemoryDeny).
    */
   readonly linkedMemories: readonly string[]
   /**
