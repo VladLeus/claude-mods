@@ -1,18 +1,12 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
-import { printMode } from '../../lib/claude.ts'
+import { initLineOf, printMode } from '../../lib/claude.ts'
 import { fenceBin, liveEnv } from '../../lib/env.ts'
 import { HarnessError } from '../../lib/errors.ts'
-import { isRecord } from '../../lib/filter.ts'
 import { rowTest } from '../../lib/row.ts'
 import { probeFailShim } from '../../lib/shims.ts'
 import { cadrePrint, firstLineOf, liveRepo, noteReply, printedCommand, replyOf, runProbe } from '../lib/session.ts'
 import { rowEntry } from '../rows.ts'
-
-type InitEvent = {
-  readonly raw: string
-  readonly event: Record<string, unknown>
-}
 
 type ListItem = {
   readonly list: string
@@ -30,24 +24,6 @@ const PLAIN_PROMPT = 'Reply with OK'
 const SHOWN_ITEMS = 10
 
 const row = rowEntry('03#59')
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
-
-// The first system/init event of a stream-json run, with the raw line the launcher reads.
-function initEventOf(stdout: string): InitEvent | null {
-  for (const raw of stdout.split('\n')) {
-    const event = parseJson(raw)
-    if (isRecord(event) && event.type === 'system' && event.subtype === 'init') return { raw, event }
-  }
-
-  return null
-}
 
 function itemsOf(event: Record<string, unknown>): readonly ListItem[] {
   return INIT_LISTS.flatMap(list => {
@@ -93,7 +69,7 @@ rowTest(row, async ctx => {
 
   const plain = await printMode(copy.repo, ['--output-format', 'stream-json', '--verbose', PLAIN_PROMPT], copy.env)
   ctx.evidence('the plain stream-json run, exit code and stderr', `exit ${plain.code}\n${plain.stderr}`)
-  const init = initEventOf(plain.stdout)
+  const init = initLineOf(plain.stdout)
   if (init === null) {
     throw new HarnessError(`03#59: the stream-json run printed no system/init event (exit ${plain.code})`)
   }

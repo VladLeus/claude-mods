@@ -11,6 +11,7 @@ import {
   dialogText,
   dismiss,
   idleTui,
+  initEventOf,
   isAppDialog,
   isDialogScreen,
   printMode,
@@ -30,7 +31,7 @@ import { run } from '../../lib/proc.ts'
 import type { RunResult } from '../../lib/proc.ts'
 import type { RowContext } from '../../lib/row.ts'
 import { scratchRoot } from '../../lib/scratch.ts'
-import { initEventOf, recordShim, shellQuote } from '../../lib/shims.ts'
+import { recordShim, shellQuote } from '../../lib/shims.ts'
 import { importSource } from '../../lib/source.ts'
 import { killServer, matches, socketName, startServer, waitDead, WAIT_MS } from '../../lib/tmux.ts'
 import type { Matcher, Pane, Server } from '../../lib/tmux.ts'

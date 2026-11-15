@@ -1,7 +1,6 @@
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { HarnessError } from './errors.ts'
-import { isRecord, isStringList } from './filter.ts'
 
 export const SHIM_SLEEP_S = 300
 
@@ -13,22 +12,8 @@ export type ShimCall = {
   readonly argv: readonly string[]
 }
 
-export type InitEvent = {
-  readonly skills: readonly string[]
-  readonly slashCommands: readonly string[]
-  readonly memoryAuto: string | null
-}
-
-export type DenyCover = {
-  readonly deny: number
-  readonly edit: number
-  readonly write: number
-}
-
 const SHIM_NAME_RE = /^[A-Za-z0-9._-]+$/
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
-const INIT_LINE_MARK = '"subtype":"init"'
-const FOLDER_RULE_RE = /^(Edit|Write)\(\/(\/[^()]*)\/\*\*\)$/
 
 export function shellQuote(value: string): string {
   return `'${value.replaceAll(`'`, `'\\''`)}'`
@@ -227,47 +212,4 @@ function parseCall(line: string): ShimCall | null {
 
 export function parseShimLog(text: string): readonly ShimCall[] {
   return text.split('\n').filter(line => line.length > 0).map(parseCall).filter(call => call !== null)
-}
-
-export function initEventOf(text: string): InitEvent | null {
-  const line = text.split('\n').find(item => item.includes(INIT_LINE_MARK))
-  if (line === undefined) return null
-  let value: unknown
-  try {
-    value = JSON.parse(line)
-  } catch {
-    return null
-  }
-  if (!isRecord(value)) return null
-  const { skills, slash_commands: slashCommands, memory_paths: memoryPaths } = value
-  if (!isStringList(skills) || !isStringList(slashCommands)) return null
-  const memoryAuto = isRecord(memoryPaths) && typeof memoryPaths.auto === 'string' ? memoryPaths.auto : null
-
-  return { skills, slashCommands, memoryAuto }
-}
-
-// The rule form is the one cadre writes for a folder, `Edit(//<absolute path>/**)`.
-export function denyCoverOf(text: string | null, folder: string): DenyCover | null {
-  if (text === null) return null
-  let value: unknown
-  try {
-    value = JSON.parse(text)
-  } catch {
-    return null
-  }
-  const permissions = isRecord(value) ? value.permissions : undefined
-  const deny = isRecord(permissions) ? permissions.deny : undefined
-  if (!isStringList(deny)) return null
-  const target = folder.replace(/\/+$/, '')
-  let edit = 0
-  let write = 0
-  for (const rule of deny) {
-    const [, tool, path] = FOLDER_RULE_RE.exec(rule) ?? []
-    if (path === undefined) continue
-    if (path !== target && !target.startsWith(`${path}/`)) continue
-    if (tool === 'Edit') edit += 1
-    if (tool === 'Write') write += 1
-  }
-
-  return { deny: deny.length, edit, write }
 }

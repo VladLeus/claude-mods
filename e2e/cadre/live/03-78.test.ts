@@ -1,9 +1,11 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import { configDir, passTrust, printMode } from '../../lib/claude.ts'
+import { configDir, initLineOf, passTrust, printMode } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
+import { isRecord } from '../../lib/filter.ts'
+import type { RunResult } from '../../lib/proc.ts'
 import { rowTest } from '../../lib/row.ts'
-import { denyCoverOf, initEventOf } from '../../lib/shims.ts'
+import { denyCoverOf } from '../../lib/settings.ts'
 import { capture, killServer, newWindow, socketName, startServer, WAIT_MS } from '../../lib/tmux.ts'
 import {
   cadrePrint,
@@ -85,11 +87,11 @@ rowTest(rowEntry('03#78'), async ctx => {
   ctx.observe('statusFindsTheSession', how !== 'none', `found by: ${how}; state: ${state}`)
   ctx.observe('foundBy', how, `the session line of the reply: ${statusLine(reply, 'session') ?? 'none'}`)
 
-  let stdout: string
+  let printed: RunResult
   let full: string
   try {
     const args = ['--output-format', 'stream-json', '--verbose', '--max-turns', '1', '--no-session-persistence']
-    stdout = (await printMode(copy.repo, [...args, MEMORY_PROBE_PROMPT], copy.env)).stdout
+    printed = await printMode(copy.repo, [...args, MEMORY_PROBE_PROMPT], copy.env)
     full = (await realpath(copy.repo)).replace(NON_ALPHANUMERIC_RE, '-')
   } catch (error) {
     if (error instanceof HarnessError) throw error
@@ -98,9 +100,12 @@ rowTest(rowEntry('03#78'), async ctx => {
     ctx.observe('roleDenyCoversEngineMemory', reason)
     return
   }
-  const memory = initEventOf(stdout)?.memoryAuto ?? null
+  const init = initLineOf(printed.stdout)
+  const memoryPaths = init?.event.memory_paths
+  const memory = isRecord(memoryPaths) && typeof memoryPaths.auto === 'string' ? memoryPaths.auto : null
   if (memory === null) {
-    ctx.observe('engineMemoryFolder', 'not recorded: no memory_paths.auto in the init event')
+    const reason = init === null ? `no init event (exit ${printed.code})` : 'no memory_paths.auto in the init event'
+    ctx.observe('engineMemoryFolder', `not recorded: ${reason}`)
     ctx.observe('roleDenyCoversEngineMemory', 'not recorded: no memory folder from the engine')
     return
   }

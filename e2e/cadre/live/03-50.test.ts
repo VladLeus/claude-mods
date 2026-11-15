@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { printMode } from '../../lib/claude.ts'
+import { initLineOf, printMode } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
 import { rowTest } from '../../lib/row.ts'
@@ -16,23 +16,6 @@ const PROMPT = 'Reply with OK'
 const STREAM_ARGS: readonly string[] = ['--output-format', 'stream-json', '--verbose']
 
 const row = rowEntry('03#50')
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
-
-function initEventOf(stdout: string): Record<string, unknown> | null {
-  for (const line of stdout.split('\n')) {
-    const event = parseJson(line)
-    if (isRecord(event) && event.type === 'system' && event.subtype === 'init') return event
-  }
-
-  return null
-}
 
 function toolsOf(event: Record<string, unknown>): readonly string[] {
   return Array.isArray(event.tools) ? event.tools.filter(tool => typeof tool === 'string') : []
@@ -68,7 +51,7 @@ rowTest(row, async ctx => {
     copy.env,
   )
   ctx.evidence('the run with deniedMcpServers, exit code and stderr', `exit ${denied.code}\n${denied.stderr}`)
-  const deniedInit = initEventOf(denied.stdout)
+  const deniedInit = initLineOf(denied.stdout)?.event ?? null
   if (deniedInit === null) throw new HarnessError('03#50: the deniedMcpServers run printed no init event')
   const stubTools = toolsOf(deniedInit).filter(tool => tool.startsWith(STUB_TOOL_PREFIX))
   ctx.evidence('the stub server in the init event', stubServerText(deniedInit))
@@ -84,7 +67,7 @@ rowTest(row, async ctx => {
   })
   const unknown = await printMode(copy.repo, [...STREAM_ARGS, '--settings', unknownSettings, PROMPT], copy.env)
   ctx.evidence('the run with an unknown settings key, exit code and stderr', `exit ${unknown.code}\n${unknown.stderr}`)
-  const unknownInit = initEventOf(unknown.stdout)
+  const unknownInit = initLineOf(unknown.stdout)?.event ?? null
   if (unknownInit === null) throw new HarnessError('03#50: the unknown-key run printed no init event')
   const isDenied = !toolsOf(unknownInit).includes(DENIED_TOOL)
   const evidence = isDenied

@@ -1,6 +1,5 @@
-import { claudeBin, printMode } from '../../lib/claude.ts'
+import { claudeBin, initLineOf, printMode } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
-import { isRecord } from '../../lib/filter.ts'
 import { run } from '../../lib/proc.ts'
 import { rowTest } from '../../lib/row.ts'
 import type { RowContext } from '../../lib/row.ts'
@@ -16,23 +15,6 @@ const PLUGIN_COMMAND_MS = 300_000
 const PROMPT = 'Reply with OK'
 
 const row = rowEntry('03#80')
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
-
-function initEventOf(stdout: string): Record<string, unknown> | null {
-  for (const line of stdout.split('\n')) {
-    const event = parseJson(line)
-    if (isRecord(event) && event.type === 'system' && event.subtype === 'init') return event
-  }
-
-  return null
-}
 
 function namesOf(event: Record<string, unknown>, list: string): readonly string[] {
   const value = event[list]
@@ -60,7 +42,7 @@ rowTest(row, async ctx => {
 
   const result = await printMode(copy.repo, ['--output-format', 'stream-json', '--verbose', PROMPT], copy.env)
   ctx.evidence('the stream-json run after the install, exit code and stderr', `exit ${result.code}\n${result.stderr}`)
-  const init = initEventOf(result.stdout)
+  const init = initLineOf(result.stdout)?.event ?? null
   if (init === null) throw new HarnessError('03#80: the stream-json run printed no init event')
   const commands = namesOf(init, 'slash_commands')
   const skills = namesOf(init, 'skills')

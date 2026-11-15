@@ -6,7 +6,7 @@ import type { AuthStatus } from './auth.ts'
 import { liveEnv } from './env.ts'
 import type { ChildEnv } from './env.ts'
 import { HarnessError } from './errors.ts'
-import { filterContext, filterText, isRecord } from './filter.ts'
+import { filterContext, filterText, isRecord, isStringList } from './filter.ts'
 import { hashFolder } from './hash.ts'
 import { pollUntil } from './poll.ts'
 import { run } from './proc.ts'
@@ -37,6 +37,16 @@ export type Preflight =
     readonly reason: string
     readonly identities: readonly string[]
   }
+
+export type InitLine = {
+  readonly raw: string
+  readonly event: Record<string, unknown>
+}
+
+export type InitEvent = {
+  readonly skills: readonly string[]
+  readonly slashCommands: readonly string[]
+}
 
 const AUTH_STATUS_MS = 30_000
 const PRINT_MODE_MS = 300_000
@@ -88,6 +98,24 @@ export async function printMode(
   if (result.code !== 0 && AUTH_LOST_RE.test(result.stderr)) throw new HarnessError('auth lost mid-run')
 
   return result
+}
+
+export function initLineOf(stdout: string): InitLine | null {
+  for (const raw of stdout.split('\n')) {
+    const event = parseJson(raw)
+    if (isRecord(event) && event.type === 'system' && event.subtype === 'init') return { raw, event }
+  }
+
+  return null
+}
+
+export function initEventOf(stdout: string): InitEvent | null {
+  const event = initLineOf(stdout)?.event
+  if (event === undefined) return null
+  const { skills, slash_commands: slashCommands } = event
+  if (!isStringList(skills) || !isStringList(slashCommands)) return null
+
+  return { skills, slashCommands }
 }
 
 export async function authStatus(cwd: string, env: ChildEnv, bin: string = claudeBin()): Promise<AuthStatus | string> {
@@ -254,6 +282,7 @@ const DIALOG_FOOTER_RE = /Esc to cancel|Enter to (?:select|confirm)|↑\/↓ to 
 const DIALOG_HEADER_RE = /^ *☐ /gm
 const NOTES_KEY = 'n'
 const GAP_RE = /\s{3,}/
+const WHITESPACE_RE = /\s+/g
 const WRAPPED_MIN_CHARS = 6
 const CURSOR_MS = 5_000
 const TUI_ROUNDS = 8
@@ -395,6 +424,10 @@ export function dialogText(screen: string): string {
   const header = [...screen.matchAll(DIALOG_HEADER_RE)].at(-1)
 
   return header === undefined ? screen : screen.slice(header.index)
+}
+
+export function squashed(text: string): string {
+  return text.replace(WHITESPACE_RE, ' ')
 }
 
 export function dialogOptions(screen: string): readonly string[] {
