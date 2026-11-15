@@ -148,27 +148,49 @@ describe('detectSuperpowers', () => {
   })
 
   test('a project-sourced enablement shows its source in the evidence', () => {
-    const flags = [{ key: OFFICIAL_KEY, source: 'project' as const, value: true }]
+    const flags: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'project', value: true }]
 
     expect(detectSuperpowers(facts({ enabledPlugins: flags }))).toEqual({
       id: 'superpowers',
       name: 'superpowers',
-      status: 'installed',
+      status: 'not-found',
       version: null,
-      evidence: ['enabledPlugins["superpowers@claude-plugins-official"]=true (project)'],
+      evidence: [
+        'no docs/superpowers/ or .superpowers/',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (project), not installed for this repo',
+      ],
     })
   })
 
   test('the version comes only from the entry for the same key', () => {
-    const flags = [{ key: OFFICIAL_KEY, source: 'user' as const, value: true }]
+    const flags: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: true }]
     const versions = [{ key: 'superpowers@local-dev', version: '9.9.9' }]
 
     expect(detectSuperpowers(facts({ enabledPlugins: flags, superpowersVersions: versions }))).toEqual({
       id: 'superpowers',
       name: 'superpowers',
-      status: 'installed',
+      status: 'not-found',
       version: null,
-      evidence: ['enabledPlugins["superpowers@claude-plugins-official"]=true (user)'],
+      evidence: [
+        'no docs/superpowers/ or .superpowers/',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (user), not installed for this repo',
+      ],
+    })
+  })
+
+  test('docs/superpowers/ with an enabled key that has no installed entry is in use, the key not installed', () => {
+    const docs: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
+    const flags: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'project', value: true }]
+
+    expect(detectSuperpowers(facts({ docsEntries: [docs], enabledPlugins: flags }))).toEqual({
+      id: 'superpowers',
+      name: 'superpowers',
+      status: 'in-use',
+      version: null,
+      evidence: [
+        'docs/superpowers/',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (project), not installed for this repo',
+      ],
     })
   })
 
@@ -195,13 +217,22 @@ describe('detectSuperpowers', () => {
   })
 
   test('the version is the first enabled key that has a recorded version', () => {
-    const flags = [
-      { key: OFFICIAL_KEY, source: 'user' as const, value: true },
-      { key: 'superpowers@local-dev', source: 'local' as const, value: true },
+    const flags: PluginFlag[] = [
+      { key: OFFICIAL_KEY, source: 'user', value: true },
+      { key: 'superpowers@local-dev', source: 'local', value: true },
     ]
     const versions = [{ key: 'superpowers@local-dev', version: '5.0.0' }]
 
-    expect(detectSuperpowers(facts({ enabledPlugins: flags, superpowersVersions: versions })).version).toBe('5.0.0')
+    expect(detectSuperpowers(facts({ enabledPlugins: flags, superpowersVersions: versions }))).toEqual({
+      id: 'superpowers',
+      name: 'superpowers',
+      status: 'installed',
+      version: '5.0.0',
+      evidence: [
+        'enabledPlugins["superpowers@local-dev"]=true (local)',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (user), not installed for this repo',
+      ],
+    })
   })
 })
 
@@ -541,18 +572,26 @@ describe('the superpowers start steps of a role', () => {
 })
 
 describe('SUPERPOWERS_ADAPTER.isInstalled', () => {
-  test('is true only with an enabled superpowers@ key; docs/superpowers/ or a disabled key is not', () => {
+  test('is true only with an enabled superpowers@ key that has an installed entry for this repo', () => {
     const docs: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
     const enabled: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: true }]
     const disabled: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: false }]
+    const entry = [{ key: OFFICIAL_KEY, version: '6.4.1' }]
+    const otherEntry = [{ key: 'superpowers@x', version: '6.4.1' }]
     const cases = [
+      facts({ enabledPlugins: enabled, superpowersVersions: entry }),
+      facts({ docsEntries: [docs], enabledPlugins: enabled, superpowersVersions: entry }),
       facts({ enabledPlugins: enabled }),
-      facts({ docsEntries: [docs], enabledPlugins: enabled }),
+      facts({ enabledPlugins: enabled, superpowersVersions: otherEntry }),
+      facts({ enabledPlugins: disabled, superpowersVersions: entry }),
       facts({ docsEntries: [docs] }),
-      facts({ docsEntries: [docs], enabledPlugins: disabled }),
       facts({}),
     ]
+    const installedLine = /^enabledPlugins\["[^"]+"\]=true \([a-z]+\)$/
 
-    expect(cases.map(SUPERPOWERS_ADAPTER.isInstalled)).toEqual([true, true, false, false, false])
+    expect(cases.map(SUPERPOWERS_ADAPTER.isInstalled)).toEqual([true, true, false, false, false, false, false])
+    expect(cases.map(item => detectSuperpowers(item).evidence.some(line => installedLine.test(line)))).toEqual(
+      cases.map(SUPERPOWERS_ADAPTER.isInstalled),
+    )
   })
 })

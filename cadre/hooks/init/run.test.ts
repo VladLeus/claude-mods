@@ -5241,13 +5241,18 @@ describe('a consented framework install after Confirm', () => {
     'Install superpowers for this repo?': 'Yes, install it',
   }
 
+  /** The installed_plugins entry of superpowers for this repo, as its install leaves it. */
+  const SUPERPOWERS_ENTRY = { key: 'superpowers@claude-plugins-official', version: '6.4.1' }
+
   /** The facts with these frameworks shown installed, as init reads them again once their installs worked. */
   function showing(initFacts: InitFacts, ids: readonly FrameworkId[]): InitFacts {
     const { facts } = initFacts
-    const enabledPlugins = [...facts.enabledPlugins, ...(ids.includes('superpowers') ? [SUPERPOWERS_ENABLED] : [])]
+    const isSuperpowers = ids.includes('superpowers')
+    const enabledPlugins = [...facts.enabledPlugins, ...(isSuperpowers ? [SUPERPOWERS_ENABLED] : [])]
+    const superpowersVersions = [...facts.superpowersVersions, ...(isSuperpowers ? [SUPERPOWERS_ENTRY] : [])]
     const gsd = [...facts.gsd, ...(ids.includes('gsd') ? [GSD_PROVEN] : [])]
 
-    return { ...initFacts, facts: { ...facts, enabledPlugins, gsd } }
+    return { ...initFacts, facts: { ...facts, enabledPlugins, superpowersVersions, gsd } }
   }
 
   /** A draft of be alone on superpowers, GSD and superpowers taken as installed, with these installs consented. */
@@ -5367,6 +5372,57 @@ describe('a consented framework install after Confirm', () => {
 
     expect(host.calls[0]).toEqual({ argv: SUPERPOWERS_PROJECT_INSTALL, options: { cwd: '/repo', timeoutMs: 180_000 } })
     expect([installAt, installAt < firstWriteAt, role.includes('Framework: superpowers.')]).toEqual([0, true, true])
+  })
+
+  /** docs/superpowers/ in use with only the enabled project key of superpowers: no installed entry for this repo. */
+  const KEY_ONLY: Facts = {
+    ...EMPTY_FACTS,
+    repoEntries: [{ name: 'docs', kind: 'dir', isLink: false }],
+    docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
+    enabledPlugins: [SUPERPOWERS_ENABLED],
+  }
+
+  /**
+   * The reply and host of an init over KEY_ONLY that keeps superpowers and answers Yes to its install; once the install
+   * ran, the facts are read again through `rescan`.
+   */
+  async function keptSuperpowersInstall(
+    rescan: (initFacts: InitFacts) => InitFacts,
+  ): Promise<{ readonly reply: string; readonly host: MemHost }> {
+    const answers = { ...INIT_ANSWERS, 'Install superpowers for this repo?': 'Yes, install it' }
+    const run = queuedIo(gitWorld({ facts: { facts: KEY_ONLY, gsdUserDir: null } }), answers)
+    const host = memHost(hostWorld({}))
+    const recorded = withHostEvents(host)
+    const isInstalled = (): boolean => recorded.events.includes(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        const read = await run.io.facts(locations)
+
+        return isInstalled() ? rescan(read) : read
+      },
+    }
+    const reply = await runInit(io, { dryRun: false, host: recorded.io })
+
+    return { reply, host }
+  }
+
+  test('a kept superpowers with only its enabled key asks its install; an entry on the re-scan lists it', async () => {
+    const { reply, host } = await keptSuperpowersInstall(read => showing(read, ['superpowers']))
+
+    expect(host.calls.map(call => call.argv.join(' '))).toContain(SUPERPOWERS_PROJECT_INSTALL.join(' '))
+    expect(reply).toContain('Installed superpowers@claude-plugins-official')
+  })
+
+  test('a kept superpowers with only its enabled key whose re-scan adds only the key falls back', async () => {
+    const { reply, host } = await keptSuperpowersInstall(read => {
+      const enabledPlugins = [...read.facts.enabledPlugins, SUPERPOWERS_ENABLED]
+
+      return { ...read, facts: { ...read.facts, enabledPlugins } }
+    })
+
+    expect(host.calls.map(call => call.argv.join(' '))).toContain(SUPERPOWERS_PROJECT_INSTALL.join(' '))
+    expect(reply).toContain('superpowers did not install, so')
   })
 
   test('a GSD install that exits 1 or is rejected gives its command, runs once, and be falls back', async () => {

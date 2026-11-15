@@ -8,6 +8,7 @@ import type {
   Facts,
   FrameworkId,
   GsdFact,
+  PluginFlag,
   RawGsdCandidate,
   RepoEntry,
   RoleSpec,
@@ -853,13 +854,31 @@ describe('the install offer for a kept framework that is not installed', () => {
     return keptAt(GSD_CHOSEN, facts({ repoEntries: [PLANNING] }), ['gsd', 'none'])
   }
 
+  /** superpowers chosen as the one framework in use, its docs folder, its enabled key and the key's installed entry. */
+  const SUPERPOWERS_CHOSEN: Choice = {
+    kind: 'chosen',
+    id: 'superpowers',
+    pickedBy: 'only-one-in-use',
+    reason: 'only superpowers is in use',
+  }
+  const DOCS: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
+  const ENABLED: PluginFlag = { key: 'superpowers@claude-plugins-official', source: 'project', value: true }
+  const ENTRY = { key: 'superpowers@claude-plugins-official', version: '6.4.1' }
+  const SP_INSTALLED: readonly FrameworkId[] = ['superpowers', 'none']
+
   test('Keep GSD asks the GSD install question next, No first, naming the project install command', () => {
     const asked = nextStage(gsdUninstalled(), { kind: 'answer', text: KEEP_GSD })
     const ask = frameworkInstallAsk('gsd')
-    expect([asked.sub.kind, asked.openQuestion?.question, asked.openQuestion?.spec]).toEqual([
+    const spec = asked.openQuestion?.spec
+    expect([asked.sub.kind, asked.openQuestion?.question, spec?.options, spec?.context?.summary]).toEqual([
       'set-install',
       ask.question,
-      ask.spec,
+      ask.spec.options,
+      ask.spec.context?.summary,
+    ])
+    expect(spec?.context?.lines).toEqual([
+      'GSD is in use here (.planning/ (dir)) but not installed',
+      ...(ask.spec.context?.lines ?? []),
     ])
     expect(ask.spec.options[0]).toBe('No')
     expect(ask.spec.context?.summary).toContain('npx -y @opengsd/gsd-core@latest --claude --local')
@@ -922,6 +941,45 @@ describe('the install offer for a kept framework that is not installed', () => {
     expect([asked.sub.kind, asked.openQuestion?.question]).toEqual([
       'set-install',
       frameworkInstallAsk('superpowers').question,
+    ])
+  })
+
+  test('Keep superpowers with docs/superpowers/ and only an enabled key asks its install, reason line first', () => {
+    const entered = keptAt(SUPERPOWERS_CHOSEN, facts({ docsEntries: [DOCS], enabledPlugins: [ENABLED] }), SP_INSTALLED)
+    const asked = nextStage(entered, { kind: 'answer', text: 'Keep superpowers (Recommended)' })
+    const ask = frameworkInstallAsk('superpowers')
+
+    expect([asked.sub.kind, asked.openQuestion?.question]).toEqual(['set-install', ask.question])
+    expect(asked.openQuestion?.spec.context?.lines).toEqual([
+      'superpowers is in use here (docs/superpowers/) but not installed',
+      ...(ask.spec.context?.lines ?? []),
+    ])
+  })
+
+  test('an added framework, and the install question asked with no reason, keep the two context lines', () => {
+    const installed = facts({ docsEntries: [DOCS], enabledPlugins: [ENABLED], superpowersVersions: [ENTRY] })
+    const entered = keptAt(SUPERPOWERS_CHOSEN, installed, SP_INSTALLED)
+    const asked = nextStage(entered, { kind: 'answer', text: 'Add GSD too' })
+    const ask = frameworkInstallAsk('gsd')
+
+    expect([asked.openQuestion?.question, asked.openQuestion?.spec.context?.lines]).toEqual([
+      ask.question,
+      ask.spec.context?.lines,
+    ])
+    expect(ask.spec.context?.lines).toHaveLength(2)
+  })
+
+  test('superpowers in use, enabled and with its installed entry: Keep superpowers asks no install question', () => {
+    const installed = facts({ docsEntries: [DOCS], enabledPlugins: [ENABLED], superpowersVersions: [ENTRY] })
+    const kept = frameworksStage.answer(keptAt(SUPERPOWERS_CHOSEN, installed, SP_INSTALLED), {
+      kind: 'answer',
+      text: 'Keep superpowers (Recommended)',
+    })
+
+    expect([kept.sub, kept.draft.frameworkSet, kept.draft.frameworkInstalls]).toEqual([
+      { kind: 'done' },
+      ['superpowers'],
+      undefined,
     ])
   })
 

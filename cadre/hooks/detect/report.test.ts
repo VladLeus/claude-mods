@@ -68,6 +68,17 @@ describe('detectReportLines', () => {
     ])
   })
 
+  test('a repo with only an enabled superpowers key shows superpowers not found, the key not installed', () => {
+    const keyOnly = facts({ enabledPlugins: [{ key: SUPERPOWERS_KEY, source: 'project', value: true }] })
+    const lines = detectReportLines(keyOnly)
+
+    expect(lines.find(line => line.startsWith('superpowers'))).toBe(
+      'superpowers   not found    -        no docs/superpowers/ or .superpowers/; ' +
+        `enabledPlugins["${SUPERPOWERS_KEY}"]=true (project), not installed for this repo`,
+    )
+    expect(lines.at(-1)).toBe('Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers')
+  })
+
   test('a version of 240 code points is kept whole, and one of 241 is cut to 240 with an ellipsis', () => {
     const kept = 'v'.repeat(240)
     const cut = `${'v'.repeat(239)}\u{2026}`
