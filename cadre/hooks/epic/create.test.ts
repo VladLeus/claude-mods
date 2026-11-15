@@ -1255,7 +1255,6 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     expect(start).not.toContain('is gone')
     expect(run.reply).not.toContain('is gone')
     expect(deny).toContain('Edit(//home/u/.claude/projects/-repo/memory/**)')
-    expect(deny).toContain('Write(//home/u/.claude/projects/-repo/memory/**)')
   })
 
   test(

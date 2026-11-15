@@ -38,10 +38,12 @@ import {
 } from '../testkit'
 import type { HostRunRule, HostWrite, MemWorld } from '../testkit'
 import {
+  editRules,
   linkedMemoryDeny,
   lintRuntimeDenyPattern,
   pluginSkillDeny,
   runtimeDeny,
+  settingsDeny,
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
   UNDENIED_RECORD_WARNING,
@@ -714,6 +716,43 @@ describe('linked memory deny (G-02-1f)', () => {
     expect(results.flatMap(result => result.problems)).toEqual([])
     expect(results.filter(result => result.memory.length > 0)).toHaveLength(21)
     expect(results).toHaveLength(42)
+  })
+})
+
+describe('Edit-only file denies', () => {
+  test('settingsDeny writes no Write rule for any role', () => {
+    const ids = ROLE_TEMPLATE.map(row => row.id)
+    const roles = ids.flatMap(id => [templateRole(id), templateRole(id, { instructions: ['auto-memory'] })])
+    const results = roles.map(role => {
+      const folder = roleMemoryDir(user(), role.id)
+      const launcher = user({ userSkills: GSD_SKILLS, linkedMemories: [`${folder}/squad.md`] })
+      const deny = settingsDeny(role, compileScope(role, context()), launcher).deny
+      const memory = isPartsFlowRole(role) ? [`Edit(/${folder}/squad.md)`] : []
+      const kept = [
+        ...privateDeny(folder),
+        ...memoryAndRecordDeny(launcher.userDir, folder),
+        ...memory,
+        ...launchFileRules('/repo'),
+        ...inboxFileRules(launcher.userDir),
+        ...teamFileRules('/repo', [role.id]),
+      ]
+
+      const writes = deny.filter(entry => entry.startsWith('Write('))
+
+      return { writes, lost: kept.filter(rule => !deny.includes(rule)) }
+    })
+
+    expect(results).toEqual(roles.map(() => ({ writes: [], lost: [] })))
+    expect(roles.filter(isPartsFlowRole)).toHaveLength(ids.length)
+  })
+
+  test('editRules gives the one Edit rule of a path, and null for a path no exact rule can hold', () => {
+    expect(editRules('/repo/.cadre/bin', '/**')).toEqual(['Edit(//repo/.cadre/bin/**)'])
+    expect(editRules('/home/u s/.claude', '/**')).toBeNull()
+  })
+
+  test('a Write rule goes to the committed lint, which refuses an absolute pattern', () => {
+    expect(lintRuntimeDenyPattern('Write(//repo/cadre/**)')).not.toBeNull()
   })
 })
 

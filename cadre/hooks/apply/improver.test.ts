@@ -298,7 +298,7 @@ describe('improver pass (G-02-1f)', () => {
     ])
     expect(improverGuardFlags('/repo', 'be')).toEqual([
       '--settings',
-      '{"permissions":{"deny":["Edit(//repo/.cadre/be/.runtime/**)","Write(//repo/.cadre/be/.runtime/**)"]}}',
+      '{"permissions":{"deny":["Edit(//repo/.cadre/be/.runtime/**)"]}}',
       '--disallowedTools',
       'Bash',
     ])

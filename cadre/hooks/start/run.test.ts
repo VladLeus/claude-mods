@@ -1282,15 +1282,8 @@ describe('linked memory deny (G-02-1f)', () => {
       `Edit(/${folder}/instructions/**)`,
       `Edit(/${folder}/notes.md)`,
       `Edit(/${folder}/squad.md)`,
-      `Write(/${folder}/instructions.json)`,
-      `Write(/${folder}/instructions/**)`,
-      `Write(/${folder}/notes.md)`,
-      `Write(/${folder}/squad.md)`,
     ])
-    expect(deny.filter(entry => entry.includes('/projects/'))).toEqual([
-      `Edit(/${MEMORY_DIR}/**)`,
-      `Write(/${MEMORY_DIR}/**)`,
-    ])
+    expect(deny.filter(entry => entry.includes('/projects/'))).toEqual([`Edit(/${MEMORY_DIR}/**)`])
   })
 })
 
