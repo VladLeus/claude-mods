@@ -6,13 +6,11 @@
  * probeVerdicts for the specs.
  */
 import type { CompiledScope, ProbeCheck, ProbeCheckKind, ProbeExpectation, ScopeRule } from '../../types'
-import { sortedUnique } from '../core/text'
 import { asciiLine } from '../generate/kickoff'
 import { CONTRACTS } from '../locales/contracts'
 import { fill } from '../locales/t'
 import { INFRA_SKILLS } from '../roles/infra'
 import { callDeniedLines, SKILLS_RULE_ENFORCEMENT } from '../scope/card'
-import { pluginName, skillPlugin } from '../scope/lint'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
 export const PROBE_CHECK_KINDS: readonly ProbeCheckKind[] = Object.freeze([
@@ -127,16 +125,6 @@ function skillExpectation(kind: 'skill-present' | 'skill-absent', text: string, 
  * of the skills denied at call time, which the init listing still shows.
  */
 function skillExpectations(scope: CompiledScope, deniedSkills: readonly string[]): ProbeExpectation[] {
-  const enabled = new Set(
-    Object.entries(scope.settings.enabledPlugins)
-      .filter(([, isOn]) => isOn)
-      .map(([key]) => pluginName(key)),
-  )
-  const offPluginSkills = scope.card.notGiven.skills.filter(name => {
-    const plugin = skillPlugin(name)
-
-    return plugin !== null && !enabled.has(plugin)
-  })
   const granted = scope.card.skills.filter(name => !INFRA_SKILLS.includes(name))
   const callDenied = callDeniedLines(deniedSkills).map(
     (text): ProbeExpectation => ({
@@ -149,7 +137,7 @@ function skillExpectations(scope: CompiledScope, deniedSkills: readonly string[]
 
   return [
     ...granted.map(name => skillExpectation('skill-present', CONTRACTS.probeSkillGranted, name)),
-    ...sortedUnique(offPluginSkills).map(name => skillExpectation('skill-absent', CONTRACTS.probeSkillDenied, name)),
+    ...scope.card.notGiven.pluginSkills.map(name => skillExpectation('skill-absent', CONTRACTS.probeSkillDenied, name)),
     ...callDenied,
   ]
 }

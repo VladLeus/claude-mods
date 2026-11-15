@@ -1429,7 +1429,12 @@ export type ScopeCard = {
   readonly isAttended: boolean
   readonly skills: readonly string[]
   readonly mcp: readonly string[]
-  readonly notGiven: { readonly skills: readonly string[]; readonly mcp: readonly string[] }
+  readonly notGiven: {
+    readonly skills: readonly string[]
+    /** The not-given skills whose scanned plugin is set, which is off for the role. */
+    readonly pluginSkills: readonly string[]
+    readonly mcp: readonly string[]
+  }
   /** The not-given skills the launch denies per skill at call time, as `plugin:skill`, sorted. */
   readonly callDenied: readonly string[]
   /**

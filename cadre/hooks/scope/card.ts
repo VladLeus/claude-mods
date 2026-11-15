@@ -72,13 +72,12 @@ function hasScannedSkill(skill: SkillRef, given: ReadonlySet<string>, enabled: R
   return plugin !== null && enabled.has(pluginName(plugin))
 }
 
-/** The scanned skill names this role does not have; see hasScannedSkill. */
-function notGivenSkills(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[]): string[] {
+/** The scanned skills this role does not have; see hasScannedSkill. */
+function missingSkills(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[]): SkillRef[] {
   const given = givenSkills(role, ctx)
   const enabled = new Set(plugins.map(pluginName))
-  const missing = ctx.setup.skills.filter(skill => !hasScannedSkill(skill, given, enabled))
 
-  return sortedUnique(missing.map(skill => skill.name))
+  return ctx.setup.skills.filter(skill => !hasScannedSkill(skill, given, enabled))
 }
 
 function givenSkills(role: RoleSpec, ctx: ScopeContext): Set<string> {
@@ -406,6 +405,7 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
   const notLoaded = sortedUnique(ctx.setup.hooks.map(hook => hook.script)).filter(
     script => !loaded.includes(script) && !byProject.includes(script),
   )
+  const missing = missingSkills(role, ctx, plugins)
 
   return {
     roleId: role.id,
@@ -419,7 +419,11 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
     isAttended: ctx.isAttended || isGsdWithoutBash(role, ctx) || isAskedInMenus(role, ctx),
     skills: sortedUnique(role.skills),
     mcp: sortedUnique(role.mcp),
-    notGiven: { skills: notGivenSkills(role, ctx, plugins), mcp: notGivenMcp(role, ctx) },
+    notGiven: {
+      skills: sortedUnique(missing.map(skill => skill.name)),
+      pluginSkills: sortedUnique(missing.filter(skill => skill.plugin !== null).map(skill => skill.name)),
+      mcp: notGivenMcp(role, ctx),
+    },
     callDenied: callDeniedSkills(role, ctx, plugins),
     hooks: { loaded, loadedByProject, notLoaded },
     rules: rulesFor(role, ctx, plugins, deny),
