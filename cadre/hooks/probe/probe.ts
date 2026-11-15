@@ -11,7 +11,7 @@ import { asciiLine } from '../generate/kickoff'
 import { CONTRACTS } from '../locales/contracts'
 import { fill } from '../locales/t'
 import { INFRA_SKILLS } from '../roles/infra'
-import { SKILLS_RULE_ENFORCEMENT } from '../scope/card'
+import { callDeniedLines, SKILLS_RULE_ENFORCEMENT } from '../scope/card'
 import { pluginName, skillPlugin } from '../scope/lint'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
@@ -122,9 +122,9 @@ function skillExpectation(kind: 'skill-present' | 'skill-absent', text: string, 
 }
 
 /**
- * The per-skill expectations: skill-present for each skill given to the role but the handoff skills the infra rule
- * checks, then skill-absent for each denied skill, sorted and once each: the denied names, and the not-given plugin
- * skills whose plugin the role's settings do not enable.
+ * The per-skill expectations: skill-present for each given skill but the handoff skills the infra rule checks,
+ * skill-absent for each not-given skill of a plugin the role does not enable, then one best-effort summary per plugin
+ * of the skills denied at call time, which the init listing still shows.
  */
 function skillExpectations(scope: CompiledScope, deniedSkills: readonly string[]): ProbeExpectation[] {
   const enabled = new Set(
@@ -137,27 +137,41 @@ function skillExpectations(scope: CompiledScope, deniedSkills: readonly string[]
 
     return plugin !== null && !enabled.has(plugin)
   })
-  const denied = sortedUnique([...deniedSkills, ...offPluginSkills])
   const granted = scope.card.skills.filter(name => !INFRA_SKILLS.includes(name))
+  const callDenied = callDeniedLines(deniedSkills).map(
+    (text): ProbeExpectation => ({
+      check: 'not-visible',
+      enforcement: SKILLS_RULE_ENFORCEMENT,
+      text: probeText(text),
+      token: '',
+    }),
+  )
 
   return [
     ...granted.map(name => skillExpectation('skill-present', CONTRACTS.probeSkillGranted, name)),
-    ...denied.map(name => skillExpectation('skill-absent', CONTRACTS.probeSkillDenied, name)),
+    ...sortedUnique(offPluginSkills).map(name => skillExpectation('skill-absent', CONTRACTS.probeSkillDenied, name)),
+    ...callDenied,
   ]
 }
 
+/** What the launch did with the role's skills: denied per skill at call time, plugins switched off, not linked. */
+export type LaunchSkills = {
+  readonly deniedSkills: readonly string[]
+  readonly offPlugins: readonly string[]
+  readonly unlinkedSkills: readonly string[]
+}
+
+export const NO_LAUNCH_SKILLS: LaunchSkills = Object.freeze({ deniedSkills: [], offPlugins: [], unlinkedSkills: [] })
+
 /**
- * The expectations of a role's probe (D-112, D-130), in card rule order: one per check of a rule, as
- * `<rule text> [<check>]` with the rule's label, or for a rule with no check one not-visible expectation (hard or best
- * effort), which the launcher reports best-effort, or one note (none). Then one best-effort line per granted and per
- * denied skill (skillExpectations). The last one is the role's memory folder, which the init event shows as
- * `memory_paths.auto` (ISO-03). A check or memory token that fails isProbeToken is never written as a check: that
- * expectation is not-visible, its token '' and its text ends with ` (not checked: unusual characters)` (T-03-10).
+ * The expectations of a role's probe: one per check of each card rule in order (a rule with no check gives one
+ * not-visible line, or a note when it is labelled none), the per-skill lines, then the role's memory folder. A token
+ * that fails isProbeToken is never compared: its line is not-visible, with the token '' and marked not checked.
  */
 export function expectationsFor(
   scope: CompiledScope,
   memoryDir: string,
-  deniedSkills: readonly string[] = [],
+  launch: LaunchSkills = NO_LAUNCH_SKILLS,
 ): ProbeExpectation[] {
   const memory = written({
     check: 'memory-path',
@@ -166,7 +180,7 @@ export function expectationsFor(
     token: memoryDir,
   })
 
-  return [...scope.card.rules.flatMap(ruleExpectations), ...skillExpectations(scope, deniedSkills), memory]
+  return [...scope.card.rules.flatMap(ruleExpectations), ...skillExpectations(scope, launch.deniedSkills), memory]
 }
 
 /**

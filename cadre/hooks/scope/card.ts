@@ -24,7 +24,7 @@ import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { fill } from '../locales/t'
 import { handoffFolderOf, isSafeRoot } from '../paths'
-import { INFRA_MCP_SERVERS, INFRA_SKILLS } from '../roles/infra'
+import { INFRA_MCP_SERVERS, INFRA_SKILLS, PER_SKILL_DENY_PLUGINS } from '../roles/infra'
 import { chainLines } from '../roles/template'
 import { runnableFrameworks } from './frameworks'
 import {
@@ -74,12 +74,43 @@ function hasScannedSkill(skill: SkillRef, given: ReadonlySet<string>, enabled: R
 
 /** The scanned skill names this role does not have; see hasScannedSkill. */
 function notGivenSkills(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[]): string[] {
-  const startSkills = runnableFrameworks(ctx).flatMap(id => adapterOf(id).startSkills)
-  const given = new Set([...INFRA_SKILLS, ...startSkills, ...role.skills])
+  const given = givenSkills(role, ctx)
   const enabled = new Set(plugins.map(pluginName))
   const missing = ctx.setup.skills.filter(skill => !hasScannedSkill(skill, given, enabled))
 
   return sortedUnique(missing.map(skill => skill.name))
+}
+
+function givenSkills(role: RoleSpec, ctx: ScopeContext): Set<string> {
+  const startSkills = runnableFrameworks(ctx).flatMap(id => adapterOf(id).startSkills)
+
+  return new Set([...INFRA_SKILLS, ...startSkills, ...role.skills])
+}
+
+function callDeniedSkills(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[]): string[] {
+  const given = givenSkills(role, ctx)
+  const perSkill = PER_SKILL_DENY_PLUGINS.map(pluginName)
+  const enabled = plugins.map(pluginName)
+  const denied = ctx.setup.skills.filter(skill => {
+    if (skill.plugin === null || given.has(skill.name)) return false
+    const plugin = pluginName(skill.plugin)
+
+    return perSkill.includes(plugin) && enabled.includes(plugin)
+  })
+
+  return sortedUnique(denied.map(skill => skill.name))
+}
+
+/** The card lines of the skills denied at call time: one per plugin, with its bare skill names sorted. */
+export function callDeniedLines(names: readonly string[]): string[] {
+  const plugins = sortedUnique(names.flatMap(name => skillPlugin(name) ?? []))
+
+  return plugins.map(plugin => {
+    const group = names.filter(name => skillPlugin(name) === plugin)
+    const bare = sortedUnique(group.map(name => name.slice(plugin.length + 1)))
+
+    return fill(ARTIFACT.cardCallDenied, { plugin, count: bare.length, skills: cardList(bare, CARD_LIST_WORDS) })
+  })
 }
 
 /** What the role is denied, and what the card says about it. */
@@ -367,11 +398,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
   ]
 }
 
-/**
- * The scope card of a role, from the same inputs as the settings, so the two cannot drift. The role is attended when
- * the context says so, and also when it runs GSD without Bash. The hooks loaded by project settings are those the
- * start's project settings load (projectLoadedHooks).
- */
+/** The scope card of a role, from the same inputs as the settings so the two cannot drift. */
 export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeCard {
   const loaded = sortedUnique(role.carry.hooks)
   const byProject = sortedUnique(projectLoadedHooks(ctx).map(hook => hook.script))
@@ -393,6 +420,7 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
     skills: sortedUnique(role.skills),
     mcp: sortedUnique(role.mcp),
     notGiven: { skills: notGivenSkills(role, ctx, plugins), mcp: notGivenMcp(role, ctx) },
+    callDenied: callDeniedSkills(role, ctx, plugins),
     hooks: { loaded, loadedByProject, notLoaded },
     rules: rulesFor(role, ctx, plugins, deny),
     chain: chainLines(ctx.roles),
@@ -402,12 +430,8 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
 }
 
 /**
- * The lines of a scope card, as init shows it and ROLE.md holds it (ROLE-06): the title, the framework with the model,
- * effort and permission mode, the other frameworks the role may run when there is one, the skills and MCP servers, the
- * skills and the MCP servers the role was not given, the hooks loaded, loaded by project settings and not loaded, one
- * line per list so a list cut at the line cap never hides another (B6), each rule marked `[hard]`, `[best-effort]` or
- * `[none]`, the decision chain and the memory folder. Every line passes through reportText, so a hostile value cannot
- * add a line or hide text.
+ * The lines of a scope card as init shows it and ROLE.md holds it: one line per list, so a list cut at the line cap
+ * never hides another, and the skills denied at call time, one line per plugin. Every line passes through reportText.
  */
 export function scopeCardLines(card: ScopeCard): string[] {
   const framework = adapterOf(card.framework).name
@@ -419,6 +443,7 @@ export function scopeCardLines(card: ScopeCard): string[] {
     fill(ARTIFACT.cardSkillsLine, { skills: cardList(card.skills, CARD_LIST_WORDS) }),
     fill(ARTIFACT.cardMcpLine, { servers: cardList(card.mcp, CARD_LIST_WORDS) }),
     fill(ARTIFACT.cardNotGivenSkills, { skills: cardList(card.notGiven.skills, CARD_LIST_WORDS) }),
+    ...callDeniedLines(card.callDenied),
     fill(ARTIFACT.cardNotGivenMcp, { servers: cardList(card.notGiven.mcp, CARD_LIST_WORDS) }),
     fill(ARTIFACT.cardHooksLoaded, { hooks: cardList(card.hooks.loaded, CARD_LIST_WORDS) }),
     fill(ARTIFACT.cardHooksByProject, { hooks: cardList(card.hooks.loadedByProject, CARD_LIST_WORDS) }),

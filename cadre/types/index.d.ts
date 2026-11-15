@@ -1430,6 +1430,8 @@ export type ScopeCard = {
   readonly skills: readonly string[]
   readonly mcp: readonly string[]
   readonly notGiven: { readonly skills: readonly string[]; readonly mcp: readonly string[] }
+  /** The not-given skills the launch denies per skill at call time, as `plugin:skill`, sorted. */
+  readonly callDenied: readonly string[]
   /**
    * The scanned hook scripts by what loads them in a role session (D-62, A1): `loaded` are the hooks the role carries;
    * `loadedByProject` are scripts registered in project settings that are not carried, which load because the launcher

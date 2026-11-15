@@ -26,7 +26,7 @@ import type { LaunchPlan } from '../launch/plan'
 import { inboxRotationOf, isInboxOverRotation } from '../messages/rotate'
 import { INBOX_ROTATE_READ_MAX_BYTES } from '../messages/send'
 import { INBOX_LOG_FILE, PRIVATE_INSTRUCTIONS_LINK, privateInstructionsDir, roleMemoryDir } from '../paths'
-import { deniedSkillNames, expectationsFor, probeExpectationsText } from '../probe/probe'
+import { deniedSkillNames, expectationsFor, NO_LAUNCH_SKILLS, probeExpectationsText } from '../probe/probe'
 import { gatherLaunchUser } from './gather-user'
 import { renderFailedReply } from './launcher-check'
 import { readClaudeJson, runtimeMcpText } from './mcp-config'
@@ -174,7 +174,8 @@ export async function renderRole(
   const mcpRoots = [...input.mcpRoots, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
   const mcp = runtimeMcpText(role, claudeJson, mcpRoots, state.readUserMcp)
   const deniedSkills = deniedSkillNames(pluginSkillDeny(role, scope, user).deny)
-  const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id), deniedSkills))
+  const expectations = expectationsFor(scope, roleMemoryDir(user, id), { ...NO_LAUNCH_SKILLS, deniedSkills })
+  const expectationsText = probeExpectationsText(expectations)
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
   const { inboxDir } = launch
   const disk = await renderDiskOf(io, renderPaths(user.root, id, plan, { inboxDir, kickoff: input.epic !== null }))

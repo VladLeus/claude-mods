@@ -181,6 +181,7 @@ export const ARTIFACT = Object.freeze({
   cardSkillsLine: '  skills: {skills}',
   cardMcpLine: '  MCP servers: {servers}',
   cardNotGivenSkills: '  not given skills: {skills}',
+  cardCallDenied: '  denied at call time ({plugin}, {count} skills): {skills}',
   cardNotGivenMcp: '  not given MCP: {servers}',
   cardHooksLoaded: '  hooks loaded: {hooks}',
   cardHooksByProject: '  hooks loaded by project settings: {hooks}',

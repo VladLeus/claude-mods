@@ -19,7 +19,7 @@ import {
   roleJsonPath,
   roleMemoryDir,
 } from '../paths'
-import { MATTPOCOCK_PLUGIN } from '../roles/infra'
+import { PER_SKILL_DENY_PLUGINS } from '../roles/infra'
 import { isSafeDir, lintDenyPattern, pluginName, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
 import { isPartsFlowRole, launchRoots } from './links'
 import type { LaunchUser } from './links'
@@ -306,7 +306,7 @@ export function pluginSkillDeny(
     return names.filter(name => !given.has(name)).map(name => `Skill(${name})`)
   })
   const offPlugins = Object.entries(enabled)
-    .filter(([key, isOn]) => isOn && pluginName(key) === pluginName(MATTPOCOCK_PLUGIN))
+    .filter(([key, isOn]) => isOn && PER_SKILL_DENY_PLUGINS.map(pluginName).includes(pluginName(key)))
     .filter(([key]) => listedSkillsOf(user, key) === undefined)
     .map(([key]) => key)
   const warnings = offPlugins.map(key => t('launch.deny.pluginOffWarning', { plugin: shown(key) }))

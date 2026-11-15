@@ -36,7 +36,7 @@ import {
   roleMemoryDir,
   userDirOf,
 } from '../paths'
-import { MATTPOCOCK_PLUGIN } from '../roles/infra'
+import { PER_SKILL_DENY_PLUGINS } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { isEntryForRoot, SOURCE_ORDER } from '../scan/facts/settings'
 import { claudeMdImports } from '../scan/instructions/imports'
@@ -228,13 +228,12 @@ async function jsonOf(io: InitIo, path: string): Promise<unknown> {
 }
 
 /**
- * The install path installed_plugins.json records for MATTPOCOCK_PLUGIN: the first entry for this repo, one for the
- * root, the root as given or the main checkout of a nested worktree (`roots`), else the first user entry. Null when
- * that entry has no absolute path.
+ * The install path installed_plugins.json records for the plugin `key`: the first repo entry for one of `roots` (the
+ * root, the root as given or the main checkout of a nested worktree), else the first user entry; null if not absolute.
  */
-function installPathOf(value: unknown, roots: readonly string[]): string | null {
-  if (!isObject(value) || !isObject(value.plugins) || !Object.hasOwn(value.plugins, MATTPOCOCK_PLUGIN)) return null
-  const entries = value.plugins[MATTPOCOCK_PLUGIN]
+function installPathOf(value: unknown, roots: readonly string[], key: string): string | null {
+  if (!isObject(value) || !isObject(value.plugins) || !Object.hasOwn(value.plugins, key)) return null
+  const entries = value.plugins[key]
   if (!Array.isArray(entries)) return null
   const usable = entries.filter(isObject).filter(entry => isEntryForRoot(entry, roots))
   const repoEntry = usable.find(entry => entry.scope !== 'user')
@@ -262,8 +261,8 @@ function skillListOf(value: unknown): string[] | null {
 }
 
 /**
- * The skill names of the installed MATTPOCOCK_PLUGIN by its key, read from its own plugin.json at the install path
- * installPathOf gives; {} when any read fails or the list cannot be read whole, so the launch turns the plugin off.
+ * The skill names of each installed PER_SKILL_DENY_PLUGINS key, from its own plugin.json; a key whose list cannot be
+ * read whole is left out, so the launch turns that plugin off.
  */
 async function pluginSkillsOf(
   io: InitIo,
@@ -271,11 +270,16 @@ async function pluginSkillsOf(
   roots: readonly string[],
 ): Promise<Record<string, readonly string[]>> {
   const installed = await jsonOf(io, `${userDir}/plugins/installed_plugins.json`)
-  const installPath = installPathOf(installed, roots)
-  if (installPath === null) return {}
-  const skills = skillListOf(await jsonOf(io, `${installPath}/.claude-plugin/plugin.json`))
+  const lists: Record<string, readonly string[]> = {}
+  for (const key of PER_SKILL_DENY_PLUGINS) {
+    const installPath = installPathOf(installed, roots, key)
+    if (installPath === null) continue
+    const skills = skillListOf(await jsonOf(io, `${installPath}/.claude-plugin/plugin.json`))
+    if (skills === null) continue
+    lists[key] = skills
+  }
 
-  return skills === null ? {} : { [MATTPOCOCK_PLUGIN]: skills }
+  return lists
 }
 
 /** The plugin keys `<root>/.claude/settings.json` turns on, sorted; [] when it cannot be read. */

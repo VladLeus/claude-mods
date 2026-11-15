@@ -144,6 +144,12 @@ export const GRILL_SKILLS: readonly string[] = Object.freeze([
 ])
 
 /**
+ * The plugins whose skill list the launch reads, so a role is denied each of their skills it is not given, at call
+ * time.
+ */
+export const PER_SKILL_DENY_PLUGINS: readonly string[] = Object.freeze([MATTPOCOCK_PLUGIN])
+
+/**
  * The review skill of claude-security, as `plugin:skill`, which every Security role gets when the person answers
  * Install (decision #39). The name is an assumption (the plugin's skill folder is `claude-security`), checked live in
  * 03-UAT (plan 03-16).
