@@ -165,15 +165,15 @@ describe('the per-skill probe lines', () => {
     expect(expectations.at(-1)?.check).toBe('memory-path')
   })
 
-  test('a not-given user skill gets no line, nor does a not-given plugin skill whose plugin is enabled', () => {
+  test('a not-given skill with no scanned plugin gets no line, a colon in its name included', () => {
     const user = beScope([], [skillRef('my-skill')])
-    const scope = beScope([], [skillRef(CLAUDE_SECURITY_SKILL, CLAUDE_SECURITY_PLUGIN)])
-    const enabledPlugins = { ...scope.settings.enabledPlugins, [CLAUDE_SECURITY_PLUGIN]: true }
-    const enabled: CompiledScope = { ...scope, settings: { ...scope.settings, enabledPlugins } }
+    const commands = beScope([], [skillRef('gsd:plan-phase'), skillRef('anthropic-skills:deep-research')])
 
     expect(user.card.notGiven.skills).toEqual(['my-skill'])
     expect(skillLines(expectationsFor(user, BE_MEMORY))).toEqual([])
-    expect(skillLines(expectationsFor(enabled, BE_MEMORY))).toEqual([])
+    expect(commands.card.notGiven.skills).toEqual(['anthropic-skills:deep-research', 'gsd:plan-phase'])
+    expect(commands.card.notGiven.pluginSkills).toEqual([])
+    expect(expectationsFor(commands, BE_MEMORY).filter(item => item.check === 'skill-absent')).toEqual([])
   })
 
   test(

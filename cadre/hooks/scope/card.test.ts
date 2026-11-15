@@ -749,3 +749,19 @@ describe('the skills denied at call time on the card', () => {
     expect(be.callDenied).toEqual([])
   })
 })
+
+describe('the not-given plugin skills on the card', () => {
+  test('they are the not-given names whose scanned plugin is set, sorted, once each', () => {
+    const skills = [
+      skillRef('zeta:b', 'zeta@m'),
+      skillRef('zeta:b', 'zeta@m'),
+      skillRef('alpha:a', 'alpha@m'),
+      skillRef('mine'),
+      skillRef('x:y'),
+    ]
+    const card = compileScope(templateRole('be'), context({ setup: emptySetupScan({ skills }) })).card
+
+    expect(card.notGiven.skills).toEqual(['alpha:a', 'mine', 'x:y', 'zeta:b'])
+    expect(card.notGiven.pluginSkills).toEqual(['alpha:a', 'zeta:b'])
+  })
+})
