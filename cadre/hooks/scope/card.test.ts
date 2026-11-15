@@ -406,8 +406,15 @@ function hereNotes(): ScopeRule[] {
   const writable =
     '.claude/settings.json and .claude/settings.local.json of the folder the launcher is run from are not ' +
     'write-protected: a role that can edit there can change what the next launch loads'
+  const plugins =
+    'plugins that .claude/settings.json of the folder the launcher is run from enables are not switched off'
 
-  return [...notes.slice(0, 2), { text: writable, enforcement: 'none' }, ...notes.slice(2)]
+  return [
+    ...notes.slice(0, 2),
+    { text: writable, enforcement: 'none' },
+    { text: plugins, enforcement: 'none' },
+    ...notes.slice(2),
+  ]
 }
 
 /** The project monitor warning for `script`. */
@@ -449,7 +456,7 @@ describe('launch start card (D-122)', () => {
     const setup = { ...START_SETUP, startHooks: [hook('guard.sh', 'project')] }
     const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup })).card
 
-    expect(card.rules.slice(-6, -1)).toEqual(hereNotes())
+    expect(card.rules.slice(-7, -1)).toEqual(hereNotes())
     expect(card.rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
     expect(card.hooks.loadedByProject).toEqual([])
   })

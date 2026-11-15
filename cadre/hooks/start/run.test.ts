@@ -1287,6 +1287,26 @@ describe('linked memory deny (G-02-1f)', () => {
   })
 })
 
+describe('the start folder plugins of a dir start', () => {
+  test('runStart switches off a plugin the start folder settings of a dir start enable', async () => {
+    const state = cadreJsonText({
+      schema: 1,
+      cadreVersion: '0.2.0',
+      framework: 'none',
+      gitPolicy: 'definitions',
+      roles: ['be'],
+      launchStart: { kind: 'dir', path: 'src' },
+      readUserMcp: false,
+    })
+    const dirStart = withFile(await appliedWorld(), '/repo/.cadre/cadre.json', state)
+    const world = withFile(dirStart, '/repo/src/.claude/settings.json', '{"enabledPlugins":{"tool@m":true}}')
+    const start = await startBe(world)
+    const settings = start.writes.find(write => write.path === `${RUNTIME}/settings.json`)?.text ?? '{}'
+
+    expect(JSON.parse(settings).enabledPlugins?.['tool@m']).toBe(false)
+  })
+})
+
 /** The folder that holds every role memory folder of the fixture user: `<userDir>/cadre`. */
 const CADRE_DIR = '/home/u/.claude/cadre'
 

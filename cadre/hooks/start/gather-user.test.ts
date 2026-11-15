@@ -677,6 +677,31 @@ describe('the plugin skills and project plugins a launch reads', () => {
     expect((await gatheredUser(repoWorld({ files }))).projectPlugins).toEqual([MATTPOCOCK_PLUGIN, 'tool@m'])
   })
 
+  test('a dir start adds the keys its start folder settings enable; git-root and here read no start file', async () => {
+    const files = {
+      '/repo/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'a@m': true } }),
+      '/repo/src/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'tool@m': true } }),
+    }
+    const world = repoWorld({ files })
+    const dir = await gatheredUser(world, { kind: 'dir', path: 'src' })
+    const root = await gatheredUser(world)
+    const here = await gatheredUser(world, { kind: 'here' })
+
+    expect(dir.projectPlugins).toEqual(['a@m', 'tool@m'])
+    expect([root.projectPlugins, here.projectPlugins]).toEqual([['a@m'], ['a@m']])
+  })
+
+  test('a start file that links out of the repo, is missing or is not JSON adds no key', async () => {
+    const rootFile = { '/repo/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'a@m': true } }) }
+    const start = '/repo/src/.claude/settings.json'
+    const enabling = { ...rootFile, [start]: JSON.stringify({ enabledPlugins: { 'tool@m': true } }) }
+    const linked = repoWorld({ files: enabling, realPaths: { [start]: '/elsewhere/settings.json' } })
+    const notJson = repoWorld({ files: { ...rootFile, [start]: '{"enabledPlugins": [' } })
+    for (const world of [linked, repoWorld({ files: rootFile }), notJson]) {
+      expect((await gatheredUser(world, { kind: 'dir', path: 'src' })).projectPlugins).toEqual(['a@m'])
+    }
+  })
+
   test('with no install and no repo settings the user has neither field', async () => {
     const gathered = await gatheredUser(repoWorld())
     const files = { '/repo/.claude/settings.json': '{"enabledPlugins": [' }
