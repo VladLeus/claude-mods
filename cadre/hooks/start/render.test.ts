@@ -79,7 +79,7 @@ async function renderedPm(
   return parsed.rules
 }
 
-/** The skill lines PM's probe gets: the two grill skills present, tdd absent, all best-effort. */
+/** The skill lines PM's probe gets: the two grill skills present, tdd in the call-denied summary, all best-effort. */
 const PM_SKILL_LINES: readonly ProbeExpectation[] = [
   {
     check: 'skill-present',
@@ -94,10 +94,10 @@ const PM_SKILL_LINES: readonly ProbeExpectation[] = [
     token: 'mattpocock-skills:grilling',
   },
   {
-    check: 'skill-absent',
+    check: 'not-visible',
     enforcement: 'best-effort',
-    text: 'Skill denied to the role [skill mattpocock-skills:tdd absent]',
-    token: 'mattpocock-skills:tdd',
+    text: 'denied at call time (mattpocock-skills, 1 skills): tdd',
+    token: '',
   },
 ]
 
@@ -107,24 +107,28 @@ function skillsInventory(skills: readonly string[]): InitInventory {
 }
 
 describe('the per-skill probe lines of a render', () => {
-  test("PM's render writes the grill skills present and tdd absent, before the memory folder line", async () => {
-    const rules = await renderedPm(memWorld({ dirs: REPO_DIRS, files: mattInstall({ scope: 'user' }) }))
-    const lines = rules.slice(-4, -1)
+  test(
+    "PM's render writes the grill skills present and one call-denied summary line, before the memory folder line",
+    async () => {
+      const rules = await renderedPm(memWorld({ dirs: REPO_DIRS, files: mattInstall({ scope: 'user' }) }))
+      const lines = rules.slice(-4, -1)
 
-    expect(lines).toEqual([...PM_SKILL_LINES])
-    expect(rules.at(-1)?.check).toBe('memory-path')
-    const all = ['mattpocock-skills:grill-me', 'mattpocock-skills:grilling', 'mattpocock-skills:tdd']
-    expect(probeVerdicts(skillsInventory(all), lines).map(item => item.verdict)).toEqual([
-      'best-effort',
-      'best-effort',
-      'violated',
-    ])
-    expect(probeVerdicts(skillsInventory(all.slice(0, 2)), lines).map(item => item.verdict)).toEqual([
-      'best-effort',
-      'best-effort',
-      'best-effort',
-    ])
-  })
+      expect(lines).toEqual([...PM_SKILL_LINES])
+      expect(rules.at(-1)?.check).toBe('memory-path')
+      expect(rules.filter(rule => rule.check === 'skill-absent' && rule.token === 'mattpocock-skills:tdd')).toEqual([])
+      const all = ['mattpocock-skills:grill-me', 'mattpocock-skills:grilling', 'mattpocock-skills:tdd']
+      expect(probeVerdicts(skillsInventory(all), lines).map(item => item.verdict)).toEqual([
+        'best-effort',
+        'best-effort',
+        'best-effort',
+      ])
+      expect(probeVerdicts(skillsInventory(all.slice(0, 2)), lines).map(item => item.verdict)).toEqual([
+        'best-effort',
+        'best-effort',
+        'best-effort',
+      ])
+    },
+  )
   test("PM's epic render reads the main checkout's install and writes the same skill lines", async () => {
     const worktree = '/repo/.claude/worktrees/proj-1'
     const locations: InitLocations = { ...DEFAULT_LOCATIONS, root: worktree, givenRoot: worktree }
@@ -133,8 +137,7 @@ describe('the per-skill probe lines of a render', () => {
     const rules = await renderedPm(world, locations, { mainRoot: '/repo', kickoff: 'kickoff' })
 
     expect(rules.slice(-4, -1)).toEqual([...PM_SKILL_LINES])
-    expect(rules.filter(rule => rule.token === 'mattpocock-skills:tdd').map(rule => rule.check)).toEqual([
-      'skill-absent',
-    ])
+    expect(rules.filter(rule => rule.token === 'mattpocock-skills:tdd')).toEqual([])
+    expect(rules.filter(rule => rule.text.endsWith(': tdd'))).toEqual([PM_SKILL_LINES[2]])
   })
 })

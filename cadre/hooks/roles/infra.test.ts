@@ -9,6 +9,7 @@ import {
   GRILL_SKILLS,
   INFRA_PLUGINS,
   MATTPOCOCK_PLUGIN,
+  PER_SKILL_DENY_PLUGINS,
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
 } from './infra'
@@ -41,6 +42,8 @@ describe('the grill plugin of PM', () => {
     expect(MATTPOCOCK_PLUGIN).toBe('mattpocock-skills@claude-plugins-official')
     expect(GRILL_SKILLS).toEqual(['mattpocock-skills:grilling', 'mattpocock-skills:grill-me'])
     expect(Object.isFrozen(GRILL_SKILLS)).toBe(true)
+    expect(PER_SKILL_DENY_PLUGINS).toEqual([MATTPOCOCK_PLUGIN])
+    expect(Object.isFrozen(PER_SKILL_DENY_PLUGINS)).toBe(true)
     expect([...SECURITY_PLUGINS, ...INFRA_PLUGINS]).not.toContain(MATTPOCOCK_PLUGIN)
   })
 })

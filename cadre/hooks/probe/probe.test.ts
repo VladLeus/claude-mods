@@ -129,13 +129,18 @@ function beScope(skills: readonly string[], scanned: ReturnType<typeof skillRef>
   return compileScope(templateRole('be', { skills: [...skills] }), context({ setup }))
 }
 
-/** The rule text of a granted skill's line, and of a denied skill's line. */
+/** The rule text of a granted skill's line, and the start of a call-denied summary line. */
 const GIVEN = 'Skill given to the role'
-const DENIED = 'Skill denied to the role'
+const CALL_DENIED = 'denied at call time'
 
-/** The per-skill expectations of a scope: those whose check is skill-absent or whose text names a granted skill. */
+/**
+ * The per-skill expectations of a scope: those whose check is skill-absent or whose text names a granted skill or
+ * starts a call-denied summary.
+ */
 function skillLines(expectations: readonly ProbeExpectation[]): ProbeExpectation[] {
-  return expectations.filter(item => item.check === 'skill-absent' || item.text.startsWith(GIVEN))
+  return expectations.filter(
+    item => item.check === 'skill-absent' || item.text.startsWith(GIVEN) || item.text.startsWith(CALL_DENIED),
+  )
 }
 
 describe('the per-skill probe lines', () => {
@@ -171,34 +176,42 @@ describe('the per-skill probe lines', () => {
     expect(skillLines(expectationsFor(enabled, BE_MEMORY))).toEqual([])
   })
 
-  test('a granted skill gets a skill-present line, a handoff skill none, and a denied name a skill-absent line', () => {
-    const scope = beScope(['create-handoff-doc', 'x:y'], [])
-    const lines = skillLines(expectationsFor(scope, BE_MEMORY, ['z:b', 'z:a', 'z:b']))
+  test(
+    'a granted skill gets a skill-present line, a handoff skill none, and the denied names one summary line per plugin',
+    () => {
+      const scope = beScope(['create-handoff-doc', 'x:y'], [])
+      const launch = { deniedSkills: ['z:b', 'z:a', 'w:c'], offPlugins: [], unlinkedSkills: [] }
+      const lines = skillLines(expectationsFor(scope, BE_MEMORY, launch))
 
-    expect(lines).toEqual([
-      { check: 'skill-present', enforcement: 'best-effort', text: `${GIVEN} [skill x:y present]`, token: 'x:y' },
-      { check: 'skill-absent', enforcement: 'best-effort', text: `${DENIED} [skill z:a absent]`, token: 'z:a' },
-      { check: 'skill-absent', enforcement: 'best-effort', text: `${DENIED} [skill z:b absent]`, token: 'z:b' },
-    ])
-  })
+      expect(lines).toEqual([
+        { check: 'skill-present', enforcement: 'best-effort', text: `${GIVEN} [skill x:y present]`, token: 'x:y' },
+        { check: 'not-visible', enforcement: 'best-effort', text: `${CALL_DENIED} (w, 1 skills): c`, token: '' },
+        { check: 'not-visible', enforcement: 'best-effort', text: `${CALL_DENIED} (z, 2 skills): a, b`, token: '' },
+      ])
+    },
+  )
 
   test('a skill name that is not a probe token becomes a not-visible line marked not checked', () => {
-    const expectations = expectationsFor(beScope([], []), BE_MEMORY, ['a"b'])
+    const scope = beScope([], [])
+    const odd: CompiledScope = { ...scope, card: { ...scope.card, skills: ['a"b'] } }
+    const expectations = expectationsFor(odd, BE_MEMORY)
 
     expect(expectations.at(-2)).toEqual({
       check: 'not-visible',
       enforcement: 'best-effort',
-      text: 'Skill denied to the role [skill ab absent] (not checked: unusual characters)',
+      text: 'Skill given to the role [skill ab present] (not checked: unusual characters)',
       token: '',
     })
   })
   test('every per-skill line carries the enforcement of the Skills rule on the card', () => {
     const scope = beScope(['x:y'], [skillRef(CLAUDE_SECURITY_SKILL, CLAUDE_SECURITY_PLUGIN)])
     const skills = scope.card.rules.find(item => item.text === ARTIFACT.cardSkills)
-    const lines = skillLines(expectationsFor(scope, BE_MEMORY, ['z:a']))
+    const launch = { deniedSkills: ['z:a'], offPlugins: [], unlinkedSkills: [] }
+    const lines = skillLines(expectationsFor(scope, BE_MEMORY, launch))
 
     expect(skills?.enforcement).toBe(SKILLS_RULE_ENFORCEMENT)
     expect(lines.length).toBe(3)
+    expect(lines.map(line => line.text)).toContain(`${CALL_DENIED} (z, 1 skills): a`)
     expect(lines.map(line => line.enforcement)).toEqual([
       SKILLS_RULE_ENFORCEMENT,
       SKILLS_RULE_ENFORCEMENT,

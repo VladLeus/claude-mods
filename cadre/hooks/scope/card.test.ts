@@ -12,6 +12,7 @@ import type {
   SetupScan,
 } from '../../types'
 import { ARTIFACT } from '../locales/artifact'
+import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import {
   BIDI_OVERRIDE,
@@ -24,7 +25,7 @@ import {
   skillRef,
   templateRole,
 } from '../testkit'
-import { mcpToolName, scopeCardLines, SKILLS_RULE_ENFORCEMENT } from './card'
+import { callDeniedLines, mcpToolName, scopeCardLines, SKILLS_RULE_ENFORCEMENT } from './card'
 import { compileScope } from './compile'
 
 /** The card rule with exactly this text, or undefined when the card has none. */
@@ -719,5 +720,32 @@ describe('a role started with --ask-user', () => {
       [false, false],
       [false, false],
     ])
+  })
+})
+
+describe('the skills denied at call time on the card', () => {
+  /** A scan that holds the grill plugin and lists three of its skills. */
+  const MATT_SCAN = emptySetupScan({
+    plugins: [MATTPOCOCK_PLUGIN],
+    skills: ['grilling', 'grill-me', 'tdd'].map(name => skillRef(`mattpocock-skills:${name}`, MATTPOCOCK_PLUGIN)),
+  })
+
+  test('callDeniedLines gives one line per plugin with 12 bare names and then how many more', () => {
+    const names = Array.from({ length: 14 }, (_, index) => `m:s${String(index + 1).padStart(2, '0')}`)
+    const shownNames = names.slice(0, 12).map(name => name.slice('m:'.length))
+
+    expect(callDeniedLines(names)).toEqual([`  denied at call time (m, 14 skills): ${shownNames.join(', ')}, +2 more`])
+    expect(callDeniedLines([])).toEqual([])
+  })
+
+  test('PM given the grill skills shows tdd denied at call time after the not-given skills; BE shows none', () => {
+    const pm = compileScope(templateRole('pm', { skills: [...GRILL_SKILLS] }), context({ setup: MATT_SCAN })).card
+    const be = compileScope(templateRole('be'), context({ setup: MATT_SCAN })).card
+    const lines = scopeCardLines(pm)
+    const notGiven = lines.findIndex(line => line.startsWith('  not given skills:'))
+
+    expect(pm.callDenied).toEqual(['mattpocock-skills:tdd'])
+    expect(lines[notGiven + 1]).toBe('  denied at call time (mattpocock-skills, 1 skills): tdd')
+    expect(be.callDenied).toEqual([])
   })
 })
