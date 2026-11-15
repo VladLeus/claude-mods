@@ -297,7 +297,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'recorded',
     file: 'live/03-78.test.ts',
     roleSession: 'be',
-    cassette: { inputs: ['cadre/hooks/status'] },
+    cassette: { inputs: ['cadre/hooks/launch', 'cadre/hooks/paths.ts', 'cadre/hooks/status'] },
   },
   {
     id: '03#80',
