@@ -34,12 +34,14 @@ import {
   memoryFolderOf,
   parentOf,
   roleMemoryDir,
+  startSettingsPath,
   userDirOf,
 } from '../paths'
 import { PER_SKILL_DENY_PLUGINS } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { isEntryForRoot, SOURCE_ORDER } from '../scan/facts/settings'
 import { claudeMdImports } from '../scan/instructions/imports'
+import { readRepoFile } from '../scan/port-read'
 import { ruleFiles, RULES_FOLDER } from '../scan/rules'
 import { claudeMdPathsOf } from '../scan/setup/claude-md'
 import { hookScriptOf, positiveInteger } from '../scan/setup/settings'
@@ -282,13 +284,25 @@ async function pluginSkillsOf(
   return lists
 }
 
-/** The plugin keys `<root>/.claude/settings.json` turns on, sorted; [] when it cannot be read. */
-async function projectPluginsOf(io: InitIo, root: string): Promise<string[]> {
-  const value = await jsonOf(io, `${root}/.claude/settings.json`)
+/** The enabledPlugins keys a settings value sets to true, sorted. */
+function enabledKeysOf(value: unknown): string[] {
   if (!isObject(value) || !isObject(value.enabledPlugins)) return []
   const enabled = Object.entries(value.enabledPlugins).filter(([, isOn]) => isOn === true)
 
   return sortedUnique(enabled.map(([key]) => key))
+}
+
+/**
+ * The plugin keys the root's .claude/settings.json and a dir start folder's turn on, sorted; a file that cannot be
+ * read adds none.
+ */
+async function projectPluginsOf(io: InitIo, root: string, startDir: string | undefined): Promise<string[]> {
+  const rootKeys = enabledKeysOf(await jsonOf(io, `${root}/.claude/settings.json`))
+  if (startDir === undefined) return rootKeys
+  const read = await readRepoFile(io, root, startSettingsPath(startDir), MAX_READ_BYTES)
+  const startKeys = read.state === 'text' ? enabledKeysOf(parseJsonValue(read.text)?.value) : []
+
+  return sortedUnique([...rootKeys, ...startKeys])
 }
 
 /** The user's agents: the regular `.md` files in `<userDir>/agents`, by name without `.md`, sorted. */
@@ -374,8 +388,8 @@ async function levelsRefusal(
  *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
  *   skills and agents, and the code dirs given;
  * - the skill list of the installed mattpocock-skills (pluginSkillsOf), whose install entry is looked up over the same
- *   roots as the user folder, and the plugins the repo's settings file turns on (projectPluginsOf), each set only when
- *   there is one;
+ *   roots as the user folder, and the plugins the settings files of the repo and of a dir start folder turn on
+ *   (projectPluginsOf), each set only when there is one;
  * - for a parts-flow role (isPartsFlowRole), the memories its hand-out record names, linked into its role memory
  *   folder with cadre's MEMORY.md block (linkedMemoriesOf, G-02-1f, D-140 q3-a): their link paths are the user's
  *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
@@ -421,7 +435,8 @@ export async function gatherLaunchUser(
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
   const pluginSkills = await pluginSkillsOf(io, userDir, roots)
-  const projectPlugins = await projectPluginsOf(io, locations.root)
+  const startDir = input.launchStart.kind === 'dir' ? input.launchStart.path : undefined
+  const projectPlugins = await projectPluginsOf(io, locations.root, startDir)
   const user: LaunchUser = {
     root: locations.root,
     givenRoot: locations.givenRoot,
@@ -443,7 +458,7 @@ export async function gatherLaunchUser(
     linkedMemories: [],
     ...(Object.keys(pluginSkills).length === 0 ? {} : { pluginSkills }),
     ...(projectPlugins.length === 0 ? {} : { projectPlugins }),
-    ...(input.launchStart.kind === 'dir' ? { startDir: input.launchStart.path } : {}),
+    ...(startDir === undefined ? {} : { startDir }),
   }
   if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS, inboxDir }
   const linked = await linkedMemoriesOf(io, user, input.role.id)

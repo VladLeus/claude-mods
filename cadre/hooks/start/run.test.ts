@@ -1298,7 +1298,8 @@ describe('the start folder plugins of a dir start', () => {
       launchStart: { kind: 'dir', path: 'src' },
       readUserMcp: false,
     })
-    const dirStart = withFile(await appliedWorld(), '/repo/.cadre/cadre.json', state)
+    const applied = withFile(await appliedWorld(), '/repo/.cadre/cadre.json', state)
+    const dirStart = { ...applied, dirs: { ...applied.dirs, '/repo/src': [] } }
     const world = withFile(dirStart, '/repo/src/.claude/settings.json', '{"enabledPlugins":{"tool@m":true}}')
     const start = await startBe(world)
     const settings = start.writes.find(write => write.path === `${RUNTIME}/settings.json`)?.text ?? '{}'
