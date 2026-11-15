@@ -59,16 +59,17 @@ const GIT_RULE = {
   result: { exitCode: 0, stdout: '/repo/.git\n', stderr: '' },
 }
 
-/** The expectations renderRole wrote for PM over `world` at these locations, with this epic. */
-async function renderedPm(
+/** The expectations renderRole wrote for `role` over `world` at these locations, with this epic, and its warnings. */
+async function renderOf(
   world: MemWorld,
+  role: RoleSpec = PM,
   locations: InitLocations = DEFAULT_LOCATIONS,
   epic: EpicRender | null = null,
-): Promise<ProbeExpectation[]> {
+): Promise<{ readonly rules: ProbeExpectation[]; readonly warnings: readonly string[] }> {
   const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] })
-  const scope = compileScope(PM, context({ framework: 'none', setup, roles: ['pm'] }))
+  const scope = compileScope(role, context({ framework: 'none', setup, roles: ['pm'] }))
   const host = memHost(hostWorld({ runs: [GIT_RULE] }))
-  const input = { locations, state: stateOf([PM]), role: PM, scope, codeDirs: [], mcpRoots: [], epic }
+  const input = { locations, state: stateOf([role]), role, scope, codeDirs: [], mcpRoots: [], epic }
   const render = await renderRole(memIo(world, {}).io, host.io, input)
   if (render.kind === 'refuse') throw new Error(`renderRole refused: ${render.text}`)
   const path = `${locations.root}/.cadre/pm/.runtime/probe-expectations.json`
@@ -76,8 +77,20 @@ async function renderedPm(
   if (written === undefined) throw new Error('renderRole wrote no probe expectations')
   const parsed: { readonly rules: ProbeExpectation[] } = JSON.parse(written.text)
 
-  return parsed.rules
+  return { rules: parsed.rules, warnings: render.warnings }
 }
+
+/** The expectations renderRole wrote for PM over `world` at these locations, with this epic. */
+async function renderedPm(
+  world: MemWorld,
+  locations: InitLocations = DEFAULT_LOCATIONS,
+  epic: EpicRender | null = null,
+): Promise<ProbeExpectation[]> {
+  return (await renderOf(world, PM, locations, epic)).rules
+}
+
+/** The start of the note a given skill the launch could not provide gets. */
+const UNAVAILABLE = 'Skill given to the role, not available at this launch: '
 
 /** The skill lines PM's probe gets: the two grill skills present, tdd in the call-denied summary, all best-effort. */
 const PM_SKILL_LINES: readonly ProbeExpectation[] = [
@@ -139,5 +152,30 @@ describe('the per-skill probe lines of a render', () => {
     expect(rules.slice(-4, -1)).toEqual([...PM_SKILL_LINES])
     expect(rules.filter(rule => rule.token === 'mattpocock-skills:tdd')).toEqual([])
     expect(rules.filter(rule => rule.text.endsWith(': tdd'))).toEqual([PM_SKILL_LINES[2]])
+  })
+  test('a given skill whose plugin the launch turned off gets a note instead of a skill-present line', async () => {
+    const { rules, warnings } = await renderOf(memWorld({ dirs: REPO_DIRS }))
+    const perSkill = rules.slice(-3, -1)
+
+    expect(perSkill).toEqual([
+      { check: 'note', enforcement: 'none', text: `${UNAVAILABLE}mattpocock-skills:grill-me`, token: '' },
+      { check: 'note', enforcement: 'none', text: `${UNAVAILABLE}mattpocock-skills:grilling`, token: '' },
+    ])
+    expect(rules.filter(rule => rule.check === 'skill-present' && GRILL_SKILLS.includes(rule.token))).toEqual([])
+    expect(probeVerdicts(skillsInventory([]), perSkill).map(item => item.verdict)).not.toContain('violated')
+    expect(warnings).toContain(
+      `plugin ${MATTPOCOCK_PLUGIN} is turned off for this role: ` +
+        'cadre could not read its skill list from the installed plugin.json',
+    )
+  })
+  test('a given user skill the launch could not link gets a note, and the not-linked warning stays', async () => {
+    const role = templateRole('pm', { skills: [...GRILL_SKILLS, 'my-notes'] })
+    const world = memWorld({ dirs: REPO_DIRS, files: mattInstall({ scope: 'user' }) })
+    const { rules, warnings } = await renderOf(world, role)
+
+    expect(rules.filter(rule => rule.text.endsWith('my-notes'))).toEqual([
+      { check: 'note', enforcement: 'none', text: `${UNAVAILABLE}my-notes`, token: '' },
+    ])
+    expect(warnings).toContain('skill my-notes was not found in your user skills: not linked')
   })
 })

@@ -219,6 +219,18 @@ describe('the per-skill probe lines', () => {
     ])
   })
 
+  test('a given skill the launch dropped gets a note, every other given skill a skill-present line', () => {
+    const scope = beScope(['x:y', 'solo', 'kept'], [])
+    const launch = { deniedSkills: [], offPlugins: ['x@m'], unlinkedSkills: ['solo'] }
+    const unavailable = 'Skill given to the role, not available at this launch:'
+
+    expect(skillLines(expectationsFor(scope, BE_MEMORY, launch))).toEqual([
+      { check: 'skill-present', enforcement: 'best-effort', text: `${GIVEN} [skill kept present]`, token: 'kept' },
+      { check: 'note', enforcement: 'none', text: `${unavailable} solo`, token: '' },
+      { check: 'note', enforcement: 'none', text: `${unavailable} x:y`, token: '' },
+    ])
+  })
+
   test('a Security role given claude-security with the plugin enabled gets it present and never absent', () => {
     const security = templateRole('security', { skills: [CLAUDE_SECURITY_SKILL] })
     const scanned = [skillRef(CLAUDE_SECURITY_SKILL, CLAUDE_SECURITY_PLUGIN)]

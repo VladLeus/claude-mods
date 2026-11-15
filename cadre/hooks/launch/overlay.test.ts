@@ -73,7 +73,18 @@ describe('overlayLinks', () => {
         { path: `${OVERLAY}/skills/resume-handoff-doc`, target: '/home/u/.claude/skills/resume-handoff-doc' },
       ],
       warnings: [],
+      unlinkedSkills: [],
     })
+  })
+
+  test('unlinkedSkills names the skills not linked, not found or unsafe, sorted, and never an agent', () => {
+    const overlay = { skills: ['ok', 'missing', '../x'], agents: ['gone'] }
+    const result = overlayLinks('pm', overlay, user({ userSkills: ['ok', '../x'] }))
+    const owner = user({ userSkills: ['ok'], userAgents: ['b'] })
+    const linked = overlayLinks('pm', { skills: ['ok'], agents: ['b'] }, owner)
+
+    expect(result.unlinkedSkills).toEqual(['../x', 'missing'])
+    expect(linked.unlinkedSkills).toEqual([])
   })
 
   test('the targets lie in the config dir of the user, and the links under the role folder of the repo', () => {
