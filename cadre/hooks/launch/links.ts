@@ -82,6 +82,8 @@ export type LaunchUser = {
   readonly projectPlugins?: readonly string[]
   /** The slug of the epic whose worktree the role is rendered for; absent for /cadre start. */
   readonly epicSlug?: string
+  /** The repo-relative folder of a dir start; absent for a git-root or here start. */
+  readonly startDir?: string
 }
 
 /**

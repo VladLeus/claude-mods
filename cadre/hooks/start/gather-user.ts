@@ -368,7 +368,7 @@ async function levelsRefusal(
  *   checkout as `mainRoot`, set before the memories are linked, so a linked worktree links and denies main's memory
  *   folder and gets main's code-dir denies (03.1-W3 M1, S1);
  * - the carried values of the user settings (launchSettingsOf) and the hooks of each source hookSourcesFor names for
- *   the launch start (launchHooksOf, D-103);
+ *   the launch start (launchHooksOf, D-103), and the folder of a dir start (startDir);
  * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
  *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
  *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
@@ -443,6 +443,7 @@ export async function gatherLaunchUser(
     linkedMemories: [],
     ...(Object.keys(pluginSkills).length === 0 ? {} : { pluginSkills }),
     ...(projectPlugins.length === 0 ? {} : { projectPlugins }),
+    ...(input.launchStart.kind === 'dir' ? { startDir: input.launchStart.path } : {}),
   }
   if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS, inboxDir }
   const linked = await linkedMemoriesOf(io, user, input.role.id)

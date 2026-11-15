@@ -18,6 +18,7 @@ import {
   privateInstructionsDir,
   roleJsonPath,
   roleMemoryDir,
+  shortenedProjectPrefixOf,
 } from '../paths'
 import { PER_SKILL_DENY_PLUGINS } from '../roles/infra'
 import { isSafeDir, lintDenyPattern, pluginName, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
@@ -207,13 +208,18 @@ function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
 }
 
 /**
- * The deny of the repo's memory folders, `Edit(//<folder>/**)` for the memory folder of every launch root, so no role
+ * The deny of the repo's memory folders, `Edit(//<folder>/**)` for the memory folder of every launch root and
+ * `Edit(//<prefix>*\/memory/**)` for the engine's shortened folder of a root whose encoded name is too long, so no role
  * edits a memory, through a link or not; a folder no exact rule can hold gets UNDENIED_MEMORY_FOLDER_WARNING, once.
  */
 function memoryFolderDeny(user: LaunchUser): DenyResult {
   const roots = launchRoots(user)
   const folders = sortedUnique(roots.map(root => memoryFolderOf(user.userDir, root)))
-  const rules = folders.map(folder => editRules(folder, '/**'))
+  const prefixes = sortedUnique(roots.flatMap(root => shortenedProjectPrefixOf(user.userDir, root) ?? []))
+  const rules = [
+    ...folders.map(folder => editRules(folder, '/**')),
+    ...prefixes.map(prefix => editRules(prefix, '*/memory/**')),
+  ]
   const deny = rules.flatMap(rule => rule ?? [])
 
   return { deny, warnings: rules.includes(null) ? [UNDENIED_MEMORY_FOLDER_WARNING] : [] }
@@ -221,23 +227,30 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
 
 /**
  * The deny of the files a later launch or session runs or trusts, `Edit(//...)` under every launch root: the two
- * `.claude` settings files, `.cadre/bin/**`, `.cadre/manifest.json`, `.cadre/cadre.json`, the team's role.json files
- * and each framework's project install folder, so an Edit-only role cannot plant a hook, rewrite a launcher or change
- * the team. A path no exact rule can hold gets none and no warning: runtimeDeny already warns about such a root.
+ * `.claude` settings files of the root and of a dir start's folder, `.cadre/bin/**`, `.cadre/manifest.json`,
+ * `.cadre/cadre.json`, the team's role.json files and each framework's project install folder, so an Edit-only role
+ * cannot plant a hook, rewrite a launcher or change the team. A path no exact rule can hold gets none and no warning:
+ * runtimeDeny already warns about such a root.
  */
 function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
   const roots = sortedUnique(launchRoots(user))
   const ids = user.teamIds ?? [id]
   const runs = ADAPTERS.flatMap(adapter => adapter.projectInstall?.runs ?? [])
-  const rules = roots.flatMap(root => [
-    editRules(`${root}/.claude/settings.json`, ''),
-    editRules(`${root}/.claude/settings.local.json`, ''),
-    editRules(`${root}/.cadre/bin`, '/**'),
-    editRules(`${root}/.cadre/manifest.json`, ''),
-    editRules(`${root}/${cadreStatePath()}`, ''),
-    ...ids.map(teamId => editRules(`${root}/${roleJsonPath(teamId)}`, '')),
-    ...runs.map(dir => editRules(`${root}/${dir}`, '/**')),
-  ])
+  const rules = roots.flatMap(root => {
+    const settingsFolders = [root, ...(user.startDir === undefined ? [] : [`${root}/${user.startDir}`])]
+
+    return [
+      ...settingsFolders.flatMap(folder => [
+        editRules(`${folder}/.claude/settings.json`, ''),
+        editRules(`${folder}/.claude/settings.local.json`, ''),
+      ]),
+      editRules(`${root}/.cadre/bin`, '/**'),
+      editRules(`${root}/.cadre/manifest.json`, ''),
+      editRules(`${root}/${cadreStatePath()}`, ''),
+      ...ids.map(teamId => editRules(`${root}/${roleJsonPath(teamId)}`, '')),
+      ...runs.map(dir => editRules(`${root}/${dir}`, '/**')),
+    ]
+  })
 
   return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
 }

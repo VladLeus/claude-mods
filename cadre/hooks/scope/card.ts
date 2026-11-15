@@ -342,7 +342,8 @@ function startFolderText(start: Exclude<LaunchStart, { readonly kind: 'git-root'
 
 /**
  * The notes of a launch start other than the git root, labelled none, in this order: the project settings of the git
- * root do not load, the start folder's `.claude/settings.json` loads, the git root is an additional directory, and the
+ * root do not load, the start folder's `.claude/settings.json` loads (a here start adds that its settings files are
+ * not write-protected, as the folder is not known before launch), the git root is an additional directory, and the
  * handoffs and GSD's .planning/ follow the start folder. None for a git-root start.
  */
 function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
@@ -351,10 +352,12 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
   const handoffs = `${handoffFolderOf(role.id)}/`
   const settings =
     start.kind === 'dir' ? fill(ARTIFACT.cardStartSettingsDir, { folder }) : ARTIFACT.cardStartSettingsHere
+  const writable = start.kind === 'here' ? [rule(ARTIFACT.cardHereSettingsWritable, 'none')] : []
 
   return [
     rule(fill(ARTIFACT.cardNoProjectSettings, { folder }), 'none'),
     rule(settings, 'none'),
+    ...writable,
     rule(fill(ARTIFACT.cardAdditionalDir, { folder }), 'none'),
     rule(fill(ARTIFACT.cardHandoffsFollow, { handoffs, folder }), 'none'),
   ]

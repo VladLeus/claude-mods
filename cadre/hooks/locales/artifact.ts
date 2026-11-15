@@ -166,6 +166,8 @@ export const ARTIFACT = Object.freeze({
   cardStartSettingsDir: '{folder}/.claude/settings.json loads: its hooks run and its permission rules apply',
   cardStartSettingsHere:
     '.claude/settings.json of the folder the launcher is run from loads: its hooks run and its permission rules apply',
+  cardHereSettingsWritable: `.claude/settings.json and .claude/settings.local.json of the folder the launcher is ${
+    ''}run from are not write-protected: a role that can edit there can change what the next launch loads`,
   cardAdditionalDir: 'Additional directory: <git root> (start folder is {folder})',
   cardHandoffsFollow: 'Handoffs ({handoffs}) and GSD .planning/ follow the start folder ({folder})',
   cardRouteStrict: 'MCP route: strict (--strict-mcp-config)',

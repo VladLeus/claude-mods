@@ -206,16 +206,23 @@ export function mangledProjectDir(path: string): string {
 /** Follows the engine's shortened project folder name: a longer name keeps this many characters plus a suffix. */
 export const ENGINE_FOLDER_NAME_MAX_CHARS = 200
 
+/** The start the engine keeps of a project folder name too long to use whole; null when the name is kept whole. */
+function shortenedNamePrefix(name: string): string | null {
+  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return null
+
+  return name.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
+}
+
 /**
  * The listed folders (never a link) that may be the engine's shortened folder for `name`: those that start with
  * its first ENGINE_FOLDER_NAME_MAX_CHARS characters; none when the name is no longer than that or its own folder is
  * listed.
  */
 export function shortenedProjectDirs(name: string, entries: readonly PortEntry[]): string[] {
-  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return []
+  const prefix = shortenedNamePrefix(name)
+  if (prefix === null) return []
   const folders = entries.filter(entry => entry.kind === 'dir' && !entry.isLink)
   if (folders.some(entry => entry.name === name)) return []
-  const prefix = name.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
 
   return folders.filter(entry => entry.name.startsWith(prefix)).map(entry => entry.name)
 }
@@ -269,6 +276,17 @@ export function projectFolderOf(userDir: string, root: string): string {
  */
 export function memoryFolderOf(userDir: string, root: string): string {
   return `${projectFolderOf(userDir, root)}/memory`
+}
+
+/**
+ * The engine's project folder for a root whose encoded name is too long starts with this path and has a suffix after
+ * it; null when the root keeps its full name.
+ */
+export function shortenedProjectPrefixOf(userDir: string, root: string): string | null {
+  const prefix = shortenedNamePrefix(mangledProjectDir(root))
+  if (prefix === null) return null
+
+  return `${userDir}/projects/${prefix}`
 }
 
 /**

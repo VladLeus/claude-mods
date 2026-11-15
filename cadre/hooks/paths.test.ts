@@ -179,6 +179,17 @@ describe('shortenedProjectDirs', () => {
     ])
     expect(shortenedProjectDirs(long, [])).toEqual([])
   })
+
+  test('a file or a link with the prefix is never a candidate', () => {
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-f`), link(`${prefix}-l`)])).toEqual([])
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-d`, 'dir', true)])).toEqual([])
+  })
+
+  test('startCwdNeedle is the cwd field with the folder JSON-encoded, closing quote included', () => {
+    expect(startCwdNeedle('/a/b')).toBe('"cwd":"/a/b"')
+    expect(startCwdNeedle('/a/"q"')).toBe('"cwd":"/a/\\"q\\""')
+    expect('{"cwd":"/a/bc"}'.includes(startCwdNeedle('/a/b'))).toBe(false)
+  })
 })
 
 describe('shortenedProjectPrefixOf', () => {
@@ -191,17 +202,6 @@ describe('shortenedProjectPrefixOf', () => {
     expect(shortenedProjectPrefixOf('/home/u/.claude', `/r/${'a'.repeat(250)}`)).toBe(
       `/home/u/.claude/projects/-r-${'a'.repeat(197)}`,
     )
-  })
-
-  test('a file or a link with the prefix is never a candidate', () => {
-    expect(shortenedProjectDirs(long, [entry(`${prefix}-f`), link(`${prefix}-l`)])).toEqual([])
-    expect(shortenedProjectDirs(long, [entry(`${prefix}-d`, 'dir', true)])).toEqual([])
-  })
-
-  test('startCwdNeedle is the cwd field with the folder JSON-encoded, closing quote included', () => {
-    expect(startCwdNeedle('/a/b')).toBe('"cwd":"/a/b"')
-    expect(startCwdNeedle('/a/"q"')).toBe('"cwd":"/a/\\"q\\""')
-    expect('{"cwd":"/a/bc"}'.includes(startCwdNeedle('/a/b'))).toBe(false)
   })
 })
 
