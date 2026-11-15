@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { SettingsSource, SetupScan } from '../../../types'
+import type { PortRead, SettingsSource, SetupScan } from '../../../types'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
@@ -13,7 +13,7 @@ import {
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import type { SetupContext } from './read'
-import { projectHooks, projectSettings, startSettingsHooks } from './settings'
+import { projectHooks, projectSettings, START_SETTINGS_KEYS, startSettingsOf } from './settings'
 
 /** The secret fixtures and the fixture home: nothing of these may survive into a scan. */
 const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
@@ -440,20 +440,53 @@ describe('the .mcp.json approval lists of the settings (D-332)', () => {
   })
 })
 
-describe('startSettingsHooks', () => {
-  const guard = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}}'
+describe('startSettingsOf', () => {
+  const hooks = '"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}'
+  const guard = `{${hooks}}`
+  const guardHook = { script: 'guard.sh', event: 'PreToolUse', source: 'project' }
 
-  test('a text read gives its hook scripts as projectHooks reads them, from project settings', () => {
-    const hooks = startSettingsHooks({ state: 'text', text: guard })
-
-    expect(hooks).toEqual([{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }])
-    expect(hooks).toEqual(projectHooks(JSON.parse(guard), 'project'))
+  test('an absent file is absent, with no hook, key or warning', () => {
+    expect(startSettingsOf({ state: 'absent' }, 'src')).toEqual({ state: 'absent', hooks: [], keys: [], warnings: [] })
   })
 
-  test('an absent, unknown, too large or unparseable file gives no hook', () => {
-    expect(startSettingsHooks({ state: 'absent' })).toEqual([])
-    expect(startSettingsHooks({ state: 'unknown' })).toEqual([])
-    expect(startSettingsHooks({ state: 'too-large', bytes: 1_000_000 })).toEqual([])
-    expect(startSettingsHooks({ state: 'text', text: '{"hooks":' })).toEqual([])
+  test('an unknown, too large, unparsable or non-object file is unknown, with no hook or key and one warning', () => {
+    const warning = 'could not read src/.claude/settings.json of the start folder (treated as unknown)'
+    const reads: readonly PortRead[] = [
+      { state: 'unknown' },
+      { state: 'too-large', bytes: 1_000_000 },
+      { state: 'text', text: '{"hooks":' },
+      { state: 'text', text: '[1]' },
+    ]
+
+    expect(reads.map(read => startSettingsOf(read, 'src'))).toEqual(
+      reads.map(() => ({ state: 'unknown', hooks: [], keys: [], warnings: [warning] })),
+    )
+  })
+
+  test('a read file gives its hook scripts as projectHooks reads them, and the unscanned keys it sets', () => {
+    const keys = '"env":{"A":"1"},"permissions":{"allow":["Bash"],"additionalDirectories":["/x"]},"sandbox":{}'
+    const read = startSettingsOf({ state: 'text', text: `{${hooks},${keys},"disableAllHooks":false}` }, 'src')
+
+    expect(read).toEqual({
+      state: 'read',
+      hooks: [guardHook],
+      keys: ['permissions.allow', 'permissions.additionalDirectories', 'env', 'sandbox', 'disableAllHooks'],
+      warnings: [
+        'src/.claude/settings.json sets permissions.allow, permissions.additionalDirectories, env, sandbox, ' +
+          'disableAllHooks, which cadre does not scan: they apply in every role started there; ' +
+          'src/.claude/skills, agents and commands also load unscanned',
+      ],
+    })
+    expect(read.hooks).toEqual(projectHooks(JSON.parse(guard), 'project'))
+    expect(START_SETTINGS_KEYS).toEqual(read.keys)
+  })
+
+  test('a read file with none of the keys has no warning', () => {
+    expect(startSettingsOf({ state: 'text', text: guard }, 'src')).toEqual({
+      state: 'read',
+      hooks: [guardHook],
+      keys: [],
+      warnings: [],
+    })
   })
 })

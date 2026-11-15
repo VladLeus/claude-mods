@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo, LaunchStart, PortRead, PortStat } from '../../../types'
+import type { InitIo, LaunchStart, PortRead, PortStat, StartSettings } from '../../../types'
 import { isRepoFolder } from '../../paths'
 import { proposeRoles } from '../../roles/propose'
 import { MAX_READ_BYTES } from '../../scan/facts/normalize'
@@ -370,7 +370,7 @@ describe('the launch stage (D-230)', () => {
     expect(done.draft.launchStart).toEqual({ kind: 'dir', path: 'apps/web' })
   })
 
-  test('the start folder settings read sets the start hooks of the scans and ends the stage with the dir', () => {
+  test('the start folder settings read sets the start settings of the scans and ends the stage with the dir', () => {
     const guard = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}}'
     const asked = nextStage(entered, { kind: 'answer', text: 'other' })
     const checking = nextStage(asked, { kind: 'answer', text: 'src' })
@@ -380,30 +380,41 @@ describe('the launch stage (D-230)', () => {
     const result: PortRead = { state: 'text', text: guard }
     const done = nextStage(reading, { kind: 'io', result: { id: 'read-repo-file', result } })
     expect(done.draft.launchStart).toEqual({ kind: 'dir', path: 'src' })
-    expect(done.draft.gathered?.setup.startHooks).toEqual([
-      { script: 'guard.sh', event: 'PreToolUse', source: 'project' },
-    ])
+    expect(done.draft.gathered?.setup.startSettings).toEqual({
+      state: 'read',
+      hooks: [{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }],
+      keys: [],
+      warnings: [],
+    })
   })
 
-  test('a start folder settings read that is not text ends the stage the same way with no start hook', () => {
+  test('a start folder settings read that is not text ends the stage the same way, with its state and no hook', () => {
+    const unread = 'could not read src/.claude/settings.json of the start folder (treated as unknown)'
     const results: readonly PortRead[] = [{ state: 'absent' }, { state: 'unknown' }, { state: 'too-large', bytes: 9 }]
-    for (const result of results) {
+    const starts = results.map(result => {
       const asked = nextStage(entered, { kind: 'answer', text: 'other' })
       const checking = nextStage(asked, { kind: 'answer', text: 'src' })
       const reading = nextStage(checking, { kind: 'io', result: { id: 'launch-dir-check', result: true } })
       const done = nextStage(reading, { kind: 'io', result: { id: 'read-repo-file', result } })
-      const started = [done.draft.launchStart, done.draft.gathered?.setup.startHooks]
-      expect(started).toEqual([{ kind: 'dir', path: 'src' }, []])
-    }
+
+      return [done.draft.launchStart, done.draft.gathered?.setup.startSettings]
+    })
+
+    expect(starts).toEqual([
+      [{ kind: 'dir', path: 'src' }, { state: 'absent', hooks: [], keys: [], warnings: [] }],
+      [{ kind: 'dir', path: 'src' }, { state: 'unknown', hooks: [], keys: [], warnings: [unread] }],
+      [{ kind: 'dir', path: 'src' }, { state: 'unknown', hooks: [], keys: [], warnings: [unread] }],
+    ])
   })
 
-  test('a git-root or here answer ends the stage with no start hooks left from an earlier dir answer', () => {
-    const gathered = { ...wholeDraft().gathered, setup: emptySetupScan({ startHooks: [hook('guard.sh', 'project')] }) }
+  test('a git-root or here answer ends the stage with no start settings left from an earlier dir answer', () => {
+    const startSettings: StartSettings = { state: 'read', hooks: [hook('guard.sh', 'project')], keys: [], warnings: [] }
+    const gathered = { ...wholeDraft().gathered, setup: emptySetupScan({ startSettings }) }
     const state = launchStage.enter(stateAt('launch', wholeDraft({ roles: LAUNCH_TEAM, gathered })))
     for (const answer of ['Git root of this repo', 'The folder I run it from']) {
       const done = nextStage(state, { kind: 'answer', text: answer })
       expect(done.draft.gathered?.setup).toEqual(emptySetupScan())
-      expect('startHooks' in (done.draft.gathered?.setup ?? {})).toBe(false)
+      expect('startSettings' in (done.draft.gathered?.setup ?? {})).toBe(false)
     }
   })
 

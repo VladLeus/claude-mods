@@ -137,7 +137,8 @@ describe('repoGuard and readTeam', () => {
     const state = stateOf(team, { launchStart: start, readUserMcp: true })
     const { gathered, scopes } = await compileTeam(run.io, DEFAULT_LOCATIONS, state, team)
     const scans = await scansOf(world, true)
-    expect(gathered).toEqual({ ...scans, setup: { ...scans.setup, startHooks: [] } })
+    const startSettings = { state: 'absent', hooks: [], keys: [], warnings: [] }
+    expect(gathered).toEqual({ ...scans, setup: { ...scans.setup, startSettings } })
     expect(run.reads.filter(path => path === '/home/u/.claude.json')).toHaveLength(1)
     expect(scopes).toEqual(scopesFor(team, 'none', gathered, [], start))
     expect(scopes).not.toEqual(scopesFor(team, 'none', gathered, [], { kind: 'git-root' }))
@@ -153,7 +154,12 @@ describe('repoGuard and readTeam', () => {
     const { gathered, scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
     const lines = scopeCardLines(cardOf(scopes, 'be'))
 
-    expect(gathered.setup.startHooks).toEqual([{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }])
+    expect(gathered.setup.startSettings).toEqual({
+      state: 'read',
+      hooks: [{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }],
+      keys: [],
+      warnings: [],
+    })
     expect(lines).toContain(
       '    [none] <git root>/src/.claude/settings.json loads: its hooks run and its permission rules apply',
     )

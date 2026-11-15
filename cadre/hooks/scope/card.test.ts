@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type {
   CompiledScope,
   FrameworkId,
+  HookScript,
   LaunchStart,
   McpRoute,
   ProbeCheck,
@@ -10,6 +11,8 @@ import type {
   ScopeContext,
   ScopeRule,
   SetupScan,
+  StartSettings,
+  StartSettingsKey,
 } from '../../types'
 import { ARTIFACT } from '../locales/artifact'
 import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
@@ -376,6 +379,11 @@ const START_SETUP: SetupScan = emptySetupScan({
 /** BE carrying the GSD secret read guard, the one hook a role carries (D-62). */
 const GUARDED_BE: RoleSpec = templateRole('be', { carry: { ...EMPTY_CARRY, hooks: ['gsd-secret-read-guard.js'] } })
 
+/** The start folder settings of a dir start as the scan read them, with these hooks and keys. */
+function readStart(hooks: readonly HookScript[], keys: readonly StartSettingsKey[] = []): StartSettings {
+  return { state: 'read', hooks, keys, warnings: [] }
+}
+
 /** The folder apps/web of the repo as a launch start (A2). */
 const APPS_WEB: LaunchStart = { kind: 'dir', path: 'apps/web' }
 
@@ -440,8 +448,8 @@ describe('launch start card (D-122)', () => {
   })
 
   test('a dir start lists the start folder hooks as loaded by project settings, less the role\'s own', () => {
-    const startHooks = [hook('guard.sh', 'project'), hook('gsd-secret-read-guard.js', 'project')]
-    const setup = { ...START_SETUP, startHooks }
+    const folderHooks = [hook('guard.sh', 'project'), hook('gsd-secret-read-guard.js', 'project')]
+    const setup = { ...START_SETUP, startSettings: readStart(folderHooks) }
     const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup })).card
 
     expect(card.hooks).toEqual({
@@ -453,7 +461,7 @@ describe('launch start card (D-122)', () => {
   })
 
   test('a here start names the folder the launcher is run from in its start notes', () => {
-    const setup = { ...START_SETUP, startHooks: [hook('guard.sh', 'project')] }
+    const setup = { ...START_SETUP, startSettings: readStart([hook('guard.sh', 'project')]) }
     const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup })).card
 
     expect(card.rules.slice(-7, -1)).toEqual(hereNotes())
@@ -462,7 +470,7 @@ describe('launch start card (D-122)', () => {
   })
 
   test('a git-root start has no start note and lists the project hook scripts as loaded by project settings', () => {
-    const setup = { ...START_SETUP, startHooks: [hook('guard.sh', 'project')] }
+    const setup = { ...START_SETUP, startSettings: readStart([hook('guard.sh', 'project')]) }
     const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup })).card
     const plain = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup: START_SETUP })).card
     const notes = [...startNotes('<git root>/apps/web'), ...startNotes(HERE_FOLDER), ...hereNotes()]
@@ -487,7 +495,7 @@ describe('launch start card (D-122)', () => {
   })
 
   test('a context monitor among the start folder hooks gets its warning for a dir start', () => {
-    const setup = emptySetupScan({ startHooks: [hook('gsd-context-monitor.js', 'project')] })
+    const setup = emptySetupScan({ startSettings: readStart([hook('gsd-context-monitor.js', 'project')]) })
     const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, APPS_WEB]
     const labels = starts.map(launchStart => {
       const scope = compileScope(templateRole('be'), context({ launchStart, setup }))
@@ -496,6 +504,47 @@ describe('launch start card (D-122)', () => {
     })
 
     expect(labels).toEqual([undefined, undefined, 'none'])
+  })
+
+  test('a dir start shows its project hooks as unknown when the start folder settings were not read', () => {
+    const unread: StartSettings = { state: 'unknown', hooks: [], keys: [], warnings: ['unread'] }
+    const absent: StartSettings = { state: 'absent', hooks: [], keys: [], warnings: [] }
+    const lines = [unread, absent, readStart([hook('guard.sh', 'project')])].map(startSettings => {
+      const setup = { ...START_SETUP, startSettings }
+      const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup })).card
+
+      return scopeCardLines(card).find(line => line.startsWith('  hooks loaded by project settings:'))
+    })
+
+    expect(lines).toEqual([
+      '  hooks loaded by project settings: unknown',
+      '  hooks loaded by project settings: none',
+      '  hooks loaded by project settings: guard.sh',
+    ])
+  })
+
+  test('a dir start whose start folder settings set unscanned keys warns right after its settings line', () => {
+    const rulesOf = (startSettings: StartSettings): readonly ScopeRule[] =>
+      compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: { ...START_SETUP, startSettings } })).card.rules
+    const withKeys = rulesOf(readStart([], ['permissions.allow', 'env']))
+    const at = withKeys.findIndex(item => item.text === startSettingsLine('<git root>/apps/web'))
+
+    expect(withKeys[at + 1]).toEqual({
+      text:
+        'WARNING: <git root>/apps/web/.claude/settings.json sets permissions.allow, env, which cadre does not scan; ' +
+        "the folder's own .claude/skills, .claude/agents and .claude/commands also load unscanned",
+      enforcement: 'none',
+    })
+    expect(rulesOf(readStart([])).filter(item => item.text.includes('which cadre does not scan'))).toEqual([])
+  })
+
+  test('the monitor warning of a dir start reads only the hooks of start folder settings that were read', () => {
+    const monitor = [hook('gsd-context-monitor.js', 'project')]
+    const unread: StartSettings = { state: 'unknown', hooks: monitor, keys: [], warnings: [] }
+    const setup = emptySetupScan({ startSettings: unread })
+    const scope = compileScope(templateRole('be'), context({ launchStart: APPS_WEB, setup }))
+
+    expect(ruleOf(scope, monitorWarning('gsd-context-monitor.js'))).toBeUndefined()
   })
 })
 
