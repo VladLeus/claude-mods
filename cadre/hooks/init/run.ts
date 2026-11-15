@@ -590,7 +590,7 @@ async function compiledAfter(
  *    are neither with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
  * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
  *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again, and
- *    only they tell whether an install worked, never its exit code. A consented plugin install that the facts show
+ *    only they tell whether an install worked, never its exit code. A consented framework plugin install that landed
  *    joins the setup as step 4's plugins do (consentedPluginKeys). An install whose framework is still not installed
  *    when the facts are read again failed: a role or repo default on it falls back (withoutFailedInstalls), cadre.json
  *    records the frameworks and sizing without it (initFrameworks), and the reply names who fell back to what and the
@@ -643,10 +643,11 @@ async function compiledAfter(
  *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
  *    offered, its label is set before the writes and again before each improver run (IMPROVER_PROGRESS, D-284, S-02).
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
- *    framework installs that landed by install id and then the plugins installed (installed), the fallback line of
- *    each that did not and the problems of step 4 (installProblems), the untracked-parts
- *    warnings of 5a (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and
- *    tally of 6a (improverWarnings, improved), which the reply prints, each failure with the command to run.
+ *    framework installs that landed by install id and then the plugins installed in 1a and 4 (installed), the fallback
+ *    line of each framework install that did not land and then the plugin install problems of 1a and 4
+ *    (installProblems), the untracked-parts warnings of 5a (untrackedParts), the private problems of 5b and 6
+ *    (privateProblems) and the improver warnings and tally of 6a (improverWarnings, improved), which the reply prints,
+ *    each failure with the command to run.
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
  */
 async function applyConfirmed(
