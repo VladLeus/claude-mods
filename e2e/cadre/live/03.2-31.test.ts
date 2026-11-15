@@ -18,6 +18,8 @@ const TAKE_NEW = 'Take new'
 const NEXT_PAGE = 'Next page'
 const PREVIOUS_PAGE = 'Previous page'
 const LAST_PAGE = 'Last page'
+const EXPECTED_COUNTS = `${TAKE_NEW}: 0 lines added, ${ADDED_LINES} removed`
+const COUNTS_RE = /Take new: [0-9]+ lines? added, [0-9]+ removed/
 const DIFF_NUMBER_RE = new RegExp(`- ${ADDED_PREFIX} ([0-9]{3})`, 'g')
 const MORE_ABOVE_RE = /\+[0-9]+ more above/
 const MAX_PAGES = 60
@@ -51,6 +53,17 @@ rowTest(rowEntry('03.2#31'), async ctx => {
   await ctx.check('the Keep mine / Take new question is asked a page at a time', () => {
     assert.ok(isPaged, 'the question over the long hand-edited ROLE.md shows no Next page option')
   })
+  const question = squashed(dialogText(screen))
+  await ctx.check(`the question names ${KEEP_MINE} and ${TAKE_NEW}`, () => {
+    const lacks = `the question lacks ${KEEP_MINE} or ${TAKE_NEW}`
+    assert.ok(question.includes(KEEP_MINE) && question.includes(TAKE_NEW), lacks)
+  })
+  await ctx.check(`page 1's counts line reads ${EXPECTED_COUNTS}`, () => {
+    const counts = COUNTS_RE.exec(question)?.[0]
+    assert.ok(counts !== undefined, 'page 1 shows no counts line')
+    const cut = 'the diff holds more than the hand-added lines, so the diff row cap may have cut the last of them'
+    assert.equal(counts, EXPECTED_COUNTS, `page 1 shows ${counts}: ${cut}`)
+  })
 
   const firstPageOf = new Map<string, number>()
   const repeated: string[] = []
@@ -64,16 +77,13 @@ rowTest(rowEntry('03.2#31'), async ctx => {
     const isLast = !options.includes(NEXT_PAGE)
     ctx.screen(`the conflict question, page ${page}`, screen)
     for (const line of numbers) {
-      if (firstPageOf.has(line)) {
-        repeated.push(line)
+      const first = firstPageOf.get(line)
+      if (first !== undefined) {
+        repeated.push(`${line} on page ${first} and again on page ${page}`)
         continue
       }
       firstPageOf.set(line, page)
     }
-    await ctx.check(`page ${page}: the question names ${KEEP_MINE} and ${TAKE_NEW}`, () => {
-      const text = squashed(dialog)
-      assert.ok(text.includes(KEEP_MINE) && text.includes(TAKE_NEW), `the question lacks ${KEEP_MINE} or ${TAKE_NEW}`)
-    })
     const offered = isLast
       ? `${KEEP_MINE} and ${TAKE_NEW} as options`
       : `${NEXT_PAGE} and ${LAST_PAGE} as options, not ${KEEP_MINE} or ${TAKE_NEW}`
