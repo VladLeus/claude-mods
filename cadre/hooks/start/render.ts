@@ -21,12 +21,13 @@ import { compareText, sortedUnique } from '../core/text'
 import { isStepDone } from '../host/steps'
 import { pluginSkillDeny } from '../launch/deny'
 import type { LaunchUser, OverlayLink } from '../launch/links'
+import { overlayLinks } from '../launch/overlay'
 import { launchPlan } from '../launch/plan'
 import type { LaunchPlan } from '../launch/plan'
 import { inboxRotationOf, isInboxOverRotation } from '../messages/rotate'
 import { INBOX_ROTATE_READ_MAX_BYTES } from '../messages/send'
 import { INBOX_LOG_FILE, PRIVATE_INSTRUCTIONS_LINK, privateInstructionsDir, roleMemoryDir } from '../paths'
-import { deniedSkillNames, expectationsFor, NO_LAUNCH_SKILLS, probeExpectationsText } from '../probe/probe'
+import { deniedSkillNames, expectationsFor, probeExpectationsText } from '../probe/probe'
 import { gatherLaunchUser } from './gather-user'
 import { renderFailedReply } from './launcher-check'
 import { readClaudeJson, runtimeMcpText } from './mcp-config'
@@ -173,8 +174,12 @@ export async function renderRole(
   const claudeJson = await readClaudeJson(io, locations, state.readUserMcp, userRoots)
   const mcpRoots = [...input.mcpRoots, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
   const mcp = runtimeMcpText(role, claudeJson, mcpRoots, state.readUserMcp)
-  const deniedSkills = deniedSkillNames(pluginSkillDeny(role, scope, user).deny)
-  const expectations = expectationsFor(scope, roleMemoryDir(user, id), { ...NO_LAUNCH_SKILLS, deniedSkills })
+  const skillDeny = pluginSkillDeny(role, scope, user)
+  const expectations = expectationsFor(scope, roleMemoryDir(user, id), {
+    deniedSkills: deniedSkillNames(skillDeny.deny),
+    offPlugins: skillDeny.offPlugins,
+    unlinkedSkills: overlayLinks(id, scope.overlay, user).unlinkedSkills,
+  })
   const expectationsText = probeExpectationsText(expectations)
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
   const { inboxDir } = launch

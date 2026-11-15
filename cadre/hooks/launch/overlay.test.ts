@@ -183,9 +183,10 @@ describe('overlayLinks', () => {
 
   test('a name given twice is linked once, and an empty overlay plans nothing', () => {
     const twice = overlayLinks('pm', { skills: ['a', 'a'], agents: [] }, user({ userSkills: ['a'] }))
+    const empty = overlayLinks('pm', { skills: [], agents: [] }, user())
 
     expect(twice.links).toHaveLength(1)
-    expect(overlayLinks('pm', { skills: [], agents: [] }, user())).toEqual({ links: [], warnings: [] })
+    expect(empty).toEqual({ links: [], warnings: [], unlinkedSkills: [] })
   })
 
   test('launchPlan links the instructions and the overlay together, sorted by path, and warns in step order', () => {

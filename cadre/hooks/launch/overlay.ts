@@ -21,9 +21,8 @@ function isSafeOverlayName(name: string): boolean {
 }
 
 /**
- * The links for one kind of overlay entry, in name order, once each. A name that is not a plain name is not linked and
- * is named in a warning, even when the user has it, and so is a name the user does not have. `extension` is added to
- * the name in the link path and in the target (an agent is a `.md` file, a skill is a folder).
+ * The links for one kind of overlay entry, in name order, once each. A name that is not plain, even one the user has,
+ * or that the user does not have is not linked: it gets a warning and goes to `unlinked`.
  */
 function overlayGroup(
   kind: 'skill' | 'agent',
@@ -32,38 +31,46 @@ function overlayGroup(
   linkDir: string,
   targetDir: string,
   extension: string,
-): LinkSet {
+): LinkSet & { readonly unlinked: string[] } {
   const links: OverlayLink[] = []
   const warnings: string[] = []
+  const unlinked: string[] = []
   for (const name of sortedUnique(names)) {
     if (!isSafeOverlayName(name)) {
       warnings.push(t('launch.overlay.overlayGroup', { kind, name: shown(name) }))
+      unlinked.push(name)
       continue
     }
     if (!have.includes(name)) {
       warnings.push(t('launch.overlay.overlayGroup2', { kind, name }))
+      unlinked.push(name)
       continue
     }
     links.push({ path: `${linkDir}/${name}${extension}`, target: `${targetDir}/${name}${extension}` })
   }
 
-  return { links, warnings }
+  return { links, warnings, unlinked }
 }
 
 /**
- * The links that build the role's overlay (spike S4 V3): each overlay skill is linked to `<userDir>/skills/<name>`
- * under `.runtime/overlay/.claude/skills/`, and each overlay agent to `<userDir>/agents/<name>.md` under
- * `.runtime/overlay/.claude/agents/`. Under `--setting-sources project` a user-level skill or agent is absent unless an
- * `--add-dir` overlay links it. A skill named `plugin:skill` never reaches the overlay, as compileScope enables its
- * plugin instead. The links are sorted by path, the warnings list the skills before the agents, and a name that is not
- * found among the user's, or is not a safe name, is not linked.
+ * The links that build the role's overlay: under `--setting-sources project` a user skill or agent loads only when this
+ * `--add-dir` overlay links it from the user folder (a `plugin:skill` never gets here: its plugin is enabled instead).
+ * `unlinkedSkills` names the skills not linked, in name order.
  */
-export function overlayLinks(id: string, overlay: CompiledScope['overlay'], user: LaunchUser): LinkSet {
+export function overlayLinks(
+  id: string,
+  overlay: CompiledScope['overlay'],
+  user: LaunchUser,
+): LinkSet & { readonly unlinkedSkills: readonly string[] } {
   const base = `${runtimeDir(user, id)}/overlay/.claude`
   const skillsDir = `${user.userDir}/skills`
   const agentsDir = `${user.userDir}/agents`
   const skills = overlayGroup('skill', overlay.skills, user.userSkills, `${base}/skills`, skillsDir, '')
   const agents = overlayGroup('agent', overlay.agents, user.userAgents, `${base}/agents`, agentsDir, '.md')
 
-  return { links: sortedLinks([...skills.links, ...agents.links]), warnings: [...skills.warnings, ...agents.warnings] }
+  return {
+    links: sortedLinks([...skills.links, ...agents.links]),
+    warnings: [...skills.warnings, ...agents.warnings],
+    unlinkedSkills: skills.unlinked,
+  }
 }

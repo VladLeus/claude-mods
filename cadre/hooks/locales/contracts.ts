@@ -33,6 +33,7 @@ export const CONTRACTS = Object.freeze({
   probeSkillAbsent: 'skill {token} absent',
   probeSkillGranted: 'Skill given to the role',
   probeSkillDenied: 'Skill denied to the role',
+  probeSkillUnavailable: 'Skill given to the role, not available at this launch: {name}',
   probePermissionMode: 'permission mode {token}',
   probeChecked: '{text} [{label}]',
   probeMemoryFolder: 'Memory folder: {dir} (autoMemoryDirectory)',
