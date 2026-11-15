@@ -19,6 +19,7 @@ const EXPECTED_GRILL_SKILLS: readonly string[] = ['mattpocock-skills:grilling', 
 const EXPECTED_DENIED = 'tdd'
 const INIT_COMMAND = '/cadre init'
 const PM = 'pm'
+const PROBE_NOTE = `with the role's per-skill denies in place`
 const VIOLATED = 'violated'
 
 rowTest(rowEntry('03.2#30'), async ctx => {
@@ -42,7 +43,7 @@ rowTest(rowEntry('03.2#30'), async ctx => {
   })
   if (!isOpened) return
 
-  const probe = await recordedProbe(ctx, { ...copy, repo: epic.worktree }, PM)
+  const probe = await recordedProbe(ctx, { ...copy, repo: epic.worktree }, PM, PROBE_NOTE)
   noteReply(ctx, 'the probe of pm in the epic worktree', probe)
   const verdicts = probe.stdout.split('\n').map(line => line.trim()).filter(line => line.length > 0)
   for (const skill of EXPECTED_GRILL_SKILLS) {

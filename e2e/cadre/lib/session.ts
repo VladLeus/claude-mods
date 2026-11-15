@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
-import { access, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { access, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
@@ -176,11 +176,13 @@ export async function runProbe(copy: LiveRepo, id: string, env: ChildEnv = copy.
   return run([join(copy.repo, '.cadre', 'bin', id), '--probe'], { cwd: copy.repo, env, timeoutMs: PROBE_MS })
 }
 
-export async function recordedProbe(ctx: RowContext, copy: LiveRepo, id: string): Promise<RunResult> {
-  const dir = join(ctx.scratch, `probe-${id}`)
-  const out = join(dir, 'stdout.jsonl')
-  const shimDir = join(dir, 'bin')
+export async function recordedProbe(ctx: RowContext, copy: LiveRepo, id: string, note: string): Promise<RunResult> {
+  let shimDir: string
+  let out: string
   try {
+    const dir = await mkdtemp(join(ctx.scratch, `probe-${id}-`))
+    shimDir = join(dir, 'bin')
+    out = join(dir, 'stdout.jsonl')
     await recordShim(shimDir, fenceBin(), out)
   } catch (error) {
     if (error instanceof HarnessError) throw error
@@ -193,8 +195,7 @@ export async function recordedProbe(ctx: RowContext, copy: LiveRepo, id: string)
     ctx.observe(`${id}InitLists`, 'not recorded: no init event in the probe output')
     return result
   }
-  const evidence = (list: string): string =>
-    `the ${list} list of the init event of the ${id} probe, with the role's per-skill denies in place`
+  const evidence = (list: string): string => `the ${list} list of the init event of the ${id} probe, ${note}`
   ctx.observe(`${id}InitSkills`, [...event.skills], evidence('skills'))
   ctx.observe(`${id}InitSlashCommands`, [...event.slashCommands], evidence('slash_commands'))
 
