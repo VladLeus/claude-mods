@@ -321,6 +321,13 @@ export function isInputShowing(screen: string, text: string): boolean {
   return box.replace(INPUT_MARK_RE, '').replace(WHITESPACE_RE, '') === text.replace(WHITESPACE_RE, '')
 }
 
+// Enter on a question or permission prompt picks its highlighted option, so a box without the text is never submitted.
+export function submitRefusal(screen: string, text: string): string | null {
+  if (isInputShowing(screen, text)) return null
+
+  return `the input box no longer shows the typed text: answer the question on the screen first\n${screen}`
+}
+
 function authChecked(screen: string): string {
   if (isLoginPrompt(screen)) throw new HarnessError('auth lost mid-run')
 
@@ -351,7 +358,11 @@ export async function submitTui(pane: Pane, text: string): Promise<void> {
     WAIT_MS,
     `the typed ${JSON.stringify(text)} in the input box`,
   )
-  authChecked(await waitSteady(pane, screen => inputBoxOf(screen) ?? screen, 'the input box to hold still'))
+  const still = authChecked(
+    await waitSteady(pane, screen => inputBoxOf(screen) ?? screen, 'the input box to hold still'),
+  )
+  const refusal = submitRefusal(still, text)
+  if (refusal !== null) throw new HarnessError(refusal)
   await sendKeys(pane, 'Enter')
 }
 

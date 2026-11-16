@@ -12,7 +12,7 @@ import { parseGuardSnapshot, parseRunState, parseWsState, RESULT_MAX_BYTES, ROOT
 import { afterEcho, tokenHash, tokenRefusal, windowNameFor, withLastSent, withWindow, wsIdOf } from '../lib/agent.ts'
 import { answerRefusal, claimRefusal, claimsTaken, keysRefusal, SAFE_KEYS, sendRefusal } from '../lib/agent.ts'
 import { cadreRefusal, exclusiveRefusal, GIT_READS, isWsId, runRefusal, seedRefusal } from '../lib/agent.ts'
-import { WAIT_MAX_S, WAIT_TIMEOUT_DEFAULT_S } from '../lib/agent.ts'
+import { matchedLine, WAIT_MAX_S, WAIT_TIMEOUT_DEFAULT_S } from '../lib/agent.ts'
 import type { AgentCommand, Location, RunState, WsState } from '../lib/agent.ts'
 import { e2eConfigDir, e2eConfigPath, writeFilterFile } from '../lib/auth.ts'
 import { answer, answerOther, authPreflight, idleTui, isDialogScreen, passTrust, startTui } from '../lib/claude.ts'
@@ -856,9 +856,11 @@ async function waitWindow(cmd: Command<'wait'>, ws: WsState): Promise<number> {
     throw error
   })
   if (screen !== null) {
-    const isEchoMissing = afterEcho(screen, sent).echo === 'missing'
+    const view = afterEcho(screen, sent)
+    const isEveryLine = view.echo === 'missing' || view.echo === 'unsent'
+    const matched = `matched ${matchedLine(view.text, cmd.pattern)}`
     const shown = lastLines(screen, SCREEN_LINES)
-    say(isEchoMissing ? `matched\n${NO_ECHO_LINE}\n${shown}` : `matched\n${shown}`)
+    say(isEveryLine ? `${matched}\n${NO_ECHO_LINE}\n${shown}` : `${matched}\n${shown}`)
     return 0
   }
   const isExited = (await windowOf(server, cmd.window))?.dead === true

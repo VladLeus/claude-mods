@@ -901,6 +901,14 @@ export function afterEcho(screen: string, sent: string | undefined): EchoView {
   return { text: screen, echo: 'missing' }
 }
 
+export function matchedLine(region: string, pattern: RegExp): string {
+  const found = new RegExp(pattern.source, pattern.flags.replace('g', '')).exec(region)
+  if (found === null) return ''
+  const linesUp = region.slice(found.index).split('\n').length - 1
+
+  return `${linesUp} lines up: ${found[0].split('\n')[0] ?? ''}`
+}
+
 type SendTarget = {
   readonly exclusive: boolean
   readonly root: boolean
