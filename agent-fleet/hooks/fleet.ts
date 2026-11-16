@@ -238,6 +238,7 @@ const WAIT_REASONS: readonly string[] = [
   'workflow-end',
   'subagent-result',
   'background-task',
+  'idle-inbox',
   'other',
 ]
 const MAX_WAITING_FROM = 64
