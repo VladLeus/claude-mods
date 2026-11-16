@@ -30,7 +30,7 @@ function treeOf(rest: readonly (readonly [string, readonly PortEntry[]])[]): Lis
  */
 function planOf(main: Listings, tree: Listings, since = 1000): CopyBack {
   const listed = tree.has('') ? tree : treeOf([...tree])
-  const input = { copies: ['thoughts'], included: ['thoughts'], since, main, tree: listed }
+  const input = { copies: ['thoughts'], walked: [], included: ['thoughts'], since, main, tree: listed }
 
   return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, ...input })
 }
@@ -43,29 +43,41 @@ function backOf(
   tree: Listings,
   since = 1000,
 ): CopyBack {
-  return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, copies, included, since, main, tree })
+  return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, copies, walked: [], included, since, main, tree })
 }
 
-/** The step that copies the worktree's file at `path` over main's. */
-function copyOf(path: string): EpicStep {
-  return { kind: 'copy', path: `/repo/${path}`, source: `${BARE_WORKTREE}/${path}` }
+/** copyBackPlan of the recorded walked folders and no copy, from BARE_WORKTREE into /repo, the copy made at `since`. */
+function walkedOf(
+  walked: readonly string[],
+  included: readonly string[],
+  main: Listings,
+  tree: Listings,
+  since = 1000,
+): CopyBack {
+  return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, copies: [], walked, included, since, main, tree })
+}
+
+/** The step that moves the worktree's file at `path` into main, over main's. */
+function moveOf(path: string): EpicStep {
+  return { kind: 'move', path: `/repo/${path}`, source: `${BARE_WORKTREE}/${path}`, overwrite: true }
 }
 
 describe('copying back what the roles wrote in a copied folder at epic done', () => {
-  test('a file written after the copy that main lacks is copied back into main', () => {
+  test('a file written after the copy that main lacks is moved into main', () => {
     const plan = planOf(mainOf([['thoughts', []]]), new Map([['thoughts', [fileAt('x.md', 2000)]]]))
+    const source = `${BARE_WORKTREE}/thoughts/x.md`
 
     expect(plan).toEqual({
-      steps: [{ kind: 'copy', path: '/repo/thoughts/x.md', source: `${BARE_WORKTREE}/thoughts/x.md` }],
+      steps: [{ kind: 'move', path: '/repo/thoughts/x.md', source, overwrite: true }],
       unsafe: [],
     })
   })
 
-  test('a newer file main holds in another version is copied over it, changed in the worktree only or in both', () => {
+  test('a newer file main holds in another version is moved over it, changed in the worktree only or in both', () => {
     const main = mainOf([['thoughts', [fileAt('both.md', 1500, 2), fileAt('mine.md', 500, 2)]]])
     const tree = new Map([['thoughts', [fileAt('both.md', 2000), fileAt('mine.md', 2000)]]])
 
-    expect(planOf(main, tree)).toEqual({ steps: [copyOf('thoughts/both.md'), copyOf('thoughts/mine.md')], unsafe: [] })
+    expect(planOf(main, tree)).toEqual({ steps: [moveOf('thoughts/both.md'), moveOf('thoughts/mine.md')], unsafe: [] })
   })
 
   test('a file not written since the copy, or equal in size and time to main, gives no step', () => {
@@ -75,7 +87,7 @@ describe('copying back what the roles wrote in a copied folder at epic done', ()
     expect(planOf(main, tree)).toEqual({ steps: [], unsafe: [] })
   })
 
-  test('a folder main lacks gets one mkdir, from the top, just before the first copy below it', () => {
+  test('a folder main lacks gets one mkdir, from the top, just before the first move below it', () => {
     const tree = new Map([
       ['thoughts', [entry('moved', 'dir'), entry('new', 'dir')]],
       ['thoughts/moved', [fileAt('old.md', 500)]],
@@ -87,10 +99,10 @@ describe('copying back what the roles wrote in a copied folder at epic done', ()
     expect(planOf(mainOf([['thoughts', []]]), tree).steps).toEqual([
       { kind: 'mkdir', path: '/repo/thoughts/new' },
       { kind: 'mkdir', path: '/repo/thoughts/new/deep' },
-      copyOf('thoughts/new/deep/a.md'),
-      copyOf('thoughts/new/z.md'),
+      moveOf('thoughts/new/deep/a.md'),
+      moveOf('thoughts/new/z.md'),
     ])
-    expect(gone.steps).toEqual([{ kind: 'mkdir', path: '/repo/thoughts' }, copyOf('thoughts/x.md')])
+    expect(gone.steps).toEqual([{ kind: 'mkdir', path: '/repo/thoughts' }, moveOf('thoughts/x.md')])
   })
 
   test('a link or an entry of another kind in the copy gives nothing', () => {
@@ -210,7 +222,7 @@ describe('what epic done may copy back', () => {
     const copies = ['node_modules', 'thoughts']
 
     expect(backOf(copies, ['thoughts'], main, tree)).toEqual({
-      steps: [copyOf('thoughts/x.md')],
+      steps: [moveOf('thoughts/x.md')],
       unsafe: ['node_modules'],
     })
     expect(backOf(copies, [], main, tree)).toEqual({ steps: [], unsafe: ['node_modules', 'thoughts'] })
@@ -241,5 +253,100 @@ describe('what epic done may copy back', () => {
       unsafe: ['thoughts/shared'],
     })
     expect(backOf(['thoughts'], ['thoughts'], new Map(), tree)).toEqual({ steps: [], unsafe: ['thoughts'] })
+  })
+})
+
+describe('moving the new files of a walked folder into main at epic done', () => {
+  /** The worktree's walked folder thoughts holding a file new.md. */
+  const TREE = treeOf([['thoughts', [fileAt('new.md', 2000)]]])
+
+  test('each new regular file directly in a walked folder is moved, new since the copy or not; the rest stays', () => {
+    const children = [
+      fileAt('idea.md', 500),
+      fileAt('kept.md', 2000),
+      fileAt('new.md', 2000),
+      link('notes.md'),
+      entry('shared', 'dir'),
+      entryAt('sock', 'other', 2000),
+    ]
+    const main = mainOf([['thoughts', [entry('kept.md'), entry('shared', 'dir')]]])
+
+    expect(walkedOf(['thoughts'], ['thoughts/shared'], main, treeOf([['thoughts', children]]))).toEqual({
+      steps: [moveOf('thoughts/idea.md'), moveOf('thoughts/new.md')],
+      unsafe: [],
+    })
+  })
+
+  test('a walked folder below which the include file names nothing now is unsafe, named', () => {
+    for (const included of [[], ['thoughts'], ['thoughts2/x']]) {
+      expect(walkedOf(['thoughts'], included, mainOf([['thoughts', []]]), TREE)).toEqual({
+        steps: [],
+        unsafe: ['thoughts'],
+      })
+    }
+  })
+
+  test('a walked folder whose folder the worktree cannot list is unsafe; a non-folder one gives nothing', () => {
+    const main = mainOf([['thoughts', []]])
+    const walked = ['gone', 'thoughts']
+
+    expect(walkedOf(['a/b'], ['a/b/c'], main, TREE)).toEqual({ steps: [], unsafe: ['a/b'] })
+    for (const shown of [fileAt('thoughts', 2000), link('thoughts')]) {
+      const tree = new Map([['', [shown]]])
+
+      expect(walkedOf(walked, ['gone/x', 'thoughts/shared'], main, tree)).toEqual({ steps: [], unsafe: [] })
+    }
+  })
+
+  test('with no real creation time a walked folder is unsafe and nothing is moved', () => {
+    for (const since of [0, -1]) {
+      expect(walkedOf(['thoughts'], ['thoughts/shared'], mainOf([['thoughts', []]]), TREE, since)).toEqual({
+        steps: [],
+        unsafe: ['thoughts'],
+      })
+    }
+  })
+
+  test("main's way to a walked folder is checked as for a copy: a link, a non-folder or no listing is unsafe", () => {
+    const linked = new Map([['', [link('thoughts')]]])
+    const file = new Map([['', [entry('thoughts')]]])
+
+    for (const main of [linked, file, new Map()]) {
+      expect(walkedOf(['thoughts'], ['thoughts/shared'], main, TREE)).toEqual({ steps: [], unsafe: ['thoughts'] })
+    }
+  })
+
+  test('a walked folder main lacks is made before the first move into it', () => {
+    expect(walkedOf(['thoughts'], ['thoughts/shared'], new Map([['', []]]), TREE)).toEqual({
+      steps: [{ kind: 'mkdir', path: '/repo/thoughts' }, moveOf('thoughts/new.md')],
+      unsafe: [],
+    })
+  })
+
+  test('a walked folder the worktree cannot list, or main cannot list where it shows it, is unsafe', () => {
+    expect(walkedOf(['thoughts'], ['thoughts/shared'], mainOf([['thoughts', []]]), treeOf([]))).toEqual({
+      steps: [],
+      unsafe: ['thoughts'],
+    })
+    expect(walkedOf(['thoughts'], ['thoughts/shared'], mainOf([]), TREE)).toEqual({ steps: [], unsafe: ['thoughts'] })
+  })
+
+  test('a copy and a walked folder share the mkdir of a folder main lacks, made once, the copies first', () => {
+    const tree = treeOf([
+      ['thoughts', [fileAt('idea.md', 2000), entry('shared', 'dir')]],
+      ['thoughts/shared', [fileAt('x.md', 2000)]],
+    ])
+    const input = { copies: ['thoughts/shared'], walked: ['thoughts'], included: ['thoughts/shared'], since: 1000 }
+    const main = new Map([['', []]])
+
+    expect(copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, ...input, main, tree })).toEqual({
+      steps: [
+        { kind: 'mkdir', path: '/repo/thoughts' },
+        { kind: 'mkdir', path: '/repo/thoughts/shared' },
+        moveOf('thoughts/shared/x.md'),
+        moveOf('thoughts/idea.md'),
+      ],
+      unsafe: [],
+    })
   })
 })
