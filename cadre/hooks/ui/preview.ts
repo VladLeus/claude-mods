@@ -111,20 +111,16 @@ export function fitPreview(context: AskContext, rows: number, columns: number | 
 }
 
 /**
- * The transcript entries the TUI default prints right above a dialog (D-228, D-262, WD-S4): for a context too long for
- * the preview drawn at `columns` (fitPreview at PREVIEW_LINE_ROWS, D-260), one entry per row, its title and then every
- * line, each cleaned with no cap (T-02.1-79, T-02.2-09), so no value can add an entry or a title of its own and the
- * full text above holds whole what the preview leaves out. Rows are never joined: the terminal stores a newline inside
- * a `$.ui.log` text as U+FFFD and draws the rows run together (D-262 reload check, user 2026-11-04). None for a context
- * that fits, for the Review (it is paged), for no context, and for a context with the same title and the same lines,
- * in order, as `printed`, the one printed last, so a question asked again prints its context once.
+ * The rows printed above the TUI dialog for a context whose preview leaves lines out, once per context; none when the
+ * preview shows it whole, a paged context's page included.
  */
 export function tuiTranscriptEntries(
   context: AskContext | null,
   printed: AskContext | null,
   columns: number | null,
 ): readonly string[] {
-  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS, columns).isOverflow) return []
+  if (context === null) return []
+  if (!fitPreview({ ...context, lines: shownLines(context) }, PREVIEW_LINE_ROWS, columns).isOverflow) return []
   const { title, lines } = context
   const isPrinted =
     printed !== null &&
