@@ -18,7 +18,9 @@ import {
 import { CHANGES_MAX_CHARS } from './send'
 
 /** The idle wait sentence, spelled out so the specs pin its words. */
-const IDLE_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
+const IDLE_WAIT =
+  'When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ' +
+  'when your task is finished, give the done answer autopilot asks for.'
 
 const A: InboxEntry = {
   v: 1,

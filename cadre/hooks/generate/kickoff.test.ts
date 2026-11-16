@@ -47,7 +47,9 @@ const ROLE_LINE_CHARS = /^[\x20-\x7e]+$/
 const QUOTE_CHARS = /["'`]/
 
 /** The idle wait sentence, spelled out so the specs pin its words. */
-const IDLE_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
+const IDLE_WAIT =
+  'When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ' +
+  'when your task is finished, give the done answer autopilot asks for.'
 
 /** Every way a kickoff of this role and framework breaks the contract with autopilot, as messages; empty when none. */
 function kickoffProblems(role: RoleSpec, framework: FrameworkId): string[] {

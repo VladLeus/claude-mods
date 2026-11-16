@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  IDLE_INBOX_WAIT,
   MCP_SYSTEM,
   PROMPTS,
   proposeSystemText,
@@ -33,6 +34,15 @@ describe('locales/prompts (D-221)', () => {
     ]
 
     expect(systems.filter(text => !isPromptAscii(text))).toEqual([])
+  })
+
+  test('the idle inbox sentence names both exits, in printable ASCII with no quote or backtick', () => {
+    expect(IDLE_INBOX_WAIT).toBe(
+      'When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ' +
+        'when your task is finished, give the done answer autopilot asks for.',
+    )
+    expect(isPromptAscii(IDLE_INBOX_WAIT)).toBe(true)
+    expect(/["'`]/.test(IDLE_INBOX_WAIT)).toBe(false)
   })
 
   test('the ASCII check refuses a byte above 0x7E and a control character', () => {

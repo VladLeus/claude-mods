@@ -34,7 +34,9 @@ import type { GenerateInput } from './files'
 import { builtClaudeMdPath } from './launcher'
 
 /** The idle wait sentence, spelled out so the specs pin its words. */
-const IDLE_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
+const IDLE_WAIT =
+  'When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ' +
+  'when your task is finished, give the done answer autopilot asks for.'
 
 /** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
 function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
