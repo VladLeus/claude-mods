@@ -72,6 +72,21 @@ export const ARTIFACT = Object.freeze({
     'Brief: send TL the brief with the planning mode the user confirmed (your roles in a team without TL).',
   roleMdCorePmFeed: 'Feed: send TL one ticket at a time with its key, your scope and risk scores and the report form.',
   roleMdCorePmAccept: "Accept: check each report against the ticket's acceptance criteria, then feed the next ticket.",
+  roleMdCorePmDeps: `Before the grill, resolve every dependency a ticket names (linked tickets, spikes, docs) in the ${
+    ''}tracker and the repo, and put what you find into the grill.`,
+  roleMdCorePmFacts: `For code facts, send TL a question (inbox_send kind question) and keep those grill branches ${
+    ''}open until TL answers.`,
+  roleMdCorePmNotFound: `Report a fact you could not find as "not found by me (searched X)", naming where you ${
+    ''}searched; never as "not in the repo".`,
+  roleMdCorePmOutcomes: `State what must be true (acceptance criteria, behaviour, scope); leave code structure, tests ${
+    ''}and review routing to TL.`,
+  roleMdCorePmReportForm:
+    'In the report form, ask for verification as a summary, with the details in the docs named in docPaths.',
+  roleMdCorePmAsk: `Make no product decision without the user: send a product question to the user (AskUserQuestion ${
+    ''}while they are here, queue_question while they are away) whenever its answer changes or narrows an ${
+    ''}acceptance criterion, a user-visible flow or a decision the user made, or picks between real alternatives.`,
+  roleMdCorePmDecideAlone: `Decide alone only when the answer follows directly from a grill answer, and log which ${
+    ''}grill answer it follows from.`,
   roleMdTlLoop: `Your ticket loop as TL: on each ticket PM sends, add complexity and effort to PM's scope and ${
     ''}risk, compute the size and pick the framework or GSD path; record the vector with a one-line reason.`,
   roleMdTlPlan: 'Plan the ticket in your own planning docs.',
@@ -80,6 +95,7 @@ export const ARTIFACT = Object.freeze({
   roleMdCoreTlBrief: `Send each implementer a brief, not a plan: the goal, the acceptance criteria, your ${
     ''}architecture decisions with their reasons, the areas at risk, what is out of scope, the report form and what ${
     ''}must be proven. Leave out method signatures, spec bodies and commands.`,
+  roleMdCoreTlHold: 'Do not dispatch the part of a task an open product question affects.',
   roleMdCoreTlTrust: `Trust the implementer's report: read the diff for architecture and scope fit, and do not ${
     ''}re-run the checks it lists as run.`,
   roleMdCoreTlFailed: `On a failed or partial report, decide on the implementer's proposed answer; dig deeper only ${

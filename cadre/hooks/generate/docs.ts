@@ -40,13 +40,21 @@ export function mcpText(scope: CompiledScope): string {
 /** The line ROLE.md adds after the framework line of an attended role. It is no card rule, so it never repeats one. */
 const ATTENDED_LINE = ARTIFACT.roleMdAttended
 
-/** The core PM's How you work: fetch, grill, brief, feed and accept, with no build loop and no ask gate. */
+/**
+ * The core PM's How you work: fetch with the named dependencies, grill with code facts from TL, brief, feed outcomes
+ * and the report form, and accept, with no build loop and no ask gate.
+ */
 const CORE_PM_WORK: readonly string[] = [
   ARTIFACT.roleMdCorePmIntro,
   ARTIFACT.roleMdCorePmFetch,
+  ARTIFACT.roleMdCorePmDeps,
   ARTIFACT.roleMdCorePmGrillStep,
+  ARTIFACT.roleMdCorePmFacts,
+  ARTIFACT.roleMdCorePmNotFound,
   ARTIFACT.roleMdCorePmBrief,
   ARTIFACT.roleMdCorePmFeed,
+  ARTIFACT.roleMdCorePmOutcomes,
+  ARTIFACT.roleMdCorePmReportForm,
   ARTIFACT.roleMdCorePmAccept,
 ]
 
@@ -110,6 +118,13 @@ const PM_PART: readonly string[] = [
   ARTIFACT.roleMdPmGrillCritical,
 ]
 
+/** A core PM's part: PM's grill rules, with the ask and decide-alone lines in place of the critical-question line. */
+const CORE_PM_PART: readonly string[] = [
+  ...PM_PART.filter(line => line !== ARTIFACT.roleMdPmGrillCritical),
+  ARTIFACT.roleMdCorePmAsk,
+  ARTIFACT.roleMdCorePmDecideAlone,
+]
+
 /** TL's ticket loop in the Hierarchy section of ROLE.md. */
 const TL_PART: readonly string[] = [
   ARTIFACT.roleMdTlLoop,
@@ -136,8 +151,9 @@ const CORE_WORKER_PART: readonly string[] = [
 ]
 
 /**
- * A core team's TL part: the loop on the fed ticket only, a brief for each implementer instead of a plan, trust in
- * the reports, and a QA or Security task only when the team has a role standing for it.
+ * A core team's TL part: the loop on the fed ticket only, a brief for each implementer instead of a plan, no dispatch
+ * of what an open product question affects, trust in the reports, and a QA or Security task only when the team has a
+ * role standing for it.
  */
 function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
   const qaLines = standIn('qa', roles) === null ? [] : [ARTIFACT.roleMdCoreTlQa]
@@ -147,6 +163,7 @@ function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
     ARTIFACT.roleMdTlLoop,
     ARTIFACT.roleMdCoreTlFed,
     ARTIFACT.roleMdCoreTlBrief,
+    ARTIFACT.roleMdCoreTlHold,
     ARTIFACT.roleMdTlTasks,
     ARTIFACT.roleMdCoreTlTrust,
     ARTIFACT.roleMdCoreTlFailed,
@@ -157,10 +174,9 @@ function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
   ]
 }
 
-/**
- * The role's own part of the Hierarchy section: PM's, TL's or a worker's; a core team's TL and workers have their own.
- */
+/** The role's own part of the Hierarchy section: PM's, TL's or a worker's, each with a core-team version. */
 function rolePart(role: RoleSpec, team: RoleMdTeam): readonly string[] {
+  if (team.isCore && standsFor(role, 'pm')) return CORE_PM_PART
   if (team.isCore && standsFor(role, 'tl')) return coreTlPart(team.roles)
   if (standsFor(role, 'pm')) return PM_PART
   if (standsFor(role, 'tl')) return TL_PART
