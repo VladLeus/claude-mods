@@ -153,7 +153,7 @@ function historyCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
     }
     if (call.id !== 'scan-history') throw new Error(`the history stage does not set ${call.id}`)
 
-    return { id: 'scan-history', result: await scanHistory(io, call.dir, call.startFolder, call.sessions) }
+    return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
   }
 }
 
@@ -325,9 +325,7 @@ describe('history scan', () => {
   test('historyStage: a Yes run folds one Session history section into the roles questions, logging none', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [])
     const drive = await drivenWith(historyAt(), ['Yes, scan names and counts'], historyCalls(run.io))
-    const scan = await scanHistory(memIo(historyWorld({ 'a.jsonl': EXAMPLE }), []).io, DIR, '/repo', [
-      transcript('a.jsonl', 1),
-    ])
+    const scan = await scanHistory(memIo(historyWorld({ 'a.jsonl': EXAMPLE }), []).io, DIR, [transcript('a.jsonl', 1)])
     expect(drive.outputs).toEqual([historyFoldOf(scan)])
     expect(PANE_TITLES.history).toBe('Session history')
     expect(drive.outputs.filter(output => output.kind === 'log' && output.text.includes('\n'))).toEqual([])

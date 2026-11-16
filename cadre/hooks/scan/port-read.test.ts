@@ -2,8 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, PortStat } from '../../types'
 import { mangledProjectDir } from '../paths'
-import { entry, entryAt, link, memIo, memWorld } from '../testkit'
-import type { MemWorld } from '../testkit'
+import { entry, memIo, memWorld } from '../testkit'
 import { MAX_READ_BYTES } from './facts/normalize'
 import {
   followedProjectFolder,
@@ -13,7 +12,6 @@ import {
   portProbeOf,
   portTextOf,
   readRepoFile,
-  readsStartCwd,
 } from './port-read'
 
 describe('readRepoFile', () => {
@@ -287,36 +285,5 @@ describe('followedProjectFolder', () => {
 
     expect(await followedProjectFolder(run.io, `${projects}/${long}`, checkOf([]).check)).toBe(`${projects}/${long}`)
     expect(run.reads).toEqual([])
-  })
-})
-
-describe('readsStartCwd', () => {
-  const folder = '/home/u/.claude/projects/-x'
-  /** A transcript row whose cwd is `cwd`, as the engine writes it. */
-  function row(cwd: string): string {
-    return `${JSON.stringify({ type: 'user', cwd, sessionId: 's' })}\n`
-  }
-
-  test('a folder holding a transcript with the start folder as its cwd passes; /a/bc does not pass /a/b', async () => {
-    const dirs = { [folder]: [entryAt('a.jsonl', 'file', 1), entryAt('b.jsonl', 'file', 2)] }
-    const worldOf = (cwd: string): MemWorld =>
-      memWorld({ dirs, files: { [`${folder}/a.jsonl`]: row(cwd), [`${folder}/b.jsonl`]: '' } })
-    const held = memIo(worldOf('/a/b'), [])
-    const near = memIo(worldOf('/a/bc'), [])
-
-    expect(await readsStartCwd(held.io, '/a/b')(folder)).toBe(true)
-    expect(held.reads).toEqual([`${folder}/b.jsonl`, `${folder}/a.jsonl`])
-    expect(await readsStartCwd(near.io, '/a/b')(folder)).toBe(false)
-  })
-
-  test('only regular .jsonl files are read, and a folder that cannot be listed does not pass', async () => {
-    const dirs = { [folder]: [entry('a.txt'), link('l.jsonl'), entry('d.jsonl', 'dir')] }
-    const files = { [`${folder}/a.txt`]: row('/a/b') }
-    const run = memIo(memWorld({ dirs, files }), [])
-    const unlisted = memIo(memWorld({ unknownPaths: [folder] }), [])
-
-    expect(await readsStartCwd(run.io, '/a/b')(folder)).toBe(false)
-    expect(run.reads).toEqual([])
-    expect(await readsStartCwd(unlisted.io, '/a/b')(folder)).toBe(false)
   })
 })

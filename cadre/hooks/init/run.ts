@@ -837,7 +837,7 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
     case 'scan-history':
       await io.progress(HISTORY_PROGRESS, countsText([['sessions', call.sessions.length]]))
 
-      return { id: 'scan-history', result: await scanHistory(io, call.dir, call.startFolder, call.sessions) }
+      return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
     case 'read-repo-file':
       return { id: 'read-repo-file', result: await readRepoFile(io, call.root, call.path, call.maxBytes) }
     case 'repo-instruction-names':
