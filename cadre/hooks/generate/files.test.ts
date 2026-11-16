@@ -11,7 +11,6 @@ import type {
   RoleSpec,
   ScopeContext,
   SetupScan,
-  TeamStructure,
 } from '../../types'
 import { isObject } from '../core/json'
 import { compareText } from '../core/text'
@@ -249,21 +248,24 @@ describe('desiredFiles', () => {
     expect(index.split('\n').filter(line => line.includes('| .cadre/bin/'))).toHaveLength(TEMPLATE_ROLES.length)
   })
 
-  test('the recorded structure changes no generated text yet', () => {
+  test('a custom record changes no generated text, and a core record changes only the ROLE.md texts', () => {
     const input = inputOf(TEMPLATE_ROLES, 'gsd')
-    const be = templateRole('be')
-    const scope = scopeOf(be, 'gsd', TEMPLATE_ROLES)
-    const structures: readonly TeamStructure[] = ['core', 'custom']
+    const core: CadreState = { ...input.state, structure: 'core' }
+    const team = { isCore: isCoreTeam(core), roles: TEMPLATE_ROLES }
     const filesOf = (state: CadreState): DesiredFile[] =>
       desiredFiles({ ...input, state }).filter(file => file.path !== '.cadre/cadre.json')
+    const notRoleMd = (files: readonly DesiredFile[]): DesiredFile[] =>
+      files.filter(file => !file.path.endsWith('/ROLE.md'))
     const unrecorded = filesOf(input.state)
+    const coreFiles = filesOf(core)
 
-    for (const structure of structures) {
-      const state: CadreState = { ...input.state, structure }
-      const team = { isCore: isCoreTeam(state), roles: TEMPLATE_ROLES }
-      const files = filesOf(state)
-      expect(files).toEqual(unrecorded)
-      expect(contentOf(files, '.cadre/be/ROLE.md')).toBe(roleMdText(be, scope, team))
+    expect(filesOf({ ...input.state, structure: 'custom' })).toEqual(unrecorded)
+    expect(notRoleMd(coreFiles)).toEqual(notRoleMd(unrecorded))
+    expect(contentOf(coreFiles, '.cadre/tl/ROLE.md')).not.toBe(contentOf(unrecorded, '.cadre/tl/ROLE.md'))
+    for (const role of TEMPLATE_ROLES) {
+      const scope = scopeOf(role, 'gsd', TEMPLATE_ROLES)
+
+      expect(contentOf(coreFiles, `.cadre/${role.id}/ROLE.md`)).toBe(roleMdText(role, scope, team))
     }
   })
 })

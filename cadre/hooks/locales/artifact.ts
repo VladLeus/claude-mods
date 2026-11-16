@@ -67,6 +67,11 @@ export const ARTIFACT = Object.freeze({
   roleMdTlLoop: `Your ticket loop as TL: on each ticket PM sends, add complexity and effort to PM's scope and ${
     ''}risk, compute the size and pick the framework or GSD path; record the vector with a one-line reason.`,
   roleMdTlPlan: 'Plan the ticket in your own planning docs.',
+  roleMdCoreTlFed: `Work only on the ticket PM fed, and answer PM's code-fact questions during the grill; do no ${
+    ''}research on later tickets.`,
+  roleMdCoreTlBrief: `Send each implementer a brief, not a plan: the goal, the acceptance criteria, your ${
+    ''}architecture decisions with their reasons, the areas at risk, what is out of scope, the report form and what ${
+    ''}must be proven. Leave out method signatures, spec bodies and commands.`,
   roleMdTlTasks: `Send BE and FE their tasks in parallel (inbox_send kind task), split by area; a file both ${
     ''}would touch is yours to serialise.`,
   roleMdTlReport: `Wait for every report, then report to PM in the form PM asked (by default: outcome, changes, ${

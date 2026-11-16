@@ -313,6 +313,8 @@ export type KickoffContext = {
   readonly roleId: string
   /** The spec's path in the repo; null when the role has no spec yet. */
   readonly specPath: string | null
+  /** True only for the TL of a core team, which plans no implementation. */
+  readonly isCoreLead?: boolean
 }
 
 /**
@@ -337,6 +339,8 @@ export type ProjectInstall = {
 export type RoleWorkContext = {
   readonly roleId: string
   readonly isLead: boolean
+  /** True only for the TL of a core team, which plans no implementation. */
+  readonly isCoreLead?: boolean
 }
 
 /**

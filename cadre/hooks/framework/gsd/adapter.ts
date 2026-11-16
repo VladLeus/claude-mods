@@ -266,12 +266,14 @@ function approvedSpecLines(specPath: string | null): string[] {
 
 /**
  * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work (the
- * new project of a checkout with no `.planning/` too), one line per human gate, and the done answer. Lines are joined
- * with newlines and the text has no trailing newline. The title and the spec path come from outside the adapter, so
- * they are cleaned before they can add a line.
+ * new project of a checkout with no `.planning/` too), one line per human gate, and the done answer, joined with
+ * newlines. A core lead plans no implementation, so it gets no start or verify line. The title and the spec path come
+ * from outside the adapter, so they are cleaned before they can add a line.
  */
 export function gsdKickoffText(ctx: KickoffContext): string {
   const title = kickoffTitle(ctx)
+  const leftOut: readonly string[] =
+    ctx.isCoreLead === true ? [ARTIFACT.gsdKickoffStart, ARTIFACT.gsdKickoffVerify] : []
 
   return [
     fill(ARTIFACT.gsdKickoffIntro, { title }),
@@ -283,7 +285,9 @@ export function gsdKickoffText(ctx: KickoffContext): string {
     ARTIFACT.gsdHumanGates,
     ...GSD_GATES.map(gate => fill(ARTIFACT.gsdGateLine, { where: gate.where, kickoff: gate.kickoff })),
     DONE_LINE,
-  ].join('\n')
+  ]
+    .filter(line => !leftOut.includes(line))
+    .join('\n')
 }
 
 /**
@@ -296,6 +300,9 @@ const GSD_LEAD_STEPS: readonly string[] = Object.freeze([
   ARTIFACT.gsdStepMilestoneLead,
   ARTIFACT.gsdStepPath,
 ])
+
+/** The steps a core lead runs: the lead steps up to the milestone, since it plans no implementation. */
+const GSD_CORE_LEAD_STEPS: readonly string[] = Object.freeze(GSD_LEAD_STEPS.slice(0, 3))
 
 /**
  * The steps a worker runs: the project only in a team with no TL and a checkout with no `.planning/`, its workstream,
@@ -386,7 +393,11 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   factsHeading: t('framework.gsd.adapter.gsdAdapterFactsHeading'),
   roleWork: Object.freeze({
     workstreamEnv: 'GSD_WORKSTREAM',
-    startSteps: (ctx: RoleWorkContext) => (ctx.isLead ? GSD_LEAD_STEPS : GSD_WORKER_STEPS),
+    startSteps: (ctx: RoleWorkContext) => {
+      if (ctx.isCoreLead === true) return GSD_CORE_LEAD_STEPS
+
+      return ctx.isLead ? GSD_LEAD_STEPS : GSD_WORKER_STEPS
+    },
   }),
 })
 

@@ -41,12 +41,12 @@ export function mcpText(scope: CompiledScope): string {
 const ATTENDED_LINE = ARTIFACT.roleMdAttended
 
 /**
- * The Planning docs section of ROLE.md: the intro and the start steps of each framework the role may run, own
- * framework first and worded for the lead when the role stands for TL; two or more frameworks with steps add the pick
- * line and a label line per framework. None when no framework has a step.
+ * The Planning docs section of ROLE.md: the start steps of each framework the role may run, own framework first and
+ * worded for the lead or the core lead; two or more frameworks add the pick line and a label per framework. None when
+ * no framework has a step.
  */
-function planningDocsLines(role: RoleSpec, card: ScopeCard): string[] {
-  const ctx = { roleId: role.id, isLead: standsFor(role, 'tl') }
+function planningDocsLines(role: RoleSpec, card: ScopeCard, isCoreLead: boolean): string[] {
+  const ctx = { roleId: role.id, isLead: standsFor(role, 'tl'), isCoreLead }
   const groups = [card.framework, ...card.alsoRuns]
     .map(id => ({ id, steps: adapterOf(id).roleWork.startSteps(ctx) }))
     .filter(group => group.steps.length > 0)
@@ -105,8 +105,20 @@ const WORKER_PART: readonly string[] = [
   ARTIFACT.roleMdWorkerNoTl,
 ]
 
-/** The part of the Hierarchy section for what the role stands for: PM, TL, or a worker for every other role. */
-function rolePart(role: RoleSpec): readonly string[] {
+/** A core team's TL part: the loop on the fed ticket only, and a brief for each implementer instead of a plan. */
+function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
+  return [
+    ARTIFACT.roleMdTlLoop,
+    ARTIFACT.roleMdCoreTlFed,
+    ARTIFACT.roleMdCoreTlBrief,
+    ARTIFACT.roleMdTlTasks,
+    ARTIFACT.roleMdTlReport,
+  ]
+}
+
+/** The role's own part of the Hierarchy section: PM's, TL's (a core team's TL has its own) or a worker's. */
+function rolePart(role: RoleSpec, team: RoleMdTeam): readonly string[] {
+  if (team.isCore && standsFor(role, 'tl')) return coreTlPart(team.roles)
   if (standsFor(role, 'pm')) return PM_PART
   if (standsFor(role, 'tl')) return TL_PART
 
@@ -117,10 +129,10 @@ function rolePart(role: RoleSpec): readonly string[] {
  * The Hierarchy section of ROLE.md: its heading, the lines every role gets, the ask line of a role started with
  * --ask-user, then the role's own part.
  */
-function hierarchyLines(role: RoleSpec): string[] {
+function hierarchyLines(role: RoleSpec, team: RoleMdTeam): string[] {
   const askLines = role.autopilot.askUser ? [ARTIFACT.roleMdHierarchyAskUser] : []
 
-  return [ARTIFACT.roleMdHierarchy, '', ...COMMON_PART, ...askLines, ...rolePart(role), '']
+  return [ARTIFACT.roleMdHierarchy, '', ...COMMON_PART, ...askLines, ...rolePart(role, team), '']
 }
 
 /**
@@ -145,20 +157,16 @@ export type RoleMdTeam = { readonly isCore: boolean; readonly roles: readonly Ch
 const CUSTOM_TEAM: RoleMdTeam = Object.freeze({ isCore: false, roles: [] })
 
 /**
- * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session; it is never named
- * CLAUDE.md or AGENTS.md. It holds, in this order: the title and id, the purpose, the framework with the model,
- * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
- * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
- * "Handoffs" (the folder autopilot accepts), "Inbox" (the role's inbox file, the inbox tools and the idle wait),
- * "Planning docs" (the start steps of every framework the role may run, when one has a step), "Hierarchy" (who asks
- * whom, the epic end and the role's own part), "Sizing" (how a ticket is sized) and "Scope" (the lines of the scope
- * card). The framework is the one the scope was compiled for (`scope.card.framework`), so the document and the card
- * cannot disagree. The title and the purpose come from outside, so they are cleaned.
+ * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session (never named CLAUDE.md
+ * or AGENTS.md), section by section. The framework is the one the scope was compiled for, so the document and the card
+ * cannot disagree. A core team's TL gets the kickoff, start steps and Hierarchy part of a lead that plans no
+ * implementation.
  */
 export function roleMdText(role: RoleSpec, scope: CompiledScope, team: RoleMdTeam = CUSTOM_TEAM): string {
   const { card } = scope
   const adapter = adapterOf(card.framework)
-  const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null })
+  const isCoreLead = team.isCore && standsFor(role, 'tl')
+  const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null, isCoreLead })
   const model = fill(ARTIFACT.roleMdModel, { model: role.model, effort: role.effort })
   const lines = [
     fill(ARTIFACT.roleMdTitle, { title: clean(role.title, MAX_ROLE_CHARS), id: role.id }),
@@ -187,8 +195,8 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope, team: RoleMdTea
     ARTIFACT.roleMdNoteLine,
     ARTIFACT.roleMdInboxStates,
     '',
-    ...planningDocsLines(role, card),
-    ...hierarchyLines(role),
+    ...planningDocsLines(role, card, isCoreLead),
+    ...hierarchyLines(role, team),
     ...sizingLines(),
     ARTIFACT.roleMdScope,
     '',

@@ -287,7 +287,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/ROLE.md",
-        "sha256": "5631c66e233b62ce1ba3d0fb9083fbc0656b5d7a688bf7a7feabce4e0a38b2ec",
+        "sha256": "800dd34b20db509ef7923cfc53df3277e17b4e5a60290ea6d64e6c8ada4afff9",
         "isWritten": true
       },
       {
@@ -317,7 +317,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "bcf6fd62758d7c9f9ef000c44715460d9921c06680f2639c22a102576facdb70",
+        "sha256": "430f1240f44837234841a5228e58e0e0290bdc0f6a75e0fd5a5a1e11ce837d1c",
         "isWritten": true
       }
     ],
@@ -429,7 +429,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/ROLE.md\",",
-      "      \"sha256\": \"5631c66e233b62ce1ba3d0fb9083fbc0656b5d7a688bf7a7feabce4e0a38b2ec\"",
+      "      \"sha256\": \"800dd34b20db509ef7923cfc53df3277e17b4e5a60290ea6d64e6c8ada4afff9\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -761,7 +761,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/ROLE.md",
-        "sha256": "7e1e7099b100bdba55503be2dbd71f9565e1d15a375de85700516d4f9b3331ee",
+        "sha256": "85201360689978160cd3f1c9e9a3278252d194a94987a17dd49d59ff4b2eb4a8",
         "isWritten": true
       },
       {
@@ -791,7 +791,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "521939f9e44e0c1857be9c42c4f29f5da716ad87017132b6249a99c668b2653e",
+        "sha256": "3eea835322dc22d4120a34310ffe6e3b47790c845ff59e84a25fb911ab943fc8",
         "isWritten": true
       }
     ],
@@ -904,7 +904,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/ROLE.md\",",
-      "      \"sha256\": \"7e1e7099b100bdba55503be2dbd71f9565e1d15a375de85700516d4f9b3331ee\"",
+      "      \"sha256\": \"85201360689978160cd3f1c9e9a3278252d194a94987a17dd49d59ff4b2eb4a8\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
