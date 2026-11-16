@@ -155,12 +155,12 @@ export const PROMPTS = Object.freeze({
   inboxLineTooLarge: 'Not sent: the entry is {size} bytes, over {max}: {parts}. Shorten these.',
   inboxNotStarted: 'Not sent: {to} has no inbox yet. Run /cadre start {to} first.',
   inboxUnsafe: 'Not sent: the inbox of {to} is a link or not a regular file, so cadre does not write to it.',
-  inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read.',
+  inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject} Read it with inbox_read.',
   // The wake of a task that names its method. Then the kind fields of inbox_send (messages/send): the refusal of a
   // missing, a foreign or a bad field, of a brief's mode and tickets, and of a task framework its receiver may not run;
   // then the size line a send result ends with, and the pick it names per planning mode (messages/sizing sizeText).
   inboxWakeMethod:
-    'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read and execute it with {method}.',
+    'New {kind} {id} from {from} in your cadre inbox: {subject} Read it with inbox_read and execute it with {method}.',
   inboxFieldMissing: 'A {kind} needs {fields}.',
   inboxTicketKeyBad:
     'ticketKey must be a ticket key of at most {max} characters: a letter or digit, then letters, digits, . - or _.',
