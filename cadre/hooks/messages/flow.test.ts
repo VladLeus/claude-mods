@@ -383,9 +383,30 @@ describe('runInboxSend of a task', () => {
     use: { framework: 'gsd', gsdPath: 'phase' },
   }
 
+  const PM_TICKET: InboxEntry = {
+    v: 1,
+    type: 'entry',
+    id: 'pm-900-0123abcd',
+    at: 900,
+    from: 'pm',
+    to: 'tl',
+    kind: 'ticket',
+    subject: 'Add login',
+    body: 'The acceptance criteria',
+    ticketKey: 'PROJ-2',
+    scores: { scope: 0.3, risk: 0.9 },
+  }
+
   /** A world where pm, tl and be were started and be published its session id, with the clock at 1000. */
   function beWorld(): MemWorld {
     return memWorld({ now: 1000, dirs: STARTED, files: { [BE_SESSION]: sessionRecordText('s-be') } })
+  }
+
+  /** beWorld with these entries in tl's own inbox. */
+  function tlInboxWorld(entries: readonly InboxEntry[]): MemWorld {
+    const files = { [BE_SESSION]: sessionRecordText('s-be'), [TL_INBOX]: entries.map(recordLine).join('') }
+
+    return memWorld({ now: 1000, dirs: STARTED, files })
   }
 
   test('tl sends be a task: the entry carries its vector with the size stamp; the result names the picks', async () => {
@@ -431,6 +452,44 @@ describe('runInboxSend of a task', () => {
 
       expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxFieldMissing, { kind: 'task', fields: field }) })
       expect([host.calls, sends]).toEqual([[], []])
+    }
+  })
+
+  test("a task inherits the pin of PM's ticket with the same key: the class and the pick follow the pin", async () => {
+    const world = tlInboxWorld([{ ...PM_TICKET, pin: 'small' }])
+    const { outcome, host, reads } = await sendFrom(world, TASK, { ctx: TL })
+    const entry = entryLine(firstStdin(host))
+    const id = entry?.id ?? ''
+
+    expect(entry).toMatchObject({ kind: 'task', ticketKey: 'PROJ-2', size: 0.6, large: false, pinned: 'small' })
+    expect(outcome).toEqual({
+      kind: 'result',
+      text:
+        `${fill(PROMPTS.inboxSent, { id, to: 'be' })} Size small (pinned; computed 0.6). ` +
+        'In gsd-epic mode: gsd, GSD path quick. In ticket mode: superpowers.',
+    })
+    expect(reads).toContain(TL_INBOX)
+  })
+
+  test('the latest PM ticket of the key wins, an unpinned one too; a ticket of another key is ignored', async () => {
+    const team: TeamView = { ...TEAM, sizing: { ...TEAM.sizing, threshold: 0.7 } }
+    const later: InboxEntry = { ...PM_TICKET, id: 'pm-950-0123abcd', at: 950 }
+    const other: InboxEntry = { ...PM_TICKET, id: 'pm-980-0123abcd', at: 980, ticketKey: 'PROJ-3', pin: 'large' }
+    const worlds = [tlInboxWorld([{ ...PM_TICKET, pin: 'large' }, later]), tlInboxWorld([other])]
+    for (const world of worlds) {
+      const { outcome, host, reads } = await sendFrom(world, TASK, { ctx: TL, team })
+      const stdin = firstStdin(host)
+      const id = entryLine(stdin)?.id ?? ''
+
+      expect(entryLine(stdin)).toMatchObject({ size: 0.6, large: false })
+      expect(stdin).not.toContain('"pinned":')
+      expect(outcome).toEqual({
+        kind: 'result',
+        text:
+          `${fill(PROMPTS.inboxSent, { id, to: 'be' })} Size 0.6, so small (the threshold is 0.7). ` +
+          'In gsd-epic mode: gsd, GSD path quick. In ticket mode: superpowers.',
+      })
+      expect(reads).toContain(TL_INBOX)
     }
   })
 })
@@ -491,9 +550,12 @@ describe('runInboxSend of the ticket loop', () => {
     return { ...TEAM, frameworks, mayRun: { pm: ['none'], tl: frameworks, be: frameworks } }
   }
 
-  test('pm sends tl a ticket: the entry carries its key, scores, pin and report form, and no size', async () => {
+  test('pm sends tl a ticket: it carries its fields and no stamp; only a pinned one ends with its class', async () => {
     const { outcome, host } = await sendFrom(tlWorld(), TICKET, { ctx: PM })
-    const entry = entryLine(firstStdin(host))
+    const stdin = firstStdin(host)
+    const entry = entryLine(stdin)
+    const unpinned = await sendFrom(tlWorld(), { ...TICKET, pin: undefined }, { ctx: PM })
+    const unpinnedId = entryLine(firstStdin(unpinned.host))?.id ?? ''
 
     expect(entry).toMatchObject({
       kind: 'ticket',
@@ -503,8 +565,14 @@ describe('runInboxSend of the ticket loop', () => {
       pin: 'large',
       reportForm: 'Outcome first',
     })
-    expect([entry?.size, entry?.large]).toEqual([undefined, undefined])
-    expect(outcome).toEqual({ kind: 'result', text: fill(PROMPTS.inboxSent, { id: entry?.id ?? '', to: 'tl' }) })
+    expect(['"size":', '"large":', '"pinned":'].filter(key => stdin.includes(key))).toEqual([])
+    expect(outcome).toEqual({
+      kind: 'result',
+      text:
+        `${fill(PROMPTS.inboxSent, { id: entry?.id ?? '', to: 'tl' })} Size large (pinned). ` +
+        'In gsd-epic mode: gsd, GSD path phase. In ticket mode: gsd, GSD path phase.',
+    })
+    expect(unpinned.outcome).toEqual({ kind: 'result', text: fill(PROMPTS.inboxSent, { id: unpinnedId, to: 'tl' }) })
   })
 
   test('the same ticket key sent twice gives two entries with two ids; nothing is merged', async () => {
@@ -516,19 +584,20 @@ describe('runInboxSend of the ticket loop', () => {
     expect(entries[0]?.id).not.toBe(entries[1]?.id)
   })
 
-  test('be reports to tl: the entry carries every report field and the size stamp of its vector', async () => {
+  test('be reports to tl: the entry keeps its vector, with no size stamp and no size line', async () => {
     const { outcome, host } = await sendFrom(tlWorld(), REPORT)
+    const stdin = firstStdin(host)
+    const entry = entryLine(stdin)
 
-    expect(parseInboxLine(firstStdin(host))).toMatchObject({
+    expect(entry).toMatchObject({
       kind: 'report',
       outcome: 'done',
       frameworkUsed: 'superpowers',
       openQuestions: [],
       vector: VECTOR,
-      size: 0.6,
-      large: true,
     })
-    expect(outcome.text).toContain(fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'large', threshold: 0.5 }))
+    expect(['"size":', '"large":', '"pinned":'].filter(key => stdin.includes(key))).toEqual([])
+    expect(outcome).toEqual({ kind: 'result', text: fill(PROMPTS.inboxSent, { id: entry?.id ?? '', to: 'tl' }) })
   })
 
   test('a superpowers task gets the plan file of its receiver and ticket and the method, never its own', async () => {
