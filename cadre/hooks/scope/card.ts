@@ -376,6 +376,16 @@ function startRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 }
 
 /**
+ * Whether the plugins the start folder's settings enable are not known, so the launch cannot switch them off: a here
+ * start, or a dir start whose settings could not be read.
+ */
+function isStartPluginsUnknown(ctx: ScopeContext): boolean {
+  if (ctx.launchStart.kind === 'here') return true
+
+  return ctx.launchStart.kind === 'dir' && ctx.setup.startSettings?.state === 'unknown'
+}
+
+/**
  * The rules of the card in their fixed order. The label of each rule is fixed here: a rule an engine setting enforces
  * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none. The rules the startup
  * inventory can prove carry their probe checks: the Bash rule, the MCP deny list, the infra rule and the permission
@@ -386,10 +396,11 @@ function startRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeRule[] {
   const mode = role.permissionMode === 'manual' ? 'default' : role.permissionMode
   const pluginList = cardList(plugins.map(plugin => shown(plugin)), CARD_LIST_WORDS)
+  const pluginsEnforcement: Enforcement = isStartPluginsUnknown(ctx) ? 'best-effort' : 'hard'
 
   return [
     ...bypassRules(role),
-    rule(fill(ARTIFACT.cardPlugins, { plugins: pluginList }), 'hard'),
+    rule(fill(ARTIFACT.cardPlugins, { plugins: pluginList }), pluginsEnforcement),
     bashRule(role),
     ...deniedDirRules(deny),
     ...ownDirRules(deny),
