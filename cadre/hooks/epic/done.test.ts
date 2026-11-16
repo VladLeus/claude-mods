@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HostRun, RoleSpec } from '../../types'
+import type { HostRun, PortEntry, RoleSpec } from '../../types'
 import { stableJson } from '../core/json'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import {
   BRANCH,
   entry,
+  entryAt,
   epic,
   epicHost,
   eventsOf,
@@ -24,6 +25,7 @@ import {
   cleanStateOf,
   EPIC_DONE_NO_DIALOG,
   EPIC_DONE_NO_LIST,
+  epicCopyBackFailedReply,
   epicDoneProblems,
   epicDoneQuestion,
   epicDoneRefusal,
@@ -218,6 +220,98 @@ describe('removing a finished epic worktree (D-152, D-169 to D-171)', () => {
       expect(epicLinkRemovals(WORKTREE, ['.cadre/bin/pm'], new Map())).toEqual([])
     },
   )
+})
+
+/** new.md as WORKTREE's copy of thoughts holds it: written by a role at 2000, after the copy at 1000. */
+const NEW_MD: PortEntry = { ...entryAt('new.md', 'file', 2000), size: 5 }
+
+/** The copy-back of new.md from WORKTREE's copy of thoughts into the main checkout. */
+const COPY_NEW: readonly string[] = ['/bin/cp', '-pR', '--', `${WORKTREE}/thoughts/new.md`, '/repo/thoughts/new.md']
+
+/**
+ * A done world whose record copied thoughts into WORKTREE at `createdAt`, whose worktree lists thoughts as a real
+ * folder holding NEW_MD, and whose main checkout lists thoughts as a real folder holding `held`; `dirs` adds or
+ * replaces listings.
+ */
+async function copyBackWorld(
+  held: readonly PortEntry[] = [],
+  createdAt = 1000,
+  dirs: Readonly<Record<string, readonly PortEntry[]>> = {},
+): Promise<MemWorld> {
+  const world = await doneWorld()
+  const links = ['node_modules', '.cadre/bin/pm']
+  const record = epicRecordText({ ...RECORD, createdAt, links, copies: ['thoughts'] })
+  const listings = {
+    ...world.dirs,
+    [WORKTREE]: [entry('.cadre', 'dir'), link('node_modules'), entry('thoughts', 'dir')],
+    [`${WORKTREE}/thoughts`]: [NEW_MD],
+    '/repo': [entry('thoughts', 'dir')],
+    '/repo/thoughts': held,
+    ...dirs,
+  }
+
+  return { ...world, files: { ...world.files, [`${GIT_DIR}/${EPIC_RECORD_FILE}`]: record }, dirs: listings }
+}
+
+/** The `/bin/cp` runs of an epic done run, in call order. */
+function copyRuns(run: EpicRun): (readonly string[])[] {
+  return run.calls.map(call => call.argv).filter(argv => argv[0] === '/bin/cp')
+}
+
+describe('epic done copies back what the roles wrote in the copied folders', () => {
+  test('a file a role wrote in a copied folder is copied into main before any link or the worktree goes', async () => {
+    const run = await epicDone(await copyBackWorld(), DONE_RULES)
+    const copyAt = run.events.indexOf(COPY_NEW.join(' '))
+    const rmAt = run.events.findIndex(event => event.startsWith('/bin/rm '))
+    const removeAt = run.events.indexOf(REMOVE_ARGV('/repo', WORKTREE, false).join(' '))
+
+    expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+    expect(copyRuns(run)).toEqual([COPY_NEW])
+    expect([copyAt >= 0, copyAt < rmAt, copyAt < removeAt]).toEqual([true, true, true])
+  })
+
+  test("a file changed in main too is overwritten by the worktree's version, no reason, no question", async () => {
+    const run = await epicDone(await copyBackWorld([{ ...entryAt('new.md', 'file', 1500), size: 9 }]), DONE_RULES)
+
+    expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+    expect([copyRuns(run), run.asked]).toEqual([[COPY_NEW], []])
+    expect(removals(run).at(-1)).toEqual(REMOVE_ARGV('/repo', WORKTREE, false))
+  })
+
+  test('a file main holds as a link stops done naming it, with no copy, no rm and no worktree remove', async () => {
+    const run = await epicDone(await copyBackWorld([link('new.md')]), DONE_RULES)
+
+    expect(run.reply).toBe(epicCopyBackFailedReply('PROJ-1', 'thoughts/new.md'))
+    expect([copyRuns(run), removals(run)]).toEqual([[], []])
+  })
+
+  test('a folder main holds as a link deeper in a copied folder stops done naming it, removing nothing', async () => {
+    const dirs = {
+      [`${WORKTREE}/thoughts`]: [entry('a', 'dir')],
+      [`${WORKTREE}/thoughts/a`]: [entry('b', 'dir')],
+      [`${WORKTREE}/thoughts/a/b`]: [NEW_MD],
+    }
+    const run = await epicDone(await copyBackWorld([link('a')], 1000, dirs), DONE_RULES)
+
+    expect(run.reply).toBe(epicCopyBackFailedReply('PROJ-1', 'thoughts/a'))
+    expect([copyRuns(run), removals(run)]).toEqual([[], []])
+  })
+
+  test('a record with no real creation time stops done naming the copied folder, removing nothing', async () => {
+    const run = await epicDone(await copyBackWorld([], 0), DONE_RULES)
+
+    expect(run.reply).toBe(epicCopyBackFailedReply('PROJ-1', 'thoughts'))
+    expect([copyRuns(run), removals(run)]).toEqual([[], []])
+  })
+
+  test('a copy-back step that fails or cannot run stops done naming its path, removing nothing after it', async () => {
+    for (const failed of [rule(COPY_NEW, 1), rule(COPY_NEW, null)]) {
+      const run = await epicDone(await copyBackWorld(), [failed, ...DONE_RULES])
+
+      expect(run.reply).toBe(epicCopyBackFailedReply('PROJ-1', 'thoughts/new.md'))
+      expect([run.events.at(-1), removals(run)]).toEqual([COPY_NEW.join(' '), []])
+    }
+  })
 })
 
 /** What epicDoneProblems is given: the three checks, and the branch and base its reasons name. */
