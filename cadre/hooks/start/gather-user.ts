@@ -29,6 +29,7 @@ import {
   inboxDirOf,
   inboxFolderLevels,
   inboxHomeOf,
+  isDirInsideRoot,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   memoryFolderOf,
@@ -44,6 +45,8 @@ import { claudeMdImports } from '../scan/instructions/imports'
 import { readRepoFile } from '../scan/port-read'
 import { ruleFiles, RULES_FOLDER } from '../scan/rules'
 import { claudeMdPathsOf } from '../scan/setup/claude-md'
+import { isInsideRepo, listFolder } from '../scan/setup/read'
+import type { SetupContext } from '../scan/setup/read'
 import { hookScriptOf, positiveInteger } from '../scan/setup/settings'
 import { linkedMemoriesOf } from './memory-links'
 import { isPlainName, NO_MEMORY_LINKS } from './render-plan'
@@ -211,11 +214,29 @@ async function memoryFilesOf(io: InitIo, userDir: string, root: string): Promise
   return markdownFiles(io, memoryFolderOf(userDir, root))
 }
 
-/** The user's skills: the folders and links in `<userDir>/skills`, sorted; a listing that fails gives none. */
-async function userSkillsOf(io: InitIo, userDir: string): Promise<string[]> {
-  const entries = (await io.list(`${userDir}/skills`)) ?? []
-
+/** The skill names of a listing: its folders and links, sorted, once each. */
+function skillFolderNames(entries: readonly PortEntry[]): string[] {
   return sortedUnique(entries.filter(entry => entry.kind === 'dir' || entry.isLink).map(entry => entry.name))
+}
+
+/** The names of a listing's regular `.md` files without the extension, sorted, once each. */
+function markdownNames(entries: readonly PortEntry[]): string[] {
+  return sortedUnique(markdownFileNames(entries).map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
+}
+
+/**
+ * A launch root `.claude` folder's listing, as the setup scan lists the repo's agents: only a folder whose real path is
+ * inside the repo is listed, and one that links out or cannot be read adds a warning.
+ */
+async function repoFolderEntries(
+  io: InitIo,
+  ctx: SetupContext,
+  path: string,
+  warnings: string[],
+): Promise<readonly PortEntry[]> {
+  if (!(await isInsideRepo(io, ctx, path, isDirInsideRoot, warnings))) return []
+
+  return listFolder(io, ctx, path, warnings)
 }
 
 /** A skill name a plugin's own skill list may hold. */
@@ -305,13 +326,6 @@ async function projectPluginsOf(io: InitIo, root: string, startDir: string | und
   return sortedUnique([...rootKeys, ...startKeys])
 }
 
-/** The user's agents: the regular `.md` files in `<userDir>/agents`, by name without `.md`, sorted. */
-async function userAgentsOf(io: InitIo, userDir: string): Promise<string[]> {
-  const names = await markdownFiles(io, `${userDir}/agents`)
-
-  return sortedUnique(names.map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
-}
-
 /** Whether a listed entry is a file or a link: a linked file loads like one, so it is counted too (fails closed). */
 function isFileOrLink(entry: PortEntry): boolean {
   return entry.kind === 'file' || entry.isLink
@@ -386,7 +400,8 @@ async function levelsRefusal(
  * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
  *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
  *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
- *   skills and agents, and the code dirs given;
+ *   skills and agents, the skills and agents the root's own `.claude` folders provide (repoFolderEntries, whose
+ *   warnings lead the ok result's), and the code dirs given;
  * - the skill list of the installed mattpocock-skills (pluginSkillsOf), whose install entry is looked up over the same
  *   roots as the user folder, and the plugins the settings files of the repo and of a dir start folder turn on
  *   (projectPluginsOf), each set only when there is one;
@@ -437,6 +452,18 @@ export async function gatherLaunchUser(
   const pluginSkills = await pluginSkillsOf(io, userDir, roots)
   const startDir = input.launchStart.kind === 'dir' ? input.launchStart.path : undefined
   const projectPlugins = await projectPluginsOf(io, locations.root, startDir)
+  const ctx: SetupContext = {
+    root: locations.root,
+    givenRoot: locations.givenRoot,
+    home,
+    configDir: locations.configDir,
+  }
+  const repoWarnings: string[] = []
+  const skillEntries = await repoFolderEntries(io, ctx, `${locations.root}/.claude/skills`, repoWarnings)
+  const commandEntries = await repoFolderEntries(io, ctx, `${locations.root}/.claude/commands`, repoWarnings)
+  const agentEntries = await repoFolderEntries(io, ctx, `${locations.root}/.claude/agents`, repoWarnings)
+  const repoSkills = sortedUnique([...skillFolderNames(skillEntries), ...markdownNames(commandEntries)])
+  const repoAgents = markdownNames(agentEntries)
   const user: LaunchUser = {
     root: locations.root,
     givenRoot: locations.givenRoot,
@@ -452,18 +479,23 @@ export async function gatherLaunchUser(
     globalClaudeMd: await globalClaudeMdOf(io, userDir, home),
     memoryFiles: await memoryFilesOf(io, userDir, locations.root),
     givenMemoryFiles: await memoryFilesOf(io, userDir, locations.givenRoot),
-    userSkills: await userSkillsOf(io, userDir),
-    userAgents: await userAgentsOf(io, userDir),
+    userSkills: skillFolderNames((await io.list(`${userDir}/skills`)) ?? []),
+    userAgents: markdownNames((await io.list(`${userDir}/agents`)) ?? []),
+    ...(repoSkills.length === 0 ? {} : { repoSkills }),
+    ...(repoAgents.length === 0 ? {} : { repoAgents }),
     codeDirs: input.codeDirs,
     linkedMemories: [],
     ...(Object.keys(pluginSkills).length === 0 ? {} : { pluginSkills }),
     ...(projectPlugins.length === 0 ? {} : { projectPlugins }),
     ...(startDir === undefined ? {} : { startDir }),
   }
-  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS, inboxDir }
+  if (!isPartsFlowRole(input.role)) {
+    return { kind: 'ok', user, warnings: repoWarnings, memories: NO_MEMORY_LINKS, inboxDir }
+  }
   const linked = await linkedMemoriesOf(io, user, input.role.id)
   const { memories } = linked
   const linkedMemories = memories.links.map(link => link.path)
+  const warnings = [...repoWarnings, ...linked.warnings]
 
-  return { kind: 'ok', user: { ...user, linkedMemories }, warnings: linked.warnings, memories, inboxDir }
+  return { kind: 'ok', user: { ...user, linkedMemories }, warnings, memories, inboxDir }
 }

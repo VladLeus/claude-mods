@@ -60,6 +60,13 @@ export type LaunchUser = {
   readonly userSkills: readonly string[]
   /** File names without `.md` in `<userDir>/agents`. */
   readonly userAgents: readonly string[]
+  /**
+   * The skills the launch root's own `.claude/skills` folders and links and `.claude/commands` `.md` files provide;
+   * absent when none.
+   */
+  readonly repoSkills?: readonly string[]
+  /** The `.md` files of the launch root's `.claude/agents`, by name; absent when none. */
+  readonly repoAgents?: readonly string[]
   /** The top-level code dirs to deny with exact patterns; renderRole passes the repo scan's at launch. */
   readonly codeDirs: readonly string[]
   /**
