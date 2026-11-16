@@ -158,24 +158,77 @@ describe('the TUI-default paged conflict question', () => {
     return previews[0]
   }
 
-  test('a long conflict diff is asked a page at a time, each preview showing its page and no marker', async () => {
-    const spec = conflictSpec(200)
-    const { io, specs } = recordingIo('Take new')
-    const answer = await TUI_DEFAULT.pagedPort(io, VIEW).ask(QUESTION, spec)
-    expect(answer).toBe('Take new')
-    expect(specs.length).toBeGreaterThan(1)
-    expect(specs[0]?.options[0]).toBe(NEXT_PAGE_LABEL)
-    expect(specs.at(-1)?.options).toEqual([PREVIOUS_PAGE_LABEL, ...CONFLICT_OPTIONS])
-    for (const page of specs) {
-      const context = page.context
-      if (context === undefined) throw new Error('a page has no context')
-      expect(context.lines).toEqual(spec.context?.lines ?? [])
-      const texts = (context.rows ?? []).flatMap(section => section.rows.map(row => row.text))
-      expect(texts.length).toBeGreaterThan(0)
-      const preview = pagePreview(page)
-      expect(preview).toBe(previewMarkdown([{ ...context, lines: texts }], 80))
-      expect(String(preview)).not.toContain('more above')
-    }
+  test(
+    'a long conflict diff is asked a page at a time, each preview showing its page and its page marker',
+    async () => {
+      const spec = conflictSpec(200)
+      const { io, specs } = recordingIo('Take new')
+      const answer = await TUI_DEFAULT.pagedPort(io, VIEW).ask(QUESTION, spec)
+      expect(answer).toBe('Take new')
+      expect(specs.length).toBeGreaterThan(1)
+      expect(specs[0]?.options[0]).toBe(NEXT_PAGE_LABEL)
+      expect(specs.at(-1)?.options).toEqual([PREVIOUS_PAGE_LABEL, ...CONFLICT_OPTIONS])
+      for (const [at, page] of specs.entries()) {
+        const context = page.context
+        if (context === undefined) throw new Error('a page has no context')
+        expect(context.lines).toEqual(spec.context?.lines ?? [])
+        const texts = (context.rows ?? []).flatMap(section => section.rows.map(row => row.text))
+        expect(texts.length).toBeGreaterThan(0)
+        const preview = pagePreview(page)
+        const lines = [...texts, `page ${at + 1} of ${specs.length}`]
+        expect(preview).toBe(previewMarkdown([{ ...context, lines }], 80))
+        expect(String(preview)).not.toContain('more above')
+      }
+    },
+  )
+
+  test(
+    'a diff of 200 removed lines is asked in 11 pages at 40 and 80 columns, each preview ending with its marker, ' +
+      'and nothing is printed above the dialog',
+    async () => {
+      const rows = Array.from({ length: 200 }, (_, at): DiffRow => {
+        const number = String(at + 1).padStart(3, '0')
+
+        return { kind: 'removed', line: `e2e hand-added line ${number}` }
+      })
+      const context = conflictContext('.cadre/be/ROLE.md', { rows, added: 0, removed: 200 })
+      const spec: AskSpec = { options: CONFLICT_OPTIONS, header: 'Conflict', context }
+      const diff = rows.map(row => `- ${row.line}`)
+      for (const columns of [40, 80]) {
+        const { io, specs } = recordingIo('Take new')
+        const view: PageView = { ...VIEW, columns: () => columns }
+        expect(await TUI_DEFAULT.pagedPort(io, view).ask(QUESTION, spec)).toBe('Take new')
+        const texts = specs.map(page =>
+          (page.context?.rows ?? []).flatMap(section => section.rows.map(row => row.text)),
+        )
+        expect([columns, specs.length]).toEqual([columns, 11])
+        expect(texts[0]).toEqual(['Take new: 0 lines added, 200 removed', ...diff.slice(0, 18)])
+        expect(texts[10]).toEqual(diff.slice(189))
+        for (const [at, page] of specs.entries()) {
+          const preview = String(pagePreview(page, columns))
+          const lines = [...(texts[at] ?? []), `page ${at + 1} of 11`]
+          expect(preview).toBe(previewMarkdown([{ title: context.title, lines }], columns))
+          expect(preview).not.toContain('more above')
+          const opened = TUI_DEFAULT.dialogOpenEffects(page.context ?? null, null, columns)
+          expect([columns, at, opened]).toEqual([columns, at, [{ kind: 'status', text: null }]])
+        }
+      }
+    },
+  )
+
+  test('a long hand-out list that is not paged is still printed whole above the dialog, once', () => {
+    const lines = Array.from({ length: 80 }, (_, at) => `skill ${at + 1}`)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [{ title: null, rows: lines.map(plain) }]
+    const context: AskContext = { title: 'Hand out', lines, kind: 'skills', summary: '80 skills', rows }
+    const entries = ['Hand out', ...lines].map(text => ({ kind: 'transcript', text }))
+
+    expect(TUI_DEFAULT.dialogOpenEffects(context, null, 80)).toEqual([
+      { kind: 'status', text: null },
+      ...entries,
+      { kind: 'printed', context },
+    ])
+    expect(TUI_DEFAULT.dialogOpenEffects(context, context, 80)).toEqual([{ kind: 'status', text: null }])
   })
 
   test('a short conflict diff that fits the preview is asked once, as given', async () => {
@@ -195,7 +248,8 @@ describe('the TUI-default paged conflict question', () => {
     expect(texts.flat()).toEqual(spec.context?.lines ?? [])
     for (const [at, page] of specs.entries()) {
       const preview = String(pagePreview(page, 122))
-      expect(preview).toBe(previewMarkdown([{ title: page.context?.title ?? '', lines: texts[at] ?? [] }], 122))
+      const lines = [...(texts[at] ?? []), `page ${at + 1} of ${specs.length}`]
+      expect(preview).toBe(previewMarkdown([{ title: page.context?.title ?? '', lines }], 122))
       expect([preview.endsWith('\n…'), preview.includes('more above')]).toEqual([false, false])
     }
   })

@@ -800,6 +800,15 @@ describe('tuiTranscriptEntries (WD-S4, D-262)', () => {
     expect(entries).toEqual([[], ['Lines', ...wrapped]])
   })
 
+  test('a paged context whose page fits the preview gives no entry; the same context unpaged gives every line', () => {
+    const context = linesContext(40)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [{ title: null, rows: context.lines.slice(0, 10).map(plain) }]
+    const paged: AskContext = { ...context, rows, page: { index: 0, count: 4 } }
+    expect(tuiTranscriptEntries(paged, null, null)).toEqual([])
+    expect(tuiTranscriptEntries(context, null, null)).toEqual(['Lines', ...context.lines])
+  })
+
   test('the context printed last, by its title and lines, gives no entry; a changed one gives them all', () => {
     const printed = linesContext(30)
     const rebuilt = { ...printed, lines: [...printed.lines] }
