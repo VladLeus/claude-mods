@@ -227,10 +227,10 @@ async function pmSeed(
  * a new inbox with the epic brief (epicEntryLine). Its lines: one
  * `warning: <id>: <text>` line per render warning, then the lines of the open stage (openedLines). A role whose render
  * refuses keeps that refusal as its line, which does not stop the others, and one whose launcher in the worktree reads
- * as a text without the epic kickoff line (hasRuntimeKickoff) gets epicWorktreeLauncherLine and does not open, and one
- * that is there but is not the launcher text runEpic checked in the main checkout, or cannot be read in full, gets
- * epicWorktreeLauncherChangedLine and does not open either (epicWorktreeLauncherCheck, 03.1-W4 S1); a role whose
- * worktree has no launcher stays openable.
+ * as a text without the epic kickoff line (hasRuntimeKickoff) gets epicWorktreeLauncherLine and does not open; one
+ * whose launcher differs from the text runEpic checked in the main checkout gets epicWorktreeLauncherChangedLine, one
+ * whose launcher cannot be read in full gets epicWorktreeLauncherUnreadLine, and neither opens
+ * (epicWorktreeLauncherCheck); a role whose worktree has no launcher stays openable.
  */
 async function renderedLines(
   io: InitIo,
