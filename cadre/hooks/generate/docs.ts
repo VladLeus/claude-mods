@@ -143,11 +143,11 @@ function sizingLines(): string[] {
  * CLAUDE.md or AGENTS.md. It holds, in this order: the title and id, the purpose, the framework with the model,
  * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
  * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
- * "Handoffs" (the folder autopilot accepts), "Inbox" (the role's inbox file and the inbox tools), "Planning docs" (the
- * start steps of every framework the role may run, when one has a step), "Hierarchy" (who asks whom, the epic end and
- * the role's own part), "Sizing" (how a ticket is sized) and "Scope" (the lines of the scope card). The framework is
- * the one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The
- * title and the purpose come from outside, so they are cleaned.
+ * "Handoffs" (the folder autopilot accepts), "Inbox" (the role's inbox file, the inbox tools and the idle wait),
+ * "Planning docs" (the start steps of every framework the role may run, when one has a step), "Hierarchy" (who asks
+ * whom, the epic end and the role's own part), "Sizing" (how a ticket is sized) and "Scope" (the lines of the scope
+ * card). The framework is the one the scope was compiled for (`scope.card.framework`), so the document and the card
+ * cannot disagree. The title and the purpose come from outside, so they are cleaned.
  */
 export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
   const { card } = scope
@@ -177,6 +177,7 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     ARTIFACT.roleMdInbox,
     '',
     ARTIFACT.roleMdInboxLine,
+    ARTIFACT.roleMdInboxIdle,
     ARTIFACT.roleMdNoteLine,
     ARTIFACT.roleMdInboxStates,
     '',

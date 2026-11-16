@@ -159,12 +159,12 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/be/ROLE.md",
-        "sha256": "080f64da969d0aea3dd6c5032538302c490aba674a6c3008e9880e9029ad480b",
+        "sha256": "e0306ef47d91b1cdd6dc722394cdbd2ec5fd71865ee8acefb4519f44c1c76150",
         "isWritten": true
       },
       {
         "path": "/repo/.cadre/be/kickoff.txt",
-        "sha256": "fd6f6ab04c6447aca43ab7f675adea924454d8959685d268fcd52071ac9df7fa",
+        "sha256": "978727388a94183f13cc369fd426e51b6895c9be57e32736b7fa436e9d1203b2",
         "isWritten": true
       },
       {
@@ -174,7 +174,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "c6fb17958e7cc4fe710f450a1853335e988e37aa5ab07f3649d231decd63898f",
+        "sha256": "3bd4411b04bcd4e14fc01f5506b4a71f641f3ea170b4d791cfb0d87f96706696",
         "isWritten": true
       }
     ],
@@ -199,12 +199,12 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/be/ROLE.md\",",
-      "      \"sha256\": \"080f64da969d0aea3dd6c5032538302c490aba674a6c3008e9880e9029ad480b\"",
+      "      \"sha256\": \"e0306ef47d91b1cdd6dc722394cdbd2ec5fd71865ee8acefb4519f44c1c76150\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/be/kickoff.txt\",",
-      "      \"sha256\": \"fd6f6ab04c6447aca43ab7f675adea924454d8959685d268fcd52071ac9df7fa\"",
+      "      \"sha256\": \"978727388a94183f13cc369fd426e51b6895c9be57e32736b7fa436e9d1203b2\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -244,12 +244,12 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/ROLE.md\",",
-      "      \"sha256\": \"a566a27186ac75011bc94bee4b51717180bcb44411b1d8d9979c120ab2b53ccc\"",
+      "      \"sha256\": \"907d99536889efb200513adb532b018d99e5e6cb2c792bff34252e2b4c37568f\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/kickoff.txt\",",
-      "      \"sha256\": \"22fd17861d0629a70ab5904a951f67f987df2363dbb05d382ba37bfe8ca173da\"",
+      "      \"sha256\": \"623c9db0adea885924710fafbbc77962c82e85aca4fd8345b6591b3aa33d12e6\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",

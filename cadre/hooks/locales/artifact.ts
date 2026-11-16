@@ -5,9 +5,10 @@
  * the manifest hashes every generated file, so a byte change here would show as a change or a conflict in every
  * installed role on its next init or regen (C4). Templates with `{name}` slots are filled through locales/t `fill`,
  * after the builder cleaned and capped each value (D-222); a template too long for one line breaks inside an empty
- * `${''}`, so it keeps its literal type and its typed slots. It imports nothing; generate/, scope/ and apply/ import
- * it.
+ * `${''}`, so it keeps its literal type and its typed slots. It imports only the idle wait sentence from
+ * locales/prompts; generate/, scope/ and apply/ import it.
  */
+import { IDLE_INBOX_WAIT } from './prompts'
 
 /** Every generated-file text and template by its name (D-221). Object.freeze keeps each literal type. */
 export const ARTIFACT = Object.freeze({
@@ -32,6 +33,7 @@ export const ARTIFACT = Object.freeze({
   roleMdInbox: '## Inbox',
   roleMdInboxLine: `Your inbox lives in your user config folder, outside the repo, and only the cadre inbox tools ${
     ''}write it. Read it with inbox_read when you start, after every restart and when a wait ends.`,
+  roleMdInboxIdle: IDLE_INBOX_WAIT,
   roleMdNoteLine: 'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).',
   roleMdInboxStates: `Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the ${
     ''}entry you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done ${

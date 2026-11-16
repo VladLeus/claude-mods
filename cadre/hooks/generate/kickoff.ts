@@ -5,7 +5,7 @@
  */
 import type { FrameworkId, RoleSpec } from '../../types'
 import { adapterOf } from '../framework/registry'
-import { PROMPTS } from '../locales/prompts'
+import { IDLE_INBOX_WAIT, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 
 /**
@@ -60,13 +60,12 @@ export function budgetedRoleLine(role: RoleSpec, sentence: (title: string) => st
 }
 
 /**
- * The short ASCII role line of a kickoff (D-79): who the role is, where its ROLE.md is, and what to start with. The
- * title is cut to what is left of ROLE_LINE_MAX once the fixed text is in, so a long title never cuts off the
- * instruction at the end, and a title with no ASCII character left gives way to the role id. The line has no quote or
- * backtick character, so it sits inside the quotes of the autopilot command.
+ * The short ASCII role line of a kickoff: who the role is, where its ROLE.md is and what it starts with, its title
+ * budgeted to ROLE_LINE_MAX, then the idle wait sentence whole; it holds no quote or backtick, so it sits inside the
+ * quotes of the autopilot command.
  */
 export function kickoffRoleLine(role: RoleSpec, framework: FrameworkId): string {
-  return budgetedRoleLine(role, title => roleSentence(role, framework, title))
+  return `${budgetedRoleLine(role, title => roleSentence(role, framework, title))} ${IDLE_INBOX_WAIT}`
 }
 
 /**

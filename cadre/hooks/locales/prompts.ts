@@ -4,9 +4,12 @@
  * fallback line shows) and the kickoff sentences of a role's first prompt. They are printable ASCII only (prompts.test,
  * T-02.1-84) and never translated. A system prompt shows JSON with literal braces, so it is a plain constant or a
  * builder of the numbers it names, never a fill template; every other text is a PROMPTS template filled through
- * locales/t `fill` after the call site cleaned each value (D-222). It imports nothing; the suggest/, generate/ and
- * epic/ modules import it.
+ * locales/t `fill` after the call site cleaned each value (D-222). It imports nothing; the suggest/, generate/,
+ * messages/ and epic/ modules and locales/artifact import it.
  */
+
+/** What a role with an empty inbox and no work left does: autopilot's idle wait, which any incoming message ends. */
+export const IDLE_INBOX_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
 
 /** Every single-line prompt text and template by its name (D-221). Object.freeze keeps each literal type. */
 export const PROMPTS = Object.freeze({
@@ -219,7 +222,7 @@ export const PROMPTS = Object.freeze({
   inboxItemSized: '{vector}; size {size}, {sizeClass}',
   inboxItemUseGsd: 'gsd, GSD path {gsdPath}',
   inboxItemMethod: '{method}. Execute your plan with it; never ask which method to use.',
-  inboxEmpty: 'Your inbox is empty.',
+  inboxEmpty: `Your inbox is empty. ${IDLE_INBOX_WAIT}`,
   'inboxHidden.one': '{count} entry marked done or rejected is not shown; call inbox_read with all: true to list it.',
   'inboxHidden.other':
     '{count} entries marked done or rejected are not shown; call inbox_read with all: true to list them.',
