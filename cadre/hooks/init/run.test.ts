@@ -4979,6 +4979,13 @@ const MODE_NOT_RUN_USER =
 const MODE_WAITS =
   'warning: GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
 
+/** What the plan row of an accepted hunk not run shows in place of a command when no GSD is known for the repo. */
+const GSD_WAIT_COMMAND = 'waits for GSD (not installed for this repo)'
+
+function runRows(lines: readonly string[]): string[] {
+  return lines.filter(line => line.trimStart().startsWith('run: ')).map(line => line.trim())
+}
+
 /** The fallback line of a GSD install that did not land, with the whole team on GSD. */
 const GSD_FALLBACK_DEFAULT =
   'warning: GSD did not install, so the repo default fell back to none (built-in): run ' +
@@ -5119,7 +5126,8 @@ describe('init apply hunks (D-120)', () => {
       expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
       expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
       expect([at > 0, lines.slice(at, at + 2)]).toEqual([true, [GSD_FALLBACK_DEFAULT, MODE_WAITS]])
-      expect(lines.filter(line => line.startsWith('warning: ') && line.includes('node .claude/gsd-core'))).toEqual([])
+      expect(runRows(lines)).toEqual([`run: ${GSD_WAIT_COMMAND}`])
+      expect(reply).not.toContain('node .claude/gsd-core')
     },
   )
 
@@ -5134,7 +5142,8 @@ describe('init apply hunks (D-120)', () => {
     expect(run.asked.filter(question => question.startsWith('Install GSD for this repo?')).length).toBe(1)
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
     expect(lines).toContain(MODE_WAITS)
-    expect(lines.filter(line => line.startsWith('warning: ') && line.includes('node .claude/gsd-core'))).toEqual([])
+    expect(runRows(lines)).toEqual([`run: ${GSD_WAIT_COMMAND}`])
+    expect(reply).not.toContain('node .claude/gsd-core')
   })
 
   test('with an unproven user-level GSD, its check and install declined, the hunk shows the ~/ command', async () => {
@@ -5153,7 +5162,8 @@ describe('init apply hunks (D-120)', () => {
     expect([asked("Run GSD's own check"), asked('Install GSD for this repo?')]).toEqual([1, 1])
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
     expect(lines).toContain(MODE_NOT_RUN_USER)
-    expect(lines.filter(line => line.startsWith('warning: ') && line.includes('node .claude/gsd-core'))).toEqual([])
+    expect(runRows(lines)).toEqual([`run: ${MODE_DISPLAY}`])
+    expect(reply).not.toContain('node .claude/gsd-core')
   })
 
   test('a hunk cadre ran, one that failed and one declined get no not-run line', async () => {
@@ -7512,9 +7522,11 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
     const { host, result } = await appliedIn(world, await reframedOf(world, draft))
     const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const ops = result.kind === 'accepted' ? result.value.planned.plan.ops : []
     const waits = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
     expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [waits]])
+    expect(ops.flatMap(op => (op.kind === 'hunk' ? [op.command] : []))).toEqual([GSD_WAIT_COMMAND])
   })
 
   test('a hunk after a project GSD install that lands, with no proven user-level GSD, is not run', async () => {
@@ -7538,12 +7550,14 @@ describe('the file plan and apply of /cadre frameworks', () => {
     }
     const result = await reframeApplied(io, host.io, reframed)
     const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const ops = result.kind === 'accepted' ? result.value.planned.plan.ops : []
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
     const line =
       `the .planning/config.json change mode was not run by cadre: run this yourself: ${hunk.command}` +
       REQUIRED_NEXT_STEP
     expect([outcome?.installed, outcome?.installProblems]).toEqual([[projectInstallOf('gsd')?.id], []])
     expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [line]])
+    expect(ops.flatMap(op => (op.kind === 'hunk' ? [op.command] : []))).toEqual([hunk.command])
   })
 
   test('a parts-flow role whose role.json is written again keeps its instructionParts', async () => {
