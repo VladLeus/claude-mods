@@ -547,6 +547,25 @@ describe('launch start card (D-122)', () => {
 
     expect(ruleOf(scope, monitorWarning('gsd-context-monitor.js'))).toBeUndefined()
   })
+
+  test('the plugins rule is best-effort on a here start and on a dir start whose start settings were not read', () => {
+    const unread: StartSettings = { state: 'unknown', hooks: [], keys: [], warnings: ['unread'] }
+    const absent: StartSettings = { state: 'absent', hooks: [], keys: [], warnings: [] }
+    const cases: readonly (readonly [LaunchStart, StartSettings])[] = [
+      [{ kind: 'here' }, readStart([])],
+      [APPS_WEB, unread],
+      [APPS_WEB, readStart([])],
+      [APPS_WEB, absent],
+      [{ kind: 'git-root' }, unread],
+    ]
+    const labels = cases.map(([launchStart, startSettings]) => {
+      const scope = compileScope(GUARDED_BE, context({ launchStart, setup: { ...START_SETUP, startSettings } }))
+
+      return ruleOf(scope, PLUGIN_RULE)?.enforcement
+    })
+
+    expect(labels).toEqual(['best-effort', 'best-effort', 'hard', 'hard', 'hard'])
+  })
 })
 
 /** One compiled scope of the route matrix, with the combination it was compiled for. */
