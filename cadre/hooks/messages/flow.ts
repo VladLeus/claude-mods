@@ -21,7 +21,7 @@ import type {
 } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { isRoleId } from '../core/role-id'
-import { clean, utf8Bytes } from '../core/text'
+import { clean } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
@@ -39,6 +39,7 @@ import {
   foldInbox,
   inboxLogPath,
   inboxReadText,
+  lineRefusal,
   parseInbox,
   parseReadInput,
   parseSessionRecord,
@@ -48,7 +49,6 @@ import {
 } from './record'
 import {
   INBOX_APPEND_TIMEOUT_MS,
-  INBOX_LINE_MAX_BYTES,
   INBOX_READ_MAX_BYTES,
   parseMarkInput,
   parseSendInput,
@@ -218,11 +218,10 @@ async function deliver(
     ...fields,
   }
   const line = recordLine(entry)
-  if (utf8Bytes(line) > INBOX_LINE_MAX_BYTES) {
-    return deny(fill(PROMPTS.inboxLineTooLarge, { max: INBOX_LINE_MAX_BYTES }))
-  }
-  const refusal = await receiverRefusal(io, session.inboxHome, to)
+  const refusal = lineRefusal(entry, line)
   if (refusal !== null) return deny(refusal)
+  const receiver = await receiverRefusal(io, session.inboxHome, to)
+  if (receiver !== null) return deny(receiver)
   const appended = await appendLine(host, inboxLogPath(session.inboxHome, to), line)
   if (!appended) return deny(fill(PROMPTS.inboxAppendFailed, { to }))
   const sessionId = await publishedId(io, sessionFilePath(session.inboxHome, to))

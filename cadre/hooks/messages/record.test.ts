@@ -9,6 +9,7 @@ import {
   entryIdOf,
   foldInbox,
   inboxReadText,
+  lineRefusal,
   parseInbox,
   parseInboxLine,
   parseReadInput,
@@ -507,6 +508,16 @@ describe('the line cap', () => {
     expect(sizes.filter(size => size > INBOX_LINE_MAX_BYTES)).toEqual([])
     expect(INBOX_LINE_MAX_BYTES).toBe(32768)
     expect(INBOX_LINE_MAX_BYTES < 2 * largest).toBe(true)
+  })
+
+  test('a line over the cap is refused with its size and its three largest fields; one under it is not', () => {
+    const large: InboxEntry = { ...A, body: 'x'.repeat(40000) }
+    const line = recordLine(large)
+
+    expect(lineRefusal(A, recordLine(A))).toBeNull()
+    expect(lineRefusal(large, line)).toBe(
+      fill(PROMPTS.inboxLineTooLarge, { size: utf8Bytes(line), max: 32768, parts: 'body 40002, id 18, type 7' }),
+    )
   })
 })
 

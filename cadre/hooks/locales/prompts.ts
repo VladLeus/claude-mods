@@ -152,7 +152,7 @@ export const PROMPTS = Object.freeze({
   inboxBodyEmpty: 'body is empty or not text: write the message in body.',
   inboxBodyTooLong: 'body is over {max} characters: shorten it or split it into several entries.',
   inboxReplyToBad: 'replyTo must be the id of an inbox entry, as inbox_read shows it.',
-  inboxLineTooLarge: 'Not sent: the entry is over {max} bytes. Shorten the body.',
+  inboxLineTooLarge: 'Not sent: the entry is {size} bytes, over {max}: {parts}. Shorten these.',
   inboxNotStarted: 'Not sent: {to} has no inbox yet. Run /cadre start {to} first.',
   inboxUnsafe: 'Not sent: the inbox of {to} is a link or not a regular file, so cadre does not write to it.',
   inboxWake: 'New {kind} {id} from {from} in your cadre inbox: {subject}. Read it with inbox_read.',
@@ -188,11 +188,13 @@ export const PROMPTS = Object.freeze({
   inboxSize: 'Size {size}, so {sizeClass} (the threshold is {threshold}).',
   inboxSizePick: 'In {mode} mode: {framework}.',
   inboxSizePickGsd: 'In {mode} mode: gsd, GSD path {gsdPath}.',
-  // The sentences of an inbox_send property's description (messages/send inboxSendSchema).
+  // The sentences of an inbox_send property's description (messages/send inboxSendSchema), then a field of a line over
+  // the line cap as its refusal names it (messages/record lineRefusal).
   inboxPropertyKinds: 'Only on {kinds}.',
   inboxPropertyRequired: 'Required on {kinds}.',
   inboxPropertyChars: 'At most {max} characters.',
   inboxPropertyList: 'At most {max} items of at most {chars} characters each.',
+  inboxLinePart: '{field} {bytes}',
   // The descriptions of the inbox tools (register.tsx), the refusals of a call outside a role session or a call that
   // failed, and the line of a role session whose role.json is not found.
   inboxSendDescription:
@@ -205,7 +207,7 @@ export const PROMPTS = Object.freeze({
     ''}kinds it goes on. Caps in characters: subject {subjectMax}, body {bodyMax}, reportForm {reportFormMax}, ${
     ''}changes {changesMax}, verification {verificationMax}, reason {reasonMax}, specPath {specPathMax}, ticketKey ${
     ''}{ticketKeyMax}; docPaths and openQuestions at most {listMax} items of {itemMax}; tickets at most ${
-    ''}{ticketsMax} keys.`,
+    ''}{ticketsMax} keys. A send within the caps is always stored.`,
   inboxReadDescription:
     `cadre: read your own inbox. Each entry shows its id, state, kind, sender and subject, then its body. all: true ${
     ''}also lists the entries marked done or rejected.`,

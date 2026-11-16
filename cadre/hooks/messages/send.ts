@@ -45,7 +45,10 @@ export const INBOX_STATES: readonly InboxState[] = Object.freeze([
 
 export const SUBJECT_MAX_CHARS = 120
 export const BODY_MAX_CHARS = 3000
-export const INBOX_LINE_MAX_BYTES = 4000
+
+/** The largest entry the field caps allow fits this line cap, which a spec pins. */
+export const INBOX_LINE_MAX_BYTES = 32 * 1024
+
 export const INBOX_READ_MAX_BYTES = 1024 * 1024
 export const INBOX_APPEND_TIMEOUT_MS = 10_000
 
@@ -81,7 +84,7 @@ export const SPEC_PATH_MAX_CHARS = 200
 export const LIST_MAX_ITEMS = 10
 export const LIST_ITEM_MAX_CHARS = 200
 
-/** The most ticket keys a brief lists; the line cap is the real bound of a long list. */
+/** The most ticket keys a brief lists. */
 export const TICKETS_MAX_ITEMS = 100
 
 /** The cap in characters of each text field, as the check holds it and the schema and the description state it. */

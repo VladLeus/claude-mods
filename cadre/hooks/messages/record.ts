@@ -16,7 +16,7 @@ import type {
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue } from '../core/json'
 import { isRoleId } from '../core/role-id'
-import { clean, isChangedByClean, reportText } from '../core/text'
+import { clean, isChangedByClean, reportText, utf8Bytes } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { IDLE_INBOX_WAIT, inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
@@ -25,6 +25,7 @@ import {
   bodyShown,
   CHANGES_MAX_CHARS,
   ENTRY_ID_PATTERN,
+  INBOX_LINE_MAX_BYTES,
   kindFieldsOf,
   markStateOf,
   MESSAGE_KINDS,
@@ -40,6 +41,9 @@ const ENTRY_ID_HASH_CHARS = 8
 
 /** The longest session id a session record may hold. */
 const SESSION_ID_MAX_CHARS = 128
+
+/** How many of its largest fields a line refusal names. */
+const LINE_PARTS_SHOWN = 3
 
 export function inboxLogPath(home: string, id: string): string {
   return `${inboxDirOf(home, id)}/${INBOX_LOG_FILE}`
@@ -147,6 +151,22 @@ function orderedEvent(event: InboxEvent): InboxEvent {
 /** One inbox.jsonl line: the event as JSON with no spaces, then a newline. */
 export function recordLine(event: InboxEvent): string {
   return `${JSON.stringify(orderedEvent(event))}\n`
+}
+
+/**
+ * Why the record line of an entry is not appended: its size in bytes against the line cap and its largest fields by
+ * the bytes of their JSON, ties in record order; null within the cap.
+ */
+export function lineRefusal(entry: InboxEntry, line: string): string | null {
+  const size = utf8Bytes(line)
+  if (size <= INBOX_LINE_MAX_BYTES) return null
+  const parts = Object.entries(orderedEvent(entry))
+    .map(([field, value]) => ({ field, bytes: utf8Bytes(JSON.stringify(value)) }))
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, LINE_PARTS_SHOWN)
+    .map(part => fill(PROMPTS.inboxLinePart, part))
+
+  return fill(PROMPTS.inboxLineTooLarge, { size, max: INBOX_LINE_MAX_BYTES, parts: parts.join(', ') })
 }
 
 function isEntryId(value: unknown): value is string {
