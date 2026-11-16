@@ -173,24 +173,23 @@ describe('history scan', () => {
     expect([run.listed, run.reads.filter(path => path.endsWith('.jsonl'))]).toEqual([[long], []])
   })
 
-  test('the consented scan of a session folder over 200 characters reads the verified shortened folder', async () => {
+  test('the consented scan reads only the sessions in the folder it is given, also over 200 characters', async () => {
     const root = `/repo/${'w'.repeat(300)}`
     const long = `/home/u/.claude/projects/${mangledProjectDir(root)}`
     const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
     const shortened = `/home/u/.claude/projects/${name}`
-    const cadre = commandLine('<command-name>/cadre</command-name>')
-    const held = `${JSON.stringify({ type: 'user', cwd: root })}\n${cadre}`
+    const held = `${JSON.stringify({ type: 'user', cwd: root })}\n${commandLine('<command-name>/cadre</command-name>')}`
     const world = memWorld({
       dirs: {
-        '/home/u/.claude/projects': [entry('-repo', 'dir'), entry(name, 'dir')],
+        '/home/u/.claude/projects': [entry(name, 'dir')],
         [shortened]: [transcript('old.jsonl', 1), transcript('new.jsonl', 2)],
       },
-      files: { [`${shortened}/old.jsonl`]: cadre, [`${shortened}/new.jsonl`]: held },
+      files: { [`${shortened}/old.jsonl`]: held, [`${shortened}/new.jsonl`]: held },
     })
     const run = memIo(world, {})
     const scan = await scanHistory(run.io, long, root, [transcript('new.jsonl', 2), transcript('old.jsonl', 1)])
-    expect([scan.scanned, scan.counts]).toEqual([2, [{ name: 'cadre', count: 2 }]])
-    expect(run.reads.slice(-2)).toEqual([`${shortened}/new.jsonl`, `${shortened}/old.jsonl`])
+    expect([run.listed, run.reads]).toEqual([[], [`${long}/new.jsonl`, `${long}/old.jsonl`]])
+    expect([scan.scanned, scan.skippedUnknown, scan.counts]).toEqual([0, 2, []])
   })
 
   test('a shortened folder whose transcripts hold another start folder is not listed or read', async () => {
