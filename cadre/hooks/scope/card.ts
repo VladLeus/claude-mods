@@ -309,11 +309,12 @@ function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 
 /**
  * The hooks the project settings of the start load, which cadre's settings cannot remove: the git root's for a
- * git-root start, the start folder's for a dir start (null when its settings could not be read), none for here.
+ * git-root start, the start folder's for a dir start (null when its settings could not be read), and null for here,
+ * whose folder is not known before launch.
  */
 function projectLoadedHooks(ctx: ScopeContext): readonly HookScript[] | null {
   if (ctx.launchStart.kind === 'git-root') return ctx.setup.hooks.filter(hook => hook.source === 'project')
-  if (ctx.launchStart.kind !== 'dir') return []
+  if (ctx.launchStart.kind !== 'dir') return null
   const settings = ctx.setup.startSettings
   if (settings?.state === 'unknown') return null
 
@@ -413,7 +414,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
 
 /**
  * The scope card of a role, from the same inputs as the settings so the two cannot drift; the hooks the start's project
- * settings load are null when the start folder's settings could not be read.
+ * settings load are null when unknown: for a here start, or a dir start whose folder settings could not be read.
  */
 export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeCard {
   const loaded = sortedUnique(role.carry.hooks)
