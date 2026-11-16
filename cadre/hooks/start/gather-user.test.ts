@@ -782,4 +782,43 @@ describe('the skills and agents the launch root provides', () => {
     expect('repoSkills' in mainOnly).toBe(false)
     expect(inWorktree.repoSkills).toEqual(['gsd-autonomous'])
   })
+
+  test('an epic worktree reads the launch root folders its mirror links into the main checkout', async () => {
+    const claude = '/repo/.claude/worktrees/proj-1/.claude'
+    const dirs = {
+      '/repo/.git': [],
+      [`${claude}/commands`]: [entry('gsd-autonomous.md')],
+      [`${claude}/agents`]: [entry('gsd-executor.md')],
+      [`${claude}/skills`]: [entry('own-skill', 'dir')],
+    }
+    const realPaths = {
+      [`${claude}/commands`]: '/repo/.claude/commands',
+      [`${claude}/agents`]: '/repo/.claude/agents',
+      [`${claude}/skills`]: '/elsewhere/skills',
+    }
+    const { read } = await gather(repoWorld({ dirs, realPaths }), [GIT_OK], WORKTREE)
+    const gathered = userOf(read)
+
+    expect([gathered.mainRoot, gathered.repoSkills, gathered.repoAgents]).toEqual([
+      '/repo',
+      ['gsd-autonomous'],
+      ['gsd-executor'],
+    ])
+    expect(read.kind === 'ok' ? read.warnings : null).toEqual([
+      'could not read <repo>/.claude/skills (treated as unknown)',
+    ])
+  })
+
+  test('without a main checkout a launch root folder that links into another checkout is still refused', async () => {
+    const notNested: InitLocations = { ...DEFAULT_LOCATIONS, root: '/wt', givenRoot: '/wt' }
+    const dirs = { '/repo/.git': [], '/wt/.claude/commands': [entry('gsd-autonomous.md')] }
+    const realPaths = { '/wt/.claude/commands': '/repo/.claude/commands' }
+    const { read } = await gather(repoWorld({ dirs, realPaths }), [GIT_OK], notNested)
+    const gathered = userOf(read)
+
+    expect(['mainRoot' in gathered, 'repoSkills' in gathered]).toEqual([false, false])
+    expect(read.kind === 'ok' ? read.warnings : null).toEqual([
+      'could not read <repo>/.claude/commands (treated as unknown)',
+    ])
+  })
 })
