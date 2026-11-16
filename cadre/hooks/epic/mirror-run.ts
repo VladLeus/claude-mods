@@ -84,6 +84,8 @@ export type Mirrored = {
   readonly links: readonly string[]
   /** The repo-relative paths of the copies whose move into place ran. */
   readonly copies: readonly string[]
+  /** The repo-relative folders the plan walked whose mkdir step ran. */
+  readonly walked: readonly string[]
   readonly warnings: readonly string[]
 }
 
@@ -154,7 +156,8 @@ export async function includedOf(
  * The worktree is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are
  * idempotent: a write or run that fails stops it with epicExcludesFailedReply, before any step. Each step then runs
  * with its epicStepArgv and epicStepTimeoutMs, and the first one that fails stops it: epicCopyFailedReply for a copy
- * or its move, else epicStepFailedReply. What ran before the stop is in the result, a copy only once its move ran.
+ * or its move, else epicStepFailedReply. What ran before the stop is in the result, a copy only once its move ran and
+ * a walked folder once its mkdir ran.
  */
 export async function mirrorSteps(
   io: InitIo,
@@ -171,7 +174,7 @@ export async function mirrorSteps(
   },
 ): Promise<Mirrored> {
   const { root, worktree, key } = input
-  const listFailed: Mirrored = { failure: epicListFailedReply(key), links: [], copies: [], warnings: [] }
+  const listFailed: Mirrored = { failure: epicListFailedReply(key), links: [], copies: [], walked: [], warnings: [] }
   const others = await host.run(LS_OTHERS_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
   if (others === null || others.exitCode !== 0) return listFailed
   const ignored = await host.run(LS_IGNORED_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
@@ -187,7 +190,13 @@ export async function mirrorSteps(
   const warnings = [...plan.warnings, ...global.warnings]
 
   const file = `${input.gitDir}/${EXCLUDES_FILE}`
-  const excludesFailed: Mirrored = { failure: epicExcludesFailedReply(key), links: [], copies: [], warnings }
+  const excludesFailed: Mirrored = {
+    failure: epicExcludesFailedReply(key),
+    links: [],
+    copies: [],
+    walked: [],
+    warnings,
+  }
   const hiddenCopies = [...input.recordedCopies, ...plan.copies].filter(isHiddenCopy)
   const hidden = sortedUnique([...input.recorded, ...plan.links, ...hiddenCopies])
   if (!(await host.write(file, excludesText(global.text, hidden)))) return excludesFailed
@@ -199,15 +208,16 @@ export async function mirrorSteps(
   const ran: EpicStep[] = []
   const made = (kind: EpicStep['kind']) =>
     ran.filter(step => step.kind === kind).map(step => step.path.slice(worktree.length + 1))
+  const walked = () => plan.walked.filter(folder => made('mkdir').includes(folder))
   for (const step of plan.steps) {
     const done = await host.run(epicStepArgv(step), { timeoutMs: epicStepTimeoutMs(step) })
     if (hasRunFailed(done)) {
       const failure = stepFailedReply(step, root, worktree)
 
-      return { failure, links: made('link'), copies: made('move'), warnings }
+      return { failure, links: made('link'), copies: made('move'), walked: walked(), warnings }
     }
     ran.push(step)
   }
 
-  return { failure: null, links: made('link'), copies: made('move'), warnings }
+  return { failure: null, links: made('link'), copies: made('move'), walked: walked(), warnings }
 }

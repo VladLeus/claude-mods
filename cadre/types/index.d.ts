@@ -104,6 +104,8 @@ export type EpicRecord = {
   readonly links: readonly string[]
   /** The repo-relative paths cadre copied into the worktree (D-172). */
   readonly copies: readonly string[]
+  /** The repo-relative folders the mirror made real above a path .worktreeinclude names. */
+  readonly walked?: readonly string[]
 }
 
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */

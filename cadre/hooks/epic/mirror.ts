@@ -166,8 +166,8 @@ export function mirrorPaths(
  *   it as a regular file, not a link: the rules above apply first, as for an entry, and then it is copied as in rule
  *   (i), never linked, so a rubric main has and the worktree lacks is copied into it.
  * A step below a folder the worktree does not list gets a mkdir step for each such folder from the top first, once
- * each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, and the
- * warnings.
+ * each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, the folders
+ * rule (h) made real (walked), in plan order, and the warnings.
  */
 export function mirrorPlan(input: {
   readonly root: string
@@ -181,6 +181,7 @@ export function mirrorPlan(input: {
   readonly steps: readonly EpicStep[]
   readonly links: readonly string[]
   readonly copies: readonly string[]
+  readonly walked: readonly string[]
   readonly warnings: readonly string[]
 } {
   const { root, worktree, main, tree, included } = input
@@ -189,6 +190,7 @@ export function mirrorPlan(input: {
   const steps: EpicStep[] = []
   const links: string[] = []
   const copies: string[] = []
+  const walked: string[] = []
   const warnings: string[] = []
   const made = new Set<string>()
   const placed = new Set<string>()
@@ -233,6 +235,7 @@ export function mirrorPlan(input: {
     const holdsNamed = included.some(named => named.startsWith(`${path}/`))
     if (isReal && shown.kind === 'dir' && !isNamed && holdsNamed) {
       for (const folder of [...missing, path]) mkdir(folder)
+      walked.push(path)
       for (const child of childrenOf(path)) visit(`${path}/${child}`)
       return
     }
@@ -258,7 +261,7 @@ export function mirrorPlan(input: {
   const rubric = listedEntry(main, SIZING_RUBRIC_PATH)
   if (rubric !== undefined && rubric.kind === 'file' && !rubric.isLink) visit(SIZING_RUBRIC_PATH, true)
 
-  return { steps, links, copies, warnings }
+  return { steps, links, copies, walked, warnings }
 }
 
 /**
