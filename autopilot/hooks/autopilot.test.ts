@@ -58,7 +58,7 @@ import {
   isGraceEligible,
   isGraceLive,
   isLiveFinishedValue,
-  isPermissionDeny,
+  isModeDeny,
   isValidHandoffPath,
   limitAction,
   lockStale,
@@ -81,6 +81,7 @@ import {
   queuedAcross,
   queuedQuestionTexts,
   queuedResult,
+  refusalLogText,
   removesDrainedQuestion,
   retime,
   revivePrompt,
@@ -871,25 +872,31 @@ describe('questions while the person is in control', () => {
 })
 
 describe('refusals while autopilot drives', () => {
-  test('a permission refusal is deferred and any other deny passes through', async () => {
-    expect(isPermissionDeny('Permission to use Bash with command git push has been denied.')).toBe(true)
-    expect(isPermissionDeny('The cadre inbox tools work only in a cadre role session.')).toBe(false)
-    expect(isPermissionDeny('')).toBe(false)
+  const ruleDeny = 'Permission to use Bash with command printf probe-one has been denied.'
+  const dontAsk =
+    "Permission to use Write has been denied because Claude Code is running in don't ask mode. IMPORTANT: stop"
+
+  test('a rule refusal passes through and a mode refusal is deferred', async () => {
+    expect(isModeDeny(ruleDeny)).toBe(false)
+    expect(isModeDeny(dontAsk)).toBe(true)
+    expect(isModeDeny('')).toBe(false)
+  })
+
+  test('while away every refusal is logged, a mode refusal as deferred', async () => {
+    expect(refusalLogText('Bash', ruleDeny)).toBe(`refused (passed through): Bash: ${ruleDeny}`)
+    expect(refusalLogText('Write', dontAsk)).toBe(`deferred (refused by the permission mode): Write: ${dontAsk}`)
   })
 
   test('every engine permission refusal shape is deferred', async () => {
     const texts = [
       "Permission to use Bash has been denied because Claude Code is running in don't ask mode.",
-      'Permission to edit /repo/a.ts has been denied.',
-      'Permission to read /etc/hosts has been denied.',
       'Permission for this action was denied by the Claude Code auto mode classifier. Reason: pushes to main',
       'Permission for this action has been denied. Reason: outside the role',
       'Permission for this tool use was denied. It requires approval, and this session has no approval surface',
       'Permission for this tool use was denied: it requires interactive approval',
       'Permission for this command was denied by a built-in Claude Code safety check, not by the user.',
-      'Permission denied for: git push origin main',
     ]
-    for (const text of texts) expect(isPermissionDeny(text)).toBe(true)
+    for (const text of texts) expect(isModeDeny(text)).toBe(true)
   })
 
   test("a hook's or a tool's own deny is not a permission refusal", async () => {
@@ -902,7 +909,7 @@ describe('refusals while autopilot drives', () => {
       'permission to use Bash has been denied.',
       'Permission to use',
     ]
-    for (const text of texts) expect(isPermissionDeny(text)).toBe(false)
+    for (const text of texts) expect(isModeDeny(text)).toBe(false)
   })
 })
 
