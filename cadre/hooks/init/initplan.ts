@@ -20,6 +20,7 @@ import type {
   RepoScan,
   RoleSpec,
   Sizing,
+  TeamStructure,
 } from '../../types'
 import { projectInstallOf, setupAfterInstalls } from '../apply/installs'
 import type { OwedPrivate } from '../apply/run'
@@ -122,6 +123,8 @@ export type PlanStepInput = {
   readonly sizing?: Sizing
   /** The frameworks cadre.json records as the person's answer; absent records none. */
   readonly frameworks?: readonly FrameworkId[]
+  /** The structure cadre.json records as the person's answer; absent records none. */
+  readonly structure?: TeamStructure
 }
 
 /** The repo state a plan records in cadre.json: this cadre version and the team's answers, roles in their order. */
@@ -139,6 +142,7 @@ export function planState(input: PlanStepInput, cadreVersion: string): CadreStat
     ...(input.repo.dockerScripts === undefined || input.repo.dockerScripts.length === 0
       ? {}
       : { dockerScripts: input.repo.dockerScripts }),
+    ...(input.structure === undefined ? {} : { structure: input.structure }),
   }
 }
 

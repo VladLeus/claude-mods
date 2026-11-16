@@ -5,6 +5,7 @@
  * epic, init and testkit read the template here.
  */
 import type {
+  CadreState,
   DecisionType,
   Effort,
   FrameworkId,
@@ -163,6 +164,11 @@ export const CHECK_RUNNER_ROLES: readonly TemplateRoleId[] = Object.freeze(['be'
 /** Whether a role runs the repo's checks: it stands for BE, FE or QA. */
 export function runsRepoChecks(role: Pick<RoleSpec, 'id' | 'basedOn'>): boolean {
   return CHECK_RUNNER_ROLES.some(templateId => standsFor(role, templateId))
+}
+
+/** Whether init recorded cadre's core team; an unrecorded team counts as custom. */
+export function isCoreTeam(state: Pick<CadreState, 'structure'>): boolean {
+  return state.structure === 'core'
 }
 
 /**

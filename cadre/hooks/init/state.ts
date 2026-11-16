@@ -27,6 +27,7 @@ import type {
   RoleChange,
   RoleSpec,
   SkillRef,
+  TeamStructure,
 } from '../../types'
 import type { ApplyOutcome } from '../apply/run'
 import type { GuardResult } from '../guards/repo'
@@ -373,6 +374,7 @@ export type StageSub =
       readonly rounds: number
       readonly roles: readonly RoleSpec[]
       readonly changes: readonly RoleChange[]
+      readonly structure: TeamStructure
     }
   | {
       readonly kind: 'adjust'
@@ -380,6 +382,7 @@ export type StageSub =
       readonly round: number
       readonly roles: readonly RoleSpec[]
       readonly changes: readonly RoleChange[]
+      readonly structure: TeamStructure
     }
   | {
       readonly kind: 'describe'
@@ -398,6 +401,7 @@ export type StageSub =
         readonly round: number
         readonly roles: readonly RoleSpec[]
         readonly changes: readonly RoleChange[]
+        readonly structure: TeamStructure
       }
     }
   | {
@@ -410,6 +414,7 @@ export type StageSub =
         readonly round: number
         readonly roles: readonly RoleSpec[]
         readonly changes: readonly RoleChange[]
+        readonly structure: TeamStructure
       }
     }
   | { readonly kind: 'mcp-model'; readonly done: readonly NameAssignment[] }
@@ -600,7 +605,7 @@ export function fullDraft(draft: Partial<Draft>): Draft | null {
   if (base === null || duration === undefined || roles === undefined || changes === undefined) return null
   if (repoDefault === undefined || hunks === undefined || pluginInstalls === undefined) return null
   if (instructions === undefined || policy === undefined || launchStart === undefined) return null
-  const { frameworkSet, frameworkInstalls, projectPluginInstalls } = draft
+  const { frameworkSet, frameworkInstalls, projectPluginInstalls, structure } = draft
   const fields = { duration, roles, changes, repoDefault, hunks, pluginInstalls, instructions, policy, launchStart }
 
   return {
@@ -609,5 +614,6 @@ export function fullDraft(draft: Partial<Draft>): Draft | null {
     ...(frameworkSet === undefined ? {} : { frameworkSet }),
     ...(frameworkInstalls === undefined ? {} : { frameworkInstalls }),
     ...(projectPluginInstalls === undefined ? {} : { projectPluginInstalls }),
+    ...(structure === undefined ? {} : { structure }),
   }
 }

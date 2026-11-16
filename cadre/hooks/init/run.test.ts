@@ -3618,7 +3618,7 @@ async function initFiles(
   roles: readonly RoleSpec[],
   over: Partial<CadreState> = {},
 ): Promise<DesiredFile[]> {
-  return plannedFiles(world, initRecorded(roles), over)
+  return plannedFiles(world, initRecorded(roles), { structure: 'core', ...over })
 }
 
 /** The default team of the git fixture world has a Security role, so its ignore block holds the reports line. */
@@ -3750,7 +3750,11 @@ describe('init plan', () => {
 
   test('init stores the consent answer: over a stored yes, yes leaves cadre.json and no changes it (A1)', async () => {
     const team = await defaultRoles(gitWorld())
-    const files = await plannedFiles(gitWorld(), team, { readUserMcp: true, sizing: NO_FRAMEWORK_SIZING })
+    const files = await plannedFiles(gitWorld(), team, {
+      readUserMcp: true,
+      sizing: NO_FRAMEWORK_SIZING,
+      structure: 'core',
+    })
     const world = gitWorld({
       dirs: { '/repo/.git': [], '/repo/.cadre': [] },
       files: { ...onDisk(files), '/repo/.cadre/manifest.json': await manifestOf(files) },
@@ -3828,7 +3832,7 @@ describe('init plan', () => {
         carry,
       }
     })
-    const files = await plannedFiles(world, roles, { sizing: NO_FRAMEWORK_SIZING })
+    const files = await plannedFiles(world, roles, { sizing: NO_FRAMEWORK_SIZING, structure: 'core' })
     const run = memIo({ ...world, files: { ...world.files, ...onDisk(files) } }, answers)
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
     expect(files.map(file => [file.path, kinds.get(file.path)])).toEqual(

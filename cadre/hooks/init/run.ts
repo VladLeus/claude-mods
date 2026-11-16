@@ -693,6 +693,7 @@ async function applyConfirmed(
     readUserMcp: draft.readUserMcp,
     repoParts: tracked.repoParts,
     ...recorded,
+    ...(draft.structure === undefined ? {} : { structure: draft.structure }),
   })
   const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
   // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).

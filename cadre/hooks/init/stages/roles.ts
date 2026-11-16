@@ -10,7 +10,7 @@
  * framework, roles, suggest types, ui/ask, init/state and the duration and frameworks stages, and never imports
  * init/machine or init/run.
  */
-import type { FrameworkId, RoleChange, RoleSpec } from '../../../types'
+import type { FrameworkId, RoleChange, RoleSpec, TeamStructure } from '../../../types'
 import { projectInstallOf } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -281,28 +281,33 @@ const ADJUST_SPEC = Object.freeze({
   endingLabels: ADJUST_ENDING,
 })
 
-/** The Adjust cursor: the proposal it came from, how many Adjust answers so far, and the roles as adjusted so far. */
+/**
+ * The Adjust cursor: the proposal it came from, how many Adjust answers so far, the roles as adjusted so far, and the
+ * structure they come from.
+ */
 type AdjustCursor = {
   readonly rounds: number
   readonly round: number
   readonly roles: readonly RoleSpec[]
   readonly changes: readonly RoleChange[]
+  readonly structure: TeamStructure
 }
 
 /**
- * The roles proposed (A1, A6): the roles question about `roles` with their scan `changes`, whose own context holds the
- * proposal (rolesContext, no block of its own, D-302), the `rounds + 1`-th proposal; once MAX_ROLE_ROUNDS proposals
- * were asked, the next one cancels with ROLE_ROUNDS_REASON instead, so no cap ever accepts roles.
+ * The roles question about `roles` with their scan `changes` and the `structure` they come from, the `rounds + 1`-th
+ * proposal; once MAX_ROLE_ROUNDS proposals were asked, the next one cancels with ROLE_ROUNDS_REASON instead, so no cap
+ * ever accepts roles.
  */
 function proposed(
   state: InitState,
   roles: readonly RoleSpec[],
   changes: readonly RoleChange[],
   rounds: number,
+  structure: TeamStructure,
 ): InitState {
   if (rounds >= MAX_ROLE_ROUNDS) return stageCancelled(state, ROLE_ROUNDS_REASON)
   const ask = rolesAsk(roles, changes)
-  const sub: InitState['sub'] = { kind: 'roles', tries: 1, rounds: rounds + 1, roles, changes }
+  const sub: InitState['sub'] = { kind: 'roles', tries: 1, rounds: rounds + 1, roles, changes, structure }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question: ask.question, spec: ask.spec })
 }
@@ -335,7 +340,7 @@ function adjustAgain(
   if (round <= MAX_ADJUST_ROUNDS) return adjustAsked(state, { ...cursor, round, roles }, refusal)
   const noted = withOutputs(state, [{ kind: 'note', line: ADJUST_ROUNDS_NOTE }])
 
-  return proposed(noted, roles, cursor.changes, cursor.rounds)
+  return proposed(noted, roles, cursor.changes, cursor.rounds, cursor.structure)
 }
 
 /**
@@ -353,18 +358,18 @@ function afterAdjust(
 ): InitState {
   if (answer === null) return stageCancelled(state, ADJUST_DISMISSED_REASON)
   const choice = labelled(ADJUST_CHOICES, answer)
-  if (choice === 'done') return proposed(state, cursor.roles, cursor.changes, cursor.rounds)
+  if (choice === 'done') return proposed(state, cursor.roles, cursor.changes, cursor.rounds, cursor.structure)
   if (choice === 'show') return adjustAgain(state, cursor, cursor.roles, null)
   if (isGsdCheckDue(state, cursor.roles, installed, answer)) {
-    const { rounds, round, roles, changes } = cursor
+    const { rounds, round, roles, changes, structure } = cursor
 
-    return rolesGsdCheckAsked(state, { answer, rounds, round, roles, changes }, 1, null)
+    return rolesGsdCheckAsked(state, { answer, rounds, round, roles, changes, structure }, 1, null)
   }
   const missing = missingFramework(cursor.roles, installed, answer)
   if (missing !== null) {
-    const { rounds, round, roles, changes } = cursor
+    const { rounds, round, roles, changes, structure } = cursor
 
-    return rolesInstallAsked(state, { answer, rounds, round, roles, changes }, missing, 1, null)
+    return rolesInstallAsked(state, { answer, rounds, round, roles, changes, structure }, missing, 1, null)
   }
   const result = adjusted(cursor.roles, answer, installed)
   if (result.kind === 'error') return adjustAgain(state, cursor, cursor.roles, reportText(result.message))
@@ -525,7 +530,7 @@ function afterDescribe(state: InitState, cursor: DescribeCursor, answer: string 
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   const described = next.value
   if (described.kind === 'cancel') return stageCancelled(state, DESCRIBE_CANCELLED_REASON)
-  if (described.kind === 'template') return proposed(state, proposal.roles, proposal.changes, rounds)
+  if (described.kind === 'template') return proposed(state, proposal.roles, proposal.changes, rounds, 'core')
   const calling: InitState = { ...state, sub: { kind: 'describe-model', rounds } }
 
   return withEffect(calling, { kind: 'model', call: { id: 'describe-roles', text: described.text } })
@@ -539,10 +544,10 @@ function afterDescribe(state: InitState, cursor: DescribeCursor, answer: string 
 function afterDescribed(state: InitState, rounds: number, described: Proposed): InitState {
   const { proposal } = state.draft
   if (proposal === undefined) return stageFailed(state)
-  if (described.kind === 'roles') return proposed(state, described.roles, [], rounds)
+  if (described.kind === 'roles') return proposed(state, described.roles, [], rounds, 'custom')
   const noted = withOutputs(state, [{ kind: 'note', line: described.message }])
 
-  return proposed(noted, proposal.roles, proposal.changes, rounds)
+  return proposed(noted, proposal.roles, proposal.changes, rounds, 'core')
 }
 
 /**
@@ -574,7 +579,7 @@ function afterRoles(
   sub: Extract<InitState['sub'], { readonly kind: 'roles' }>,
   answer: string | null,
 ): InitState {
-  const { roles, changes, rounds } = sub
+  const { roles, changes, rounds, structure } = sub
   const ask = rolesAsk(roles, changes)
   const next = choiceAnswer(ask, sub, answer)
   if (next.kind === 'again') {
@@ -586,9 +591,9 @@ function afterRoles(
   if (next.value === 'use') {
     const kept = isKeptTeam(state.draft.roles, roles) ? state.kept : null
 
-    return stageDone({ ...state, draft: { ...state.draft, roles, changes }, kept })
+    return stageDone({ ...state, draft: { ...state.draft, roles, changes, structure }, kept })
   }
-  if (next.value === 'adjust') return adjustAsked(state, { rounds, round: 1, roles, changes }, null)
+  if (next.value === 'adjust') return adjustAsked(state, { rounds, round: 1, roles, changes, structure }, null)
 
   return describeAsked(state, { rounds, tries: 1, roles, changes }, null)
 }
@@ -630,11 +635,11 @@ function rolesAnswer(state: InitState, answer: Answer): InitState {
  */
 export const rolesStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
-    const { proposal, installed, roles, changes } = state.draft
+    const { proposal, installed, roles, changes, structure } = state.draft
     if (proposal === undefined || installed === undefined) return stageFailed(state)
-    if (roles === undefined) return proposed(state, proposal.roles, proposal.changes, 0)
+    if (roles === undefined) return proposed(state, proposal.roles, proposal.changes, 0, 'core')
 
-    return proposed(state, roles, changes ?? [], 0)
+    return proposed(state, roles, changes ?? [], 0, structure ?? 'core')
   },
   answer: rolesAnswer,
 })

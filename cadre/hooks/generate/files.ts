@@ -1,11 +1,12 @@
 /**
  * The generated file set, a layer 6 module: every committed file init and regen would write, by path, with its content
- * and mode (PLAN-01, D-66, D-68). It imports the text builders of generate, paths, core and the types, so init, regen,
- * /cadre start and testkit get the file set here.
+ * and mode (PLAN-01, D-66, D-68). It imports the text builders of generate, paths, core, the role template and the
+ * types, so init, regen, /cadre start and testkit get the file set here.
  */
 import type { CadreState, CompiledScope, DesiredFile, InstructionPart, LaunchStart, RoleSpec } from '../../types'
 import { compareText } from '../core/text'
 import { cadreStatePath, launcherPath, roleJsonPath, SIZING_RUBRIC_PATH } from '../paths'
+import { isCoreTeam } from '../roles/template'
 import {
   cadreJsonText,
   indexMdText,
@@ -16,6 +17,7 @@ import {
   rubricText,
   settingsText,
 } from './docs'
+import type { RoleMdTeam } from './docs'
 import { kickoffText } from './kickoff'
 import { builtClaudeMdPath, launcherText, rolePath } from './launcher'
 
@@ -60,23 +62,22 @@ function builtFiles(id: string, parts: readonly InstructionPart[] | null): Desir
 }
 
 /**
- * The files of one role: the five in its folder, its built CLAUDE.md (builtFiles: whenever repoParts is passed every
- * role gets its built file, the header alone with no repo part, so a later hand-out always replaces stale content,
- * 02-GAPS-B2 S1; none for null parts), and its launcher, each with the framework its scope was compiled for, the
- * launcher starting where `start` says. A role with no scope gives none, so nothing is generated from a half-known
- * role.
+ * The files of one role: the five in its folder, ROLE.md given `team`, its built CLAUDE.md (builtFiles) and its
+ * launcher, each with the framework its scope was compiled for, the launcher starting where `start` says. A role with
+ * no scope gives none, so nothing is generated from a half-known role.
  */
 function roleFiles(
   role: RoleSpec,
   scope: CompiledScope | undefined,
   start: LaunchStart,
   parts: readonly InstructionPart[] | null,
+  team: RoleMdTeam,
 ): DesiredFile[] {
   if (scope === undefined) return []
 
   return [
     { path: roleJsonPath(role.id), content: roleJsonText(role), mode: 'file' },
-    { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope), mode: 'file' },
+    { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope, team), mode: 'file' },
     { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, scope.card.framework), mode: 'file' },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
@@ -100,9 +101,12 @@ function roleFiles(
 export function desiredFiles(input: GenerateInput): DesiredFile[] {
   const { roles, scopes, state, only } = input
   const selected = roles.filter(role => only === null || role.id === only)
+  const team: RoleMdTeam = { isCore: isCoreTeam(state), roles }
   const partsOf = (id: string): readonly InstructionPart[] | null =>
     input.repoParts === undefined ? null : (input.repoParts.get(id) ?? [])
-  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), state.launchStart, partsOf(role.id)))
+  const files = selected.flatMap(role =>
+    roleFiles(role, scopes.get(role.id), state.launchStart, partsOf(role.id), team),
+  )
   files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
   if (only === null) {
     files.push(

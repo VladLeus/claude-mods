@@ -442,7 +442,7 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "run [[\"/bin/chmod\",\"755\",\"/repo/.cadre/bin/security\"],{\"timeoutMs\":10000}]",
     "write /repo/.cadre/bin/tl df02cbb995435b3ffd30902a3c5841b601b0ea1a3ad461a9c7eadfb7cd15e74f true",
     "run [[\"/bin/chmod\",\"755\",\"/repo/.cadre/bin/tl\"],{\"timeoutMs\":10000}]",
-    "write /repo/.cadre/cadre.json c9585323198d2e154d0a575f1f1cf5b938c213b53b5c68205c8e7fc1cc95311e true",
+    "write /repo/.cadre/cadre.json 50a320abab81ccb67f0141ea7081b9ca177c437332fea56462536d4a64b91769 true",
     "write /repo/.cadre/pm/CLAUDE.md bec0e6bed7a85311cef17b5d42b464877dcd0d730c48eb038e0f8f00ad6389b3 true",
     "write /repo/.cadre/pm/ROLE.md 929fb80148a7a5db20e70208cebc9668c5675bb9212ef01f8493ef97c62fba9c true",
     "write /repo/.cadre/pm/kickoff.txt bf1ffd286642f9cc4394d8ee794a0535f5ddefc30107f6b39e03a812ec4d957b true",
@@ -463,7 +463,7 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/tl/role.json c738e88f9a512e380cd53a6aeaf748571056e08847b842ed48cd59b503067219 true",
     "write /repo/.cadre/tl/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json 1eba9fb2db0f8f5d3a799906838d0ce859afb4a8c03abb30f5f7fc006b5fc8ad true"
+    "write /repo/.cadre/manifest.json 98a8a62b444bed19f44bc0499ed398f41d89fe70abc14da29b255f3530086d27 true"
   ],
   "applyGsd": [
     "ask Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.",
@@ -489,7 +489,7 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "run [[\"/bin/chmod\",\"755\",\"/repo/.cadre/bin/security\"],{\"timeoutMs\":10000}]",
     "write /repo/.cadre/bin/tl df02cbb995435b3ffd30902a3c5841b601b0ea1a3ad461a9c7eadfb7cd15e74f true",
     "run [[\"/bin/chmod\",\"755\",\"/repo/.cadre/bin/tl\"],{\"timeoutMs\":10000}]",
-    "write /repo/.cadre/cadre.json 85003e02dfe431643071c294633d3d8f6be5fe49607d210f5cf5bef4d6bd8052 true",
+    "write /repo/.cadre/cadre.json 3f67d91b888f903ae90fc545672e92203a1bcb5fdb5fbfe140e8b9858ff60a6e true",
     "write /repo/.cadre/pm/CLAUDE.md bec0e6bed7a85311cef17b5d42b464877dcd0d730c48eb038e0f8f00ad6389b3 true",
     "write /repo/.cadre/pm/ROLE.md 929fb80148a7a5db20e70208cebc9668c5675bb9212ef01f8493ef97c62fba9c true",
     "write /repo/.cadre/pm/kickoff.txt bf1ffd286642f9cc4394d8ee794a0535f5ddefc30107f6b39e03a812ec4d957b true",
@@ -510,6 +510,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/tl/role.json c738e88f9a512e380cd53a6aeaf748571056e08847b842ed48cd59b503067219 true",
     "write /repo/.cadre/tl/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json 005f38c9bb074ccaefebbde0e804baa515bfe0f3742bb7fc2586d57e34f24f21 true"
+    "write /repo/.cadre/manifest.json c6e63ab92c1485ba34bb64c4640fd21c580aac68787425d7f90694ca7a16d3ae true"
   ]
 }

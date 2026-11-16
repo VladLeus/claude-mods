@@ -124,7 +124,8 @@ function dockerScriptsOf(value: unknown): string[] | null {
  * (isRoleId: a slug, not reserved) and are not listed twice, a launch start (launchStartOf), and whether init may read
  * ~/.claude.json (a boolean; missing or any other value makes the state null, fail closed). A missing or invalid
  * launch start makes the state null (fail closed). A sizing block, the recorded frameworks and the docker scripts may
- * be absent; present and malformed, they make the state null. A field the contract does not name is dropped.
+ * be absent; present and malformed, they make the state null. The structure may be absent; present, it is core or
+ * custom, else the state is null. A field the contract does not name is dropped.
  */
 export function parseCadreState(text: string): CadreState | null {
   const value = parseJsonValue(text)?.value
@@ -145,6 +146,8 @@ export function parseCadreState(text: string): CadreState | null {
   const frameworks = value.frameworks === undefined ? undefined : frameworksOf(value.frameworks)
   const dockerScripts = value.dockerScripts === undefined ? undefined : dockerScriptsOf(value.dockerScripts)
   if (sizing === null || frameworks === null || dockerScripts === null) return null
+  const { structure } = value
+  if (structure !== undefined && structure !== 'core' && structure !== 'custom') return null
 
   return {
     schema: 1,
@@ -157,6 +160,7 @@ export function parseCadreState(text: string): CadreState | null {
     ...(sizing === undefined ? {} : { sizing }),
     ...(frameworks === undefined ? {} : { frameworks }),
     ...(dockerScripts === undefined ? {} : { dockerScripts }),
+    ...(structure === undefined ? {} : { structure }),
   }
 }
 

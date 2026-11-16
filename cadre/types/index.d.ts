@@ -1214,6 +1214,9 @@ export type LaunchStart =
   | { readonly kind: 'here' }
   | { readonly kind: 'dir'; readonly path: string }
 
+/** Which structure init used: cadre's core team (the template, adjusted or not) or the user's own. */
+export type TeamStructure = 'core' | 'custom'
+
 /** `.cadre/cadre.json`: the repo-level answers regen and the ignore block need (D-89). */
 export type CadreState = {
   readonly schema: 1
@@ -1235,6 +1238,8 @@ export type CadreState = {
   readonly frameworks?: readonly FrameworkId[]
   /** The repo's docker scripts init found, as `<runner> <name>`; absent when it found none. */
   readonly dockerScripts?: readonly string[]
+  /** Absent in a setup from before it was recorded, which reads as custom. */
+  readonly structure?: TeamStructure
 }
 
 /** What the repo scan found (SCAN-01): a separate type beside the frozen Facts (D-88). */

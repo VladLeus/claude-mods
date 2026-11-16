@@ -15,6 +15,7 @@ import { cadreStatePath, handoffFolderOf, launcherPath, SIZING_RUBRIC_PATH } fro
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
 import { standsFor } from '../roles/template'
+import type { ChainRole } from '../roles/template'
 import { MAX_PURPOSE_CHARS } from '../roles/validate'
 import { CARD_LIST_WORDS, scopeCardLines } from '../scope/card'
 
@@ -138,6 +139,11 @@ function sizingLines(): string[] {
   ]
 }
 
+/** The team a ROLE.md is written for: whether it is cadre's core team, and its roles. */
+export type RoleMdTeam = { readonly isCore: boolean; readonly roles: readonly ChainRole[] }
+
+const CUSTOM_TEAM: RoleMdTeam = Object.freeze({ isCore: false, roles: [] })
+
 /**
  * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session; it is never named
  * CLAUDE.md or AGENTS.md. It holds, in this order: the title and id, the purpose, the framework with the model,
@@ -149,7 +155,7 @@ function sizingLines(): string[] {
  * card). The framework is the one the scope was compiled for (`scope.card.framework`), so the document and the card
  * cannot disagree. The title and the purpose come from outside, so they are cleaned.
  */
-export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
+export function roleMdText(role: RoleSpec, scope: CompiledScope, team: RoleMdTeam = CUSTOM_TEAM): string {
   const { card } = scope
   const adapter = adapterOf(card.framework)
   const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null })

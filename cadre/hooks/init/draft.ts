@@ -19,6 +19,7 @@ import type {
   RoleChange,
   RoleProposal,
   RoleSpec,
+  TeamStructure,
 } from '../../types'
 import type { Gathered } from '../scan/gather'
 
@@ -55,6 +56,7 @@ export type Draft = {
   readonly roles: readonly RoleSpec[]
   /** The scan changes shown with the accepted roles: the template's, or none for a described structure (A6). */
   readonly changes: readonly RoleChange[]
+  readonly structure?: TeamStructure
   readonly repoDefault: FrameworkId | null
   readonly hunks: readonly HunkOp[]
   /**

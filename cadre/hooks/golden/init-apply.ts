@@ -212,7 +212,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/cadre.json",
-        "sha256": "c9585323198d2e154d0a575f1f1cf5b938c213b53b5c68205c8e7fc1cc95311e",
+        "sha256": "50a320abab81ccb67f0141ea7081b9ca177c437332fea56462536d4a64b91769",
         "isWritten": true
       },
       {
@@ -317,7 +317,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "1eba9fb2db0f8f5d3a799906838d0ce859afb4a8c03abb30f5f7fc006b5fc8ad",
+        "sha256": "98a8a62b444bed19f44bc0499ed398f41d89fe70abc14da29b255f3530086d27",
         "isWritten": true
       }
     ],
@@ -354,7 +354,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/cadre.json\",",
-      "      \"sha256\": \"c9585323198d2e154d0a575f1f1cf5b938c213b53b5c68205c8e7fc1cc95311e\"",
+      "      \"sha256\": \"50a320abab81ccb67f0141ea7081b9ca177c437332fea56462536d4a64b91769\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -686,7 +686,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/cadre.json",
-        "sha256": "85003e02dfe431643071c294633d3d8f6be5fe49607d210f5cf5bef4d6bd8052",
+        "sha256": "3f67d91b888f903ae90fc545672e92203a1bcb5fdb5fbfe140e8b9858ff60a6e",
         "isWritten": true
       },
       {
@@ -791,7 +791,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "005f38c9bb074ccaefebbde0e804baa515bfe0f3742bb7fc2586d57e34f24f21",
+        "sha256": "c6e63ab92c1485ba34bb64c4640fd21c580aac68787425d7f90694ca7a16d3ae",
         "isWritten": true
       }
     ],
@@ -829,7 +829,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/cadre.json\",",
-      "      \"sha256\": \"85003e02dfe431643071c294633d3d8f6be5fe49607d210f5cf5bef4d6bd8052\"",
+      "      \"sha256\": \"3f67d91b888f903ae90fc545672e92203a1bcb5fdb5fbfe140e8b9858ff60a6e\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",

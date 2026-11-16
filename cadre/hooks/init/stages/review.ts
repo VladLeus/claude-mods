@@ -436,6 +436,7 @@ function reviewPlanOf(draft: Draft): {
     readUserMcp: draft.readUserMcp,
     repoParts,
     ...recorded,
+    ...(draft.structure === undefined ? {} : { structure: draft.structure }),
   }
 
   return { scopes, input }
