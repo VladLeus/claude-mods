@@ -29,6 +29,7 @@ import {
   templateRole,
 } from '../testkit'
 import { cadreJsonText, indexMdText, partsBody, roleClaudeMdText, roleMdText, rubricText } from './docs'
+import type { RoleMdTeam } from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { builtClaudeMdPath } from './launcher'
@@ -277,6 +278,22 @@ const ADAPTER_OF: Readonly<Record<FrameworkId, FrameworkAdapter>> = {
   superpowers: SUPERPOWERS_ADAPTER,
   none: BUILTIN_ADAPTER,
 }
+
+/** The template team as init records it when the user keeps cadre's core team. */
+const CORE_TEAM: RoleMdTeam = { isCore: true, roles: TEMPLATE_ROLES }
+
+/** The template TL renamed to `lead`, and the core team it leads. */
+const LEAD = templateRole('tl', { id: 'lead', title: 'Lead' })
+const LEAD_TEAM: RoleMdTeam = { isCore: true, roles: TEMPLATE_ROLES.map(role => (role.id === 'tl' ? LEAD : role)) }
+
+/** The core TL's fed-ticket and brief lines, spelled out so the specs pin their words. */
+const CORE_TL_FED =
+  "Work only on the ticket PM fed, and answer PM's code-fact questions during the grill; do no research on later " +
+  'tickets.'
+const CORE_TL_BRIEF =
+  'Send each implementer a brief, not a plan: the goal, the acceptance criteria, your architecture decisions with ' +
+  'their reasons, the areas at risk, what is out of scope, the report form and what must be proven. Leave out ' +
+  'method signatures, spec bodies and commands.'
 
 /** The lines of a document that start a section. */
 function headings(text: string): string[] {
@@ -673,6 +690,34 @@ describe('the Planning docs section of ROLE.md', () => {
     }
   })
 
+  test('the core TL has the lead steps without the quick or phase path', () => {
+    const steps = [ARTIFACT.gsdStepNewProject, ARTIFACT.gsdStepWorkstream, ARTIFACT.gsdStepMilestoneLead]
+    const cases: readonly [RoleSpec, RoleMdTeam][] = [
+      [templateRole('tl'), CORE_TEAM],
+      [LEAD, LEAD_TEAM],
+    ]
+
+    for (const [tl, team] of cases) {
+      const text = roleMdText(tl, scopeOf(tl, 'gsd', TEMPLATE_ROLES), team)
+      const howYouWork = sectionLines(text, '## How you work').join('\n')
+
+      expect(planningDocs(text)).toEqual([
+        '## Planning docs',
+        '',
+        ARTIFACT.roleMdPlanningIntro,
+        ...steps.map(step => `- ${step}`),
+        '',
+      ])
+      expect(howYouWork).not.toContain('Start: /gsd-autonomous')
+      expect(howYouWork).not.toContain('Verify with /gsd-validate-phase')
+    }
+    const custom = roleMdText(templateRole('tl'), scopeOf(templateRole('tl'), 'gsd', TEMPLATE_ROLES))
+
+    expect(planningDocs(custom).join('\n')).toContain('/gsd-quick')
+    expect(sectionLines(custom, '## How you work').join('\n')).toContain('Start: /gsd-autonomous')
+    expect(sectionLines(custom, '## How you work').join('\n')).toContain('Verify with /gsd-validate-phase')
+  })
+
   test('PM on none has no Planning docs section, whatever the repo records', () => {
     const pm = templateRole('pm')
     const text = roleMdText(pm, scopeOf(pm, 'none', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] }))
@@ -695,8 +740,8 @@ describe('the Planning docs section of ROLE.md', () => {
 
 describe('the Hierarchy section of ROLE.md', () => {
   /** The Hierarchy section of the ROLE.md of `role` on `framework` in the template team, as one text. */
-  function hierarchyOf(role: RoleSpec, framework: FrameworkId): string {
-    return sectionLines(roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES)), '## Hierarchy').join('\n')
+  function hierarchyOf(role: RoleSpec, framework: FrameworkId, team?: RoleMdTeam): string {
+    return sectionLines(roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES), team), '## Hierarchy').join('\n')
   }
 
   test('PM grills the user through AskUserQuestion rounds until nothing is open, then proposes the mode', () => {
@@ -729,21 +774,44 @@ describe('the Hierarchy section of ROLE.md', () => {
     expect(text).not.toContain('grill the user')
   })
 
-  test('TL sizes each ticket, plans it, sends BE and FE their tasks in parallel, waits and reports to PM', () => {
-    const text = hierarchyOf(templateRole('tl'), 'gsd')
+  test(
+    'TL sizes each ticket, plans it, sends BE and FE their tasks in parallel, waits and reports to PM ' +
+      '(custom or unrecorded team)',
+    () => {
+      const text = hierarchyOf(templateRole('tl'), 'gsd')
 
-    expect(text).toContain('Your ticket loop as TL: on each ticket PM sends, add complexity and effort')
-    expect(text).toContain('compute the size and pick the framework or GSD path')
-    expect(text).toContain('record the vector with a one-line reason')
-    expect(text).toContain('Plan the ticket in your own planning docs.')
-    expect(text).toContain('Send BE and FE their tasks in parallel (inbox_send kind task), split by area')
-    expect(text).toContain('a file both would touch is yours to serialise')
-    expect(text).toContain('Wait for every report, then report to PM in the form PM asked')
-    expect(text).toContain(
-      'outcome, changes, verification, the vector with its reason, the framework used, the doc paths and the open ' +
-        'questions',
-    )
-    expect(text).toContain('wait for the next ticket')
+      expect(text).toContain('Your ticket loop as TL: on each ticket PM sends, add complexity and effort')
+      expect(text).toContain('compute the size and pick the framework or GSD path')
+      expect(text).toContain('record the vector with a one-line reason')
+      expect(text).toContain('Plan the ticket in your own planning docs.')
+      expect(text).toContain('Send BE and FE their tasks in parallel (inbox_send kind task), split by area')
+      expect(text).toContain('a file both would touch is yours to serialise')
+      expect(text).toContain('Wait for every report, then report to PM in the form PM asked')
+      expect(text).toContain(
+        'outcome, changes, verification, the vector with its reason, the framework used, the doc paths and the open ' +
+          'questions',
+      )
+      expect(text).toContain('wait for the next ticket')
+    },
+  )
+
+  test('the core TL sizes each ticket, works only on the fed ticket, briefs and sends BE and FE their tasks', () => {
+    const texts = [hierarchyOf(templateRole('tl'), 'gsd', CORE_TEAM), hierarchyOf(LEAD, 'gsd', LEAD_TEAM)]
+
+    for (const text of texts) {
+      const lines = text.split('\n')
+
+      expect(lines.slice(lines.indexOf(ARTIFACT.roleMdTlLoop), -1)).toEqual([
+        ARTIFACT.roleMdTlLoop,
+        CORE_TL_FED,
+        CORE_TL_BRIEF,
+        ARTIFACT.roleMdTlTasks,
+        ARTIFACT.roleMdTlReport,
+      ])
+      expect(text).toContain('Your ticket loop as TL: on each ticket PM sends, add complexity and effort')
+      expect(text).toContain('Send BE and FE their tasks in parallel (inbox_send kind task), split by area')
+      expect(text).not.toContain('Plan the ticket in your own planning docs.')
+    }
   })
 
   test('BE plans in its own docs, commits only its own files, reports to TL and sizes alone with no TL', () => {

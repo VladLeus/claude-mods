@@ -796,6 +796,22 @@ describe('the GSD start steps of a role', () => {
       expect(/\b(write|edit|create) \.planning\//i.test(step)).toBe(false)
     }
   })
+
+  test('the core lead has no quick or phase path step and no Start or Verify kickoff line', () => {
+    const coreLead = GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true, isCoreLead: true })
+    const ctx = { title: 'Team Lead', roleId: 'tl', specPath: null }
+    const today = gsdKickoffText(ctx).split('\n')
+    const core = gsdKickoffText({ ...ctx, isCoreLead: true }).split('\n')
+    const isLeftOut = (line: string): boolean =>
+      line === ARTIFACT.gsdKickoffStart || line === ARTIFACT.gsdKickoffVerify
+
+    expect(coreLead).toEqual([ARTIFACT.gsdStepNewProject, ARTIFACT.gsdStepWorkstream, ARTIFACT.gsdStepMilestoneLead])
+    expect([Object.isFrozen(coreLead), isPrintable(coreLead)]).toEqual([true, true])
+    expect(lead).toEqual([...coreLead, ARTIFACT.gsdStepPath])
+    expect(GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true, isCoreLead: false })).toEqual(lead)
+    expect(today.filter(isLeftOut)).toEqual([ARTIFACT.gsdKickoffStart, ARTIFACT.gsdKickoffVerify])
+    expect(core).toEqual(today.filter(line => !isLeftOut(line)))
+  })
 })
 
 describe('GSD_ADAPTER.isInstalled', () => {
