@@ -11,15 +11,16 @@ import {
   driveDialogs,
   liveRepo,
   noteReply,
-  recordedProbe,
+  runProbe,
 } from '../lib/session.ts'
 import { rowEntry } from '../rows.ts'
 
 const EXPECTED_GRILL_SKILLS: readonly string[] = ['mattpocock-skills:grilling', 'mattpocock-skills:grill-me']
-const EXPECTED_DENIED = 'tdd'
+const BEST_EFFORT = 'best-effort'
+const CALL_DENIED_PREFIX = 'denied at call time (mattpocock-skills, '
 const INIT_COMMAND = '/cadre init'
 const PM = 'pm'
-const PROBE_NOTE = `with the role's per-skill denies in place`
+const SYNCED_SKILL = 'anthropic-skills:deep-research'
 const VIOLATED = 'violated'
 
 rowTest(rowEntry('03.2#30'), async ctx => {
@@ -43,7 +44,7 @@ rowTest(rowEntry('03.2#30'), async ctx => {
   })
   if (!isOpened) return
 
-  const probe = await recordedProbe(ctx, { ...copy, repo: epic.worktree }, PM, PROBE_NOTE)
+  const probe = await runProbe({ ...copy, repo: epic.worktree }, PM)
   noteReply(ctx, 'the probe of pm in the epic worktree', probe)
   const verdicts = probe.stdout.split('\n').map(line => line.trim()).filter(line => line.length > 0)
   for (const skill of EXPECTED_GRILL_SKILLS) {
@@ -52,8 +53,15 @@ rowTest(rowEntry('03.2#30'), async ctx => {
       assert.ok(isCallable, `no probe line that is not violated names ${skill}`)
     })
   }
-  await ctx.check(`the probe in the worktree shows ${EXPECTED_DENIED} denied`, () => {
-    const denied = verdicts.filter(line => line.includes(`:${EXPECTED_DENIED}`) && !line.startsWith(VIOLATED))
-    assert.ok(denied.length > 0, `no probe line that is not violated names the ${EXPECTED_DENIED} skill`)
+  await ctx.check('the probe of pm in the worktree exits 0', () => {
+    assert.equal(probe.code, 0, `the probe exited ${probe.code}`)
+  })
+  await ctx.check('the probe prints the call-denied summary line of mattpocock-skills', () => {
+    const isPrinted = verdicts.some(line => line.startsWith(BEST_EFFORT) && line.includes(CALL_DENIED_PREFIX))
+    assert.ok(isPrinted, `no ${BEST_EFFORT} probe line holds: ${CALL_DENIED_PREFIX}`)
+  })
+  await ctx.check(`no probe line names ${SYNCED_SKILL}`, () => {
+    const named = verdicts.filter(line => line.includes(SYNCED_SKILL))
+    assert.deepEqual(named, [], `probe lines name ${SYNCED_SKILL}: ${named.join(' | ')}`)
   })
 })

@@ -22,8 +22,14 @@ const EXPECTED_COUNTS = `${TAKE_NEW}: 0 lines added, ${ADDED_LINES} removed`
 const COUNTS_RE = /Take new: [0-9]+ lines? added, [0-9]+ removed/
 const DIFF_NUMBER_RE = new RegExp(`- ${ADDED_PREFIX} ([0-9]{3})`, 'g')
 const MORE_ABOVE_RE = /\+[0-9]+ more above/
+const MARKER = 'page {number} of {count}'
+const FIRST_MARKER_RE = new RegExp(MARKER.replace('{number}', '1').replace('{count}', '([0-9]+)'))
 const MAX_PAGES = 60
 const NAMED_LINES = 5
+
+function markerOf(page: number, count: number): string {
+  return MARKER.replace('{number}', String(page)).replace('{count}', String(count))
+}
 
 function addedLines(): string {
   return Array.from({ length: ADDED_LINES }, (_, at) => `${ADDED_PREFIX} ${String(at + 1).padStart(3, '0')}\n`)
@@ -64,6 +70,17 @@ rowTest(rowEntry('03.2#31'), async ctx => {
     const cut = 'the diff holds more than the hand-added lines, so the diff row cap may have cut the last of them'
     assert.equal(counts, EXPECTED_COUNTS, `page 1 shows ${counts}: ${cut}`)
   })
+  const scrollback = await capture(pane, { history: true })
+  const above = scrollback.slice(0, scrollback.length - dialogText(scrollback).length)
+  const printedAdded = `cadre: - ${ADDED_PREFIX}`
+  await ctx.check('no hand-added line is printed above the conflict question', () => {
+    assert.ok(!above.includes(printedAdded), `the history above the question holds ${printedAdded}`)
+  })
+  const countText = FIRST_MARKER_RE.exec(question)?.[1]
+  const count = countText === undefined ? null : Number(countText)
+  await ctx.check('page 1 shows its page marker', () => {
+    assert.ok(count !== null, `page 1 shows no ${MARKER.replace('{number}', '1')} marker`)
+  })
 
   const firstPageOf = new Map<string, number>()
   const repeated: string[] = []
@@ -103,6 +120,12 @@ rowTest(rowEntry('03.2#31'), async ctx => {
     await ctx.check(`page ${page} cuts no line`, () => {
       assert.ok(!MORE_ABOVE_RE.test(dialog), 'the page shows a +N more above line')
     })
+    if (count !== null) await ctx.check(`page ${page} ends with ${markerOf(page, count)}`, () => {
+      const marker = markerOf(page, count)
+      assert.ok(dialog.includes(marker), `the page does not show ${marker}`)
+      const isAfterDiff = dialog.lastIndexOf(marker) > dialog.lastIndexOf(`- ${ADDED_PREFIX} `)
+      assert.ok(isAfterDiff, `${marker} is not after the last diff line of the page`)
+    })
     if (isLast) break
     const shown = numbers.join(',')
     await answer(pane, NEXT_PAGE)
@@ -116,7 +139,10 @@ rowTest(rowEntry('03.2#31'), async ctx => {
     screen = await idleTui(pane)
   }
 
-  ctx.observe('conflictPages', pages, 'the pages walked by Next page; no marker is drawn on the TUI default')
+  ctx.observe('conflictPages', pages, 'the pages walked by Next page')
+  if (count !== null) await ctx.check('the walk takes as many pages as the marker counts', () => {
+    assert.equal(pages, count, `the walk took ${pages} pages, the marker counts ${count}`)
+  })
   await ctx.check('every hand-added line is on exactly one page', () => {
     const missing = Array.from({ length: ADDED_LINES }, (_, at) => String(at + 1).padStart(3, '0'))
       .filter(line => !firstPageOf.has(line))

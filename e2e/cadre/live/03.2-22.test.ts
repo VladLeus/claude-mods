@@ -19,7 +19,8 @@ const DECLINED_KEYS: readonly string[] = ['workflow.text_mode', 'hooks.context_w
 const REQUIRED_HUNKS: readonly string[] = [ACCEPTED_KEY, 'workflow.text_mode']
 const EXPECTED_NOT_RUN_LINE =
   'warning: the .planning/config.json change mode was not run by cadre: ' +
-  'run this yourself: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+  'run this yourself: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo' +
+  ', then /cadre regen; the GSD roles stay attended until then'
 
 function parseJson(text: string | null): unknown {
   if (text === null) return null
