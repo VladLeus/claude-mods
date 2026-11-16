@@ -226,15 +226,19 @@ function markdownNames(entries: readonly PortEntry[]): string[] {
 
 /**
  * A launch root `.claude` folder's listing, as the setup scan lists the repo's agents: only a folder whose real path is
- * inside the repo is listed, and one that links out or cannot be read adds a warning.
+ * inside the root or the main checkout is listed, so an epic worktree reads the links its mirror makes; one that links
+ * elsewhere or cannot be read adds a warning.
  */
 async function repoFolderEntries(
   io: InitIo,
   ctx: SetupContext,
+  main: string | null,
   path: string,
   warnings: string[],
 ): Promise<readonly PortEntry[]> {
-  if (!(await isInsideRepo(io, ctx, path, isDirInsideRoot, warnings))) return []
+  const isInside = (stat: unknown, root: string): boolean =>
+    isDirInsideRoot(stat, root) || (main !== null && isDirInsideRoot(stat, main))
+  if (!(await isInsideRepo(io, ctx, path, isInside, warnings))) return []
 
   return listFolder(io, ctx, path, warnings)
 }
@@ -459,9 +463,9 @@ export async function gatherLaunchUser(
     configDir: locations.configDir,
   }
   const repoWarnings: string[] = []
-  const skillEntries = await repoFolderEntries(io, ctx, `${locations.root}/.claude/skills`, repoWarnings)
-  const commandEntries = await repoFolderEntries(io, ctx, `${locations.root}/.claude/commands`, repoWarnings)
-  const agentEntries = await repoFolderEntries(io, ctx, `${locations.root}/.claude/agents`, repoWarnings)
+  const skillEntries = await repoFolderEntries(io, ctx, main, `${locations.root}/.claude/skills`, repoWarnings)
+  const commandEntries = await repoFolderEntries(io, ctx, main, `${locations.root}/.claude/commands`, repoWarnings)
+  const agentEntries = await repoFolderEntries(io, ctx, main, `${locations.root}/.claude/agents`, repoWarnings)
   const repoSkills = sortedUnique([...skillFolderNames(skillEntries), ...markdownNames(commandEntries)])
   const repoAgents = markdownNames(agentEntries)
   const user: LaunchUser = {
