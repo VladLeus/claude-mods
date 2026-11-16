@@ -346,9 +346,10 @@ function startFolderText(start: Exclude<LaunchStart, { readonly kind: 'git-root'
 /**
  * The notes of a launch start other than the git root, labelled none, in this order: the project settings of the git
  * root do not load; the start folder's `.claude/settings.json` loads, then for a dir start a warning naming the keys
- * of it cadre does not scan, and for a here start that its settings files are not write-protected and the plugins they
- * enable are not switched off (the folder is not known before launch); the git root is an additional directory; the
- * handoffs and GSD's .planning/ follow the start folder.
+ * of it cadre does not scan and, when no permission rule can hold its path, that its settings files and framework
+ * install folders are not write-protected, and for a here start that its settings files are not write-protected and
+ * the plugins they enable are not switched off (the folder is not known before launch); the git root is an additional
+ * directory; the handoffs and GSD's .planning/ follow the start folder.
  */
 function startRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
   const start = ctx.launchStart
@@ -360,6 +361,10 @@ function startRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
   const keys = start.kind === 'dir' ? (ctx.setup.startSettings?.keys ?? []) : []
   const keysRules =
     keys.length === 0 ? [] : [rule(fill(ARTIFACT.cardStartSettingsKeys, { folder, keys: keys.join(', ') }), 'none')]
+  const writableRules =
+    start.kind === 'dir' && !isSafeRoot(`${ctx.root ?? ''}/${start.path}`)
+      ? [rule(fill(ARTIFACT.cardStartSettingsWritable, { folder }), 'none')]
+      : []
   const hereRules =
     start.kind === 'here'
       ? [rule(ARTIFACT.cardHereSettingsWritable, 'none'), rule(ARTIFACT.cardHerePlugins, 'none')]
@@ -369,6 +374,7 @@ function startRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
     rule(fill(ARTIFACT.cardNoProjectSettings, { folder }), 'none'),
     rule(settings, 'none'),
     ...keysRules,
+    ...writableRules,
     ...hereRules,
     rule(fill(ARTIFACT.cardAdditionalDir, { folder }), 'none'),
     rule(fill(ARTIFACT.cardHandoffsFollow, { handoffs, folder }), 'none'),

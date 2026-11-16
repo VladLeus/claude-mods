@@ -859,6 +859,8 @@ export const EN = Object.freeze({
     'the hand-out record instructions.json has a path a permission rule cannot hold: it stays editable',
   'launch.deny.undeniedInboxWarning':
     'the inbox and session files have a path a permission rule cannot hold: they stay editable',
+  'launch.deny.undeniedStartFolderWarning': `the start folder {folder} has a path a permission rule cannot hold: ${
+    ''}its .claude settings files and framework install folders stay editable`,
   'launch.deny.pluginOffWarning':
     'plugin {plugin} is turned off for this role: cadre could not read its skill list from the installed plugin.json',
 

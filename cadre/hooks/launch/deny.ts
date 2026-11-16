@@ -152,6 +152,11 @@ export function undeniedMemoryWarning(file: string): string {
   return t('launch.deny.undeniedMemoryWarning', { file: shown(file) })
 }
 
+/** The warning for a dir start folder whose path no exact rule can hold: its launch files get no deny. */
+export function undeniedStartFolderWarning(folder: string): string {
+  return t('launch.deny.undeniedStartFolderWarning', { folder: shown(folder) })
+}
+
 /** The warning for a private instructions folder whose path no exact rule can hold (02-GAPS-B2 S3): it gets no deny. */
 export const UNDENIED_PRIVATE_WARNING = t('launch.deny.undeniedPrivateWarning')
 
@@ -229,30 +234,32 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
  * The deny of the files a later launch or session runs or trusts, `Edit(//...)` under every launch root: the two
  * `.claude` settings files and each framework's project install folders, of the root and of a dir start's folder,
  * `.cadre/bin/**`, `.cadre/manifest.json`, `.cadre/cadre.json` and the team's role.json files, so an Edit-only role
- * cannot plant a hook, rewrite a launcher or change the team. A path no exact rule can hold gets none and no warning:
- * runtimeDeny already warns about such a root.
+ * cannot plant a hook, rewrite a launcher or change the team. A root path no exact rule can hold gets none and no
+ * warning, since runtimeDeny already warns about such a root; a start folder no exact rule can hold gets none and one
+ * undeniedStartFolderWarning, however many launch roots there are.
  */
 function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
   const roots = sortedUnique(launchRoots(user))
   const ids = user.teamIds ?? [id]
   const runs = ADAPTERS.flatMap(adapter => adapter.projectInstall?.runs ?? [])
-  const rules = roots.flatMap(root => {
-    const settingsFolders = [root, ...(user.startDir === undefined ? [] : [`${root}/${user.startDir}`])]
+  const settingsRules = (folder: string): (string[] | null)[] => [
+    editRules(`${folder}/.claude/settings.json`, ''),
+    editRules(`${folder}/.claude/settings.local.json`, ''),
+    ...runs.map(dir => editRules(`${folder}/${dir}`, '/**')),
+  ]
+  const rootRules = roots.flatMap(root => [
+    ...settingsRules(root),
+    editRules(`${root}/.cadre/bin`, '/**'),
+    editRules(`${root}/.cadre/manifest.json`, ''),
+    editRules(`${root}/${cadreStatePath()}`, ''),
+    ...ids.map(teamId => editRules(`${root}/${roleJsonPath(teamId)}`, '')),
+  ])
+  const { startDir } = user
+  if (startDir === undefined) return { deny: rootRules.flatMap(rule => rule ?? []), warnings: [] }
+  const startFolderRules = roots.flatMap(root => settingsRules(`${root}/${startDir}`))
+  const deny = [...rootRules, ...startFolderRules].flatMap(rule => rule ?? [])
 
-    return [
-      ...settingsFolders.flatMap(folder => [
-        editRules(`${folder}/.claude/settings.json`, ''),
-        editRules(`${folder}/.claude/settings.local.json`, ''),
-        ...runs.map(dir => editRules(`${folder}/${dir}`, '/**')),
-      ]),
-      editRules(`${root}/.cadre/bin`, '/**'),
-      editRules(`${root}/.cadre/manifest.json`, ''),
-      editRules(`${root}/${cadreStatePath()}`, ''),
-      ...ids.map(teamId => editRules(`${root}/${roleJsonPath(teamId)}`, '')),
-    ]
-  })
-
-  return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
+  return { deny, warnings: startFolderRules.includes(null) ? [undeniedStartFolderWarning(startDir)] : [] }
 }
 
 /**

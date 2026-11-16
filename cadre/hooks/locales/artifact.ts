@@ -174,6 +174,9 @@ export const ARTIFACT = Object.freeze({
     'plugins that .claude/settings.json of the folder the launcher is run from enables are not switched off',
   cardStartSettingsKeys: `WARNING: {folder}/.claude/settings.json sets {keys}, which cadre does not scan; ${
     ''}the folder's own .claude/skills, .claude/agents and .claude/commands also load unscanned`,
+  cardStartSettingsWritable: `{folder}/.claude/settings.json, settings.local.json and its framework install folders ${
+    ''}are not write-protected: no permission rule can hold the path, so a role that can edit there can change what ${
+    ''}the next launch loads`,
   cardAdditionalDir: 'Additional directory: <git root> (start folder is {folder})',
   cardHandoffsFollow: 'Handoffs ({handoffs}) and GSD .planning/ follow the start folder ({folder})',
   cardRouteStrict: 'MCP route: strict (--strict-mcp-config)',
