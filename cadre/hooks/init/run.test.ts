@@ -5137,6 +5137,45 @@ describe('init apply hunks (D-120)', () => {
     },
   )
 
+  test('after a GSD install that does not land, a found GSD still gives the wait line and row', async () => {
+    const facts: Facts = {
+      ...EMPTY_FACTS,
+      repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }],
+      gsd: [UNPROVEN],
+    }
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+    const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+    const partialCopy: GsdFact = { ...UNPROVEN, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    const cases: readonly (readonly [string, readonly GsdFact[]])[] = [
+      ['facts unchanged', []],
+      ['a partial repo copy', [partialCopy]],
+    ]
+    for (const [name, added] of cases) {
+      const host = memHost(hostWorld({}))
+      const isInstalled = (): boolean => host.calls.some(call => call.argv.join(' ') === install.join(' '))
+      const run = memIo(modeWorld({ facts: { facts, gsdUserDir: '/home/u/.claude/gsd-core' } }), answers)
+      const io: InitIo = {
+        ...run.io,
+        facts: async locations => {
+          const read = await run.io.facts(locations)
+          if (!isInstalled()) return read
+
+          return { ...read, facts: { ...read.facts, gsd: [...read.facts.gsd, ...added] } }
+        },
+      }
+      const reply = await runInit(io, { dryRun: false, host: host.io })
+      const lines = reply.split('\n')
+      const at = lines.indexOf(GSD_FALLBACK_DEFAULT)
+      expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+      expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+      expect([name, at > 0, lines.slice(at, at + 2)]).toEqual([name, true, [GSD_FALLBACK_DEFAULT, MODE_WAITS]])
+      expect(reply).not.toContain(REQUIRED_NEXT_STEP)
+      expect(reply).not.toContain('node .claude/gsd-core')
+      expect(reply).not.toContain('node ~/.claude/gsd-core')
+      expect(runRows(lines)).toEqual([`run: ${GSD_WAIT_COMMAND}`])
+    }
+  })
+
   test('with GSD in use but not installed and its install declined, the accepted hunks wait for GSD', async () => {
     const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
     const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
@@ -7524,6 +7563,21 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
     const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
     const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const ops = result.kind === 'accepted' ? result.value.planned.plan.ops : []
+    const waits = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [waits]])
+    expect(ops.flatMap(op => (op.kind === 'hunk' ? [op.command] : []))).toEqual([GSD_WAIT_COMMAND])
+  })
+
+  test('a hunk after a GSD install that does not land, with a found user-level GSD, waits for GSD', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning], gsd: [UNPROVEN] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: '/home/u/.claude/gsd-core' } }))
     const roles = [withFramework(BE, 'gsd'), PM]
     const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
     const { host, result } = await appliedIn(world, await reframedOf(world, draft))

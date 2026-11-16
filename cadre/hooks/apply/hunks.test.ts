@@ -172,14 +172,14 @@ describe('hunk runs (D-106)', () => {
     const unknownGsd: GsdFact = { ...REPO_GSD, identity: 'unknown' }
     const unknownCopy: InitFacts = { ...REPO_COPY, facts: { ...EMPTY_FACTS, gsd: [unknownGsd] } }
 
-    expect(hunkNotRunLines([repoMode], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([line])
-    expect(hunkNotRunLines([hostile], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([line])
-    expect(hunkNotRunLines([repoMode, repoMode], emptySetupScan(), unknownCopy, SHOWN)).toEqual([line, line])
+    expect(hunkNotRunLines([repoMode], emptySetupScan(), REPO_COPY, SHOWN, [])).toEqual([line])
+    expect(hunkNotRunLines([hostile], emptySetupScan(), REPO_COPY, SHOWN, [])).toEqual([line])
+    expect(hunkNotRunLines([repoMode, repoMode], emptySetupScan(), unknownCopy, SHOWN, [])).toEqual([line, line])
   })
 
   test('hunkNotRunLines gives no line for no hunk', () => {
-    expect(hunkNotRunLines([], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([])
-    expect(hunkNotRunLines([], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([])
+    expect(hunkNotRunLines([], emptySetupScan(), NONE_KNOWN, SHOWN, [])).toEqual([])
+    expect(hunkNotRunLines([], emptySetupScan(), REPO_COPY, SHOWN, [])).toEqual([])
   })
 
   test('with no GSD known after the installs the accepted hunks wait for it in one line, keys cleaned', () => {
@@ -189,15 +189,15 @@ describe('hunk runs (D-106)', () => {
       'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: ' +
       'mode, workflow.text_mode'
 
-    expect(hunkNotRunLines([MODE_HUNK, textMode], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([line])
-    expect(hunkNotRunLines([MODE_HUNK, hostile], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([line])
+    expect(hunkNotRunLines([MODE_HUNK, textMode], emptySetupScan(), NONE_KNOWN, SHOWN, [])).toEqual([line])
+    expect(hunkNotRunLines([MODE_HUNK, hostile], emptySetupScan(), NONE_KNOWN, SHOWN, [])).toEqual([line])
   })
 
   test('with no repo copy an unproven user-level GSD shows its ~/ command; a hunk no adapter offers its own', () => {
     const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
     const unoffered: HunkOp = { ...repoMode, key: 'workflow.unknown', command: 'node .claude/x config-set unknown on' }
 
-    expect(hunkNotRunLines([repoMode, unoffered], emptySetupScan(), UNPROVEN_USER, SHOWN)).toEqual([
+    expect(hunkNotRunLines([repoMode, unoffered], emptySetupScan(), UNPROVEN_USER, SHOWN, [])).toEqual([
       'the .planning/config.json change mode was not run by cadre: run this yourself: ' +
         `node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo${NEXT_STEP}`,
       'the .planning/config.json change workflow.unknown was not run by cadre: run this yourself: ' +
@@ -213,8 +213,8 @@ describe('hunk runs (D-106)', () => {
     const repoWarnings: HunkOp = { ...WARNINGS_HUNK, command: repoCommand }
     const change = 'the .planning/config.json change hooks.context_warnings was not run by cadre: run this yourself: '
 
-    expect(hunkNotRunLines([repoWarnings], statusline, REPO_COPY, SHOWN)).toEqual([`${change}${repoCommand}`])
-    expect(hunkNotRunLines([repoWarnings], statusline, UNPROVEN_USER, SHOWN)).toEqual([
+    expect(hunkNotRunLines([repoWarnings], statusline, REPO_COPY, SHOWN, [])).toEqual([`${change}${repoCommand}`])
+    expect(hunkNotRunLines([repoWarnings], statusline, UNPROVEN_USER, SHOWN, [])).toEqual([
       `${change}${GSD_TOOLS} config-set hooks.context_warnings false`,
     ])
   })
@@ -224,17 +224,17 @@ describe('hunksShown: the hunks as the post-apply plan shows them', () => {
   const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
 
   test('with a repo copy an accepted hunk not run keeps its own command', () => {
-    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([repoMode])
+    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), REPO_COPY, SHOWN, [])).toEqual([repoMode])
   })
 
   test('with no repo copy an unproven user-level GSD gives the ~/ command', () => {
-    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), UNPROVEN_USER, SHOWN)).toEqual([
+    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), UNPROVEN_USER, SHOWN, [])).toEqual([
       { ...repoMode, command: `${GSD_TOOLS} config-set mode yolo` },
     ])
   })
 
   test('with no GSD known an accepted hunk not run shows the wait text', () => {
-    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([
+    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), NONE_KNOWN, SHOWN, [])).toEqual([
       { ...repoMode, command: GSD_WAIT },
     ])
   })
@@ -243,14 +243,14 @@ describe('hunksShown: the hunks as the post-apply plan shows them', () => {
     const failed: HunkOp = { ...WARNINGS_HUNK, isRunnable: false }
     const declined: HunkOp = { ...repoMode, key: 'workflow.text_mode', isAccepted: false }
     const waiting: HunkOp = { ...repoMode, key: 'workflow.unknown' }
-    const shown = hunksShown([MODE_HUNK, failed, declined, waiting], [waiting], emptySetupScan(), NONE_KNOWN, SHOWN)
+    const shown = hunksShown([MODE_HUNK, failed, declined, waiting], [waiting], emptySetupScan(), NONE_KNOWN, SHOWN, [])
 
     expect(shown).toEqual([MODE_HUNK, failed, declined, { ...waiting, command: GSD_WAIT }])
   })
 
   test('the hunks given and their array are not changed', () => {
     const hunks = [repoMode]
-    const shown = hunksShown(hunks, hunks, emptySetupScan(), NONE_KNOWN, SHOWN)
+    const shown = hunksShown(hunks, hunks, emptySetupScan(), NONE_KNOWN, SHOWN, [])
 
     expect([shown === hunks, hunks.length, hunks[0] === repoMode, repoMode.command]).toEqual([
       false,
@@ -259,5 +259,33 @@ describe('hunksShown: the hunks as the post-apply plan shows them', () => {
       REPO_MODE,
     ])
     expect(shown[0]?.command).toBe(GSD_WAIT)
+  })
+})
+
+describe('a failed GSD install: the not-installed line and the wait row', () => {
+  const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
+
+  test('every GSD known gives the not-installed line and the wait row', () => {
+    const unknownGsd: GsdFact = { ...REPO_GSD, identity: 'unknown' }
+    const unknownCopy: InitFacts = { ...REPO_COPY, facts: { ...EMPTY_FACTS, gsd: [unknownGsd] } }
+    const line = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+
+    for (const after of [REPO_COPY, unknownCopy, UNPROVEN_USER]) {
+      expect(hunkNotRunLines([repoMode], emptySetupScan(), after, SHOWN, ['gsd'])).toEqual([line])
+      expect(hunksShown([repoMode], [repoMode], emptySetupScan(), after, SHOWN, ['gsd'])).toEqual([
+        { ...repoMode, command: GSD_WAIT },
+      ])
+    }
+  })
+
+  test('a failed install of another framework changes no line and no row', () => {
+    for (const after of [REPO_COPY, NONE_KNOWN, UNPROVEN_USER]) {
+      expect(hunkNotRunLines([repoMode], emptySetupScan(), after, SHOWN, ['superpowers'])).toEqual(
+        hunkNotRunLines([repoMode], emptySetupScan(), after, SHOWN, []),
+      )
+      expect(hunksShown([repoMode], [repoMode], emptySetupScan(), after, SHOWN, ['superpowers'])).toEqual(
+        hunksShown([repoMode], [repoMode], emptySetupScan(), after, SHOWN, []),
+      )
+    }
   })
 })
