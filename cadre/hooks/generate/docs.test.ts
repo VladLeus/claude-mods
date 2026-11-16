@@ -327,6 +327,20 @@ const CORE_WORKER_REPORT =
   'Report each task to TL when it is done (to PM in a team without TL), then wait for the next; report a task whose ' +
   'checks did not run as partial, never as complete.'
 
+/** The core PM's How you work lines, spelled out so the specs pin their words. */
+const CORE_PM_INTRO =
+  'As PM you fetch the work, grill the user, brief TL, feed it the tickets and accept the reports; you do not plan, ' +
+  'build or verify code.'
+const CORE_PM_FETCH = 'Fetch: get the epic and its tickets with your tracker MCP.'
+const CORE_PM_GRILL = 'Grill: grill the user on the epic and every ticket, as the Hierarchy section says.'
+const CORE_PM_BRIEF =
+  'Brief: send TL the brief with the planning mode the user confirmed (your roles in a team without TL).'
+const CORE_PM_FEED = 'Feed: send TL one ticket at a time with its key, your scope and risk scores and the report form.'
+const CORE_PM_ACCEPT = "Accept: check each report against the ticket's acceptance criteria, then feed the next ticket."
+
+/** What the built-in framework's kickoff tells a role and the core PM's How you work leaves out. */
+const BUILD_LOOP_WORDS: readonly string[] = ['plan.md', 'test and lint', 'do not ask the human', 'ExitPlanMode']
+
 /** The lines of a document that start a section. */
 function headings(text: string): string[] {
   return text.split('\n').filter(line => line.startsWith('## '))
@@ -647,6 +661,47 @@ describe('role documents', () => {
         expect(parseCadreState(text)).toEqual({ ...state, launchStart, readUserMcp })
       }
     }
+  })
+})
+
+describe("the core PM's How you work", () => {
+  const howYouWork = (text: string): string[] => sectionLines(text, '## How you work')
+
+  test('a core PM works by fetch, grill, brief, feed and accept, with no build loop and no ask gate', () => {
+    const pms = [templateRole('pm'), templateRole('pm', { id: 'product', title: 'Product' })]
+
+    for (const framework of FRAMEWORKS) {
+      for (const pm of pms) {
+        const section = howYouWork(roleMdText(pm, scopeOf(pm, framework, TEMPLATE_ROLES), CORE_TEAM))
+
+        expect(section).toEqual([
+          '## How you work',
+          '',
+          CORE_PM_INTRO,
+          CORE_PM_FETCH,
+          CORE_PM_GRILL,
+          CORE_PM_BRIEF,
+          CORE_PM_FEED,
+          CORE_PM_ACCEPT,
+          '',
+        ])
+        expect(BUILD_LOOP_WORDS.filter(words => section.join('\n').includes(words))).toEqual([])
+      }
+    }
+  })
+
+  test('a PM of a custom or unrecorded team keeps the kickoff text of its framework', () => {
+    const pm = templateRole('pm')
+
+    for (const framework of FRAMEWORKS) {
+      const text = roleMdText(pm, scopeOf(pm, framework, TEMPLATE_ROLES))
+      const kickoff = ADAPTER_OF[framework].kickoffText({ title: 'PM', roleId: 'pm', specPath: null })
+
+      expect(text).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
+    }
+    const builtin = howYouWork(roleMdText(pm, scopeOf(pm, 'none', TEMPLATE_ROLES))).join('\n')
+
+    expect(BUILD_LOOP_WORDS.filter(words => builtin.includes(words))).toEqual(BUILD_LOOP_WORDS)
   })
 })
 

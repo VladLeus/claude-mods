@@ -248,24 +248,47 @@ describe('desiredFiles', () => {
     expect(index.split('\n').filter(line => line.includes('| .cadre/bin/'))).toHaveLength(TEMPLATE_ROLES.length)
   })
 
-  test('a custom record changes no generated text, and a core record changes only the ROLE.md texts', () => {
+  test(
+    "a custom record changes no generated text, and a core record changes only the ROLE.md texts and PM's kickoff",
+    () => {
+      const input = inputOf(TEMPLATE_ROLES, 'gsd')
+      const core: CadreState = { ...input.state, structure: 'core' }
+      const team = { isCore: isCoreTeam(core), roles: TEMPLATE_ROLES }
+      const filesOf = (state: CadreState): DesiredFile[] =>
+        desiredFiles({ ...input, state }).filter(file => file.path !== '.cadre/cadre.json')
+      const notCoreText = (files: readonly DesiredFile[]): DesiredFile[] =>
+        files.filter(file => !file.path.endsWith('/ROLE.md') && file.path !== '.cadre/pm/kickoff.txt')
+      const unrecorded = filesOf(input.state)
+      const coreFiles = filesOf(core)
+
+      expect(filesOf({ ...input.state, structure: 'custom' })).toEqual(unrecorded)
+      expect(notCoreText(coreFiles)).toEqual(notCoreText(unrecorded))
+      expect(contentOf(coreFiles, '.cadre/tl/ROLE.md')).not.toBe(contentOf(unrecorded, '.cadre/tl/ROLE.md'))
+      for (const role of TEMPLATE_ROLES) {
+        const scope = scopeOf(role, 'gsd', TEMPLATE_ROLES)
+
+        expect(contentOf(coreFiles, `.cadre/${role.id}/ROLE.md`)).toBe(roleMdText(role, scope, team))
+      }
+    },
+  )
+
+  test('desiredFiles gives the core PM block and start only for a recorded core structure', () => {
     const input = inputOf(TEMPLATE_ROLES, 'gsd')
+    const pm = templateRole('pm')
+    const pmFile = (state: CadreState, name: string): string =>
+      contentOf(desiredFiles({ ...input, state }), `.cadre/pm/${name}`) ?? ''
     const core: CadreState = { ...input.state, structure: 'core' }
-    const team = { isCore: isCoreTeam(core), roles: TEMPLATE_ROLES }
-    const filesOf = (state: CadreState): DesiredFile[] =>
-      desiredFiles({ ...input, state }).filter(file => file.path !== '.cadre/cadre.json')
-    const notRoleMd = (files: readonly DesiredFile[]): DesiredFile[] =>
-      files.filter(file => !file.path.endsWith('/ROLE.md'))
-    const unrecorded = filesOf(input.state)
-    const coreFiles = filesOf(core)
+    const others: readonly CadreState[] = [input.state, { ...input.state, structure: 'custom' }]
+    const intro = 'As PM you fetch the work, grill the user, brief TL, feed it the tickets and accept the reports'
+    const start = 'start with the How you work steps of your ROLE.md.'
 
-    expect(filesOf({ ...input.state, structure: 'custom' })).toEqual(unrecorded)
-    expect(notRoleMd(coreFiles)).toEqual(notRoleMd(unrecorded))
-    expect(contentOf(coreFiles, '.cadre/tl/ROLE.md')).not.toBe(contentOf(unrecorded, '.cadre/tl/ROLE.md'))
-    for (const role of TEMPLATE_ROLES) {
-      const scope = scopeOf(role, 'gsd', TEMPLATE_ROLES)
-
-      expect(contentOf(coreFiles, `.cadre/${role.id}/ROLE.md`)).toBe(roleMdText(role, scope, team))
+    expect(pmFile(core, 'ROLE.md')).toContain(`## How you work\n\n${intro}`)
+    expect(pmFile(core, 'kickoff.txt')).toBe(kickoffText(pm, 'gsd', true))
+    expect(pmFile(core, 'kickoff.txt')).toContain(start)
+    for (const state of others) {
+      expect(pmFile(state, 'ROLE.md')).not.toContain(intro)
+      expect(pmFile(state, 'kickoff.txt')).toBe(kickoffText(pm, 'gsd'))
+      expect(pmFile(state, 'kickoff.txt')).toContain('start with /gsd-autonomous.')
     }
   })
 })

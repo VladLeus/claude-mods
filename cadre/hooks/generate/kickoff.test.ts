@@ -187,6 +187,24 @@ describe('kickoff', () => {
     )
   })
 
+  test('the core PM starts with its How you work steps', () => {
+    const start = 'then start with the How you work steps of your ROLE.md.'
+    const product = templateRole('pm', { id: 'product', title: 'Product' })
+
+    expect(kickoffText(templateRole('pm'), 'gsd', true)).toBe(
+      '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md, ' +
+        `read your inbox with inbox_read, ${start} ${IDLE_WAIT} ${LOAD_TOOLS}" --ask-user\n`,
+    )
+    for (const framework of FRAMEWORKS) {
+      expect(kickoffText(product, framework, true)).toContain(
+        `Read .cadre/product/ROLE.md, read your inbox with inbox_read, ${start}`,
+      )
+      expect(kickoffText(templateRole('tl'), framework, true)).not.toContain(start)
+      expect(kickoffText(templateRole('pm'), framework)).not.toContain(start)
+    }
+    expect(kickoffText(templateRole('pm'), 'none')).toContain('then start with the plan in .cadre/pm/.runtime/plan.md.')
+  })
+
   test('the kickoff of the BE has no --ask-user', () => {
     expect(kickoffText(templateRole('be'), 'superpowers')).toBe(
       '/autopilot 4h 65 "You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, ' +
