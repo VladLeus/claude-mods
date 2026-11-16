@@ -62,8 +62,17 @@ const REPO_COPY: InitFacts = { facts: { ...EMPTY_FACTS, gsd: [REPO_GSD] }, gsdUs
 /** The facts after the installs with no GSD known. */
 const NONE_KNOWN: InitFacts = { facts: EMPTY_FACTS, gsdUserDir: null }
 
+/** The facts after the installs with no repo copy and a user-level GSD found but not proven. */
+const UNPROVEN_USER: InitFacts = {
+  facts: { ...EMPTY_FACTS, gsd: [{ ...PROVEN_USER_GSD, identity: 'unknown' }] },
+  gsdUserDir: '/home/u/.claude/gsd-core',
+}
+
 /** The `mode` command as the plan shows it with no proven user-level GSD: the repo-local copy. */
 const REPO_MODE = 'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+
+/** What the not-run line of a required hunk ends with: the next step once the person ran its command. */
+const NEXT_STEP = ', then /cadre regen; the GSD roles stay attended until then'
 
 describe('hunk runs (D-106)', () => {
   test('hunkProposal finds the proposal an adapter offers for this setup by the hunk file and key; else null', () => {
@@ -147,7 +156,8 @@ describe('hunk runs (D-106)', () => {
   test('with a repo copy hunkNotRunLines names the file, the key and its own command per hunk, each cleaned', () => {
     const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
     const hostile: HunkOp = { ...repoMode, key: `mo${BIDI_OVERRIDE}\nde` }
-    const line = `the .planning/config.json change mode was not run by cadre: run this yourself: ${REPO_MODE}`
+    const line =
+      `the .planning/config.json change mode was not run by cadre: run this yourself: ${REPO_MODE}${NEXT_STEP}`
     const unknownGsd: GsdFact = { ...REPO_GSD, identity: 'unknown' }
     const unknownCopy: InitFacts = { ...REPO_COPY, facts: { ...EMPTY_FACTS, gsd: [unknownGsd] } }
 
@@ -173,18 +183,28 @@ describe('hunk runs (D-106)', () => {
   })
 
   test('with no repo copy an unproven user-level GSD shows its ~/ command; a hunk no adapter offers its own', () => {
-    const unproven: InitFacts = {
-      facts: { ...EMPTY_FACTS, gsd: [{ ...PROVEN_USER_GSD, identity: 'unknown' }] },
-      gsdUserDir: '/home/u/.claude/gsd-core',
-    }
     const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
     const unoffered: HunkOp = { ...repoMode, key: 'workflow.unknown', command: 'node .claude/x config-set unknown on' }
 
-    expect(hunkNotRunLines([repoMode, unoffered], emptySetupScan(), unproven, SHOWN)).toEqual([
+    expect(hunkNotRunLines([repoMode, unoffered], emptySetupScan(), UNPROVEN_USER, SHOWN)).toEqual([
       'the .planning/config.json change mode was not run by cadre: run this yourself: ' +
-        'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
+        `node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo${NEXT_STEP}`,
       'the .planning/config.json change workflow.unknown was not run by cadre: run this yourself: ' +
-        'node .claude/x config-set unknown on',
+        `node .claude/x config-set unknown on${NEXT_STEP}`,
+    ])
+  })
+
+  test('an optional hunk not run keeps the line with its command alone, for the repo copy and the ~/ command', () => {
+    const statusline = emptySetupScan({
+      carry: { autoCompactWindow: null, hasStatusLine: true, isGsdStatusline: true, envNames: [] },
+    })
+    const repoCommand = 'node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false'
+    const repoWarnings: HunkOp = { ...WARNINGS_HUNK, command: repoCommand }
+    const change = 'the .planning/config.json change hooks.context_warnings was not run by cadre: run this yourself: '
+
+    expect(hunkNotRunLines([repoWarnings], statusline, REPO_COPY, SHOWN)).toEqual([`${change}${repoCommand}`])
+    expect(hunkNotRunLines([repoWarnings], statusline, UNPROVEN_USER, SHOWN)).toEqual([
+      `${change}${GSD_TOOLS} config-set hooks.context_warnings false`,
     ])
   })
 })

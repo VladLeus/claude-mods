@@ -4962,14 +4962,18 @@ const MODE_DISPLAY = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode 
 /** The line apply prints when the `mode` hunk failed (D-106). */
 const MODE_FAILED = `warning: the .planning/config.json change mode failed: run it yourself: ${MODE_DISPLAY}`
 
+/** What the not-run line of a required hunk ends with: the next step once the person ran its command. */
+const REQUIRED_NEXT_STEP = ', then /cadre regen; the GSD roles stay attended until then'
+
 /** The line apply prints for the accepted `mode` hunk it did not run, as a repo-local GSD gives its command. */
 const MODE_NOT_RUN =
   'warning: the .planning/config.json change mode was not run by cadre: run this yourself: ' +
-  'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+  `node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo${REQUIRED_NEXT_STEP}`
 
 /** The line apply prints for the accepted `mode` hunk it did not run, as an unproven user-level GSD shows it. */
 const MODE_NOT_RUN_USER =
-  `warning: the .planning/config.json change mode was not run by cadre: run this yourself: ${MODE_DISPLAY}`
+  'warning: the .planning/config.json change mode was not run by cadre: run this yourself: ' +
+  `${MODE_DISPLAY}${REQUIRED_NEXT_STEP}`
 
 /** The line apply prints for the accepted `mode` hunk when no GSD is known for the repo after the installs. */
 const MODE_WAITS =
@@ -7535,7 +7539,9 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const result = await reframeApplied(io, host.io, reframed)
     const outcome = result.kind === 'accepted' ? result.value.outcome : null
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
-    const line = `the .planning/config.json change mode was not run by cadre: run this yourself: ${hunk.command}`
+    const line =
+      `the .planning/config.json change mode was not run by cadre: run this yourself: ${hunk.command}` +
+      REQUIRED_NEXT_STEP
     expect([outcome?.installed, outcome?.installProblems]).toEqual([[projectInstallOf('gsd')?.id], []])
     expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [line]])
   })
