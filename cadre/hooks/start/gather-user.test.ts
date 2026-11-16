@@ -95,8 +95,11 @@ function gitRule(result: HostRun | null): HostRunRule {
 /** The git run of the fixture repo: git answers /repo/.git, with its line break. */
 const GIT_OK = gitRule({ exitCode: 0, stdout: '/repo/.git\n', stderr: '' })
 
-/** The argv that lists the env files git tracks at /repo, NUL-ended. */
-const TRACKED_ENV = ['git', '-C', '/repo', 'ls-files', '-z', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+/** The argv that lists the env files git tracks at /repo, NUL-ended, with their mode and stage. */
+const TRACKED_ENV = ['git', '-C', '/repo', 'ls-files', '-z', '-s', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+
+/** git's `ls-files -z -s` entry of the tracked regular file .env.test. */
+const ENV_TEST_ENTRY = '100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0\t.env.test\0'
 
 /** The run of the tracked env files as the host is asked for it: no cwd, as the argv names the root. */
 const TRACKED_ENV_CALL = { argv: TRACKED_ENV, options: { timeoutMs: GIT_TIMEOUT_MS } }
@@ -838,7 +841,7 @@ describe('the skills and agents the launch root provides', () => {
 
 describe('the env files git tracks, for a role that runs the repo checks', () => {
   test('a BE launch lists them at the root once and carries what git gave', async () => {
-    const tracked = trackedEnvRule({ exitCode: 0, stdout: '.env.test\0', stderr: '' })
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: ENV_TEST_ENTRY, stderr: '' })
     const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked])
 
     expect(userOf(read).trackedEnvFiles).toEqual(['.env.test'])
@@ -846,7 +849,7 @@ describe('the env files git tracks, for a role that runs the repo checks', () =>
   })
 
   test('a PM or TL launch makes no such run and has no field', async () => {
-    const tracked = trackedEnvRule({ exitCode: 0, stdout: '.env.test\0', stderr: '' })
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: ENV_TEST_ENTRY, stderr: '' })
     for (const role of [templateRole('pm'), templateRole('tl')]) {
       const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked], DEFAULT_LOCATIONS, GIT_ROOT, [], role)
 
