@@ -466,7 +466,8 @@ describe('launch start card (D-122)', () => {
 
     expect(card.rules.slice(-7, -1)).toEqual(hereNotes())
     expect(card.rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
-    expect(card.hooks.loadedByProject).toEqual([])
+    expect(card.hooks.loadedByProject).toBeNull()
+    expect(scopeCardLines(card)).toContain('  hooks loaded by project settings: unknown')
   })
 
   test('a git-root start has no start note and lists the project hook scripts as loaded by project settings', () => {
