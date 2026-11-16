@@ -295,6 +295,38 @@ const CORE_TL_BRIEF =
   'their reasons, the areas at risk, what is out of scope, the report form and what must be proven. Leave out ' +
   'method signatures, spec bodies and commands.'
 
+/** The core TL's trust, failed-report, routing, wait and report lines, spelled out so the specs pin their words. */
+const CORE_TL_TRUST =
+  "Trust the implementer's report: read the diff for architecture and scope fit, and do not re-run the checks it " +
+  'lists as run.'
+const CORE_TL_FAILED =
+  "On a failed or partial report, decide on the implementer's proposed answer; dig deeper only when that answer " +
+  'does not hold.'
+const CORE_TL_QA =
+  'Once the implementer reports, send QA a verify task (inbox_send kind task): QA runs the specs and checks and ' +
+  'reports.'
+const CORE_TL_SECURITY =
+  "When the ticket's risk is at or over sizing.threshold, or it touches auth, payments, secrets or migrations, send " +
+  'Security a review task with the diff and the vector.'
+const CORE_TL_WAIT =
+  'Wait for a report with wait_for reason session-answer and a timeout, and for your own subagents with reason ' +
+  'subagent-result and a timeout; with nothing to wait for, use reason idle-inbox and no timeout.'
+const CORE_TL_REPORT =
+  "Wait for the implementer's report and the QA and Security reports you asked for, then report to PM in the form " +
+  'PM asked (by default: outcome, changes, verification, the vector with its reason, the framework used, the doc ' +
+  'paths and the open questions) and wait for the next ticket.'
+
+/** A core worker's plan, blocker and report lines, spelled out so the specs pin their words. */
+const CORE_WORKER_PLAN =
+  "Plan each task yourself from TL's brief (the brief is not a plan), do it, and run the repo's specs, lint and " +
+  'checks with the commands you know.'
+const CORE_WORKER_BLOCKED =
+  'When a check fails or cannot run (a service is down, the environment blocks it), study it and send TL a question ' +
+  'at once with your analysis and a proposed answer (PM in a team without TL); do not hold it to the end of the task.'
+const CORE_WORKER_REPORT =
+  'Report each task to TL when it is done (to PM in a team without TL), then wait for the next; report a task whose ' +
+  'checks did not run as partial, never as complete.'
+
 /** The lines of a document that start a section. */
 function headings(text: string): string[] {
   return text.split('\n').filter(line => line.startsWith('## '))
@@ -806,26 +838,82 @@ describe('the Hierarchy section of ROLE.md', () => {
         CORE_TL_FED,
         CORE_TL_BRIEF,
         ARTIFACT.roleMdTlTasks,
-        ARTIFACT.roleMdTlReport,
+        CORE_TL_TRUST,
+        CORE_TL_FAILED,
+        CORE_TL_QA,
+        CORE_TL_SECURITY,
+        CORE_TL_WAIT,
+        CORE_TL_REPORT,
       ])
       expect(text).toContain('Your ticket loop as TL: on each ticket PM sends, add complexity and effort')
       expect(text).toContain('Send BE and FE their tasks in parallel (inbox_send kind task), split by area')
       expect(text).not.toContain('Plan the ticket in your own planning docs.')
+      expect(text).not.toContain('Wait for every report, then report to PM')
     }
   })
 
-  test('BE plans in its own docs, commits only its own files, reports to TL and sizes alone with no TL', () => {
-    const text = hierarchyOf(templateRole('be'), 'gsd')
+  test('a core team without QA or Security has no QA or Security line for TL', () => {
+    const tl = templateRole('tl')
+    const without = (...ids: readonly string[]): RoleSpec[] => TEMPLATE_ROLES.filter(role => !ids.includes(role.id))
+    const cases: readonly [readonly RoleSpec[], readonly string[]][] = [
+      [without('qa'), [CORE_TL_SECURITY]],
+      [without('security'), [CORE_TL_QA]],
+      [without('qa', 'security'), []],
+    ]
 
-    expect(text).toContain('Plan and execute each task in your own planning docs.')
-    expect(text).toContain('Commit only your own files on the epic branch: git add <paths>, never git add -A.')
-    expect(text).toContain('When git reports an index lock, wait and retry')
-    expect(text).toContain('never rebase or reset the shared branch')
-    expect(text).toContain('Report each task to TL when it is done')
-    expect(text).toContain('A technical question goes to your parent role and TL decides it')
-    expect(text).toContain('In a team without TL, PM sends you the ticket: add complexity and effort')
-    expect(text).toContain('take the no-TL step of Planning docs when it has one')
+    for (const [roles, routes] of cases) {
+      const text = roleMdText(tl, scopeOf(tl, 'gsd', roles), { isCore: true, roles })
+      const lines = sectionLines(text, '## Hierarchy')
+
+      expect(lines.slice(lines.indexOf(ARTIFACT.roleMdTlLoop), -1)).toEqual([
+        ARTIFACT.roleMdTlLoop,
+        CORE_TL_FED,
+        CORE_TL_BRIEF,
+        ARTIFACT.roleMdTlTasks,
+        CORE_TL_TRUST,
+        CORE_TL_FAILED,
+        ...routes,
+        CORE_TL_WAIT,
+        CORE_TL_REPORT,
+      ])
+    }
   })
+
+  test('a core worker plans from the brief, runs the checks, raises a blocker at once and reports partial', () => {
+    const workers = TEMPLATE_ROLES.filter(role => ['be', 'fe', 'qa', 'security'].includes(role.id))
+
+    expect(workers.map(role => role.id)).toEqual(['be', 'fe', 'qa', 'security'])
+    for (const worker of workers) {
+      const lines = hierarchyOf(worker, 'gsd', CORE_TEAM).split('\n')
+
+      expect(lines.slice(lines.indexOf(CORE_WORKER_PLAN), -1)).toEqual([
+        CORE_WORKER_PLAN,
+        ARTIFACT.roleMdWorkerCommit,
+        CORE_WORKER_BLOCKED,
+        CORE_WORKER_REPORT,
+        ARTIFACT.roleMdWorkerNoTl,
+      ])
+      expect(lines).not.toContain(ARTIFACT.roleMdWorkerTask)
+      expect(lines).not.toContain(ARTIFACT.roleMdWorkerReport)
+    }
+  })
+
+  test(
+    'BE plans in its own docs, commits only its own files, reports to TL and sizes alone with no TL ' +
+      '(custom or unrecorded team)',
+    () => {
+      const text = hierarchyOf(templateRole('be'), 'gsd')
+
+      expect(text).toContain('Plan and execute each task in your own planning docs.')
+      expect(text).toContain('Commit only your own files on the epic branch: git add <paths>, never git add -A.')
+      expect(text).toContain('When git reports an index lock, wait and retry')
+      expect(text).toContain('never rebase or reset the shared branch')
+      expect(text).toContain('Report each task to TL when it is done')
+      expect(text).toContain('A technical question goes to your parent role and TL decides it')
+      expect(text).toContain('In a team without TL, PM sends you the ticket: add complexity and effort')
+      expect(text).toContain('take the no-TL step of Planning docs when it has one')
+    },
+  )
 
   test(
     'every role is told where a question goes, that in an epic only PM asks the user, a rejection and the epic end',

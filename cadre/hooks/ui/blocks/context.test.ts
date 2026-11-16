@@ -55,7 +55,7 @@ describe('proposalLines', () => {
     expect(proposalLines(proposal.roles, proposal.changes)).toEqual([
       'Proposed roles:',
       `  ${'PM (pm)'.padEnd(24)}Owns product decisions: scope, requirements and acceptance.`,
-      `  ${'Team Lead (tl)'.padEnd(24)}Owns architecture and QA decisions; reviews and merges the work.`,
+      `  ${'Team Lead (tl)'.padEnd(24)}Owns architecture and high-level decisions; briefs the implementers.`,
       `  ${'BE (be)'.padEnd(24)}Implements the backend and core code.`,
       `  ${'QA (qa)'.padEnd(24)}Owns tests and end-to-end checks.`,
       `  ${'Security (security)'.padEnd(24)}Owns security decisions and reviews.`,
@@ -141,7 +141,8 @@ describe('question contexts (D-203, D-236)', () => {
             },
             {
               role: 'plain',
-              text: `${'Team Lead (tl)'.padEnd(24)}Owns architecture and QA decisions; reviews and merges the work.`,
+              text:
+                `${'Team Lead (tl)'.padEnd(24)}Owns architecture and high-level decisions; briefs the implementers.`,
               indent: 2,
             },
             { role: 'plain', text: `${'BE (be)'.padEnd(24)}Implements the backend and core code.`, indent: 2 },

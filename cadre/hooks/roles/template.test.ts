@@ -42,7 +42,7 @@ describe('ROLE_TEMPLATE', () => {
   test('each purpose is its fixed sentence', () => {
     expect(ROLE_TEMPLATE.map(template => template.purpose)).toEqual([
       'Owns product decisions: scope, requirements and acceptance.',
-      'Owns architecture and QA decisions; reviews and merges the work.',
+      'Owns architecture and high-level decisions; briefs the implementers.',
       'Implements the backend and core code.',
       'Implements the frontend.',
       'Owns tests and end-to-end checks.',
