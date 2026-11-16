@@ -297,7 +297,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'mixed',
     file: 'live/03-78.test.ts',
     roleSession: 'be',
-    cassette: { inputs: ['cadre/hooks', 'autopilot/hooks', 'e2e/lib/settings.ts'] },
+    cassette: { inputs: ['cadre/hooks', 'autopilot/hooks', 'agent-fleet/hooks', 'e2e/lib/settings.ts'] },
   },
   {
     id: '03#80',
@@ -415,7 +415,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'mixed',
     file: 'live/03.1-15.test.ts',
     roleSession: 'be',
-    cassette: { inputs: ['cadre/hooks', 'autopilot/hooks'] },
+    cassette: { inputs: ['cadre/hooks', 'autopilot/hooks', 'agent-fleet/hooks'] },
     partial: [
       {
         part: 'which live sessions read running',
