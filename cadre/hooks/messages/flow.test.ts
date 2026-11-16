@@ -18,7 +18,15 @@ import {
   teamRootOf,
 } from './flow'
 import { parseInbox, parseInboxLine, recordLine, sessionRecordText } from './record'
-import { INBOX_LINE_MAX_BYTES } from './send'
+import {
+  BODY_MAX_CHARS,
+  CHANGES_MAX_CHARS,
+  LIST_ITEM_MAX_CHARS,
+  LIST_MAX_ITEMS,
+  REASON_MAX_CHARS,
+  SUBJECT_MAX_CHARS,
+  VERIFICATION_MAX_CHARS,
+} from './send'
 
 /** The inbox home of the root /repo in the user folder of HOME /home/u. */
 const HOME = inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo'))
@@ -260,11 +268,26 @@ describe('runInboxSend', () => {
     expect(sends).toEqual([])
   })
 
-  test('an entry over the line cap in UTF-8 bytes is refused before any run', async () => {
-    const { outcome, host } = await sendFrom(tlWorld(), { ...NOTE, body: WIDE.repeat(2000) })
+  test('a report with every field at its cap in four-byte characters is stored and its receiver woken', async () => {
+    const report = {
+      to: 'tl',
+      kind: 'report',
+      subject: WIDE.repeat(SUBJECT_MAX_CHARS),
+      body: WIDE.repeat(BODY_MAX_CHARS),
+      outcome: 'done',
+      changes: WIDE.repeat(CHANGES_MAX_CHARS),
+      verification: WIDE.repeat(VERIFICATION_MAX_CHARS),
+      vector: { scope: 0.4, complexity: 0.6, risk: 0.3, effort: 0.5 },
+      reason: WIDE.repeat(REASON_MAX_CHARS),
+      frameworkUsed: 'gsd',
+      docPaths: Array.from({ length: LIST_MAX_ITEMS }, () => 'd'.repeat(LIST_ITEM_MAX_CHARS)),
+      openQuestions: Array.from({ length: LIST_MAX_ITEMS }, () => WIDE.repeat(LIST_ITEM_MAX_CHARS)),
+    }
+    const { outcome, host, sends } = await sendFrom(tlWorld(), report)
 
-    expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxLineTooLarge, { max: INBOX_LINE_MAX_BYTES }) })
-    expect(teeRuns(host)).toEqual([])
+    expect(outcome.kind).toBe('result')
+    expect(teeRuns(host)).toEqual([TEE])
+    expect(sends).toHaveLength(1)
   })
 
   test('a worktree session appends under the inbox home of its own root, never that of the main checkout', async () => {
@@ -576,12 +599,13 @@ describe('runInboxSend of the ticket loop', () => {
     })
   })
 
-  test('a brief whose tickets bring the line over the line cap is refused before any run', async () => {
-    const tickets = Array.from({ length: 62 }, (_, index) => `PROJ-${index}`.padEnd(64, 'x'))
+  test('a gsd-epic brief of 100 tickets of 64 characters is stored', async () => {
+    const tickets = Array.from({ length: 100 }, (_, index) => `PROJ-${index}`.padEnd(64, 'x'))
     const { outcome, host } = await sendFrom(tlWorld(), { ...BRIEF, tickets }, { ctx: PM })
 
-    expect(outcome).toEqual({ kind: 'deny', text: fill(PROMPTS.inboxLineTooLarge, { max: INBOX_LINE_MAX_BYTES }) })
-    expect(teeRuns(host)).toEqual([])
+    expect(outcome.kind).toBe('result')
+    expect(teeRuns(host)).toEqual([TEE])
+    expect(entryLine(firstStdin(host))?.tickets).toEqual(tickets)
   })
 })
 

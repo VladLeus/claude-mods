@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InboxEntry, InboxItem, InboxMark, InboxState } from '../../types'
+import type { InboxEntry, InboxEntryFields, InboxItem, InboxMark, InboxState, MessageKind } from '../../types'
+import { utf8Bytes } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
@@ -15,7 +16,25 @@ import {
   recordLine,
   sessionRecordText,
 } from './record'
-import { CHANGES_MAX_CHARS } from './send'
+import {
+  BODY_MAX_CHARS,
+  CHANGES_MAX_CHARS,
+  INBOX_LINE_MAX_BYTES,
+  LIST_ITEM_MAX_CHARS,
+  LIST_MAX_ITEMS,
+  MESSAGE_KINDS,
+  REASON_MAX_CHARS,
+  REPORT_FORM_MAX_CHARS,
+  SPEC_PATH_MAX_CHARS,
+  SUBJECT_MAX_CHARS,
+  TICKET_KEY_MAX_CHARS,
+  TICKETS_MAX_ITEMS,
+  VERIFICATION_MAX_CHARS,
+} from './send'
+import { SP_METHOD, SP_PLAN_DIR } from './sizing'
+
+/** A character of four UTF-8 bytes. */
+const WIDE = '\u{1F600}'
 
 /** The idle wait sentence, spelled out so the specs pin its words. */
 const IDLE_WAIT =
@@ -422,6 +441,72 @@ describe('inboxReadText of the kind fields', () => {
       field('reason', 'Reason'),
       field('openQuestions', 'Why?; How?'),
     ])
+  })
+})
+
+describe('the line cap', () => {
+  test('the largest entry of every kind the stated caps allow fits the line cap of 32 KiB', () => {
+    const role = 'r'.repeat(24)
+    const id = `${'a'.repeat(64)}-${'9'.repeat(16)}-${'f'.repeat(8)}`
+    const score = 0.30000000000000004
+    const vector = { scope: score, complexity: score, risk: score, effort: score }
+    const ticketKey = 'K'.repeat(TICKET_KEY_MAX_CHARS)
+    const fieldsOf: Readonly<Record<MessageKind, InboxEntryFields>> = {
+      ticket: {
+        ticketKey,
+        scores: { scope: score, risk: score },
+        pin: 'large',
+        reportForm: WIDE.repeat(REPORT_FORM_MAX_CHARS),
+      },
+      task: {
+        ticketKey,
+        vector,
+        use: { framework: 'superpowers' },
+        specPath: 's'.repeat(SPEC_PATH_MAX_CHARS),
+        size: score,
+        large: false,
+        planPath: `${SP_PLAN_DIR}/${role}-${ticketKey}.md`,
+        method: SP_METHOD,
+      },
+      report: {
+        outcome: 'partial',
+        changes: WIDE.repeat(CHANGES_MAX_CHARS),
+        verification: WIDE.repeat(VERIFICATION_MAX_CHARS),
+        vector,
+        reason: WIDE.repeat(REASON_MAX_CHARS),
+        frameworkUsed: 'superpowers',
+        docPaths: Array.from({ length: LIST_MAX_ITEMS }, () => 'd'.repeat(LIST_ITEM_MAX_CHARS)),
+        openQuestions: Array.from({ length: LIST_MAX_ITEMS }, () => WIDE.repeat(LIST_ITEM_MAX_CHARS)),
+        size: score,
+        large: false,
+      },
+      question: {},
+      answer: {},
+      'epic-end': {},
+      note: { mode: 'gsd-epic', tickets: Array.from({ length: TICKETS_MAX_ITEMS }, () => ticketKey) },
+    }
+    const sizes = MESSAGE_KINDS.map(kind => {
+      const entry: InboxEntry = {
+        v: 1,
+        type: 'entry',
+        id,
+        at: Number.MAX_SAFE_INTEGER,
+        from: role,
+        to: role,
+        kind,
+        subject: WIDE.repeat(SUBJECT_MAX_CHARS),
+        body: WIDE.repeat(BODY_MAX_CHARS),
+        replyTo: id,
+        ...fieldsOf[kind],
+      }
+
+      return utf8Bytes(recordLine(entry))
+    })
+    const largest = Math.max(...sizes)
+
+    expect(sizes.filter(size => size > INBOX_LINE_MAX_BYTES)).toEqual([])
+    expect(INBOX_LINE_MAX_BYTES).toBe(32768)
+    expect(INBOX_LINE_MAX_BYTES < 2 * largest).toBe(true)
   })
 })
 
