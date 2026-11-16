@@ -9,6 +9,7 @@ import {
   FULL_WAIT_TOOL,
   GRACE_MS,
   HEARTBEAT_MS,
+  PARK_NOTE,
   QUEUE_TOOL,
   QUEUE_WARN,
   RELEASE_PROMPT,
@@ -66,6 +67,7 @@ import {
   limitAction,
   lockStale,
   namedSkills,
+  parkedWait,
   parseAskUser,
   parseAway,
   parseBack,
@@ -742,9 +744,25 @@ describe('after a turn', () => {
     expect(afterTurn(run({ maxRestarts: 2, restarts: 2 }), 10, 61, true)).toBe('final')
   })
 
-  test('two turns without tools pause it', async () => {
+  test('two turns without tools park a run; a run with a goal pauses', async () => {
     expect(afterTurn(run({ idleTurns: 0 }), 10, 30, false)).toBe('continue')
-    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, false)).toBe('pause')
+    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, false)).toBe('park')
+    expect(afterTurn(run({ idleTurns: 1, goal: 'issue #42 resolved' }), 10, 30, false)).toBe('pause')
+  })
+
+  test('the parked wait: reason other, a note, no timeout; the time stop still ends it and no nudge follows', async () => {
+    expect(PARK_NOTE).toBe('two turns without progress')
+    expect(parkedWait(5_000)).toEqual({
+      reason: 'other',
+      from: null,
+      note: PARK_NOTE,
+      since: 5_000,
+      timeoutAt: null,
+      pinged: false,
+    })
+    const parked = run({ phase: 'awaiting', awaiting: parkedWait(0), until: 100 })
+    expect(isTimeUp(parked, 100)).toBe(true)
+    expect(afterTurn(parked, 10, 30, false)).toBe('none')
   })
 
   test('a turn that repeats the calls of the turn before counts as idle; any difference resets it', async () => {
@@ -756,7 +774,7 @@ describe('after a turn', () => {
     expect(isIdleTurn(['a'], ['a', 'a'])).toBe(false)
     expect(isIdleTurn(['a', 'b'], ['a'])).toBe(false)
     const s = callSignature({ tool: 'mcp__notes__check' })
-    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, !isIdleTurn([s], [s]))).toBe('pause')
+    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, !isIdleTurn([s], [s]))).toBe('park')
     expect(afterTurn(run({ idleTurns: 0 }), 10, 30, !isIdleTurn([s], [s]))).toBe('continue')
   })
 
