@@ -1424,7 +1424,11 @@ export type ScopeContext = {
 export type SettingsTemplate = {
   readonly enabledPlugins: Readonly<Record<string, boolean>>
   readonly permissions: { readonly defaultMode: PermissionMode; readonly deny: readonly string[] }
-  readonly sandbox: { readonly enabled: boolean }
+  readonly sandbox: {
+    readonly enabled: boolean
+    readonly excludedCommands?: readonly string[]
+    readonly filesystem?: { readonly allowWrite?: readonly string[]; readonly allowRead?: readonly string[] }
+  }
 }
 
 /** The committed MCP file: the server names this role is given (D-93). Phase 3 renders the real --mcp-config at launch. */

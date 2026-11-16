@@ -97,7 +97,7 @@ export const GOLDEN_REGEN: Readonly<Record<string, GoldenRun | GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/be/settings.json",
-        "sha256": "8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25",
+        "sha256": "57de2f70adce0df0664d713cf2df44e46bce81f25e6cb0444423936d5406ec3a",
         "isWritten": true
       },
       {
@@ -107,7 +107,7 @@ export const GOLDEN_REGEN: Readonly<Record<string, GoldenRun | GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "3e1e320193cb272e8a9df5459fccc485d4ff8b965f90436fd0aa712f06c9948e",
+        "sha256": "630b76556dfc09c90c4f904113c881633586eedfeb11f2e3d210a96f578e525e",
         "isWritten": true
       }
     ],
@@ -146,7 +146,7 @@ export const GOLDEN_REGEN: Readonly<Record<string, GoldenRun | GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/be/settings.json\",",
-      "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "      \"sha256\": \"57de2f70adce0df0664d713cf2df44e46bce81f25e6cb0444423936d5406ec3a\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",

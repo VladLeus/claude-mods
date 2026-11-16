@@ -157,6 +157,14 @@ export function standsFor(role: Pick<RoleSpec, 'id' | 'basedOn'>, templateId: Te
   return role.id === templateId || role.basedOn === templateId
 }
 
+/** The template roles that run the repo's checks: specs, lint and Docker. */
+export const CHECK_RUNNER_ROLES: readonly TemplateRoleId[] = Object.freeze(['be', 'fe', 'qa'])
+
+/** Whether a role runs the repo's checks: it stands for BE, FE or QA. */
+export function runsRepoChecks(role: Pick<RoleSpec, 'id' | 'basedOn'>): boolean {
+  return CHECK_RUNNER_ROLES.some(templateId => standsFor(role, templateId))
+}
+
 /**
  * The id of the role that stands for a template role on the team (standsFor): the role with that id first, else the
  * first role based on it; null when there is neither. /cadre epic finds the TL with it (D-159).

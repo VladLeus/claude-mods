@@ -26,6 +26,12 @@ export const SECRET_READ_DENY: readonly string[] = Object.freeze([
   'Read(~/.ssh/**)',
 ])
 
+/** The folder every Bash role's sandbox may write: the user's tool caches. */
+export const SANDBOX_CACHE_DIR = '~/.cache'
+
+/** The commands a role that runs the repo's checks runs outside the sandbox, since Docker cannot run inside it. */
+export const DOCKER_COMMANDS: readonly string[] = Object.freeze(['docker *', 'docker-compose *'])
+
 /**
  * The memory folder pattern a card shows (D-91). renderRole renders the real folder at launch: `<config dir>` is
  * CLAUDE_CONFIG_DIR when it is set, else ~/.claude, `<repo>` is the repo's folder name and `<hash8>` the first 8 hex

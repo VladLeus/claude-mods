@@ -174,7 +174,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "00818b937ade52fb20b514f6951ed68a016ddc4d5b845be2ec7d1a33e5ff7b69",
+        "sha256": "82cc8882347cecc65b16e215a42aa583de95acea1a3633ac5bd3189ed1600ee6",
         "isWritten": true
       }
     ],
@@ -219,7 +219,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/be/settings.json\",",
-      "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "      \"sha256\": \"57de2f70adce0df0664d713cf2df44e46bce81f25e6cb0444423936d5406ec3a\"",
       "    },",
       "    {",
       "      \"mode\": \"exec\",",

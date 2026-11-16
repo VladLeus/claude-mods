@@ -5,7 +5,7 @@
  * paths, the framework registry, the role template, the infra catalog and the types, so team compiles every role's
  * scope here.
  */
-import type { CompiledScope, RoleSpec, ScopeContext } from '../../types'
+import type { CompiledScope, RoleSpec, ScopeContext, SettingsTemplate } from '../../types'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { PRIVATE_INSTRUCTIONS_LINK } from '../paths'
@@ -16,17 +16,19 @@ import {
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
 } from '../roles/infra'
-import { standsFor } from '../roles/template'
+import { runsRepoChecks, standsFor } from '../roles/template'
 import { cardFor, mcpToolName, notGivenMcp } from './card'
 import type { DenyPlan } from './card'
 import { runnableFrameworks } from './frameworks'
 import {
+  DOCKER_COMMANDS,
   isInfraPlugin,
   isSafeDir,
   lintAll,
   ownNames,
   ownRoots,
   pluginName,
+  SANDBOX_CACHE_DIR,
   SECRET_READ_DENY,
   skillPlugin,
 } from './lint'
@@ -166,12 +168,23 @@ function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
 }
 
 /**
- * Compiles the whole scope of one role from one computation (D-80): the committed settings template, the MCP file,
- * the launcher flags, the skill overlay and the card cannot drift apart, and the probe checks against the same
- * value. The settings hold only the portable keys `enabledPlugins`, `permissions` and `sandbox` (D-84); every
- * per-user value is rendered at launch. Every deny entry passes lintDenyPattern, and one that does not is dropped and
- * named on the card. Every list is sorted and without repeats, so the template hashes stably, and nothing is kept
- * between calls.
+ * The sandbox of a role: off without Bash, else on with the tool caches writable; a role that runs the repo's checks
+ * also runs Docker outside it.
+ */
+function sandboxFor(role: RoleSpec): SettingsTemplate['sandbox'] {
+  if (!role.hasBash) return { enabled: false }
+  const filesystem = { allowWrite: [SANDBOX_CACHE_DIR] }
+  if (!runsRepoChecks(role)) return { enabled: true, filesystem }
+
+  return { enabled: true, excludedCommands: [...DOCKER_COMMANDS], filesystem }
+}
+
+/**
+ * Compiles the whole scope of one role from one computation: the committed settings template, the MCP file, the
+ * launcher flags, the skill overlay and the card cannot drift apart, and the probe checks against the same value. The
+ * settings hold only the portable keys `enabledPlugins`, `permissions` and `sandbox`; every per-user value is rendered
+ * at launch. Every deny entry passes lintDenyPattern, and one that does not is dropped and named on the card. Every
+ * list is sorted and without repeats, so the template hashes stably, and nothing is kept between calls.
  */
 export function compileScope(role: RoleSpec, ctx: ScopeContext): CompiledScope {
   const enabledPlugins = pluginsFor(role, ctx)
@@ -181,7 +194,7 @@ export function compileScope(role: RoleSpec, ctx: ScopeContext): CompiledScope {
     settings: {
       enabledPlugins,
       permissions: { defaultMode: role.permissionMode, deny: deny.entries },
-      sandbox: { enabled: role.hasBash },
+      sandbox: sandboxFor(role),
     },
     mcp: { schema: 1, servers: sortedUnique(role.mcp) },
     flags: flagsFor(role, ctx),

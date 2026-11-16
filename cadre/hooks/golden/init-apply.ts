@@ -272,7 +272,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/security/settings.json",
-        "sha256": "8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25",
+        "sha256": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a",
         "isWritten": true
       },
       {
@@ -307,7 +307,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/settings.json",
-        "sha256": "8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25",
+        "sha256": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a",
         "isWritten": true
       },
       {
@@ -317,7 +317,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "2892852faefc3ddb302c4d3caafbf013e7069e496fcea2022238733ff77b16e9",
+        "sha256": "f3a044f2cd50d876e87f5585a0ad3df6ac3038a6b0e28517c369d485d3611dca",
         "isWritten": true
       }
     ],
@@ -414,7 +414,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/settings.json\",",
-      "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "      \"sha256\": \"03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -449,7 +449,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/settings.json\",",
-      "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "      \"sha256\": \"03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a\"",
       "    }",
       "  ],",
       "  \"schema\": 1",
@@ -746,7 +746,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/security/settings.json",
-        "sha256": "8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25",
+        "sha256": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a",
         "isWritten": true
       },
       {
@@ -781,7 +781,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/settings.json",
-        "sha256": "8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25",
+        "sha256": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a",
         "isWritten": true
       },
       {
@@ -791,7 +791,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "ad1f63018861d33f99bcf89875af6d4bad56e040f02b53378ff1444482149626",
+        "sha256": "9ee0eb888f0f66165d3567d179498d772bcf5a2be0c4d45026ecdcea87d01ede",
         "isWritten": true
       }
     ],
@@ -889,7 +889,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/settings.json\",",
-      "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "      \"sha256\": \"03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -924,7 +924,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/settings.json\",",
-      "      \"sha256\": \"8be5da803401dfc4aed2e51d348c0de6b7932b644c5be87c7e9612911523ab25\"",
+      "      \"sha256\": \"03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a\"",
       "    }",
       "  ],",
       "  \"schema\": 1",

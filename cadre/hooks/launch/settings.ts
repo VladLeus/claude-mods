@@ -159,7 +159,7 @@ export function settingsFor(
     ['env', sessionEnv(role, scope, user)],
     ...entryIf('hooks', carriedHooks(role, user)),
     ['permissions', { defaultMode: scope.settings.permissions.defaultMode, deny: [...deny] }],
-    ['sandbox', { enabled: scope.settings.sandbox.enabled }],
+    ['sandbox', scope.settings.sandbox],
     ...entryIf('statusLine', carriedStatusLine(role, user)),
   ]
 
