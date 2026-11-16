@@ -281,7 +281,21 @@ describe('inboxReadText', () => {
     expect([shown.includes(A.id), shown.includes(B.id), shown.includes(C.id)]).toEqual([true, false, false])
     expect([every.includes(B.id), every.includes(C.id)]).toEqual([true, true])
     expect(every).not.toContain(fill(inboxHiddenOf(2), { count: 2 }))
-    expect(inboxReadText([{ ...unread(B), state: 'done' }], false)).toBe(fill(inboxHiddenOf(1), { count: 1 }))
+    expect(inboxReadText([{ ...unread(B), state: 'done' }], false)).toBe(
+      `${fill(inboxHiddenOf(1), { count: 1 })}\n\n${IDLE_WAIT}`,
+    )
+  })
+
+  test('an inbox of only done or rejected entries ends with the idle wait; an open, awaiting or blocked entry, or all, does not', () => {
+    const done: InboxItem = { ...unread(B), state: 'done' }
+    const rejected: InboxItem = { ...unread(C), state: 'rejected' }
+    const every = inboxReadText([done], true)
+
+    expect(inboxReadText([done, rejected], false)).toBe(`${fill(inboxHiddenOf(2), { count: 2 })}\n\n${IDLE_WAIT}`)
+    expect(every).toContain(B.id)
+    expect(every).not.toContain(IDLE_WAIT)
+    expect(inboxReadText([{ ...unread(A), state: 'awaiting' }, done], false)).not.toContain(IDLE_WAIT)
+    expect(inboxReadText([{ ...unread(A), state: 'blocked' }, done], false)).not.toContain(IDLE_WAIT)
   })
 
   test('an empty inbox gives one line', () => {
