@@ -30,6 +30,8 @@ const DENIED_FILE = 'src/denied.txt'
 const DENIED_TEXT = 'marker: denied-file\n'
 // The file named from the session's folder (src) and from the git root, so the row can record which rule holds.
 const DENY_RULES: readonly string[] = ['Read(./denied.txt)', `Read(${DENIED_FILE})`]
+// A plugin no gsd-dir role is given, so the role's runtime settings must switch it off.
+const ENABLED_PLUGIN = 'superpowers@claude-plugins-official'
 const APP_FILE = 'src/app.ts'
 const SECURITY_LINE = 'export const retryLimit = 3\n'
 const BYPASS_MODE = 'bypassPermissions'
@@ -68,6 +70,7 @@ async function subfolderSettings(ws: SeedTarget): Promise<string> {
   const settings = {
     hooks: { SessionStart: [{ hooks: [{ type: 'command', command }] }] },
     permissions: { deny: [...DENY_RULES] },
+    enabledPlugins: { [ENABLED_PLUGIN]: true },
   }
   await writeIn(ws.repo, SUBFOLDER_SETTINGS, `${JSON.stringify(settings, null, 2)}\n`)
   await writeIn(ws.repo, DENIED_FILE, DENIED_TEXT)
