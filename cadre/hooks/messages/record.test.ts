@@ -270,7 +270,7 @@ describe('parseInbox and foldInbox', () => {
 })
 
 describe('inboxReadText', () => {
-  test('one block per item: its head, the body lines indented two spaces, then its note and reply lines', () => {
+  test('an unread item shows in full; a blocked item shows one head line with its note and reply', () => {
     const blocked: InboxItem = {
       entry: B,
       state: 'blocked',
@@ -282,16 +282,27 @@ describe('inboxReadText', () => {
 
     expect(inboxReadText([blocked, unread(A)], false)).toBe(
       [
-        'pm-2000-89abcdef [blocked] ticket from pm: Ship it',
-        '  Line one',
-        '  Line two',
-        'note: waits on pm',
-        'reply: pm-2600-0123abcd',
+        'pm-2000-89abcdef [blocked] ticket from pm: Ship it; note: waits on pm; reply: pm-2600-0123abcd',
         '',
         'be-1000-0123abcd [unread] note from be: Hi',
         '  Hello',
       ].join('\n'),
     )
+  })
+
+  test('read and awaiting items with a body show only their head line; all shows a done item as one line', () => {
+    const read: InboxItem = { ...unread(B), state: 'read', markedAt: 3000 }
+    const awaiting: InboxItem = { ...unread(A), state: 'awaiting', waitsFor: B.id, markedAt: 3000 }
+    const done: InboxItem = { ...unread(B), state: 'done', note: 'merged', markedAt: 3000 }
+
+    expect(inboxReadText([read, awaiting], false)).toBe(
+      [
+        'pm-2000-89abcdef [read] ticket from pm: Ship it',
+        '',
+        'be-1000-0123abcd [awaiting] note from be: Hi',
+      ].join('\n'),
+    )
+    expect(inboxReadText([done], true)).toBe('pm-2000-89abcdef [done] ticket from pm: Ship it; note: merged')
   })
 
   test('by default done and rejected items are left out and counted on a last line; all lists every item', () => {

@@ -4103,6 +4103,18 @@ describe('the inbox tools in a role session', () => {
     expect(text).toContain(`changes ${CHANGES_MAX_CHARS}`)
   })
 
+  test('a role session registers inbox_read with its all and id inputs in its schema', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, beFolderWorld(), log)
+    await startSession($, on)
+    const at = (value: unknown, key: string): unknown => (isObject(value) ? value[key] : undefined)
+    const spec = log.toolSpecs.find(held => at(held, 'name') === 'inbox_read')
+    const properties = at(at(spec, 'inputSchema'), 'properties')
+
+    expect(at(at(properties, 'id'), 'type')).toBe('string')
+    expect(at(at(properties, 'all'), 'type')).toBe('boolean')
+  })
+
   test('a role session with no inbox folder writes nothing, and inbox_read and inbox_send refuse', async ($, on) => {
     const log = newLog()
     fakeHost(on, roleWorld(), log)

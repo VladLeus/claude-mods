@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InboxEntry, RoleSession, SessionLink, TeamView, ToolOutcome } from '../../types'
+import type { InboxEntry, InboxMark, RoleSession, SessionLink, TeamView, ToolOutcome } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
@@ -671,6 +671,25 @@ describe('runInboxRead', () => {
     const io = memIo(memWorld({ dirs: { [BE_FOLDER]: [] }, unknownPaths: [BE_INBOX] }), {}).io
 
     expect(await runInboxRead(io, BE, {})).toEqual({ kind: 'deny', text: PROMPTS.inboxUnreadable })
+  })
+
+  test('inbox_read with id prints that entry in full whatever its state; an unknown id is refused', async () => {
+    const read: InboxMark = { v: 1, type: 'mark', id: ticket.id, at: 2000, by: 'be', state: 'read' }
+    const files = { [BE_INBOX]: `${recordLine(ticket)}${recordLine(read)}` }
+    const io = memIo(memWorld({ dirs: STARTED, files }), {}).io
+
+    expect(await runInboxRead(io, BE, { id: 'tl-1000-0123abcd' })).toEqual({
+      kind: 'result',
+      text: 'tl-1000-0123abcd [read] ticket from tl: Do it\n  Now',
+    })
+    expect(await runInboxRead(io, BE, { id: 'tl-9-0123abcd' })).toEqual({
+      kind: 'deny',
+      text: 'id names no entry of your inbox: call inbox_read with no id for the ids.',
+    })
+    expect(await runInboxRead(io, BE, { id: 7 })).toEqual({
+      kind: 'deny',
+      text: 'id must be the id of an inbox entry, as inbox_read shows it.',
+    })
   })
 })
 
