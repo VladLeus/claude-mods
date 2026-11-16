@@ -38,6 +38,7 @@ export const WAIT_REASONS: readonly WaitReason[] = [
 const MAX_WAIT_FROM = 64
 const MAX_WAIT_NOTE = 200
 export const MAX_IDLE_TURNS = 2
+export const PARK_NOTE = 'two turns without progress'
 /**
  * A threshold below this sits close to what a resume alone loads, so every
  * handoff after the first fires RESUME_BUMP points later. At or above it the
@@ -626,7 +627,7 @@ export function limitAction(run: Run, windows: readonly TokenWindow[], now: numb
   }
 }
 
-export type TurnAction = 'continue' | 'wrapup' | 'final' | 'pause' | 'finish' | 'resume-done' | 'none'
+export type TurnAction = 'continue' | 'wrapup' | 'final' | 'pause' | 'park' | 'finish' | 'resume-done' | 'none'
 
 const ENGINE_CALL_KEYS: readonly string[] = ['tool', 'tool_use_id', 'agentId', 'requestMeta', 'consent']
 
@@ -650,7 +651,7 @@ export function isIdleTurn(previous: readonly string[] | null, current: readonly
 
 /**
  * What to do when a main-loop turn ends, from the run, the context fill, the time, whether the turn made progress
- * and the ceiling; the token windows are judged before it.
+ * and the ceiling; the token windows are judged before it. A stall parks a run without a goal; one with a goal pauses.
  */
 export function afterTurn(
   run: Run,
@@ -673,7 +674,7 @@ export function afterTurn(
 
   if (now >= run.until) return 'final'
   if (percent !== null && percent >= effectiveTrigger(run, ceiling)) return canRestart(run) ? 'wrapup' : 'final'
-  if (!madeProgress && run.idleTurns + 1 >= MAX_IDLE_TURNS) return 'pause'
+  if (!madeProgress && run.idleTurns + 1 >= MAX_IDLE_TURNS) return run.goal ? 'pause' : 'park'
 
   return 'continue'
 }
@@ -746,6 +747,10 @@ export function parseWaitInput(
   }
 
   return { kind: 'ok', awaiting: { reason, from: from.value, note: note.value, since: now, timeoutAt, pinged: false } }
+}
+
+export function parkedWait(now: number): Awaiting {
+  return { reason: 'other', from: null, note: PARK_NOTE, since: now, timeoutAt: null, pinged: false }
 }
 
 /** Whether a main-loop tool call ends a declared wait: any tool but the wait tool itself means the session went on working. */

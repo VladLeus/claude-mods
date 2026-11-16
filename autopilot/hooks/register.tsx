@@ -62,6 +62,7 @@ import {
   limitAction,
   lockStale,
   namedSkills,
+  parkedWait,
   parseAskUser,
   parseAway,
   parseBack,
@@ -1768,6 +1769,15 @@ export const register: Register = on => {
       await save($)
       await log($, 'paused: two turns in a row without progress')
       $.ui.toast('Autopilot paused: no progress for two turns. /autopilot to see it, or start it again.')
+    }
+    if (action === 'park') {
+      const wait = parkedWait(now)
+      run.phase = 'awaiting'
+      run.awaiting = wait
+      run.idleTurns = 0
+      await save($)
+      await log($, `parked: two turns in a row without progress; waiting for ${waitText(wait, now)}`)
+      $.ui.toast('Autopilot parked: no progress for two turns. A new message resumes it; /autopilot to see it.')
     }
     if (action === 'finish') {
       const reason = run.finalReason
