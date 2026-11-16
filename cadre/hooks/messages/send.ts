@@ -22,7 +22,7 @@ import { INBOX_ENTRY_FIELDS } from '../locales/contracts'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { isSafeRelativePath } from '../paths'
-import { GSD_PATHS, parseProductScores, parseVector, PLANNING_MODES } from './sizing'
+import { GSD_PATHS, modesOffered, parseProductScores, parseVector, PLANNING_MODES } from './sizing'
 
 export const MESSAGE_KINDS: readonly MessageKind[] = Object.freeze([
   'ticket',
@@ -99,10 +99,12 @@ const TEXT_CAPS = Object.freeze({
   reason: REASON_MAX_CHARS,
 })
 
+type ListField = 'docPaths' | 'openQuestions' | 'tickets'
+
 /** The caps of one list: its most items and the most characters of each item. */
 type ListCap = { readonly items: number; readonly chars: number }
 
-const LIST_CAPS: Readonly<Record<'docPaths' | 'openQuestions' | 'tickets', ListCap>> = Object.freeze({
+const LIST_CAPS: Readonly<Record<ListField, ListCap>> = Object.freeze({
   docPaths: { items: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS },
   openQuestions: { items: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS },
   tickets: { items: TICKETS_MAX_ITEMS, chars: TICKET_KEY_MAX_CHARS },
@@ -146,10 +148,10 @@ export type SendInput =
     }
   | { readonly kind: 'error'; readonly message: string }
 
-/** The fields of a kind as the model gave them, checked, or why they are refused. */
+/** The fields of a kind as the model gave them, checked, or every reason they are refused. */
 export type KindFields =
   | { readonly kind: 'ok'; readonly fields: InboxEntryFields }
-  | { readonly kind: 'error'; readonly message: string }
+  | { readonly kind: 'error'; readonly messages: readonly string[] }
 
 /** A line break as a model may send it: CR LF, CR or LF. */
 const LINE_BREAK = /\r\n|\r|\n/g
@@ -181,10 +183,6 @@ function lineOf(raw: unknown): string {
   return typeof raw === 'string' ? clean(raw.replace(LINE_BREAK, ' '), Infinity).trim() : ''
 }
 
-function fieldsError(message: string): KindFields {
-  return { kind: 'error', message }
-}
-
 function isTicketKey(value: unknown): value is string {
   return typeof value === 'string' && TICKET_KEY_PATTERN.test(value)
 }
@@ -204,44 +202,29 @@ function parseUse(value: unknown): TaskUse | null {
   return { framework, gsdPath }
 }
 
-/** A list of at most `max` items, each kept by `itemOf`; null when it is no list, too long, or holds a refused item. */
-function listOf(raw: unknown, max: number, itemOf: (item: unknown) => string | null): string[] | null {
-  if (!Array.isArray(raw) || raw.length > max) return null
-  const items: string[] = []
-  for (const item of raw) {
-    const kept = itemOf(item)
-    if (kept === null) return null
-    items.push(kept)
-  }
-
-  return items
+/** A list item as the send keeps it: the item when it is text, '' for anything else. */
+function itemText(item: unknown): string {
+  return typeof item === 'string' ? item : ''
 }
 
-function docPathOf(item: unknown): string | null {
-  if (typeof item !== 'string' || Array.from(item).length > LIST_ITEM_MAX_CHARS) return null
-
-  return isSafeRelativePath(item) || WORKSTREAM_NAME.test(item) ? item : null
+function isDocPath(text: string): boolean {
+  return isSafeRelativePath(text) || WORKSTREAM_NAME.test(text)
 }
 
-function questionOf(item: unknown): string | null {
-  const text = lineOf(item)
+/** One kind field as part of an entry: {} when it is absent, the field when it is valid, else its refusals. */
+type FieldPart = InboxEntryFields | readonly string[]
 
-  return text !== '' && Array.from(text).length <= LIST_ITEM_MAX_CHARS ? text : null
+function isRefused(part: FieldPart): part is readonly string[] {
+  return Array.isArray(part)
 }
 
-function ticketKeyOf(item: unknown): string | null {
-  return isTicketKey(item) ? item : null
-}
-
-/** One kind field as part of an entry: {} when it is absent, the field when it is valid, else its refusal. */
-type FieldPart = InboxEntryFields | string
-
-/** A text field kept whole on one line: refused when empty or over its cap, never cut. */
+/** A text field kept whole on one line: refused when empty or over its cap, with its size, never cut. */
 function textPart(raw: unknown, field: string, max: number, part: (text: string) => InboxEntryFields): FieldPart {
   if (raw === undefined) return {}
   const text = lineOf(raw)
-  if (text === '') return fill(PROMPTS.inboxFieldEmpty, { field })
-  if (Array.from(text).length > max) return fill(PROMPTS.inboxFieldTooLong, { field, max })
+  if (text === '') return [fill(PROMPTS.inboxFieldEmpty, { field })]
+  const size = Array.from(text).length
+  if (size > max) return [fill(PROMPTS.inboxFieldTooLong, { field, size, max })]
 
   return part(text)
 }
@@ -249,90 +232,128 @@ function textPart(raw: unknown, field: string, max: number, part: (text: string)
 function ticketKeyPart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
 
-  return isTicketKey(raw) ? { ticketKey: raw } : fill(PROMPTS.inboxTicketKeyBad, { max: TICKET_KEY_MAX_CHARS })
+  return isTicketKey(raw) ? { ticketKey: raw } : [fill(PROMPTS.inboxTicketKeyBad, { max: TICKET_KEY_MAX_CHARS })]
 }
 
 function scoresPart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
   const scores = parseProductScores(raw)
 
-  return scores === null ? PROMPTS.inboxScoresBad : { scores }
+  return scores === null ? [PROMPTS.inboxScoresBad] : { scores }
 }
 
 function pinPart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
   const pin = SIZE_PINS.find(known => known === raw)
 
-  return pin === undefined ? fill(PROMPTS.inboxPinBad, { pins: SIZE_PINS.join(', ') }) : { pin }
+  return pin === undefined ? [fill(PROMPTS.inboxPinBad, { pins: SIZE_PINS.join(', ') })] : { pin }
 }
 
 function vectorPart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
   const vector = parseVector(raw)
 
-  return vector === null ? PROMPTS.inboxVectorBad : { vector }
+  return vector === null ? [PROMPTS.inboxVectorBad] : { vector }
 }
 
 function usePart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
   const use = parseUse(raw)
 
-  return use === null ? PROMPTS.inboxUseBad : { use }
+  return use === null ? [PROMPTS.inboxUseBad] : { use }
 }
 
 function specPathPart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
-  if (typeof raw === 'string' && Array.from(raw).length > SPEC_PATH_MAX_CHARS) {
-    return fill(PROMPTS.inboxFieldTooLong, { field: 'specPath', max: SPEC_PATH_MAX_CHARS })
+  const size = typeof raw === 'string' ? Array.from(raw).length : 0
+  if (size > SPEC_PATH_MAX_CHARS) {
+    return [fill(PROMPTS.inboxFieldTooLong, { field: 'specPath', size, max: SPEC_PATH_MAX_CHARS })]
   }
 
-  return typeof raw === 'string' && isSafeRelativePath(raw) ? { specPath: raw } : PROMPTS.inboxSpecPathBad
+  return typeof raw === 'string' && isSafeRelativePath(raw) ? { specPath: raw } : [PROMPTS.inboxSpecPathBad]
 }
 
 function outcomePart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
   const outcome = REPORT_OUTCOMES.find(known => known === raw)
+  if (outcome === undefined) return [fill(PROMPTS.inboxOutcomeBad, { outcomes: REPORT_OUTCOMES.join(', ') })]
 
-  return outcome === undefined ? fill(PROMPTS.inboxOutcomeBad, { outcomes: REPORT_OUTCOMES.join(', ') }) : { outcome }
+  return { outcome }
 }
 
 function frameworkUsedPart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
-  if (!isFrameworkId(raw)) return fill(PROMPTS.inboxFrameworkUsedBad, { frameworks: FRAMEWORK_IDS.join(', ') })
+  if (!isFrameworkId(raw)) return [fill(PROMPTS.inboxFrameworkUsedBad, { frameworks: FRAMEWORK_IDS.join(', ') })]
 
   return { frameworkUsed: raw }
 }
 
-function docPathsPart(raw: unknown): FieldPart {
-  if (raw === undefined) return {}
-  const docPaths = listOf(raw, LIST_MAX_ITEMS, docPathOf)
-  if (docPaths === null) return fill(PROMPTS.inboxDocPathsBad, { max: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS })
+/** How a list reads: the text the send keeps of an item, whether a kept text is an item, and the list's fault text. */
+type ListRule = {
+  readonly textOf: (item: unknown) => string
+  readonly isItem: (text: string) => boolean
+  readonly bad: string
+}
 
-  return { docPaths }
+/**
+ * A list kept item by item, or its problems in this order: more items than its cap, the items over its length cap by
+ * position and size, and the fault text once for any other bad item of a valid length; a value that is no list gives
+ * only the fault text.
+ */
+function listPart(
+  raw: unknown,
+  field: ListField,
+  rule: ListRule,
+  part: (items: string[]) => InboxEntryFields,
+): FieldPart {
+  if (raw === undefined) return {}
+  if (!Array.isArray(raw)) return [rule.bad]
+  const { items: max, chars } = LIST_CAPS[field]
+  const items = raw.map(item => {
+    const text = rule.textOf(item)
+
+    return { text, size: Array.from(text).length }
+  })
+  const long = items.flatMap((item, index) => (item.size > chars ? [{ position: index + 1, size: item.size }] : []))
+  const positions = long.map(over => over.position).join(', ')
+  const sizes = long.map(over => over.size).join(', ')
+  const problems = [
+    raw.length > max ? fill(PROMPTS.inboxListTooMany, { field, count: raw.length, max }) : null,
+    long.length === 0 ? null : fill(PROMPTS.inboxListItemsTooLong, { field, items: positions, sizes, chars }),
+    items.some(item => item.size <= chars && !rule.isItem(item.text)) ? rule.bad : null,
+  ].flatMap(problem => (problem === null ? [] : [problem]))
+
+  return problems.length === 0 ? part(items.map(item => item.text)) : problems
+}
+
+function docPathsPart(raw: unknown): FieldPart {
+  const { items, chars } = LIST_CAPS.docPaths
+  const bad = fill(PROMPTS.inboxDocPathsBad, { max: items, chars })
+  const rule: ListRule = { textOf: itemText, isItem: isDocPath, bad }
+
+  return listPart(raw, 'docPaths', rule, docPaths => ({ docPaths }))
 }
 
 function openQuestionsPart(raw: unknown): FieldPart {
-  if (raw === undefined) return {}
-  const openQuestions = listOf(raw, LIST_MAX_ITEMS, questionOf)
-  if (openQuestions === null) {
-    return fill(PROMPTS.inboxOpenQuestionsBad, { max: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS })
-  }
+  const { items, chars } = LIST_CAPS.openQuestions
+  const bad = fill(PROMPTS.inboxOpenQuestionsBad, { max: items, chars })
+  const rule: ListRule = { textOf: lineOf, isItem: text => text !== '', bad }
 
-  return { openQuestions }
+  return listPart(raw, 'openQuestions', rule, openQuestions => ({ openQuestions }))
 }
 
 function modePart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
   const mode = PLANNING_MODES.find(known => known === raw)
 
-  return mode === undefined ? fill(PROMPTS.inboxModeBad, { modes: PLANNING_MODES.join(', ') }) : { mode }
+  return mode === undefined ? [fill(PROMPTS.inboxModeBad, { modes: PLANNING_MODES.join(', ') })] : { mode }
 }
 
 function ticketsPart(raw: unknown): FieldPart {
-  if (raw === undefined) return {}
-  const tickets = listOf(raw, TICKETS_MAX_ITEMS, ticketKeyOf)
+  const bad = fill(PROMPTS.inboxTicketsBad, { max: LIST_CAPS.tickets.items })
+  const rule: ListRule = { textOf: itemText, isItem: isTicketKey, bad }
 
-  return tickets === null ? fill(PROMPTS.inboxTicketsBad, { max: TICKETS_MAX_ITEMS }) : { tickets }
+  return listPart(raw, 'tickets', rule, tickets => ({ tickets }))
 }
 
 /** The reader of each kind field by its record name. */
@@ -356,77 +377,170 @@ const FIELD_PARTS: Readonly<Record<string, (raw: unknown) => FieldPart>> = Objec
   tickets: ticketsPart,
 })
 
-/**
- * The fields the kind takes, from a stored line or the model's input: each one present is checked, an absent one
- * stays absent, and a field of another kind is not read. The first bad field gives its refusal.
- */
-export function kindFieldsOf(kind: MessageKind, fields: Readonly<Record<string, unknown>>): KindFields {
+/** The fields of a kind as checked: the valid ones and the refusals of the rest. */
+type FieldsRead = { readonly fields: InboxEntryFields; readonly messages: readonly string[] }
+
+function readKindFields(kind: MessageKind, fields: Readonly<Record<string, unknown>>): FieldsRead {
   let merged: InboxEntryFields = {}
+  const messages: string[] = []
   for (const field of KIND_FIELDS[kind]) {
     const part = FIELD_PARTS[field]?.(fields[field]) ?? {}
-    if (typeof part === 'string') return fieldsError(part)
+    if (isRefused(part)) {
+      messages.push(...part)
+      continue
+    }
     merged = { ...merged, ...part }
   }
 
-  return { kind: 'ok', fields: merged }
-}
-
-/** A brief's tickets go only with mode gsd-epic, and a gsd-epic brief lists at least one. */
-function briefFields(fields: InboxEntryFields): KindFields {
-  const { mode, tickets } = fields
-  if (tickets !== undefined && mode !== 'gsd-epic') return fieldsError(PROMPTS.inboxTicketsNotEpic)
-  if (mode === 'gsd-epic' && (tickets === undefined || tickets.length === 0)) {
-    return fieldsError(PROMPTS.inboxEpicNeedsTickets)
-  }
-
-  return { kind: 'ok', fields }
-}
-
-/** The kind fields of a send: none of another kind, every one the kind needs, each valid, and a brief consistent. */
-function sendFields(kind: MessageKind, fields: Readonly<Record<string, unknown>>): KindFields {
-  const takes = KIND_FIELDS[kind]
-  const foreign = INBOX_ENTRY_FIELDS.find(field => fields[field] !== undefined && !takes.includes(field))
-  if (foreign !== undefined) return fieldsError(fill(PROMPTS.inboxFieldNotForKind, { field: foreign, kind }))
-  const missing = REQUIRED_FIELDS[kind].filter(field => fields[field] === undefined)
-  if (missing.length > 0) return fieldsError(fill(PROMPTS.inboxFieldMissing, { kind, fields: missing.join(', ') }))
-  const read = kindFieldsOf(kind, fields)
-  if (read.kind === 'error' || kind !== 'note') return read
-
-  return briefFields(read.fields)
+  return { fields: merged, messages }
 }
 
 /**
- * The inbox_send input as a message to stamp, checked in the order to, kind (ticket and epic-end only from the PM
- * stand-in), subject, body, the fields of the kind, replyTo. The subject is cut to its cap; a body over its cap is
- * refused, never cut.
+ * The fields the kind takes, from a stored line or the model's input: each one present is checked, an absent one
+ * stays absent and a field of another kind is not read; every bad field gives its refusals.
+ */
+export function kindFieldsOf(kind: MessageKind, fields: Readonly<Record<string, unknown>>): KindFields {
+  const read = readKindFields(kind, fields)
+
+  return read.messages.length === 0 ? { kind: 'ok', fields: read.fields } : { kind: 'error', messages: read.messages }
+}
+
+/** Why a brief is refused: its tickets go only with mode gsd-epic, and a gsd-epic brief lists at least one. */
+function briefRefusal(fields: InboxEntryFields): string | null {
+  const { mode, tickets } = fields
+  if (tickets !== undefined && mode !== 'gsd-epic') return PROMPTS.inboxTicketsNotEpic
+  if (mode === 'gsd-epic' && (tickets === undefined || tickets.length === 0)) return PROMPTS.inboxEpicNeedsTickets
+
+  return null
+}
+
+/** Why a brief's mode is refused: the repo's frameworks do not offer it; null with no mode or an offered one. */
+function modeRefusal(fields: InboxEntryFields, team: TeamView): string | null {
+  const { mode } = fields
+  if (mode === undefined) return null
+  const offered = modesOffered(team.frameworks)
+  if (offered.includes(mode)) return null
+
+  return fill(PROMPTS.inboxModeNotOffered, {
+    mode,
+    modes: offered.length === 0 ? PROMPTS.inboxItemNone : offered.join(', '),
+  })
+}
+
+/** Why a task's framework is refused: its receiver may not run it; null with no use or one the receiver may run. */
+function useRefusal(fields: InboxEntryFields, to: string, team: TeamView): string | null {
+  const { use } = fields
+  if (use === undefined) return null
+  const mayRun = team.mayRun[to] ?? []
+  if (mayRun.includes(use.framework)) return null
+
+  return fill(PROMPTS.inboxUseNotRun, {
+    to,
+    framework: use.framework,
+    frameworks: mayRun.length === 0 ? PROMPTS.inboxItemNone : mayRun.join(', '),
+  })
+}
+
+/**
+ * The kind fields of a send with every refusal of them: each field of another kind, the missing ones, each bad one, a
+ * brief that does not hold together, a mode the repo does not offer and a framework the receiver may not run.
+ */
+function sendFields(
+  kind: MessageKind,
+  fields: Readonly<Record<string, unknown>>,
+  to: unknown,
+  team: TeamView,
+): FieldsRead {
+  const takes = KIND_FIELDS[kind]
+  const foreign = INBOX_ENTRY_FIELDS.filter(field => fields[field] !== undefined && !takes.includes(field))
+  const missing = REQUIRED_FIELDS[kind].filter(field => fields[field] === undefined)
+  const read = readKindFields(kind, fields)
+  const messages = [
+    ...foreign.map(field => fill(PROMPTS.inboxFieldNotForKind, { field, kind })),
+    missing.length === 0 ? null : fill(PROMPTS.inboxFieldMissing, { kind, fields: missing.join(', ') }),
+    ...read.messages,
+    kind === 'note' && read.messages.length === 0 ? briefRefusal(read.fields) : null,
+    modeRefusal(read.fields, team),
+    typeof to === 'string' && team.ids.includes(to) ? useRefusal(read.fields, to, team) : null,
+  ]
+
+  return { fields: read.fields, messages: messages.flatMap(message => (message === null ? [] : [message])) }
+}
+
+/** Why `to` is refused: missing, not text, not a role of the team, or the sender's own role; null otherwise. */
+function toRefusal(to: unknown, ctx: RoleContext, team: TeamView): string | null {
+  if (to === undefined) return PROMPTS.inboxToMissing
+  if (typeof to !== 'string') return PROMPTS.inboxToNotText
+  if (!team.ids.includes(to)) return fill(PROMPTS.inboxToNotTeam, { ids: reportText(team.ids.join(', ')) })
+  if (to === ctx.id) return PROMPTS.inboxToSelf
+
+  return null
+}
+
+/** Why the kind is refused: unknown, or one only the PM stand-in sends, from another role; null otherwise. */
+function kindRefusal(kind: MessageKind | undefined, ctx: RoleContext, team: TeamView): string | null {
+  if (kind === undefined) return fill(PROMPTS.inboxKindUnknown, { kinds: MESSAGE_KINDS.join(', ') })
+  if (!PM_KINDS.includes(kind)) return null
+  const { pm } = team
+  if (pm === null) return fill(PROMPTS.inboxKindNoPm, { kind })
+  if (pm !== ctx.id) return fill(PROMPTS.inboxKindPmOnly, { kind, pm })
+
+  return null
+}
+
+/** Why the body is refused: empty, or over its cap with its size, since a body is never cut; null otherwise. */
+function bodyRefusal(body: string): string | null {
+  if (body.trim() === '') return PROMPTS.inboxBodyEmpty
+  const size = Array.from(body).length
+  if (size > BODY_MAX_CHARS) return fill(PROMPTS.inboxBodyTooLong, { size, max: BODY_MAX_CHARS })
+
+  return null
+}
+
+/** One problem as its own sentence; several as a counted head and one line each. */
+function refusalText(problems: readonly string[]): string {
+  const [only] = problems
+  if (problems.length === 1 && only !== undefined) return only
+  const lines = problems.map(problem => fill(PROMPTS.inboxProblemLine, { problem }))
+
+  return [fill(PROMPTS.inboxProblemsHead, { count: problems.length }), ...lines].join('\n')
+}
+
+/**
+ * The inbox_send input as a message to stamp, or one refusal that lists every problem of it: to, kind, subject, body,
+ * the kind fields of a kind the role may send, then replyTo. The subject is cut to its cap.
  */
 export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView): SendInput {
   const fields: Readonly<Record<string, unknown>> = isObject(event) ? event : {}
   const { to, kind, replyTo } = fields
-  if (to === undefined) return sendError(PROMPTS.inboxToMissing)
-  if (typeof to !== 'string') return sendError(PROMPTS.inboxToNotText)
-  if (!team.ids.includes(to)) return sendError(fill(PROMPTS.inboxToNotTeam, { ids: reportText(team.ids.join(', ')) }))
-  if (to === ctx.id) return sendError(PROMPTS.inboxToSelf)
   const kindName = MESSAGE_KINDS.find(known => known === kind)
-  if (kindName === undefined) return sendError(fill(PROMPTS.inboxKindUnknown, { kinds: MESSAGE_KINDS.join(', ') }))
-  const { pm } = team
-  if (PM_KINDS.includes(kindName) && pm === null) return sendError(fill(PROMPTS.inboxKindNoPm, { kind: kindName }))
-  if (PM_KINDS.includes(kindName) && pm !== null && pm !== ctx.id) {
-    return sendError(fill(PROMPTS.inboxKindPmOnly, { kind: kindName, pm }))
-  }
+  const kindProblem = kindRefusal(kindName, ctx, team)
   const subject = subjectText(fields.subject)
-  if (subject === '') return sendError(PROMPTS.inboxSubjectEmpty)
   const body = bodyText(fields.body)
-  if (body.trim() === '') return sendError(PROMPTS.inboxBodyEmpty)
-  if (Array.from(body).length > BODY_MAX_CHARS) {
-    return sendError(fill(PROMPTS.inboxBodyTooLong, { max: BODY_MAX_CHARS }))
+  const read = kindName === undefined || kindProblem !== null ? null : sendFields(kindName, fields, to, team)
+  const isReplyToBad = replyTo !== undefined && (typeof replyTo !== 'string' || !ENTRY_ID_PATTERN.test(replyTo))
+  const problems = [
+    toRefusal(to, ctx, team),
+    kindProblem,
+    subject === '' ? PROMPTS.inboxSubjectEmpty : null,
+    bodyRefusal(body),
+    ...(read?.messages ?? []),
+    isReplyToBad ? PROMPTS.inboxReplyToBad : null,
+  ].flatMap(problem => (problem === null ? [] : [problem]))
+  // A bad to or kind is always among the problems; the checks after the count only narrow the types.
+  if (problems.length > 0 || typeof to !== 'string' || kindName === undefined || read === null) {
+    return sendError(refusalText(problems))
   }
-  const read = sendFields(kindName, fields)
-  if (read.kind === 'error') return read
-  if (replyTo === undefined) return { kind: 'ok', to, kindName, subject, body, replyTo: null, fields: read.fields }
-  if (typeof replyTo !== 'string' || !ENTRY_ID_PATTERN.test(replyTo)) return sendError(PROMPTS.inboxReplyToBad)
 
-  return { kind: 'ok', to, kindName, subject, body, replyTo, fields: read.fields }
+  return {
+    kind: 'ok',
+    to,
+    kindName,
+    subject,
+    body,
+    replyTo: typeof replyTo === 'string' ? replyTo : null,
+    fields: read.fields,
+  }
 }
 
 const SCORE_SCHEMA = Object.freeze({ type: 'number' })

@@ -243,38 +243,10 @@ function stampedFields(fields: InboxEntryFields, to: string, team: TeamView): In
   return { ...sized, planPath: `${SP_PLAN_DIR}/${to}-${ticketKey}.md`, method: SP_METHOD }
 }
 
-/** Why a brief's mode is refused: the repo's frameworks do not offer it; null with no mode or an offered one. */
-function modeRefusal(fields: InboxEntryFields, team: TeamView): string | null {
-  const { mode } = fields
-  if (mode === undefined) return null
-  const offered = modesOffered(team.frameworks)
-  if (offered.includes(mode)) return null
-
-  return fill(PROMPTS.inboxModeNotOffered, {
-    mode,
-    modes: offered.length === 0 ? PROMPTS.inboxItemNone : offered.join(', '),
-  })
-}
-
-/** Why a task's framework is refused: its receiver may not run it; null with no use or one the receiver may run. */
-function useRefusal(fields: InboxEntryFields, to: string, team: TeamView): string | null {
-  const { use } = fields
-  if (use === undefined) return null
-  const mayRun = team.mayRun[to] ?? []
-  if (mayRun.includes(use.framework)) return null
-
-  return fill(PROMPTS.inboxUseNotRun, {
-    to,
-    framework: use.framework,
-    frameworks: mayRun.length === 0 ? PROMPTS.inboxItemNone : mayRun.join(', '),
-  })
-}
-
 /**
  * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A
- * session whose own inbox folder is absent or unsafe, a mode the repo's frameworks do not offer, or a task framework
- * its receiver may not run, is refused before anything runs; a sent vector's result ends with its size and the pick in
- * each mode the repo offers.
+ * session whose own inbox folder is absent or unsafe is refused before anything runs; a sent vector's result ends with
+ * its size and the pick in each mode the repo offers.
  */
 export async function runInboxSend(
   io: InitIo,
@@ -289,8 +261,6 @@ export async function runInboxSend(
   if (input.kind === 'error') return deny(input.message)
   const own = await ownInboxRefusal(io, session)
   if (own !== null) return deny(own)
-  const refusal = modeRefusal(input.fields, team) ?? useRefusal(input.fields, input.to, team)
-  if (refusal !== null) return deny(refusal)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
   const fields = stampedFields(input.fields, input.to, team)

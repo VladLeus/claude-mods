@@ -150,7 +150,7 @@ export const PROMPTS = Object.freeze({
   inboxKindNoPm: 'kind {kind} is sent only by the PM, and this team has no PM: send a report or a note instead.',
   inboxSubjectEmpty: 'subject is empty or not text: give a short subject line.',
   inboxBodyEmpty: 'body is empty or not text: write the message in body.',
-  inboxBodyTooLong: 'body is over {max} characters: shorten it or split it into several entries.',
+  inboxBodyTooLong: 'body is {size} characters, over its cap of {max}: shorten it or split it into several entries.',
   inboxReplyToBad: 'replyTo must be the id of an inbox entry, as inbox_read shows it.',
   inboxLineTooLarge: 'Not sent: the entry is {size} bytes, over {max}: {parts}. Shorten these.',
   inboxNotStarted: 'Not sent: {to} has no inbox yet. Run /cadre start {to} first.',
@@ -169,7 +169,7 @@ export const PROMPTS = Object.freeze({
   inboxSpecPathBad: 'specPath must be a path from the git root, with no .. and no spaces.',
   inboxFieldNotForKind: '{field} is not a field of a {kind}: leave it out.',
   inboxFieldEmpty: '{field} is empty or not text.',
-  inboxFieldTooLong: '{field} is over {max} characters: shorten it.',
+  inboxFieldTooLong: '{field} is {size} characters, over its cap of {max}: shorten it.',
   inboxScoresBad:
     'scores must hold scope and risk, each a number from 0.1 to 1.0; the role that plans the ticket adds the rest.',
   inboxPinBad: 'pin must be one of {pins}.',
@@ -188,13 +188,18 @@ export const PROMPTS = Object.freeze({
   inboxSize: 'Size {size}, so {sizeClass} (the threshold is {threshold}).',
   inboxSizePick: 'In {mode} mode: {framework}.',
   inboxSizePickGsd: 'In {mode} mode: gsd, GSD path {gsdPath}.',
-  // The sentences of an inbox_send property's description (messages/send inboxSendSchema), then a field of a line over
-  // the line cap as its refusal names it (messages/record lineRefusal).
+  // The sentences of an inbox_send property's description (messages/send inboxSendSchema), a field of a line over the
+  // line cap as its refusal names it (messages/record lineRefusal), the refusals of a list over its caps, and the head
+  // and the lines of a refusal that lists several problems (messages/send).
   inboxPropertyKinds: 'Only on {kinds}.',
   inboxPropertyRequired: 'Required on {kinds}.',
   inboxPropertyChars: 'At most {max} characters.',
   inboxPropertyList: 'At most {max} items of at most {chars} characters each.',
   inboxLinePart: '{field} {bytes}',
+  inboxListTooMany: '{field} has {count} items, over its cap of {max}.',
+  inboxListItemsTooLong: '{field}: items {items} are {sizes} characters, over the cap of {chars} each.',
+  inboxProblemsHead: 'Not sent, {count} problems:',
+  inboxProblemLine: '- {problem}',
   // The descriptions of the inbox tools (register.tsx), the refusals of a call outside a role session or a call that
   // failed, and the line of a role session whose role.json is not found.
   inboxSendDescription:
@@ -207,7 +212,7 @@ export const PROMPTS = Object.freeze({
     ''}kinds it goes on. Caps in characters: subject {subjectMax}, body {bodyMax}, reportForm {reportFormMax}, ${
     ''}changes {changesMax}, verification {verificationMax}, reason {reasonMax}, specPath {specPathMax}, ticketKey ${
     ''}{ticketKeyMax}; docPaths and openQuestions at most {listMax} items of {itemMax}; tickets at most ${
-    ''}{ticketsMax} keys. A send within the caps is always stored.`,
+    ''}{ticketsMax} keys. A send within the caps is always stored. A refusal lists every problem at once.`,
   inboxReadDescription:
     `cadre: read your own inbox. Each entry shows its id, state, kind, sender and subject, then its body. all: true ${
     ''}also lists the entries marked done or rejected.`,

@@ -430,6 +430,22 @@ describe('parseSendInput: every problem at once', () => {
       ].join('\n'),
     )
   })
+
+  test('an unknown kind or a ticket not from the PM lists its envelope problems and checks no kind field', () => {
+    const listed = (...problems: readonly string[]): string =>
+      [
+        fill(PROMPTS.inboxProblemsHead, { count: problems.length }),
+        ...problems.map(problem => fill(PROMPTS.inboxProblemLine, { problem })),
+      ].join('\n')
+    const kinds = MESSAGE_KINDS.join(', ')
+
+    expect(refusalOf({ ...NOTE, kind: 'ping', subject: '', vector: 'x', outcome: 'maybe' })).toBe(
+      listed(fill(PROMPTS.inboxKindUnknown, { kinds }), PROMPTS.inboxSubjectEmpty),
+    )
+    expect(refusalOf({ ...TICKET, subject: '', scores: undefined, pin: 'medium' })).toBe(
+      listed(fill(PROMPTS.inboxKindPmOnly, { kind: 'ticket', pm: 'pm' }), PROMPTS.inboxSubjectEmpty),
+    )
+  })
 })
 
 describe('inboxSendSchema', () => {
