@@ -111,7 +111,10 @@ describe('parseSendInput', () => {
       [{ ...NOTE, subject: '' }, PROMPTS.inboxSubjectEmpty],
       [{ ...NOTE, subject: '\u200B\u0007\n' }, PROMPTS.inboxSubjectEmpty],
       [{ ...NOTE, body: '' }, PROMPTS.inboxBodyEmpty],
-      [{ ...NOTE, body: WIDE.repeat(BODY_MAX_CHARS + 1) }, fill(PROMPTS.inboxBodyTooLong, { max: BODY_MAX_CHARS })],
+      [
+        { ...NOTE, body: WIDE.repeat(BODY_MAX_CHARS + 1) },
+        'body is 3001 characters, over its cap of 3000: shorten it or split it into several entries.',
+      ],
       [{ ...NOTE, replyTo: 'not-an-entry' }, PROMPTS.inboxReplyToBad],
       [{ ...NOTE, replyTo: '' }, PROMPTS.inboxReplyToBad],
     ]
@@ -211,7 +214,7 @@ describe('parseSendInput of a task', () => {
     const atCap = `docs/${'a'.repeat(192)}.md`
 
     expect(refusalOf({ ...TASK, specPath: `docs/${'a'.repeat(193)}.md` })).toBe(
-      'specPath is over 200 characters: shorten it.',
+      'specPath is 201 characters, over its cap of 200: shorten it.',
     )
     expect(parseSendInput({ ...TASK, specPath: atCap }, BE, TEAM)).toMatchObject({ fields: { specPath: atCap } })
   })
@@ -271,10 +274,7 @@ describe('parseSendInput of a report', () => {
         { ...REPORT, docPaths: ['../x'] },
         fill(PROMPTS.inboxDocPathsBad, { max: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS }),
       ],
-      [
-        { ...REPORT, openQuestions: questions },
-        fill(PROMPTS.inboxOpenQuestionsBad, { max: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS }),
-      ],
+      [{ ...REPORT, openQuestions: questions }, 'openQuestions has 11 items, over its cap of 10.'],
       [{ ...REPORT, reason: undefined }, fill(PROMPTS.inboxFieldMissing, { kind: 'report', fields: 'reason' })],
     ]
 
@@ -286,7 +286,7 @@ describe('parseSendInput of a report', () => {
 
     expect(atCap).toMatchObject({ fields: { changes: `${'c'.repeat(CHANGES_MAX_CHARS - 2)} d` } })
     expect(refusalOf({ ...REPORT, changes: 'c'.repeat(CHANGES_MAX_CHARS + 1) })).toBe(
-      fill(PROMPTS.inboxFieldTooLong, { field: 'changes', max: CHANGES_MAX_CHARS }),
+      'changes is 1001 characters, over its cap of 1000: shorten it.',
     )
     expect(refusalOf({ ...REPORT, reason: ' \u200B\n' })).toBe(fill(PROMPTS.inboxFieldEmpty, { field: 'reason' }))
   })
@@ -310,7 +310,7 @@ describe('parseSendInput of an epic brief', () => {
     const ticketsBad = fill(PROMPTS.inboxTicketsBad, { max: TICKETS_MAX_ITEMS })
 
     expect(refusalOf({ ...BRIEF, tickets: ['PROJ-2', '../x'] })).toBe(ticketsBad)
-    expect(refusalOf({ ...BRIEF, tickets: many })).toBe(ticketsBad)
+    expect(refusalOf({ ...BRIEF, tickets: many })).toBe('tickets has 101 items, over its cap of 100.')
     expect(refusalOf({ ...BRIEF, mode: 'ticket' })).toBe(PROMPTS.inboxTicketsNotEpic)
     expect(refusalOf({ ...BRIEF, mode: undefined })).toBe(PROMPTS.inboxTicketsNotEpic)
     expect(refusalOf({ ...BRIEF, mode: 'sprint' })).toBe(fill(PROMPTS.inboxModeBad, { modes: 'gsd-epic, ticket' }))
@@ -373,6 +373,62 @@ describe('parseSendInput: the fields each kind takes', () => {
     )
 
     expect(unnamed).toEqual([])
+  })
+})
+
+describe('parseSendInput: every problem at once', () => {
+  test('a send with several problems is refused once, listing every one with its size against its cap', () => {
+    const question = (length: number): string => `${'q'.repeat(length - 1)}?`
+    const report = {
+      ...REPORT,
+      changes: 'c'.repeat(1108),
+      verification: 'v'.repeat(1008),
+      reason: 'r'.repeat(244),
+      docPaths: Array.from({ length: 11 }, (_, index) => `docs/report-${index + 1}.md`),
+      openQuestions: [question(40), question(223), question(40), question(261), question(40), question(220)],
+    }
+
+    expect(refusalOf(report)).toBe(
+      [
+        'Not sent, 5 problems:',
+        '- changes is 1108 characters, over its cap of 1000: shorten it.',
+        '- verification is 1008 characters, over its cap of 500: shorten it.',
+        '- reason is 244 characters, over its cap of 200: shorten it.',
+        '- docPaths has 11 items, over its cap of 10.',
+        '- openQuestions: items 2, 4, 6 are 223, 261, 220 characters, over the cap of 200 each.',
+      ].join('\n'),
+    )
+  })
+
+  test('a report with a ticketKey and three fields over their caps names the foreign field, then each size', () => {
+    const report = {
+      ...REPORT,
+      ticketKey: 'KAN-3',
+      changes: 'c'.repeat(1306),
+      verification: 'v'.repeat(755),
+      openQuestions: ['q'.repeat(277)],
+    }
+
+    expect(refusalOf(report)).toBe(
+      [
+        'Not sent, 4 problems:',
+        '- ticketKey is not a field of a report: leave it out.',
+        '- changes is 1306 characters, over its cap of 1000: shorten it.',
+        '- verification is 755 characters, over its cap of 500: shorten it.',
+        '- openQuestions: items 1 are 277 characters, over the cap of 200 each.',
+      ].join('\n'),
+    )
+  })
+
+  test('a note to a role outside the team with an empty subject and a long body names all three', () => {
+    expect(refusalOf({ ...NOTE, to: 'qa', subject: '', body: 'b'.repeat(3001) })).toBe(
+      [
+        'Not sent, 3 problems:',
+        '- to must name a role of the team: pm, tl, be.',
+        '- subject is empty or not text: give a short subject line.',
+        '- body is 3001 characters, over its cap of 3000: shorten it or split it into several entries.',
+      ].join('\n'),
+    )
   })
 })
 
