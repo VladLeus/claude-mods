@@ -663,7 +663,7 @@ async function applyConfirmed(
   const ran = await projectInstalled(io, host, draft)
   const { scanned, failed, landed, roles, repoDefault, landedPlugins, failedPlugins } = ran
   const { failures, hunks, notRun } = await hunksRan(io, host, draft)
-  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations)
+  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations, failed)
   const installCount = countsText([['plugins', draft.pluginInstalls.length]])
   if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
   const installs =
@@ -713,7 +713,7 @@ async function applyConfirmed(
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
-    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations),
+    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations, failed),
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...landedKeys, ...installs.installed],
     installProblems: [
@@ -742,7 +742,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
   if (asked.kind === 'cancelled') return asked
   const { scanned, failed, landed, roles, repoDefault } = await projectInstalled(io, host, draft)
   const { failures, hunks, notRun } = await hunksRan(io, host, draft)
-  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations)
+  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations, failed)
   const setup = setupAfterInstalls(gathered.setup, consentedPluginKeys(draft, failed))
   const recorded = initFrameworks(draft, failed)
   const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
@@ -768,7 +768,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
-    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations),
+    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations, failed),
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: landed.flatMap(id => projectInstallOf(id)?.id ?? []),
     installProblems: fallbackProblems(draft, failed),

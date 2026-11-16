@@ -3,7 +3,7 @@
  * through a proven user-level GSD only, the hunks after their runs, and the reply lines of a failed run and of the
  * accepted hunks not run. It imports core, the framework registry, GSD's identity and tool resolver and the types.
  */
-import type { HunkOp, InitFacts, SettingProposal, SetupScan } from '../../types'
+import type { FrameworkId, HunkOp, InitFacts, SettingProposal, SetupScan } from '../../types'
 import { reportText } from '../core/text'
 import { foundUserDir, hasRepoGsd } from '../framework/gsd/identity'
 import { resolveToolCommand } from '../framework/gsd/tools'
@@ -92,13 +92,18 @@ function notRunLine(hunk: HunkOp, display: string): string {
   return hunk.isRequired ? t('apply.hunks.hunkNotRunRequiredLine', shown) : t('apply.hunks.hunkNotRunLine', shown)
 }
 
-/** The command a hunk cadre did not run is shown with, from the GSD known after the installs; null when none is. */
+/**
+ * The command a hunk cadre did not run is shown with, from the GSD known after the installs; null when GSD's install
+ * failed or none is known.
+ */
 function shownCommand(
   hunk: HunkOp,
   setup: SetupScan,
   after: InitFacts,
   shown: Omit<GsdToolContext, 'userDir'>,
+  failed: readonly FrameworkId[],
 ): string | null {
+  if (failed.includes('gsd')) return null
   if (hasRepoGsd(after.facts)) return hunk.command
   const userDir = foundUserDir(after)
   if (userDir === null) return null
@@ -110,23 +115,24 @@ function shownCommand(
 
 /**
  * The lines of the accepted hunks cadre did not run: each with its shownCommand, or one line naming the keys that wait
- * for GSD when none is known.
+ * for GSD when there is none.
  */
 export function hunkNotRunLines(
   notRun: readonly HunkOp[],
   setup: SetupScan,
   after: InitFacts,
   shown: Omit<GsdToolContext, 'userDir'>,
+  failed: readonly FrameworkId[],
 ): string[] {
   const [first] = notRun
   if (first === undefined) return []
-  if (shownCommand(first, setup, after, shown) === null) {
+  if (shownCommand(first, setup, after, shown, failed) === null) {
     const keys = notRun.map(hunk => reportText(hunk.key)).join(', ')
 
     return [t('apply.hunks.gsdNotInstalledLine', { file: reportText(first.file), keys })]
   }
 
-  return notRun.map(hunk => notRunLine(hunk, shownCommand(hunk, setup, after, shown) ?? hunk.command))
+  return notRun.map(hunk => notRunLine(hunk, shownCommand(hunk, setup, after, shown, failed) ?? hunk.command))
 }
 
 /** The hunks as the post-apply plan shows them. */
@@ -136,12 +142,13 @@ export function hunksShown(
   setup: SetupScan,
   after: InitFacts,
   shown: Omit<GsdToolContext, 'userDir'>,
+  failed: readonly FrameworkId[],
 ): HunkOp[] {
   const notRunKeys = new Set(notRun.map(hunk => hunk.key))
 
   return hunks.map(hunk => {
     if (!notRunKeys.has(hunk.key)) return hunk
 
-    return { ...hunk, command: shownCommand(hunk, setup, after, shown) ?? t('apply.hunks.gsdWaitCommand') }
+    return { ...hunk, command: shownCommand(hunk, setup, after, shown, failed) ?? t('apply.hunks.gsdWaitCommand') }
   })
 }
