@@ -113,7 +113,7 @@ export const ROWS: readonly RowEntry[] = [
     fixture: ['gsd-here'],
     kind: 'recorded',
     file: 'live/03-55.test.ts',
-    cassette: { inputs: ['cadre/hooks/generate/launcher.ts', 'cadre/hooks/probe'] },
+    cassette: CADRE_HOOKS,
   },
   {
     id: '03#57',
@@ -294,10 +294,10 @@ export const ROWS: readonly RowEntry[] = [
     title: 'A transcript folder name over 200 characters (#14 item, decision #59)',
     tier: 'live',
     fixture: ['gsd'],
-    kind: 'recorded',
+    kind: 'mixed',
     file: 'live/03-78.test.ts',
     roleSession: 'be',
-    cassette: { inputs: ['cadre/hooks/launch', 'cadre/hooks/paths.ts', 'cadre/hooks/status'] },
+    cassette: { inputs: ['cadre/hooks', 'autopilot/hooks', 'e2e/lib/settings.ts'] },
   },
   {
     id: '03#80',
@@ -415,7 +415,7 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'mixed',
     file: 'live/03.1-15.test.ts',
     roleSession: 'be',
-    cassette: CADRE_HOOKS,
+    cassette: { inputs: ['cadre/hooks', 'autopilot/hooks'] },
     partial: [
       {
         part: 'which live sessions read running',
