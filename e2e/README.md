@@ -145,12 +145,12 @@ node e2e/agent/cli.ts end --token <token>           # after the Workflow
 | `claim <ws> <role...> [--wait <s>]` | claims roles before the workspace starts them |
 | `start <ws> root\|<role> [--cwd <folder>] [--wt <worktree>] [--raw]` | opens `claude` or a claimed role window |
 | `windows <ws>` | lists the windows, live or dead, with their folder |
-| `trust <ws> <window>` | passes the trust screens of a window cadre opened, such as `cadre-<role>` |
-| `send <ws> <window> <text>` | types one line into a window and submits it |
+| `trust <ws> <window>` | passes the trust screens of a window cadre opened, such as `cadre-<role>`; it returns at the ready prompt or at a question |
+| `send <ws> <window> <text>` | types one line into a window, waits until the input box shows it and holds still, then submits it, also while the session works |
 | `keys <ws> <window> <key...>` | presses keys from a fixed list |
 | `answer`, `other <ws> <window> <label or text>` | answers the question on the screen |
 | `capture <ws> <window> [--history] [--lines <n>]` | prints the last lines of a window |
-| `wait <ws> <window> <regex> [--timeout <s>]` | waits until the screen matches, at most 540 s per call; after a `send`, only the lines below the sent text's echo count |
+| `wait <ws> <window> <regex> [--timeout <s>]` | waits until the window history matches, at most 540 s per call; after a `send`, only the lines below the sent text's echo count |
 | `idle`, `stop <ws> <window>` | waits for a still screen; exits the session |
 | `cadre <ws> <args...> [--wt <worktree>]` | runs `/cadre <args>` in print mode in the copy |
 | `probe <ws> <role> [--wt <worktree>]` | runs a role launcher with `--probe` |
