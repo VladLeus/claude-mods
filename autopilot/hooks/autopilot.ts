@@ -627,16 +627,35 @@ export function limitAction(run: Run, windows: readonly TokenWindow[], now: numb
 
 export type TurnAction = 'continue' | 'wrapup' | 'final' | 'pause' | 'finish' | 'resume-done' | 'none'
 
+const ENGINE_CALL_KEYS: readonly string[] = ['tool', 'tool_use_id', 'agentId', 'requestMeta', 'consent']
+
+/** The engine's per-call keys are dropped because `tool_use_id` differs on every call. */
+export function callSignature(call: unknown): string {
+  if (typeof call !== 'object' || call === null) return ''
+  const tool = 'tool' in call && typeof call.tool === 'string' ? call.tool : ''
+  const input = Object.entries(call)
+    .filter(([key]) => !ENGINE_CALL_KEYS.includes(key))
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+
+  return JSON.stringify([tool, input])
+}
+
+/** A main-loop turn made no progress when it called no tool or exactly the calls of the turn before. */
+export function isIdleTurn(previous: readonly string[] | null, current: readonly string[]): boolean {
+  if (current.length === 0) return true
+  if (previous === null || previous.length !== current.length) return false
+  return current.every((signature, index) => signature === previous[index])
+}
+
 /**
- * What to do when a main-loop turn ends, from the run, the context fill, the
- * time, whether the turn called any tool, and the ceiling below auto-compact.
- * The token windows are judged apart (limitAction), before this.
+ * What to do when a main-loop turn ends, from the run, the context fill, the time, whether the turn made progress
+ * and the ceiling; the token windows are judged before it.
  */
 export function afterTurn(
   run: Run,
   now: number,
   percent: number | null,
-  calledTools: boolean,
+  madeProgress: boolean,
   ceiling = DEFAULT_CEILING,
 ): TurnAction {
   // The turn that called the restart tool ends before /clear runs: queue nothing,
@@ -653,7 +672,7 @@ export function afterTurn(
 
   if (now >= run.until) return 'final'
   if (percent !== null && percent >= effectiveTrigger(run, ceiling)) return canRestart(run) ? 'wrapup' : 'final'
-  if (!calledTools && run.idleTurns + 1 >= MAX_IDLE_TURNS) return 'pause'
+  if (!madeProgress && run.idleTurns + 1 >= MAX_IDLE_TURNS) return 'pause'
 
   return 'continue'
 }
