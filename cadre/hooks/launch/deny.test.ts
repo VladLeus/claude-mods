@@ -776,6 +776,21 @@ describe('the start folder settings deny and the shortened memory folder deny', 
     expect(plain.filter(entry => entry.includes('/src/.claude/'))).toEqual([])
   })
 
+  test('a dir start folder no exact rule can hold warns once, naming it; the roots keep their launch file rules', () => {
+    const roots = { givenRoot: '/link/repo', mainRoot: '/main' }
+    const scoped = settingsDeny(BE, BE_SCOPE, user({ ...roots, startDir: 'packages/@acme/web' }))
+    const safe = settingsDeny(BE, BE_SCOPE, user({ ...roots, startDir: 'src' }))
+    const rootRules = ['/repo', '/link/repo', '/main'].flatMap(root => launchFileRules(root))
+
+    expect(scoped.warnings).toEqual([
+      'the start folder packages/@acme/web has a path a permission rule cannot hold: ' +
+        'its .claude settings files and framework install folders stay editable',
+    ])
+    expect(rootRules.filter(rule => !scoped.deny.includes(rule))).toEqual([])
+    expect(scoped.deny.filter(entry => entry.includes('@acme'))).toEqual([])
+    expect(safe.warnings).toEqual([])
+  })
+
   test('a root with a long encoded name also gets one glob Edit rule over its shortened memory folder', () => {
     const root = `/r/${'a'.repeat(250)}`
     const glob = `Edit(//home/u/.claude/projects/-r-${'a'.repeat(197)}*/memory/**)`

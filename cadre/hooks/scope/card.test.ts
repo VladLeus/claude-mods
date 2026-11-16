@@ -566,6 +566,26 @@ describe('launch start card (D-122)', () => {
 
     expect(labels).toEqual(['best-effort', 'best-effort', 'hard', 'hard', 'hard'])
   })
+
+  test('a dir start folder no permission rule can hold gets a none note after its settings line; src gets none', () => {
+    const rulesOf = (path: string): readonly ScopeRule[] => {
+      const launchStart: LaunchStart = { kind: 'dir', path }
+
+      return compileScope(GUARDED_BE, context({ root: '/repo', launchStart, setup: START_SETUP })).card.rules
+    }
+    const folder = '<git root>/packages/@acme/web'
+    const scoped = rulesOf('packages/@acme/web')
+    const at = scoped.findIndex(item => item.text === startSettingsLine(folder))
+
+    expect(scoped[at + 1]).toEqual({
+      text:
+        `${folder}/.claude/settings.json, settings.local.json and its framework install folders are not ` +
+        'write-protected: no permission rule can hold the path, so a role that can edit there can change what the ' +
+        'next launch loads',
+      enforcement: 'none',
+    })
+    expect(rulesOf('src').filter(item => item.text.includes('not write-protected'))).toEqual([])
+  })
 })
 
 /** One compiled scope of the route matrix, with the combination it was compiled for. */
