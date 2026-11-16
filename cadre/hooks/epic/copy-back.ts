@@ -6,7 +6,7 @@
 import type { PortEntry } from '../../types'
 import { compareText, sortedUnique } from '../core/text'
 import { foldersAbove } from '../paths'
-import { listedEntry } from './mirror'
+import { listedEntry, parentOf } from './mirror'
 import type { EpicStep } from './mirror'
 
 /** The steps of a copy-back, in order, and the repo-relative paths it cannot copy back safely, sorted, once each. */
@@ -15,23 +15,34 @@ export type CopyBack = {
   readonly unsafe: readonly string[]
 }
 
+export function isRealDir(entry: PortEntry | undefined): boolean {
+  return entry !== undefined && entry.kind === 'dir' && !entry.isLink
+}
+
 /**
- * The copy-back of the copied `folders`: each regular file of the worktree's real folders written after `since` that
- * main lacks or holds in another size or time is copied over main's, a folder main lacks made just before the first
- * copy below it. A link or another kind in main at any depth, a folder a listing lacks, or `since <= 0` is unsafe.
+ * The copy-back of the recorded `copies`. A copy the worktree lists as a file, a link or not at all is skipped. A copy
+ * whose folder the worktree cannot list, or that `included` (the paths main's .worktreeinclude names now) lacks, is
+ * unsafe. Each regular file of the other copied folders written after `since` that main lacks or holds in another
+ * size or time is copied over main's, a folder main lacks made just before the first copy below it. A link or another
+ * kind in main at any depth, a folder a listing lacks, or `since <= 0` is unsafe.
  */
 export function copyBackPlan(input: {
   readonly root: string
   readonly worktree: string
-  readonly folders: readonly string[]
+  readonly copies: readonly string[]
+  readonly included: readonly string[]
   readonly since: number
   readonly main: ReadonlyMap<string, readonly PortEntry[]>
   readonly tree: ReadonlyMap<string, readonly PortEntry[]>
 }): CopyBack {
-  const { root, worktree, since, main, tree } = input
-  if (since <= 0) return { steps: [], unsafe: sortedUnique(input.folders) }
+  const { root, worktree, included, since, main, tree } = input
+  const copies = sortedUnique(input.copies)
+  const unlisted = copies.filter(copy => tree.get(parentOf(copy)) === undefined)
+  const real = copies.filter(copy => isRealDir(listedEntry(tree, copy)))
+  const folders = real.filter(copy => included.includes(copy))
+  const unsafe: string[] = [...unlisted, ...real.filter(copy => !included.includes(copy))]
+  if (since <= 0) return { steps: [], unsafe: sortedUnique([...unsafe, ...folders]) }
   const steps: EpicStep[] = []
-  const unsafe: string[] = []
   const made = new Set<string>()
 
   const copy = (path: string, missing: readonly string[]): void => {
@@ -69,6 +80,10 @@ export function copyBackPlan(input: {
   const start = (folder: string): void => {
     const chain = [...foldersAbove(folder), folder]
     for (const [at, path] of chain.entries()) {
+      if (main.get(parentOf(path)) === undefined) {
+        unsafe.push(path)
+        return
+      }
       const shown = listedEntry(main, path)
       if (shown === undefined) {
         walk(folder, chain.slice(at))
@@ -81,7 +96,7 @@ export function copyBackPlan(input: {
     }
     walk(folder, [])
   }
-  for (const folder of sortedUnique(input.folders)) start(folder)
+  for (const folder of folders) start(folder)
 
   return { steps, unsafe: sortedUnique(unsafe) }
 }

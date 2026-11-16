@@ -89,7 +89,7 @@ function protectedFolders(roleIds: readonly string[]): string[] {
 }
 
 /** The repo-relative folder a path lies in, '' for the root. */
-function parentOf(path: string): string {
+export function parentOf(path: string): string {
   const at = path.lastIndexOf('/')
 
   return at === -1 ? '' : path.slice(0, at)

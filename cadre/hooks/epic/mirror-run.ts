@@ -4,7 +4,7 @@
  * git dir and points git at it, then runs each step through the HostIo port and stops at the first that fails, with
  * the replies of a failed listing, excludes setup or step and the warning of an unreadable global excludes file. It
  * imports core, git/argv, host/steps, scan and the epic modules below it; epic/create runs it, and epic/done reads its
- * listings.
+ * listings and its included paths.
  */
 import type { HostIo, InitIo, PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
@@ -109,9 +109,15 @@ async function globalExcludesOf(
 
 /**
  * The paths of the main checkout at `root` that its WORKTREE_INCLUDE_FILE names and git ignores (includedEntries over
- * the INCLUDED_ARGV run and `ignored`, the LS_IGNORED_ARGV output): [] with no such file, null when the run fails.
+ * the INCLUDED_ARGV run and `ignored`, the LS_IGNORED_ARGV output): [] with no such file, null when the run fails. The
+ * mirror copies these paths, and epic done copies back only the recorded copies among them.
  */
-async function includedOf(io: InitIo, host: HostIo, root: string, ignored: string): Promise<readonly string[] | null> {
+export async function includedOf(
+  io: InitIo,
+  host: HostIo,
+  root: string,
+  ignored: string,
+): Promise<readonly string[] | null> {
   const include = await io.read(`${root}/${WORKTREE_INCLUDE_FILE}`, MAX_READ_BYTES)
   if (include.state === 'absent') return []
   const named = await host.run(INCLUDED_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
