@@ -4967,6 +4967,19 @@ const MODE_NOT_RUN =
   'warning: the .planning/config.json change mode was not run by cadre: run this yourself: ' +
   'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
 
+/** The line apply prints for the accepted `mode` hunk it did not run, as an unproven user-level GSD shows it. */
+const MODE_NOT_RUN_USER =
+  `warning: the .planning/config.json change mode was not run by cadre: run this yourself: ${MODE_DISPLAY}`
+
+/** The line apply prints for the accepted `mode` hunk when no GSD is known for the repo after the installs. */
+const MODE_WAITS =
+  'warning: GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+
+/** The fallback line of a GSD install that did not land, with the whole team on GSD. */
+const GSD_FALLBACK_DEFAULT =
+  'warning: GSD did not install, so the repo default fell back to none (built-in): run ' +
+  'npx -y @opengsd/gsd-core@latest --claude --local from the repo root, then /cadre frameworks again'
+
 /** The banner ROLE.md carries under the framework line of an attended role. */
 const ATTENDED_BANNER =
   'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.'
@@ -5087,16 +5100,56 @@ describe('init apply hunks (D-120)', () => {
     expect(reply).not.toContain('could not install')
   })
 
-  test('after a project GSD install that does not land the accepted hunk is named, not run', async () => {
+  test(
+    'after a project GSD install that does not land, the accepted hunks wait for GSD in one line ' +
+      'after the fallback line',
+    async () => {
+      const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+      const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
+      const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+      const host = memHost(hostWorld({}))
+      const reply = await runInit(memIo(world, answers).io, { dryRun: false, host: host.io })
+      const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+      const lines = reply.split('\n')
+      const at = lines.indexOf(GSD_FALLBACK_DEFAULT)
+      expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+      expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+      expect([at > 0, lines.slice(at, at + 2)]).toEqual([true, [GSD_FALLBACK_DEFAULT, MODE_WAITS]])
+      expect(lines.filter(line => line.startsWith('warning: ') && line.includes('node .claude/gsd-core'))).toEqual([])
+    },
+  )
+
+  test('with GSD in use but not installed and its install declined, the accepted hunks wait for GSD', async () => {
     const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
     const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
-    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'No' }
     const host = memHost(hostWorld({}))
-    const reply = await runInit(memIo(world, answers).io, { dryRun: false, host: host.io })
-    const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
-    expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+    const run = memIo(world, answers)
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(run.asked.filter(question => question.startsWith('Install GSD for this repo?')).length).toBe(1)
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
-    expect(reply.split('\n')).toContain(MODE_NOT_RUN)
+    expect(lines).toContain(MODE_WAITS)
+    expect(lines.filter(line => line.startsWith('warning: ') && line.includes('node .claude/gsd-core'))).toEqual([])
+  })
+
+  test('with an unproven user-level GSD, its check and install declined, the hunk shows the ~/ command', async () => {
+    const facts: Facts = {
+      ...EMPTY_FACTS,
+      repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }],
+      gsd: [UNPROVEN],
+    }
+    const world = modeWorld({ facts: { facts, gsdUserDir: '/home/u/.claude/gsd-core' } })
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'No' }
+    const host = memHost(hostWorld({}))
+    const run = memIo(world, answers)
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    const asked = (start: string): number => run.asked.filter(question => question.startsWith(start)).length
+    expect([asked("Run GSD's own check"), asked('Install GSD for this repo?')]).toEqual([1, 1])
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect(lines).toContain(MODE_NOT_RUN_USER)
+    expect(lines.filter(line => line.startsWith('warning: ') && line.includes('node .claude/gsd-core'))).toEqual([])
   })
 
   test('a hunk cadre ran, one that failed and one declined get no not-run line', async () => {
@@ -7455,8 +7508,9 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
     const { host, result } = await appliedIn(world, await reframedOf(world, draft))
     const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const waits = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
-    expect([outcome?.hunkFailures, outcome?.hunksNotRun]).toEqual([[], [gsdHunk()]])
+    expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [waits]])
   })
 
   test('a hunk after a project GSD install that lands, with no proven user-level GSD, is not run', async () => {
@@ -7464,7 +7518,8 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
     const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
     const roles = [withFramework(BE, 'gsd'), PM]
-    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const hunk = gsdHunk({ command: 'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo' })
+    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [hunk] })
     const reframed = await reframedOf(world, draft)
     const host = memHost(hostWorld({}))
     const run = memIo(world, {})
@@ -7480,8 +7535,9 @@ describe('the file plan and apply of /cadre frameworks', () => {
     const result = await reframeApplied(io, host.io, reframed)
     const outcome = result.kind === 'accepted' ? result.value.outcome : null
     expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    const line = `the .planning/config.json change mode was not run by cadre: run this yourself: ${hunk.command}`
     expect([outcome?.installed, outcome?.installProblems]).toEqual([[projectInstallOf('gsd')?.id], []])
-    expect([outcome?.hunkFailures, outcome?.hunksNotRun]).toEqual([[], [gsdHunk()]])
+    expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [line]])
   })
 
   test('a parts-flow role whose role.json is written again keeps its instructionParts', async () => {

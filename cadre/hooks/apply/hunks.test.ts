@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HunkOp } from '../../types'
+import type { GsdFact, HunkOp, InitFacts } from '../../types'
 import { GSD_AUTONOMY } from '../framework/gsd/adapter'
 import { isUnmetHunk } from '../framework/gsd/hunks'
 import type { GsdToolContext } from '../framework/gsd/tools'
-import { BIDI_OVERRIDE, emptySetupScan, file } from '../testkit'
-import { hunkFailureLine, hunkNotRunLine, hunkProposal, hunkRuns, hunksAfterRuns, hunksNotRun } from './hunks'
+import { BIDI_OVERRIDE, EMPTY_FACTS, emptySetupScan, file, PROVEN_USER_GSD } from '../testkit'
+import { hunkFailureLine, hunkNotRunLines, hunkProposal, hunkRuns, hunksAfterRuns, hunksNotRun } from './hunks'
 import type { HunkRun } from './hunks'
 
 /** A user-level GSD in the fixture home, as hunkStep builds the tool context from proven facts (D-71). */
@@ -49,6 +49,21 @@ const MODE_RUN: HunkRun = {
   argv: ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', 'mode', 'yolo'],
   display: `${GSD_TOOLS} config-set mode yolo`,
 }
+
+/** Where a not-run line shows a command from: the fixture repo and home folder, no CLAUDE_CONFIG_DIR. */
+const SHOWN = { home: '/home/u', root: '/repo', configDir: null }
+
+/** The repo's own GSD copy, proven, as the facts read it again after the installs. */
+const REPO_GSD: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+
+/** The facts after the installs with the repo's own GSD copy and no user-level GSD. */
+const REPO_COPY: InitFacts = { facts: { ...EMPTY_FACTS, gsd: [REPO_GSD] }, gsdUserDir: null }
+
+/** The facts after the installs with no GSD known. */
+const NONE_KNOWN: InitFacts = { facts: EMPTY_FACTS, gsdUserDir: null }
+
+/** The `mode` command as the plan shows it with no proven user-level GSD: the repo-local copy. */
+const REPO_MODE = 'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
 
 describe('hunk runs (D-106)', () => {
   test('hunkProposal finds the proposal an adapter offers for this setup by the hunk file and key; else null', () => {
@@ -129,13 +144,47 @@ describe('hunk runs (D-106)', () => {
     expect(hunksNotRun([], [MODE_RUN])).toEqual([])
   })
 
-  test('hunkNotRunLine names the file, the key and the command to run by hand, each cleaned', () => {
-    const hostile: HunkOp = { ...MODE_HUNK, key: `mo${BIDI_OVERRIDE}\nde` }
-    const line =
-      'the .planning/config.json change mode was not run by cadre: run this yourself: ' +
-      `${GSD_TOOLS} config-set mode yolo`
+  test('with a repo copy hunkNotRunLines names the file, the key and its own command per hunk, each cleaned', () => {
+    const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
+    const hostile: HunkOp = { ...repoMode, key: `mo${BIDI_OVERRIDE}\nde` }
+    const line = `the .planning/config.json change mode was not run by cadre: run this yourself: ${REPO_MODE}`
+    const unknownGsd: GsdFact = { ...REPO_GSD, identity: 'unknown' }
+    const unknownCopy: InitFacts = { ...REPO_COPY, facts: { ...EMPTY_FACTS, gsd: [unknownGsd] } }
 
-    expect(hunkNotRunLine(MODE_HUNK)).toBe(line)
-    expect(hunkNotRunLine(hostile)).toBe(line)
+    expect(hunkNotRunLines([repoMode], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([line])
+    expect(hunkNotRunLines([hostile], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([line])
+    expect(hunkNotRunLines([repoMode, repoMode], emptySetupScan(), unknownCopy, SHOWN)).toEqual([line, line])
+  })
+
+  test('hunkNotRunLines gives no line for no hunk', () => {
+    expect(hunkNotRunLines([], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([])
+    expect(hunkNotRunLines([], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([])
+  })
+
+  test('with no GSD known after the installs the accepted hunks wait for it in one line, keys cleaned', () => {
+    const textMode: HunkOp = { ...MODE_HUNK, key: 'workflow.text_mode', before: 'true', after: 'false' }
+    const hostile: HunkOp = { ...textMode, key: `workflow.text${BIDI_OVERRIDE}\n_mode` }
+    const line =
+      'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: ' +
+      'mode, workflow.text_mode'
+
+    expect(hunkNotRunLines([MODE_HUNK, textMode], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([line])
+    expect(hunkNotRunLines([MODE_HUNK, hostile], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([line])
+  })
+
+  test('with no repo copy an unproven user-level GSD shows its ~/ command; a hunk no adapter offers its own', () => {
+    const unproven: InitFacts = {
+      facts: { ...EMPTY_FACTS, gsd: [{ ...PROVEN_USER_GSD, identity: 'unknown' }] },
+      gsdUserDir: '/home/u/.claude/gsd-core',
+    }
+    const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
+    const unoffered: HunkOp = { ...repoMode, key: 'workflow.unknown', command: 'node .claude/x config-set unknown on' }
+
+    expect(hunkNotRunLines([repoMode, unoffered], emptySetupScan(), unproven, SHOWN)).toEqual([
+      'the .planning/config.json change mode was not run by cadre: run this yourself: ' +
+        'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
+      'the .planning/config.json change workflow.unknown was not run by cadre: run this yourself: ' +
+        'node .claude/x config-set unknown on',
+    ])
   })
 })

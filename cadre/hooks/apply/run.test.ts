@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FrameworkId, HostRun, HunkOp, ProjectInstall } from '../../types'
+import type { DesiredFile, FrameworkId, HostRun, ProjectInstall } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { attendedNote } from '../framework/gsd/hunks'
 import { untrackedPartsWarning } from '../generate/gittrack'
@@ -18,7 +18,7 @@ import {
   USER_DIR_LISTED,
 } from '../testkit'
 import type { MemWorld } from '../testkit'
-import { hunkFailureLine, hunkNotRunLine } from './hunks'
+import { hunkFailureLine } from './hunks'
 import type { HunkRun } from './hunks'
 import { improverArgv } from './improver'
 import type { BuiltFile } from './improver'
@@ -212,27 +212,31 @@ describe('init apply (D-105)', () => {
     expect(appliedLines(outcomeOf({ failed: ['.cadre/INDEX.md'] }))[0]).toBe('Applied: wrote 0 files (0 executable).')
   })
 
-  test('appliedLines: each accepted hunk not run is a warning line right after the hunk failure lines', () => {
+  test('appliedLines: the not-run hunk lines come right after the install problems, before the untracked parts', () => {
     const run: HunkRun = { key: 'mode', file: '.planning/config.json', argv: ['node'], display: 'node ~/x mode yolo' }
-    const hunk: HunkOp = {
-      kind: 'hunk',
-      file: '.planning/config.json',
-      key: 'hooks.context_warnings',
-      before: 'not set (GSD default)',
-      after: 'false',
-      isRequired: false,
-      isAccepted: true,
-      isRunnable: true,
-      command: 'node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false',
-    }
-    const outcome = outcomeOf({ hunkFailures: [run], hunksNotRun: [hunk], attended: ['mode'] })
-    expect(appliedLines(outcome)).toEqual([
+    const notRun = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+    const installProblems = ['GSD did not install, so the repo default fell back to none (built-in)', 'install it']
+    const untracked = untrackedPartsWarning('notes/local.md')
+    const outcome = outcomeOf({
+      hunkFailures: [run],
+      notRunLines: [notRun],
+      attended: ['mode'],
+      installProblems,
+      untrackedParts: [untracked],
+    })
+    const lines = appliedLines(outcome)
+    expect(lines).toEqual([
       APPLIED_NONE_NOTE,
       `warning: ${hunkFailureLine(run)}`,
-      `warning: ${hunkNotRunLine(hunk)}`,
       `warning: ${attendedNote(['mode'])}`,
+      `warning: ${installProblems[0]}`,
+      `warning: ${installProblems[1]}`,
+      `warning: ${notRun}`,
+      `warning: ${untracked}`,
       NEXT_STEP_NOTE,
     ])
+    const at = lines.indexOf(`warning: ${notRun}`)
+    expect(installProblems.map(problem => lines.indexOf(`warning: ${problem}`) < at)).toEqual([true, true])
     expect(appliedLines(outcomeOf({ hunkFailures: [run] }))).toEqual([
       APPLIED_NONE_NOTE,
       `warning: ${hunkFailureLine(run)}`,
