@@ -702,6 +702,8 @@ export const EN = Object.freeze({
   'apply.hunks.hunkFailureLine': 'the {file} change {key}',
   'apply.hunks.hunkFailureLine2': '{change} failed: run it yourself: {display}',
   'apply.hunks.hunkNotRunLine': '{change} was not run by cadre: run this yourself: {display}',
+  'apply.hunks.gsdNotInstalledLine':
+    'GSD is not installed for this repo, so the accepted {file} changes wait for it: {keys}',
   'apply.improver.otherListed': '{named}, +{rest} more',
   'apply.improver.otherChanges.one':
     'the improver also changed {count} other file in {folder}: {listed}; review them (listed above)',

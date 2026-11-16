@@ -35,7 +35,7 @@ import {
   parseConflictAnswer,
 } from '../apply/conflict'
 import type { ConflictChoice } from '../apply/conflict'
-import { hunkRuns, hunksAfterRuns, hunksNotRun } from '../apply/hunks'
+import { hunkNotRunLines, hunkRuns, hunksAfterRuns, hunksNotRun } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
 import {
@@ -712,7 +712,7 @@ async function applyConfirmed(
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
-    hunksNotRun: notRun,
+    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations),
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...landedKeys, ...installs.installed],
     installProblems: [
@@ -766,7 +766,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
-    hunksNotRun: notRun,
+    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations),
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: landed.flatMap(id => projectInstallOf(id)?.id ?? []),
     installProblems: fallbackProblems(draft, failed),

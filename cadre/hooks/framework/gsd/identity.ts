@@ -326,3 +326,15 @@ export function provenUserDir(initFacts: InitFacts): string | null {
 
   return isProven ? initFacts.gsdUserDir : null
 }
+
+/** Whether the facts hold the repo's own GSD copy, proven or unknown. */
+export function hasRepoGsd(facts: Facts): boolean {
+  return facts.gsd.some(fact => fact.location === 'project' && fact.identity !== 'absent')
+}
+
+/** The raw user-level GSD dir when the facts hold a user-level GSD that is proven or unknown, else null. */
+export function foundUserDir(initFacts: InitFacts): string | null {
+  const isFound = initFacts.facts.gsd.some(fact => fact.location === 'user' && fact.identity !== 'absent')
+
+  return isFound ? initFacts.gsdUserDir : null
+}
