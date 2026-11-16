@@ -18,6 +18,7 @@ import {
   DEFAULT_PERMISSION_MODE,
   EMPTY_CARRY,
   HUMAN_FALLBACK,
+  isCoreTeam,
   roleFromTemplate,
   ROLE_TEMPLATE,
   standIn,
@@ -261,5 +262,13 @@ describe('safety net: standIn (A8)', () => {
     expect(standIn('tl', [{ id: 'lead', basedOn: 'tl' }, 'tl'])).toBe('tl')
     expect(standIn('tl', ['pm', { id: 'lead', basedOn: 'tl' }, { id: 'arch', basedOn: 'tl' }])).toBe('lead')
     expect(standIn('security', ['pm', { id: 'lead', basedOn: 'tl' }])).toBe(null)
+  })
+})
+
+describe('the core team', () => {
+  test('isCoreTeam is true only for a recorded core structure', () => {
+    const recorded = [isCoreTeam({ structure: 'core' }), isCoreTeam({ structure: 'custom' }), isCoreTeam({})]
+
+    expect(recorded).toEqual([true, false, false])
   })
 })

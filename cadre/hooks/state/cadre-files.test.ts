@@ -358,6 +358,34 @@ describe('the docker scripts cadre.json records', () => {
   })
 })
 
+describe('the structure cadre.json records', () => {
+  test('cadre.json keeps the recorded structure, refuses an unknown one, and reads none as absent', () => {
+    const input: PlanStepInput = {
+      roles: [templateRole('be')],
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes: new Map(),
+      hunks: [],
+      repo: repoScan(),
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+    }
+    const absent = parseCadreState(stateText())
+
+    for (const structure of ['core', 'custom']) {
+      expect(parseCadreState(stateText({ structure }))?.structure).toBe(structure)
+    }
+    for (const structure of ['team', 'Core', '', 1, null, ['core'], {}]) {
+      expect(parseCadreState(stateText({ structure }))).toBeNull()
+    }
+    expect(absent).not.toBeNull()
+    expect(Object.hasOwn(absent ?? {}, 'structure')).toBe(false)
+    expect(planState({ ...input, structure: 'custom' }, '0.5.18').structure).toBe('custom')
+    expect(Object.hasOwn(planState(input, '0.5.18'), 'structure')).toBe(false)
+  })
+})
+
 describe('listsCadreRole', () => {
   test('it is true only for a cadre.json text whose roles list holds the role id cadre', () => {
     expect(listsCadreRole(stateText({ roles: ['pm', 'cadre'] }))).toBe(true)

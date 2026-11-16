@@ -11,11 +11,13 @@ import type {
   RoleSpec,
   ScopeContext,
   SetupScan,
+  TeamStructure,
 } from '../../types'
 import { isObject } from '../core/json'
 import { compareText } from '../core/text'
 import { isSafeOpPath, planWithManifest } from '../plan/plan'
 import type { PlanInput } from '../plan/plan'
+import { isCoreTeam } from '../roles/template'
 import { infraViolations } from '../scope/lint'
 import {
   ABSOLUTE_PATH_MARKERS,
@@ -245,6 +247,24 @@ describe('desiredFiles', () => {
 
     expect(index).toBe(contentOf(all, '.cadre/INDEX.md'))
     expect(index.split('\n').filter(line => line.includes('| .cadre/bin/'))).toHaveLength(TEMPLATE_ROLES.length)
+  })
+
+  test('the recorded structure changes no generated text yet', () => {
+    const input = inputOf(TEMPLATE_ROLES, 'gsd')
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'gsd', TEMPLATE_ROLES)
+    const structures: readonly TeamStructure[] = ['core', 'custom']
+    const filesOf = (state: CadreState): DesiredFile[] =>
+      desiredFiles({ ...input, state }).filter(file => file.path !== '.cadre/cadre.json')
+    const unrecorded = filesOf(input.state)
+
+    for (const structure of structures) {
+      const state: CadreState = { ...input.state, structure }
+      const team = { isCore: isCoreTeam(state), roles: TEMPLATE_ROLES }
+      const files = filesOf(state)
+      expect(files).toEqual(unrecorded)
+      expect(contentOf(files, '.cadre/be/ROLE.md')).toBe(roleMdText(be, scope, team))
+    }
   })
 })
 

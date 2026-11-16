@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, GsdFact, RawGsdCandidate, RoleChange, RoleProposal, RoleSpec } from '../../../types'
+import type {
+  FrameworkId,
+  GsdFact,
+  RawGsdCandidate,
+  RoleChange,
+  RoleProposal,
+  RoleSpec,
+  TeamStructure,
+} from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
@@ -859,5 +867,48 @@ describe('the install question an Adjust asks', () => {
     const refusal = `'Install' isn't one of: "No", "Yes, install it".`
     const asked = `${refusal}\n${SUPERPOWERS_INSTALL_ASKED}`
     expect([again.sub.kind, again.openQuestion?.question]).toEqual(['install', asked])
+  })
+})
+
+describe('the structure the roles stage records', () => {
+  const full = proposeRoles(FULL_SCAN)
+  const DESCRIBING = ['Describe my own structure', DESCRIPTION]
+
+  /** Adjust them, then a change of role `id` to superpowers whose install is answered Yes, then Done and Use. */
+  function installAdjust(id: string): string[] {
+    return ['Adjust them', `framework ${id} superpowers`, 'Yes, install it', 'Done adjusting', 'Use these roles']
+  }
+
+  /** The roles stage asked again from the review about `start`, accepted with `structure`, and Use these roles. */
+  async function goneBack(start: RoleProposal, structure: TeamStructure): Promise<InitState> {
+    const run = memIo(memWorld({}), ['Use these roles'])
+    const draft: Partial<Draft> = { proposal: PROPOSAL, installed: FRAMEWORKS, ...start, structure }
+
+    return stageRun(run.io, rolesStage, stateAt('roles', draft))
+  }
+
+  test('Use these roles records the core structure for the template, an adjusted template and a go-back', async () => {
+    const template = await rolesRun(['Use these roles'])
+    const adjusted = await rolesRun(['Adjust them', 'drop fe', 'Done adjusting', 'Use these roles'], [], full)
+    const installed = await rolesRun(installAdjust('qa'), [], full, ['gsd', 'none'])
+    const ends = [template.end, adjusted.end, installed.end, await goneBack(PROPOSAL, 'core')]
+    expect(ends.map(end => [end.sub.kind, end.draft.structure])).toEqual([
+      ['done', 'core'],
+      ['done', 'core'],
+      ['done', 'core'],
+      ['done', 'core'],
+    ])
+    expect(installed.run.asked[2]).toBe(SUPERPOWERS_INSTALL_ASKED)
+  })
+
+  test('a described structure is recorded as custom', async () => {
+    const described = await rolesRun([...DESCRIBING, 'Use these roles'], [DESCRIBED_REPLY])
+    const adjusted = await rolesRun([...DESCRIBING, ...installAdjust('docs')], [DESCRIBED_REPLY], PROPOSAL, ['none'])
+    const again = await goneBack({ roles: DESCRIBED_ROLES, changes: [] }, 'custom')
+    const template = await rolesRun(['Describe my own structure', 'Use the template instead', 'Use these roles'])
+    const fallback = await rolesRun([...DESCRIBING, 'Use these roles'], ['not json', 'not json', 'not json'])
+    const ends = [described.end, adjusted.end, again, template.end, fallback.end]
+    expect(ends.map(end => end.draft.structure)).toEqual(['custom', 'custom', 'custom', 'core', 'core'])
+    expect(adjusted.end.draft.roles?.find(role => role.id === 'docs')?.framework).toBe('superpowers')
   })
 })
