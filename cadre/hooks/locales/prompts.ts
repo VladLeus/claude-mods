@@ -8,8 +8,9 @@
  * messages/ and epic/ modules and locales/artifact import it.
  */
 
-/** What a role with an empty inbox and no work left does: autopilot's idle wait, which any incoming message ends. */
-export const IDLE_INBOX_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
+/** The two exits of a role with an empty inbox: autopilot's idle wait if more work may come, else its done answer. */
+export const IDLE_INBOX_WAIT = `When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ${
+  ''}when your task is finished, give the done answer autopilot asks for.`
 
 /** Every single-line prompt text and template by its name (D-221). Object.freeze keeps each literal type. */
 export const PROMPTS = Object.freeze({
