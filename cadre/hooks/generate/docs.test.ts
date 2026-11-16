@@ -33,6 +33,9 @@ import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { builtClaudeMdPath } from './launcher'
 
+/** The idle wait sentence, spelled out so the specs pin its words. */
+const IDLE_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
+
 /** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
 function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
   return {
@@ -391,25 +394,30 @@ describe('role documents', () => {
     )
   })
 
-  test('Inbox names the inbox in the user config folder, the three inbox tools and the states, in three lines', () => {
-    const be = templateRole('be')
-    const api = templateRole('be', { id: 'api', title: 'Backend API' })
-    const text = roleMdText(be, scopeOf(be, 'gsd', [be]))
+  test(
+    'Inbox names the inbox in the user config folder, the three inbox tools, the idle wait and the states, ' +
+      'in four lines',
+    () => {
+      const be = templateRole('be')
+      const api = templateRole('be', { id: 'api', title: 'Backend API' })
+      const text = roleMdText(be, scopeOf(be, 'gsd', [be]))
 
-    expect(text).toContain(
-      '## Inbox\n\n' +
-        'Your inbox lives in your user config folder, outside the repo, and only the cadre inbox tools write it. ' +
-        'Read it with inbox_read when you start, after every restart and when a wait ends.\n' +
-        'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).\n' +
-        'Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the entry ' +
-        'you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done (a ' +
-        'one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.\n\n' +
-        '## Planning docs\n',
-    )
-    expect(text).not.toContain('inbox.md')
-    expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(`\n\n${ARTIFACT.roleMdInboxLine}\n`)
-    expect(ARTIFACT.roleMdInboxLine).not.toContain('.cadre')
-  })
+      expect(text).toContain(
+        '## Inbox\n\n' +
+          'Your inbox lives in your user config folder, outside the repo, and only the cadre inbox tools write it. ' +
+          'Read it with inbox_read when you start, after every restart and when a wait ends.\n' +
+          IDLE_WAIT + '\n' +
+          'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).\n' +
+          'Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the entry ' +
+          'you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done (a ' +
+          'one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.\n\n' +
+          '## Planning docs\n',
+      )
+      expect(text).not.toContain('inbox.md')
+      expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(`\n\n${ARTIFACT.roleMdInboxLine}\n`)
+      expect(ARTIFACT.roleMdInboxLine).not.toContain('.cadre')
+    },
+  )
 
   test('Scope holds the lines of the scope card', () => {
     const be = templateRole('be', { mcp: ['jira'] })

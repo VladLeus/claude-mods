@@ -17,6 +17,9 @@ import {
 } from './record'
 import { CHANGES_MAX_CHARS } from './send'
 
+/** The idle wait sentence, spelled out so the specs pin its words. */
+const IDLE_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
+
 const A: InboxEntry = {
   v: 1,
   type: 'entry',
@@ -282,6 +285,7 @@ describe('inboxReadText', () => {
   })
 
   test('an empty inbox gives one line', () => {
+    expect(inboxReadText([], false)).toBe(`Your inbox is empty. ${IDLE_WAIT}`)
     expect(inboxReadText([], false)).toBe(PROMPTS.inboxEmpty)
   })
 

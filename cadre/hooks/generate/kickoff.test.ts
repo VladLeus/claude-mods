@@ -46,6 +46,9 @@ const ROLE_LINE_CHARS = /^[\x20-\x7e]+$/
 /** The characters a role line may never hold: a quote of either kind and the backtick (D-79). */
 const QUOTE_CHARS = /["'`]/
 
+/** The idle wait sentence, spelled out so the specs pin its words. */
+const IDLE_WAIT = 'When your inbox is empty and no work is left, call wait_for with reason idle-inbox.'
+
 /** Every way a kickoff of this role and framework breaks the contract with autopilot, as messages; empty when none. */
 function kickoffProblems(role: RoleSpec, framework: FrameworkId): string[] {
   const text = kickoffText(role, framework)
@@ -56,7 +59,10 @@ function kickoffProblems(role: RoleSpec, framework: FrameworkId): string[] {
   if (start.duration !== role.autopilot.duration) problems.push(`duration ${start.duration} is not the one of the role`)
   if (start.threshold !== 65) problems.push(`threshold ${start.threshold}`)
   if (!ROLE_LINE_CHARS.test(start.role) || QUOTE_CHARS.test(start.role)) problems.push('role line has a bad character')
-  if (start.role.length > ROLE_LINE_MAX) problems.push(`role line is ${start.role.length} characters`)
+  if (start.role.length > ROLE_LINE_MAX + 1 + IDLE_WAIT.length) {
+    problems.push(`role line is ${start.role.length} characters`)
+  }
+  if (!start.role.endsWith(IDLE_WAIT)) problems.push('the idle wait is not named')
   if (text.endsWith(' --ask-user\n') !== role.autopilot.askUser) problems.push('--ask-user does not follow the role')
   if (text.split('\n').length !== 2) problems.push('kickoff is not one line and a newline')
 
@@ -91,15 +97,15 @@ describe('kickoff', () => {
 
     expect(kickoffRoleLine(be, 'gsd')).toBe(
       'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, read your inbox with inbox_read, ' +
-        'then start with /gsd-autonomous.',
+        `then start with /gsd-autonomous. ${IDLE_WAIT}`,
     )
     expect(kickoffRoleLine(be, 'superpowers')).toBe(
       'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, read your inbox with inbox_read, ' +
-        'then start with superpowers:brainstorming.',
+        `then start with superpowers:brainstorming. ${IDLE_WAIT}`,
     )
     expect(kickoffRoleLine(be, 'none')).toBe(
       'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, read your inbox with inbox_read, ' +
-        'then start with the plan in .cadre/be/.runtime/plan.md.',
+        `then start with the plan in .cadre/be/.runtime/plan.md. ${IDLE_WAIT}`,
     )
   })
 
@@ -108,7 +114,7 @@ describe('kickoff', () => {
 
     expect(kickoffRoleLine(api, 'gsd')).toBe(
       'You are the Backend API role of this repo (cadre role api). Read .cadre/api/ROLE.md, ' +
-        'read your inbox with inbox_read, then start with /gsd-autonomous.',
+        `read your inbox with inbox_read, then start with /gsd-autonomous. ${IDLE_WAIT}`,
     )
     expect(kickoffRoleLine(api, 'none')).toContain('start with the plan in .cadre/api/.runtime/plan.md.')
   })
@@ -119,29 +125,33 @@ describe('kickoff', () => {
 
     expect(kickoffRoleLine(role, 'gsd')).toBe(
       'You are the design role of this repo (cadre role design). Read .cadre/design/ROLE.md, ' +
-        'read your inbox with inbox_read, then start with /gsd-autonomous.',
+        `read your inbox with inbox_read, then start with /gsd-autonomous. ${IDLE_WAIT}`,
     )
   })
 
   test(
-    'a title of 300 characters gives a role line of at most ROLE_LINE_MAX that still ends with the instruction',
+    'a title of 300 characters gives a role line whose budgeted part stays within ROLE_LINE_MAX ' +
+      'and that ends with the idle wait',
     () => {
       const role = templateRole('be', { title: 'T'.repeat(300) })
 
       for (const framework of FRAMEWORKS) {
         const line = kickoffRoleLine(role, framework)
 
-        expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX)
+        expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX + 1 + IDLE_WAIT.length)
         expect(line.startsWith('You are the TTTT')).toBe(true)
       }
       const instruction = 'Read .cadre/be/ROLE.md, read your inbox with inbox_read, then start with /gsd-autonomous.'
-      expect(kickoffRoleLine(role, 'gsd').endsWith(instruction)).toBe(true)
+      expect(kickoffRoleLine(role, 'gsd').endsWith(`${instruction} ${IDLE_WAIT}`)).toBe(true)
     },
   )
 
-  test('every template role line says to read the inbox with inbox_read and stays within ROLE_LINE_MAX', () => {
+  test('every template role line says to read the inbox with inbox_read and ends with the idle wait', () => {
     const lines = TEMPLATE_ROLES.flatMap(role => FRAMEWORKS.map(framework => kickoffRoleLine(role, framework)))
-    const bad = lines.filter(line => line.length > ROLE_LINE_MAX || !line.includes('read your inbox with inbox_read'))
+    const cap = ROLE_LINE_MAX + 1 + IDLE_WAIT.length
+    const bad = lines.filter(
+      line => line.length > cap || !line.includes('read your inbox with inbox_read') || !line.endsWith(IDLE_WAIT),
+    )
 
     expect(bad).toEqual([])
     expect(lines).toHaveLength(TEMPLATE_ROLES.length * FRAMEWORKS.length)
@@ -151,21 +161,21 @@ describe('kickoff', () => {
     const id = 'a'.repeat(24)
     const line = kickoffRoleLine(templateRole('be', { id, title: 'T'.repeat(40) }), 'none')
 
-    expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX)
-    expect(line.endsWith(`start with the plan in .cadre/${id}/.runtime/plan.md.`)).toBe(true)
+    expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX + 1 + IDLE_WAIT.length)
+    expect(line.endsWith(`start with the plan in .cadre/${id}/.runtime/plan.md. ${IDLE_WAIT}`)).toBe(true)
   })
 
   test('the kickoff of the PM is the autopilot command with the role line and --ask-user, then a newline', () => {
     expect(kickoffText(templateRole('pm'), 'gsd')).toBe(
       '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md, ' +
-        'read your inbox with inbox_read, then start with /gsd-autonomous." --ask-user\n',
+        `read your inbox with inbox_read, then start with /gsd-autonomous. ${IDLE_WAIT}" --ask-user\n`,
     )
   })
 
   test('the kickoff of the BE has no --ask-user', () => {
     expect(kickoffText(templateRole('be'), 'superpowers')).toBe(
       '/autopilot 4h 65 "You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, ' +
-        'read your inbox with inbox_read, then start with superpowers:brainstorming."\n',
+        `read your inbox with inbox_read, then start with superpowers:brainstorming. ${IDLE_WAIT}"\n`,
     )
   })
 
@@ -174,7 +184,7 @@ describe('kickoff', () => {
     const text = kickoffText(templateRole('be', { autopilot }), 'gsd')
 
     expect(text.startsWith('/autopilot 90m 40 "You are the BE role')).toBe(true)
-    expect(text.endsWith('/gsd-autonomous." --ask-user\n')).toBe(true)
+    expect(text.endsWith(`/gsd-autonomous. ${IDLE_WAIT}" --ask-user\n`)).toBe(true)
   })
 
   test('the copy of the autopilot grammar refuses what autopilot refuses', () => {
