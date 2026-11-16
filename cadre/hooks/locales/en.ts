@@ -969,6 +969,9 @@ export const EN = Object.freeze({
   'epic.done.epicRemoveFailedReply':
     `git could not remove the epic worktree, so cadre epic done stopped. The links it records were ${
     ''}removed first: run /cadre epic {key} to link them again.`,
+  'epic.done.epicCopyBackFailedReply':
+    `cadre epic done could not copy {path} back into the main checkout, so it removed nothing: copy it by hand or ${
+    ''}remove it from the worktree, then run cadre epic done {key} again`,
   'epic.done.cleanProblems': 'git shows changes in the worktree: commit or stash them there',
   'epic.done.cleanProblems2':
     'git could not tell whether the worktree is clean: run git status there, then commit or stash what it shows',

@@ -1,10 +1,10 @@
 /**
- * `/cadre epic done <key>` (D-152, D-165, D-169 to D-171), a layer 11 module: runEpicDone finds the epic's worktree by
- * its key in the main checkout and removes it only when it is clean, merged into its recorded base and no role there
- * reads running (roleRunState), each failed check named and `--force` asking once; it clears a lock only when its
- * process has ended, removes the links the record names, then the worktree, and never deletes the branch. It runs
- * through the InitIo and HostIo ports and imports core, git, guards/repo, host/steps, paths, status, team, ui/ask and
- * the epic modules below it; register and the goldens run it.
+ * `/cadre epic done <key>`, a layer 11 module: runEpicDone finds the epic's worktree by its key in the main checkout
+ * and removes it only when it is clean, merged into its recorded base and no role there reads running (roleRunState),
+ * each failed check named and `--force` asking once; it clears a lock only when its process has ended, copies what the
+ * roles wrote in the copied folders back into main (copyBackPlan), removes the links the record names, then the
+ * worktree, and never deletes the branch. It runs through the InitIo and HostIo ports and imports core, git,
+ * guards/repo, host/steps, paths, status, team, ui/ask and the epic modules below it; register and the goldens run it.
  */
 import type { HostIo, HostRun, InitIo, InitLocations, PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
@@ -17,6 +17,7 @@ import { foldersAbove } from '../paths'
 import { roleRunState } from '../status/autopilot-files'
 import { readTeam } from '../team'
 import { askChoice, quotedLabels } from '../ui/ask'
+import { copyBackPlan } from './copy-back'
 import {
   linkRemoveArgv,
   MERGED_ARGV,
@@ -30,7 +31,7 @@ import {
 } from './git'
 import { epicBadKeyReply, epicKeyOf, epicSlug } from './key'
 import { epicManyWorktreesReply, isEpicBranchOf, parseWorktreeList } from './lookup'
-import { listedEntry, MIRROR_STEP_TIMEOUT_MS } from './mirror'
+import { epicStepArgv, epicStepTimeoutMs, listedEntry, MIRROR_STEP_TIMEOUT_MS } from './mirror'
 import { listingsOf } from './mirror-run'
 import { EPIC_UNKNOWN_CHECKOUT, epicNotMainReply } from './pick'
 import { EPIC_RECORD_FILE, readEpicRecord } from './record'
@@ -83,6 +84,14 @@ export function epicRemovedText(key: string, path: string, branch: string): stri
  */
 export function epicRemoveFailedReply(key: string): string {
   return t('epic.done.epicRemoveFailedReply', { key: reportText(key) })
+}
+
+/**
+ * The reply when /cadre epic done cannot copy a path of a copied folder back into the main checkout, as it is not safe
+ * or its copy failed, so nothing was removed. The path below the main root and the key are shown cleaned.
+ */
+export function epicCopyBackFailedReply(key: string, path: string): string {
+  return t('epic.done.epicCopyBackFailedReply', { key: reportText(key), path: reportText(path) })
 }
 
 /**
@@ -354,24 +363,67 @@ async function lockRefusal(host: HostIo, root: string, worktree: DoneWorktree): 
   return null
 }
 
+function isRealDir(entry: PortEntry | undefined): boolean {
+  return entry !== undefined && entry.kind === 'dir' && !entry.isLink
+}
+
 /**
- * `/cadre epic done <KEY>` in the main checkout's root session (D-152, D-165, D-169 to D-171). Before anything is
- * removed it refuses, in this order: a key epicKeyOf refuses (epicBadKeyReply), before anything runs; the repo
- * refusals of repoGuard, in the epic wording; a root that CHECKOUT_ARGV and checkoutOf do not show as the main
- * checkout (epicNotMainReply or EPIC_UNKNOWN_CHECKOUT); a worktree list git cannot give (EPIC_DONE_NO_LIST); no
- * registered worktree on an epic branch of the key (epicNotFoundReply), or more than one (epicManyWorktreesReply). The
- * epic record is read from the git dir git names for the worktree. Then all three checks run before any change: clean
- * (cleanStateOf of STATUS_ARGV), merged into the recorded base (MERGED_ARGV, `no-record` with no record or no base)
- * and no role of the team, read from the main checkout, reading `running` there (roleRunState, D-171). Without
+ * The recorded `copies` the worktree lists as real folders, and the listings copyBackPlan reads, keyed by repo-relative
+ * folder: the folders above the copies in both checkouts, then each copied folder and every real folder the worktree
+ * shows below it, in both checkouts, breadth first. A folder that cannot be listed is left out of its map.
+ */
+async function copiedListings(
+  io: InitIo,
+  root: string,
+  worktree: string,
+  copies: readonly string[],
+): Promise<{
+  readonly folders: readonly string[]
+  readonly main: ReadonlyMap<string, readonly PortEntry[]>
+  readonly tree: ReadonlyMap<string, readonly PortEntry[]>
+}> {
+  const above = sortedUnique(copies.flatMap(copy => ['', ...foldersAbove(copy)]))
+  const main = await listingsOf(io, root, above)
+  const tree = await listingsOf(io, worktree, above)
+  const folders = sortedUnique(copies).filter(copy => isRealDir(listedEntry(tree, copy)))
+  let level: readonly string[] = folders
+  while (level.length > 0) {
+    const next: string[] = []
+    for (const folder of level) {
+      const shown = await io.list(`${root}/${folder}`)
+      if (shown !== null) main.set(folder, shown)
+      const listing = await io.list(`${worktree}/${folder}`)
+      if (listing === null) continue
+      tree.set(folder, listing)
+      next.push(...listing.filter(isRealDir).map(entry => `${folder}/${entry.name}`))
+    }
+    level = next
+  }
+
+  return { folders, main, tree }
+}
+
+/**
+ * `/cadre epic done <KEY>` in the main checkout's root session. Before anything is removed it refuses, in this order:
+ * a key epicKeyOf refuses (epicBadKeyReply), before anything runs; the repo refusals of repoGuard, in the epic wording;
+ * a root that CHECKOUT_ARGV and checkoutOf do not show as the main checkout (epicNotMainReply or
+ * EPIC_UNKNOWN_CHECKOUT); a worktree list git cannot give (EPIC_DONE_NO_LIST); no registered worktree on an epic
+ * branch of the key (epicNotFoundReply), or more than one (epicManyWorktreesReply). The epic record is read from the
+ * git dir git names for the worktree, and the copy-back of its copied folders is planned (copiedListings, then
+ * copyBackPlan since the record's creation time; no record, no copied folder). Then all three checks run before any
+ * change: clean (cleanStateOf of STATUS_ARGV), merged into the recorded base (MERGED_ARGV, `no-record` with no record
+ * or no base) and no role of the team, read from the main checkout, reading `running` there (roleRunState). Without
  * `--force`, any reason of epicDoneProblems keeps the worktree with epicDoneRefusal, which lists them all, a check that
- * cannot tell included. With `--force` one consent question always comes, reasons or not, listing them (forcedRefusal,
- * D-134): only its yes goes on, and no dialog, a dismissal or the keeping answer removes nothing. Then the stale-lock
- * rule (lockRefusal): a lock is cleared only when the process it names has ended, and any other lock refuses, with or
- * without `--force`. The worktree's folders are then listed, and each recorded link epicLinkRemovals keeps (listed as a
- * link, below real folders only) is removed with linkRemoveArgv, in sorted order, never with `-r`; any other recorded
- * path is left to git (03.1-W5 M1), and then the worktree with REMOVE_ARGV, with `--force` only on the forced path; a
- * remove that fails or cannot run gives epicRemoveFailedReply. The branch is never deleted, and the reply is
- * epicRemovedText.
+ * cannot tell included. With `--force` one consent question always comes, reasons or not, listing them
+ * (forcedRefusal): only its yes goes on, and no dialog, a dismissal or the keeping answer removes nothing. Then the
+ * stale-lock rule (lockRefusal): a lock is cleared only when the process it names has ended, and any other lock
+ * refuses, with or without `--force`. Then the copy-back: a path it cannot copy back safely refuses with
+ * epicCopyBackFailedReply before any step, and else each step runs with its epicStepArgv and epicStepTimeoutMs, the
+ * first that fails refusing the same way, so nothing is removed. The worktree's folders are then listed, and each
+ * recorded link epicLinkRemovals keeps (listed as a link, below real folders only) is removed with linkRemoveArgv, in
+ * sorted order, never with `-r`; any other recorded path is left to git, and then the worktree with REMOVE_ARGV, with
+ * `--force` only on the forced path; a remove that fails or cannot run gives epicRemoveFailedReply. The branch is
+ * never deleted, and the reply is epicRemovedText.
  */
 export async function runEpicDone(
   io: InitIo,
@@ -401,6 +453,8 @@ export async function runEpicDone(
   const { path, branch } = worktree
   const record = await readEpicRecord(io, host, path)
   const base = record?.base ?? null
+  const copied = await copiedListings(io, main.root, path, record?.copies ?? [])
+  const copyBack = copyBackPlan({ root: main.root, worktree: path, since: record?.createdAt ?? 0, ...copied })
 
   const clean = cleanStateOf(await host.run(STATUS_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS }))
   const merged = await mergedOf(host, main.root, branch, base)
@@ -411,6 +465,12 @@ export async function runEpicDone(
   if (kept !== null) return kept
   const locked = await lockRefusal(host, main.root, worktree)
   if (locked !== null) return locked
+  const [unsafe] = copyBack.unsafe
+  if (unsafe !== undefined) return epicCopyBackFailedReply(key, unsafe)
+  for (const step of copyBack.steps) {
+    const copiedBack = await host.run(epicStepArgv(step), { timeoutMs: epicStepTimeoutMs(step) })
+    if (hasRunFailed(copiedBack)) return epicCopyBackFailedReply(key, step.path.slice(main.root.length + 1))
+  }
 
   const links = sortedUnique(record?.links ?? [])
   const tree = await listingsOf(io, path, sortedUnique(['', ...links.flatMap(foldersAbove)]))
