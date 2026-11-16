@@ -627,6 +627,16 @@ export function limitAction(run: Run, windows: readonly TokenWindow[], now: numb
   }
 }
 
+export type LimitStops = 'all' | 'week' | 'none'
+
+/** The weekly stop also ends a run in the turn that declares a wait; the 5-hour stop never ends a wait. */
+export function limitStopsFor(phase: Phase, isTurnEnd: boolean): LimitStops {
+  if (phase === 'running' || phase === 'resuming' || phase === 'waiting') return 'all'
+  if (phase === 'awaiting' && isTurnEnd) return 'week'
+
+  return 'none'
+}
+
 export type TurnAction = 'continue' | 'wrapup' | 'final' | 'pause' | 'park' | 'finish' | 'resume-done' | 'none'
 
 const ENGINE_CALL_KEYS: readonly string[] = ['tool', 'tool_use_id', 'agentId', 'requestMeta', 'consent']

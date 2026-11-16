@@ -60,6 +60,7 @@ import {
   isValidHandoffPath,
   kickoffPrompt,
   limitAction,
+  limitStopsFor,
   lockStale,
   namedSkills,
   parkedWait,
@@ -520,15 +521,24 @@ function scheduleWake($: EngineInterface, now: number): void {
 
 /**
  * Applies the token windows: the weekly stop ends the run, the 5-hour stop
- * parks it until the reset. Returns the instruction for the model, if any.
+ * parks it until the reset; the stops that apply come from the phase.
+ * Returns the instruction for the model, if any.
  * The phase flips before the first await, so parallel calls act once.
  */
-async function applyLimits($: EngineInterface, windows: readonly TokenWindow[], now: number): Promise<string | null> {
-  if (!run || (run.phase !== 'running' && run.phase !== 'resuming' && run.phase !== 'waiting')) return null
+async function applyLimits(
+  $: EngineInterface,
+  windows: readonly TokenWindow[],
+  now: number,
+  isTurnEnd: boolean,
+): Promise<string | null> {
+  if (!run) return null
+  const stops = limitStopsFor(run.phase, isTurnEnd)
+  if (stops === 'none') return null
   const action = limitAction(run, windows, now)
   if (!action) return null
 
   if (action.kind === 'week') return enterFinal($, 'week')
+  if (stops === 'week') return null
   if (run.phase === 'waiting') return null
 
   run.phase = 'waiting'
@@ -1645,7 +1655,7 @@ export const register: Register = on => {
       const now = await $.clock.now()
 
       // Token limits come before the context trigger.
-      const limitInstruction = await applyLimits($, usage?.rateLimits ?? [], now)
+      const limitInstruction = await applyLimits($, usage?.rateLimits ?? [], now, false)
       if (limitInstruction) return { ...ran, context: [...(ran.context ?? []), ...pendingContext, limitInstruction] }
 
       // A run that ended during the awaits above gets no instruction; the pending text still goes out.
@@ -1710,7 +1720,7 @@ export const register: Register = on => {
     callsLastTurn = callsThisTurn
 
     // A turn with no tool calls never passed through the mid-turn check.
-    const limitInstruction = await applyLimits($, usage?.rateLimits ?? [], now)
+    const limitInstruction = await applyLimits($, usage?.rateLimits ?? [], now, true)
     if (limitInstruction) {
       queue($, limitInstruction)
       return result
