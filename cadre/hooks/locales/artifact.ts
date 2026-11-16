@@ -135,7 +135,8 @@ export const ARTIFACT = Object.freeze({
   cardBypass: 'WARNING: bypassPermissions is set in role.json: permission prompts are skipped',
   cardPlugins: 'Plugins: only {plugins} load (--setting-sources project whitelist)',
   cardNoBash: 'No Bash tool (denied)',
-  cardSandbox: 'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache',
+  cardSandbox: `Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache, which tools ${
+    ''}run outside the sandbox load from`,
   cardDocker: 'These run outside the sandbox: {commands}. Run each one alone, with no cd, pipe or redirect.',
   cardDeniedDirs: 'Reads and edits under {dirs} are denied; the patterns match at any depth',
   cardOwnDirs: 'Reads and edits under {dirs} are never denied (own folders)',

@@ -252,7 +252,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/security/ROLE.md",
-        "sha256": "c1eed03e0d13bf22e42016f988842129c8f0cc40a0e32df77bf5ff6843727808",
+        "sha256": "dccadba650f820b1b8985789f4751124796bfa27fb9e00d5be35f9a5765c231f",
         "isWritten": true
       },
       {
@@ -287,7 +287,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/ROLE.md",
-        "sha256": "5c9895d78e0d6d31804511caa3867c12f93bfe0dc18bda120eade3ef528cc27c",
+        "sha256": "5631c66e233b62ce1ba3d0fb9083fbc0656b5d7a688bf7a7feabce4e0a38b2ec",
         "isWritten": true
       },
       {
@@ -317,7 +317,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "98a8a62b444bed19f44bc0499ed398f41d89fe70abc14da29b255f3530086d27",
+        "sha256": "bcf6fd62758d7c9f9ef000c44715460d9921c06680f2639c22a102576facdb70",
         "isWritten": true
       }
     ],
@@ -394,7 +394,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/ROLE.md\",",
-      "      \"sha256\": \"c1eed03e0d13bf22e42016f988842129c8f0cc40a0e32df77bf5ff6843727808\"",
+      "      \"sha256\": \"dccadba650f820b1b8985789f4751124796bfa27fb9e00d5be35f9a5765c231f\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -429,7 +429,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/ROLE.md\",",
-      "      \"sha256\": \"5c9895d78e0d6d31804511caa3867c12f93bfe0dc18bda120eade3ef528cc27c\"",
+      "      \"sha256\": \"5631c66e233b62ce1ba3d0fb9083fbc0656b5d7a688bf7a7feabce4e0a38b2ec\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -726,7 +726,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/security/ROLE.md",
-        "sha256": "cb85d552bb05911b36797b29c2ae294fb2cec70acd01078a9402c19b733065ef",
+        "sha256": "a06defdcf5d44d77961273ee4d3dd26b4825b07fa182ec825547d1d066eb02c4",
         "isWritten": true
       },
       {
@@ -761,7 +761,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/ROLE.md",
-        "sha256": "b9804c2a3276fd1b528965cdf4ce5eac2742bba2368d6152694b47052066a20f",
+        "sha256": "7e1e7099b100bdba55503be2dbd71f9565e1d15a375de85700516d4f9b3331ee",
         "isWritten": true
       },
       {
@@ -791,7 +791,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "c6e63ab92c1485ba34bb64c4640fd21c580aac68787425d7f90694ca7a16d3ae",
+        "sha256": "521939f9e44e0c1857be9c42c4f29f5da716ad87017132b6249a99c668b2653e",
         "isWritten": true
       }
     ],
@@ -869,7 +869,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/ROLE.md\",",
-      "      \"sha256\": \"cb85d552bb05911b36797b29c2ae294fb2cec70acd01078a9402c19b733065ef\"",
+      "      \"sha256\": \"a06defdcf5d44d77961273ee4d3dd26b4825b07fa182ec825547d1d066eb02c4\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -904,7 +904,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/ROLE.md\",",
-      "      \"sha256\": \"b9804c2a3276fd1b528965cdf4ce5eac2742bba2368d6152694b47052066a20f\"",
+      "      \"sha256\": \"7e1e7099b100bdba55503be2dbd71f9565e1d15a375de85700516d4f9b3331ee\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
