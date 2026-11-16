@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import {
   dialogOptions,
   dialogText,
-  initEventOf,
   initLineOf,
   inputBoxOf,
   isInputShowing,
@@ -224,22 +223,4 @@ test('initLineOf skips an init event of another type and a line that is not JSON
 test('initLineOf is null when no line is a system init event', () => {
   assert.equal(initLineOf(''), null)
   assert.equal(initLineOf([JSON.stringify({ type: 'assistant' }), 'not json'].join('\n')), null)
-})
-
-test('initEventOf reads the lists of the first init line, past other events', () => {
-  const text = [
-    JSON.stringify({ type: 'system', subtype: 'hook_started' }),
-    initLine({ skills: ['p:s'], slash_commands: ['c'] }),
-    initLine({ skills: ['later'], slash_commands: [] }),
-  ].join('\n')
-
-  assert.deepEqual(initEventOf(text), { skills: ['p:s'], slashCommands: ['c'] })
-})
-
-test('initEventOf is null with no init line, an init line that is not JSON, or a missing or mixed list', () => {
-  assert.equal(initEventOf(JSON.stringify({ type: 'assistant' })), null)
-  assert.equal(initEventOf('{"type":"system","subtype":"init",'), null)
-  assert.equal(initEventOf(initLine({ slash_commands: ['c'] })), null)
-  assert.equal(initEventOf(initLine({ skills: ['p:s'] })), null)
-  assert.equal(initEventOf(initLine({ skills: ['p:s'], slash_commands: ['c', 1] })), null)
 })

@@ -133,24 +133,6 @@ export async function failMatchShim(
   return writeShim(dir, name, script.join('\n'))
 }
 
-// The probe pipes stdout into grep, so the shim buffers it to keep the exit code.
-export async function recordShim(dir: string, execPath: string, outFile: string): Promise<string> {
-  const script = [
-    '#!/bin/sh',
-    `out=${shellQuote(outFile)}`,
-    'part="$out.$$"',
-    `${shellQuote(execPath)} "$@" > "$part"`,
-    'code=$?',
-    '/bin/cat "$part" >> "$out"',
-    '/bin/cat "$part"',
-    '/bin/rm -f "$part"',
-    'exit "$code"',
-    '',
-  ]
-
-  return writeShim(dir, 'claude', script.join('\n'))
-}
-
 const MCP_STUB_FILE = 'mcp-stub.mjs'
 
 const MCP_STUB_LINES: readonly string[] = [

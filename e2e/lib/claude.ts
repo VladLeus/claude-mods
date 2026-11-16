@@ -6,7 +6,7 @@ import type { AuthStatus } from './auth.ts'
 import { liveEnv } from './env.ts'
 import type { ChildEnv } from './env.ts'
 import { HarnessError } from './errors.ts'
-import { filterContext, filterText, isRecord, isStringList } from './filter.ts'
+import { filterContext, filterText, isRecord } from './filter.ts'
 import { hashFolder } from './hash.ts'
 import { pollUntil } from './poll.ts'
 import { run } from './proc.ts'
@@ -42,11 +42,6 @@ export type Preflight =
 export type InitLine = {
   readonly raw: string
   readonly event: Record<string, unknown>
-}
-
-export type InitEvent = {
-  readonly skills: readonly string[]
-  readonly slashCommands: readonly string[]
 }
 
 const AUTH_STATUS_MS = 30_000
@@ -108,15 +103,6 @@ export function initLineOf(stdout: string): InitLine | null {
   }
 
   return null
-}
-
-export function initEventOf(stdout: string): InitEvent | null {
-  const event = initLineOf(stdout)?.event
-  if (event === undefined) return null
-  const { skills, slash_commands: slashCommands } = event
-  if (!isStringList(skills) || !isStringList(slashCommands)) return null
-
-  return { skills, slashCommands }
 }
 
 export async function authStatus(cwd: string, env: ChildEnv, bin: string = claudeBin()): Promise<AuthStatus | string> {
