@@ -52,7 +52,7 @@ import {
   WORKTREE_LIST_ARGV,
 } from './git'
 import { epicBadKeyReply } from './key'
-import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine } from './launcher'
+import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine, epicWorktreeLauncherUnreadLine } from './launcher'
 import { EPIC_NO_WORKTREE_LIST } from './lookup'
 import { epicExcludesFailedReply, epicListFailedReply, epicStepFailedReply, globalExcludesWarning } from './mirror-run'
 import {
@@ -1061,7 +1061,7 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
   })
 
   test(
-    'a worktree launcher changed from the one checked in main is not opened or copied; an equal one opens (03.1-W4 S1)',
+    'a worktree launcher changed from the one checked in main is not opened or copied; an equal one opens',
     async () => {
       const world = await renderWorld()
       const files = {
@@ -1082,14 +1082,25 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
     },
   )
 
-  test('the changed worktree launcher refusal says to commit .cadre/ first', () => {
-    expect(epicWorktreeLauncherChangedLine('pm')).toBe(
-      "not opened: the worktree's .cadre/bin/pm is not the launcher cadre checked in the main checkout. " +
-        'Commit .cadre/ first.',
+  test('the changed worktree launcher refusal names how to bring the checked launcher to the epic branch', () => {
+    const line = epicWorktreeLauncherChangedLine('pm')
+
+    expect(line).toBe(
+      "not opened: the worktree's .cadre/bin/pm differs from the launcher cadre checked in the main checkout. " +
+        'Commit .cadre/ in the main checkout and bring that commit to the epic branch, or commit the regenerated ' +
+        '.cadre/bin/pm and .cadre/manifest.json to the epic branch, then run /cadre epic with the same key again.',
+    )
+    expect(line).not.toContain('epic done')
+  })
+
+  test('the unread worktree launcher refusal says cadre could not check it against the main checkout', () => {
+    expect(epicWorktreeLauncherUnreadLine('pm')).toBe(
+      "not opened: cadre could not read the worktree's .cadre/bin/pm in full, so it did not check it against the " +
+        'launcher in the main checkout.',
     )
   })
 
-  test('a worktree launcher too large to read in full is not opened (03.1-W4 S1)', async () => {
+  test('a worktree launcher too large to read in full is not opened and says it could not be read', async () => {
     const world = await renderWorld()
     // 300 KB, over MAX_READ_BYTES (256 KB): the read of it gives too-large.
     const files = { ...world.files, [`${BARE_WORKTREE}/.cadre/bin/pm`]: `#!/bin/sh\n${'#'.repeat(300 * 1024)}\n` }
@@ -1099,6 +1110,19 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
 
     expect(opens).toEqual([epicCommand('be')])
     expect(copiedTexts(run)).toEqual([])
+    expect(run.reply.split('\n')).toContain(`  pm: ${epicWorktreeLauncherUnreadLine('pm')}`)
+  })
+
+  test('a worktree launcher the port cannot read is not opened and says it could not be read', async () => {
+    const world = await renderWorld()
+    const unknownPaths = [`${BARE_WORKTREE}/.cadre/bin/pm`]
+    const env = { TERM_PROGRAM: 'iTerm.app' }
+    const run = await epic({ ...world, unknownPaths }, [...RENDER_RULES, DARWIN], 'PROJ-1', '', { env })
+    const opens = run.calls.filter(call => call.argv[0] === '/usr/bin/osascript').map(call => call.argv.at(-1))
+
+    expect(opens).toEqual([epicCommand('be')])
+    expect(copiedTexts(run)).toEqual([])
+    expect(run.reply.split('\n')).toContain(`  pm: ${epicWorktreeLauncherUnreadLine('pm')}`)
   })
 })
 
