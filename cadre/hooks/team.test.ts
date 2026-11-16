@@ -372,3 +372,37 @@ describe('init plan', () => {
     expect(inbox?.enforcement).toBe('best-effort')
   })
 })
+
+describe('the docker scripts a team runs outside the sandbox', () => {
+  /** BE and PM on the repo default. */
+  const team = [templateRole('be'), templateRole('pm')]
+
+  /** A repo whose root package.json has these scripts and whose root has a yarn.lock. */
+  function packageWorld(scripts: Readonly<Record<string, string>>): MemWorld {
+    return gitWorld({
+      dirs: { '/repo/.git': [], '/repo': [entry('package.json'), entry('yarn.lock')] },
+      files: { '/repo/package.json': JSON.stringify({ name: 'x', scripts }) },
+    })
+  }
+
+  test('compileTeam takes the docker scripts cadre.json records, not those of the package.json now', async () => {
+    const world = packageWorld({ lint: 'eslint .' })
+    const recorded = stateOf(team, { dockerScripts: ['yarn docker:rspec'] })
+    const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, recorded, team)
+    const unrecorded = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, stateOf(team), team)
+
+    expect(scopes.get('be')?.settings.sandbox.excludedCommands).toEqual([
+      'docker *',
+      'docker-compose *',
+      'yarn docker:rspec *',
+    ])
+    expect(unrecorded.scopes.get('be')?.settings.sandbox.excludedCommands).toEqual(['docker *', 'docker-compose *'])
+  })
+
+  test('a docker script the package.json has now but cadre.json does not record stays in the sandbox', async () => {
+    const world = packageWorld({ 'docker:up': 'docker compose up' })
+    const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, stateOf(team), team)
+
+    expect(scopes.get('be')?.settings.sandbox.excludedCommands).toEqual(['docker *', 'docker-compose *'])
+  })
+})

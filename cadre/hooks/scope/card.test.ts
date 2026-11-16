@@ -871,3 +871,56 @@ describe('the not-given plugin skills on the card', () => {
     expect(card.notGiven.pluginSkills).toEqual(['alpha:a', 'zeta:b'])
   })
 })
+
+describe('the sandbox, docker and secrets rows of a card', () => {
+  /** The sandbox row of a role with Bash. */
+  const SANDBOX_ROW = 'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache'
+
+  /** The docker row of BE, FE and QA in a repo whose one docker script runs through yarn. */
+  const DOCKER_ROW =
+    'These run outside the sandbox: docker, docker-compose, yarn docker:rspec. ' +
+    'Run each one alone, with no cd, pipe or redirect.'
+
+  /** The secrets row of a role without Bash. */
+  const SECRETS_ROW = 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied'
+
+  /** The secrets row of TL and Security: Bash is stopped through the sandbox. */
+  const SECRETS_SANDBOX_ROW =
+    'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the sandbox; ' +
+    'a command run outside the sandbox is not stopped'
+
+  /** The secrets row of BE, FE and QA: Bash is stopped through the sandbox, but for the env files git tracks. */
+  const SECRETS_CHECKS_ROW =
+    'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the sandbox, ' +
+    'except the env files git tracks, which Bash commands may read; a command run outside the sandbox is not stopped'
+
+  /** The card rules of a template role in a repo with one docker script that runs through yarn. */
+  function rulesOf(id: 'pm' | 'tl' | 'be'): readonly ScopeRule[] {
+    return compileScope(templateRole(id), context({ dockerScripts: ['yarn docker:rspec'] })).card.rules
+  }
+
+  test('BE has one docker row, labelled none, right after its sandbox row', () => {
+    const rules = rulesOf('be')
+    const sandbox = rules.findIndex(item => item.text === SANDBOX_ROW)
+
+    expect(rules[sandbox]).toEqual({ text: SANDBOX_ROW, enforcement: 'best-effort' })
+    expect(rules[sandbox + 1]).toEqual({ text: DOCKER_ROW, enforcement: 'none' })
+    expect(rules.filter(item => item.text.startsWith('These run outside the sandbox'))).toHaveLength(1)
+  })
+
+  test('TL and PM have no docker row', () => {
+    const docker = (id: 'pm' | 'tl'): readonly ScopeRule[] =>
+      rulesOf(id).filter(item => item.text.startsWith('These run outside the sandbox'))
+
+    expect([docker('tl'), docker('pm')]).toEqual([[], []])
+  })
+
+  test('the secrets row says what the sandbox stops for each role kind, every one best-effort', () => {
+    const secretsOf = (id: 'pm' | 'tl' | 'be'): ScopeRule | undefined =>
+      rulesOf(id).find(item => item.text.startsWith('Reads of .env'))
+
+    expect(secretsOf('pm')).toEqual({ text: SECRETS_ROW, enforcement: 'best-effort' })
+    expect(secretsOf('tl')).toEqual({ text: SECRETS_SANDBOX_ROW, enforcement: 'best-effort' })
+    expect(secretsOf('be')).toEqual({ text: SECRETS_CHECKS_ROW, enforcement: 'best-effort' })
+  })
+})

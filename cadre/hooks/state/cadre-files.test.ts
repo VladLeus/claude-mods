@@ -1,6 +1,17 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { BACKSLASH, BE_FILE, manifestText, SHA_A, stateText } from '../testkit'
+import { planState } from '../init/initplan'
+import type { PlanStepInput } from '../init/initplan'
+import {
+  BACKSLASH,
+  BE_FILE,
+  DEFAULT_LOCATIONS,
+  manifestText,
+  repoScan,
+  SHA_A,
+  stateText,
+  templateRole,
+} from '../testkit'
 import { listsCadreRole, parseCadreState, parseManifest } from './cadre-files'
 
 const SHA_B = '0123456789abcdef'.repeat(4)
@@ -290,6 +301,60 @@ describe('parseCadreState: the sizing block and the recorded frameworks', () => 
 
   test('frameworks with an id listed twice make the state null', () => {
     expect(parseCadreState(stateText({ frameworks: ['gsd', 'gsd'] }))).toBeNull()
+  })
+})
+
+describe('the docker scripts cadre.json records', () => {
+  /** What planStep plans from, for BE alone, with a repo scan that found these docker scripts. */
+  function planInput(dockerScripts?: readonly string[]): PlanStepInput {
+    return {
+      roles: [templateRole('be')],
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes: new Map(),
+      hunks: [],
+      repo: repoScan(dockerScripts === undefined ? {} : { dockerScripts }),
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+    }
+  }
+
+  test('recorded docker scripts are read back, and an absent field stays absent', () => {
+    const recorded = parseCadreState(stateText({ dockerScripts: ['npm run docker:up', 'yarn docker:rspec'] }))
+    const absent = parseCadreState(stateText())
+
+    expect(recorded?.dockerScripts).toEqual(['npm run docker:up', 'yarn docker:rspec'])
+    expect(absent).not.toBeNull()
+    expect(Object.hasOwn(absent ?? {}, 'dockerScripts')).toBe(false)
+  })
+
+  test('docker scripts that are not a list of runner commands make the state null', () => {
+    const commands = [
+      'yarn',
+      'make docker:up',
+      'yarn docker rspec',
+      'yarn docker;up',
+      'npm docker:up',
+      ' yarn up',
+      'yarn up\n',
+    ]
+    for (const command of commands) {
+      expect(parseCadreState(stateText({ dockerScripts: [command] }))).toBeNull()
+    }
+    for (const dockerScripts of ['yarn docker:rspec', [1], null, {}]) {
+      expect(parseCadreState(stateText({ dockerScripts }))).toBeNull()
+    }
+  })
+
+  test('docker scripts that list one twice make the state null', () => {
+    expect(parseCadreState(stateText({ dockerScripts: ['yarn docker:rspec', 'yarn docker:rspec'] }))).toBeNull()
+  })
+
+  test("planState records the scan's docker scripts only when the scan found one", () => {
+    expect(planState(planInput(['yarn docker:rspec']), '0.5.17').dockerScripts).toEqual(['yarn docker:rspec'])
+    expect(Object.hasOwn(planState(planInput([]), '0.5.17'), 'dockerScripts')).toBe(false)
+    expect(Object.hasOwn(planState(planInput(), '0.5.17'), 'dockerScripts')).toBe(false)
   })
 })
 

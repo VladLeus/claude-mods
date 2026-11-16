@@ -49,7 +49,16 @@ const PLUGIN_RULE =
   '(--setting-sources project whitelist)'
 
 /** The Bash rule of a role that has Bash: one rule for both platforms, with the weaker label (ROLE-06). */
-const SANDBOX_RULE = 'Bash runs in the sandbox (hard on macOS, best-effort on Linux)'
+const SANDBOX_RULE = 'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache'
+
+/** The secrets rule of BE, FE and QA: Bash is stopped through the sandbox, but for the env files git tracks. */
+const SECRETS_CHECKS_RULE =
+  'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the sandbox, ' +
+  'except the env files git tracks, which Bash commands may read; a command run outside the sandbox is not stopped'
+
+/** The docker rule of BE, FE and QA in a repo with no docker script. */
+const DOCKER_RULE =
+  'These run outside the sandbox: docker, docker-compose. Run each one alone, with no cd, pipe or redirect.'
 
 /** The sandbox of a role that runs the repo's checks: docker outside it, the tool caches writable. */
 const IMPLEMENTER_SANDBOX = {
@@ -989,7 +998,8 @@ describe('scope rules', () => {
     expect(scope.card.rules).toEqual([
       { text: PLUGIN_RULE, enforcement: 'hard' },
       { text: SANDBOX_RULE, enforcement: 'best-effort' },
-      { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
+      { text: DOCKER_RULE, enforcement: 'none' },
+      { text: SECRETS_CHECKS_RULE, enforcement: 'best-effort' },
       {
         text: mergedDenied('jira'),
         enforcement: 'best-effort',
@@ -1183,5 +1193,16 @@ describe('the sandbox of a role', () => {
   test('a role based on BE runs docker outside the sandbox, a Bash role based on none does not', () => {
     expect(compileScope(role('api', 'be'), context()).settings.sandbox).toEqual(IMPLEMENTER_SANDBOX)
     expect(compileScope(role('docs', null), context()).settings.sandbox).toEqual(CACHE_SANDBOX)
+  })
+
+  test("BE also runs the repo's docker scripts outside the sandbox, TL none of them", () => {
+    const ctx = context({ dockerScripts: ['yarn docker:rspec'] })
+
+    expect(compileScope(templateRole('be'), ctx).settings.sandbox.excludedCommands).toEqual([
+      'docker *',
+      'docker-compose *',
+      'yarn docker:rspec *',
+    ])
+    expect(compileScope(templateRole('tl'), ctx).settings.sandbox).toEqual(CACHE_SANDBOX)
   })
 })

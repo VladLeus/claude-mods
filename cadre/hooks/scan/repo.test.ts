@@ -746,3 +746,40 @@ describe('existing .cadre', () => {
     ])
   })
 })
+
+describe('the docker scripts the scan finds', () => {
+  /** A package.json whose one script runs the specs in a docker compose service. */
+  const DOCKER_PACKAGE = JSON.stringify({
+    name: 'x',
+    scripts: { 'docker:rspec': 'docker compose exec -e RAILS_ENV=test console rspec' },
+  })
+
+  test('a root package.json with a docker script and a root yarn.lock give it with yarn, from one read', async () => {
+    const run = memIo(
+      memWorld({
+        dirs: { '/repo': [entry('package.json'), entry('yarn.lock')] },
+        files: { '/repo/package.json': DOCKER_PACKAGE },
+      }),
+      [],
+    )
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(scan.dockerScripts).toEqual(['yarn docker:rspec'])
+    expect(fileReads(run.reads)).toEqual(['/repo/package.json'])
+  })
+
+  test('with no package.json the scan finds no docker script', async () => {
+    const scan = await scanOf({ dirs: { '/repo': [entry('README.md'), entry('yarn.lock')] } })
+
+    expect(scan.dockerScripts).toEqual([])
+  })
+
+  test('a package.json one folder down adds no docker script', async () => {
+    const scan = await scanOf({
+      dirs: { '/repo': [entry('api', 'dir'), entry('yarn.lock')], '/repo/api': [entry('package.json')] },
+      files: { '/repo/api/package.json': DOCKER_PACKAGE },
+    })
+
+    expect(scan.dockerScripts).toEqual([])
+  })
+})
