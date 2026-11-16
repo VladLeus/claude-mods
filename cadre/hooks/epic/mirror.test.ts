@@ -3,9 +3,11 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { PortEntry } from '../../types'
 import { BARE_WORKTREE, entry, link } from '../testkit'
 import {
+  copyTempPath,
   epicStepArgv,
   epicStepTimeoutMs,
   isHiddenCopy,
+  mirrorCopyTempWarning,
   mirrorLinkedParentWarning,
   mirrorPaths,
   mirrorPlan,
@@ -29,6 +31,15 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
     expect(epicStepTimeoutMs(copyStep)).toBe(120_000)
     expect(epicStepTimeoutMs({ kind: 'mkdir', path: '/w/a' })).toBe(10_000)
     expect(epicStepTimeoutMs({ kind: 'link', path: '/w/a', target: '/repo/a' })).toBe(10_000)
+  })
+
+  test('a move runs mv -n, never over what is there, or mv -f when it overwrites, and may run for 120 s', () => {
+    const place: EpicStep = { kind: 'move', path: '/w/a', source: '/w/a.cadre-copy', overwrite: false }
+    const replace: EpicStep = { kind: 'move', path: '/repo/a', source: '/w/a', overwrite: true }
+
+    expect(epicStepArgv(place)).toEqual(['/bin/mv', '-n', '--', '/w/a.cadre-copy', '/w/a'])
+    expect(epicStepArgv(replace)).toEqual(['/bin/mv', '-f', '--', '/w/a', '/repo/a'])
+    expect([epicStepTimeoutMs(place), epicStepTimeoutMs(replace)]).toEqual([120_000, 120_000])
   })
 })
 
@@ -86,11 +97,14 @@ const SCRATCH_STEPS: readonly string[] = [
   'mkdir .claude',
   'link .claude/settings.local.json',
   'link .claude/skills',
-  'copy .env',
-  'copy .env.local',
+  'copy .env.cadre-copy',
+  'move .env',
+  'copy .env.local.cadre-copy',
+  'move .env.local',
   'link node_modules',
   'link thoughts',
-  'copy web/.env',
+  'copy web/.env.cadre-copy',
+  'move web/.env',
 ]
 
 /** mirrorPlan of `entries` for the role pm from /repo into BARE_WORKTREE, over these listings and named paths. */
@@ -126,8 +140,14 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
     ])
     expect(plan.steps.find(step => step.kind === 'copy')).toEqual({
       kind: 'copy',
-      path: `${BARE_WORKTREE}/.env`,
+      path: `${BARE_WORKTREE}/.env.cadre-copy`,
       source: '/repo/.env',
+    })
+    expect(plan.steps.find(step => step.kind === 'move')).toEqual({
+      kind: 'move',
+      path: `${BARE_WORKTREE}/.env`,
+      source: `${BARE_WORKTREE}/.env.cadre-copy`,
+      overwrite: false,
     })
   })
 
@@ -135,7 +155,7 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
     const main = new Map([['', [entry('.gitignore'), entry('node_modules', 'dir')]]])
     const plan = planOf(['.gitignore', 'node_modules'], main, new Map())
 
-    expect(plan.steps.map(stepLine)).toEqual(['copy .gitignore', 'link node_modules'])
+    expect(plan.steps.map(stepLine)).toEqual(['copy .gitignore.cadre-copy', 'move .gitignore', 'link node_modules'])
     expect(plan.copies).toEqual(['.gitignore'])
     expect(plan.links).toEqual(['node_modules'])
   })
@@ -202,12 +222,30 @@ describe('what .worktreeinclude names in the mirror', () => {
   /** Main's root listing thoughts and node_modules as real folders. */
   const MAIN = new Map([['', [entry('node_modules', 'dir'), entry('thoughts', 'dir')]]])
 
-  test('a named folder is copied whole in one step and recorded as a copy, not a link', () => {
+  test('a named folder is copied whole to a temporary sibling, moved into place and recorded as a copy', () => {
     const plan = planOf(['node_modules', 'thoughts'], MAIN, new Map(), ['thoughts'])
+    const temp = `${BARE_WORKTREE}/thoughts.cadre-copy`
 
-    expect(plan.steps.map(stepLine)).toEqual(['link node_modules', 'copy thoughts'])
-    expect(plan.steps[1]).toEqual({ kind: 'copy', path: `${BARE_WORKTREE}/thoughts`, source: '/repo/thoughts' })
+    expect(plan.steps.map(stepLine)).toEqual(['link node_modules', 'copy thoughts.cadre-copy', 'move thoughts'])
+    expect(plan.steps.slice(1)).toEqual([
+      { kind: 'copy', path: temp, source: '/repo/thoughts' },
+      { kind: 'move', path: `${BARE_WORKTREE}/thoughts`, source: temp, overwrite: false },
+    ])
     expect([plan.copies, plan.links]).toEqual([['thoughts'], ['node_modules']])
+    expect(copyTempPath('thoughts')).toBe('thoughts.cadre-copy')
+  })
+
+  test('a temporary sibling the worktree lists already gives no step and no copy, and one warning naming both', () => {
+    const main = new Map([['', [entry('.env'), entry('node_modules', 'dir'), entry('thoughts', 'dir')]]])
+    const tree = new Map([['', [entry('.env.cadre-copy'), link('thoughts.cadre-copy')]]])
+    const plan = planOf(['.env', 'node_modules', 'thoughts'], main, tree, ['thoughts'])
+
+    expect(plan.steps.map(stepLine)).toEqual(['link node_modules'])
+    expect([plan.copies, plan.links]).toEqual([[], ['node_modules']])
+    expect(plan.warnings).toEqual([
+      mirrorCopyTempWarning('.env', '.env.cadre-copy'),
+      mirrorCopyTempWarning('thoughts', 'thoughts.cadre-copy'),
+    ])
   })
 
   test('a named file below .claude is copied, while the other children of .claude are linked', () => {
@@ -216,7 +254,8 @@ describe('what .worktreeinclude names in the mirror', () => {
 
     expect(plan.steps.map(stepLine)).toEqual([
       'mkdir .claude',
-      'copy .claude/settings.local.json',
+      'copy .claude/settings.local.json.cadre-copy',
+      'move .claude/settings.local.json',
       'link .claude/skills',
     ])
   })
@@ -232,7 +271,8 @@ describe('what .worktreeinclude names in the mirror', () => {
       'mkdir thoughts',
       'link thoughts/local',
       'link thoughts/notes.md',
-      'copy thoughts/shared',
+      'copy thoughts/shared.cadre-copy',
+      'move thoughts/shared',
     ])
     expect([plan.copies, plan.links]).toEqual([['thoughts/shared'], ['thoughts/local', 'thoughts/notes.md']])
   })
@@ -268,9 +308,11 @@ describe('the sizing rubric in the mirror', () => {
 
   test('a rubric main has, that no entry names, is copied into a worktree that lacks it', () => {
     const plan = planOf([], MAIN, TREE)
-    const copy = { kind: 'copy', path: `${BARE_WORKTREE}/.cadre/sizing.md`, source: '/repo/.cadre/sizing.md' }
+    const temp = `${BARE_WORKTREE}/.cadre/sizing.md.cadre-copy`
+    const copy = { kind: 'copy', path: temp, source: '/repo/.cadre/sizing.md' }
+    const move = { kind: 'move', path: `${BARE_WORKTREE}/.cadre/sizing.md`, source: temp, overwrite: false }
 
-    expect([plan.steps, plan.copies, plan.links]).toEqual([[copy], ['.cadre/sizing.md'], []])
+    expect([plan.steps, plan.copies, plan.links]).toEqual([[copy, move], ['.cadre/sizing.md'], []])
   })
 
   test('an untracked rubric is linked; one the worktree lists, or a link in main, gets no step', () => {

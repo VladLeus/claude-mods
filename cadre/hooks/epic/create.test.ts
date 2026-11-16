@@ -55,7 +55,13 @@ import {
 import { epicBadKeyReply } from './key'
 import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine, epicWorktreeLauncherUnreadLine } from './launcher'
 import { EPIC_NO_WORKTREE_LIST } from './lookup'
-import { epicExcludesFailedReply, epicListFailedReply, epicStepFailedReply, globalExcludesWarning } from './mirror-run'
+import {
+  epicCopyFailedReply,
+  epicExcludesFailedReply,
+  epicListFailedReply,
+  epicStepFailedReply,
+  globalExcludesWarning,
+} from './mirror-run'
 import {
   EPIC_CANCELLED,
   EPIC_NO_PM,
@@ -455,7 +461,12 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
     const run = await epic({ ...world, dirs }, rules, 'PROJ-1', '')
     const excludes = lastWrite(run, BARE_EXCLUDES)
 
-    expect(stepRuns(run)).toEqual(['copy .env', 'copy .gitignore'])
+    expect(stepRuns(run)).toEqual([
+      'copy .env.cadre-copy',
+      'move .env',
+      'copy .gitignore.cadre-copy',
+      'move .gitignore',
+    ])
     expect(excludes).toBe(excludesText('', ['.gitignore']))
     expect(excludes?.split('\n')).not.toContain('/.env')
   })
@@ -503,6 +514,7 @@ const STEP_KINDS: ReadonlyMap<string, string> = new Map([
   ['/bin/mkdir', 'mkdir'],
   ['/bin/ln', 'link'],
   ['/bin/cp', 'copy'],
+  ['/bin/mv', 'move'],
 ])
 
 /** The mirror steps an epic run ran, each as stepLine writes it: its kind and its path below BARE_WORKTREE. */
@@ -568,18 +580,54 @@ async function includeWorld(files: Readonly<Record<string, string>> = {}): Promi
   return { ...world, files: { ...world.files, ...files }, dirs }
 }
 
+/** The temporary sibling the epic mirror copies thoughts to before it moves the copy into place. */
+const THOUGHTS_TEMP = `${BARE_WORKTREE}/thoughts.cadre-copy`
+
+/** The copy of main's thoughts to THOUGHTS_TEMP. */
+const THOUGHTS_CP: readonly string[] = ['/bin/cp', '-pR', '--', '/repo/thoughts', THOUGHTS_TEMP]
+
+/** The move of THOUGHTS_TEMP into place, never over what is there. */
+const THOUGHTS_MV: readonly string[] = ['/bin/mv', '-n', '--', THOUGHTS_TEMP, `${BARE_WORKTREE}/thoughts`]
+
 describe('copying what .worktreeinclude names into the epic worktree', () => {
-  test('a folder .worktreeinclude names is copied whole and recorded as a copy, an unnamed one linked', async () => {
+  test('a named folder is copied to a temporary sibling, then moved into place and recorded as a copy', async () => {
     const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
     const run = await epic(world, INCLUDE_RULES, 'PROJ-1', '')
-    const cp = ['/bin/cp', '-pR', '--', '/repo/thoughts', `${BARE_WORKTREE}/thoughts`]
     const ln = ['/bin/ln', '-s', '--', '/repo/node_modules', `${BARE_WORKTREE}/node_modules`]
     const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+    const isCopyStep = (argv: readonly string[]) => argv[0] === '/bin/cp' || argv[0] === '/bin/mv'
 
-    expect(run.events).toContain(cp.join(' '))
+    expect(stepRuns(run)).toEqual(['link node_modules', 'copy thoughts.cadre-copy', 'move thoughts'])
+    expect(run.events).toContain(THOUGHTS_CP.join(' '))
+    expect(run.events).toContain(THOUGHTS_MV.join(' '))
     expect(run.events).toContain(ln.join(' '))
-    expect(run.calls.find(call => call.argv[0] === '/bin/cp')?.options.timeoutMs).toBe(120_000)
+    expect(run.calls.filter(call => isCopyStep(call.argv)).map(call => call.options.timeoutMs)).toEqual([
+      120_000,
+      120_000,
+    ])
     expect([record?.copies, record?.links]).toEqual([['thoughts'], ['node_modules']])
+  })
+
+  test('a failed or rejected copy stops naming the path and its sibling, no move run, no copy recorded', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    for (const failed of [rule(THOUGHTS_CP, 1), rule(THOUGHTS_CP, null)]) {
+      const run = await epic(world, [failed, ...INCLUDE_RULES], 'PROJ-1', '')
+      const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+
+      expect(run.reply).toBe(epicCopyFailedReply('thoughts', 'thoughts.cadre-copy'))
+      expect(run.calls.filter(call => call.argv[0] === '/bin/mv')).toEqual([])
+      expect([record?.copies, record?.links]).toEqual([[], ['node_modules']])
+    }
+  })
+
+  test('a move into place that fails stops the same way, and the copy is not recorded', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    const run = await epic(world, [rule(THOUGHTS_MV, 1), ...INCLUDE_RULES], 'PROJ-1', '')
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+
+    expect(run.reply).toBe(epicCopyFailedReply('thoughts', 'thoughts.cadre-copy'))
+    expect(stepRuns(run)).toEqual(['link node_modules', 'copy thoughts.cadre-copy', 'move thoughts'])
+    expect([record?.copies, record?.links]).toEqual([[], ['node_modules']])
   })
 
   test('with no .worktreeinclude there is no INCLUDED_ARGV run, and thoughts stays a link', async () => {
@@ -952,7 +1000,8 @@ describe("PM's epic brief and the sizing rubric of an epic", () => {
     const copies = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')?.copies
     const paths = run.writes.map(write => write.path)
 
-    expect(run.events).toContain(['/bin/cp', '-pR', '--', MAIN_RUBRIC, WORKTREE_RUBRIC].join(' '))
+    expect(run.events).toContain(['/bin/cp', '-pR', '--', MAIN_RUBRIC, `${WORKTREE_RUBRIC}.cadre-copy`].join(' '))
+    expect(run.events).toContain(['/bin/mv', '-n', '--', `${WORKTREE_RUBRIC}.cadre-copy`, WORKTREE_RUBRIC].join(' '))
     expect([excludes.includes('/.cadre/sizing.md'), copies, run.reply.includes('Linked 0, copied 1.')]).toEqual([
       true,
       ['.cadre/sizing.md'],
