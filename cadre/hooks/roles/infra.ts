@@ -25,13 +25,15 @@ export const INFRA_PLUGINS: readonly string[] = Object.freeze([
  */
 export const INFRA_SKILLS: readonly string[] = Object.freeze(['create-handoff-doc', 'resume-handoff-doc'])
 
+export const AUTOPILOT_WAIT_TOOL = 'mcp__autopilot__wait_for'
+
 /**
  * The tools autopilot relies on in every role: its three MCP tools, Skill, and PushNotification. No deny rule may name
  * or cover them (ISO-04, D-77).
  */
 export const INFRA_TOOLS: readonly string[] = Object.freeze([
   'mcp__autopilot__restart_session',
-  'mcp__autopilot__wait_for',
+  AUTOPILOT_WAIT_TOOL,
   'mcp__autopilot__queue_question',
   'Skill',
   'PushNotification',

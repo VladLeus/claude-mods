@@ -7,12 +7,18 @@ import type { FrameworkId, RoleSpec } from '../../types'
 import { adapterOf } from '../framework/registry'
 import { IDLE_INBOX_WAIT, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
+import { AUTOPILOT_WAIT_TOOL, CADRE_TOOLS } from '../roles/infra'
 
 /**
  * The most characters the role line of a kickoff may have (D-79; 240 since the inbox sentence of D-114,
  * decisions #32/#39).
  */
 export const ROLE_LINE_MAX = 240
+
+/** The sentence that loads the deferred inbox and wait tools in one ToolSearch, last in every kickoff line. */
+export const KICKOFF_LOAD_TOOLS = fill(PROMPTS.kickoffLoadTools, {
+  tools: [...CADRE_TOOLS, AUTOPILOT_WAIT_TOOL].join(','),
+})
 
 /** What the role line drops: any character outside printable ASCII, and the quote and backtick characters. */
 const NOT_ROLE_LINE_CHAR = /[^\x20-\x7e]|["'`]/g
@@ -61,11 +67,13 @@ export function budgetedRoleLine(role: RoleSpec, sentence: (title: string) => st
 
 /**
  * The short ASCII role line of a kickoff: who the role is, where its ROLE.md is and what it starts with, its title
- * budgeted to ROLE_LINE_MAX, then the idle wait sentence whole; it holds no quote or backtick, so it sits inside the
- * quotes of the autopilot command.
+ * budgeted to ROLE_LINE_MAX, then the idle wait and the tool load sentences whole; it holds no quote or backtick, so it
+ * sits inside the quotes of the autopilot command.
  */
 export function kickoffRoleLine(role: RoleSpec, framework: FrameworkId): string {
-  return `${budgetedRoleLine(role, title => roleSentence(role, framework, title))} ${IDLE_INBOX_WAIT}`
+  const line = budgetedRoleLine(role, title => roleSentence(role, framework, title))
+
+  return `${line} ${IDLE_INBOX_WAIT} ${KICKOFF_LOAD_TOOLS}`
 }
 
 /**

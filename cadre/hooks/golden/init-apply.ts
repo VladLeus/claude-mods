@@ -227,7 +227,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/pm/kickoff.txt",
-        "sha256": "bf1ffd286642f9cc4394d8ee794a0535f5ddefc30107f6b39e03a812ec4d957b",
+        "sha256": "08bf8d125705ab8e01e55ca511317b7f5771eb423ecc18fda6e4a5ffa4ab006d",
         "isWritten": true
       },
       {
@@ -257,7 +257,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/security/kickoff.txt",
-        "sha256": "8a028589b0bc9772b09c597a8814d8ce2179a92d8fa668e627ed95e2c8742db9",
+        "sha256": "283fccb025b661c02e802be2bb43b67f9d33e9e061ad31b79c52ba9474b4ce8f",
         "isWritten": true
       },
       {
@@ -292,7 +292,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/kickoff.txt",
-        "sha256": "56d503e44f226fa624a3db33f7bf6735fb93f59ec48e98e25f64616f1a8ce03b",
+        "sha256": "937c1de1033196923d0f0f1dca9e033b03d30945cda03a62eff175924023c94c",
         "isWritten": true
       },
       {
@@ -317,7 +317,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "1975416b69bed66d989f313182d5eb1cbd258a3c0a37ae4b3f71fd9f5e835cad",
+        "sha256": "491c5c2b227dd9cf07ca92dfff7b3e690082629526d3641ac9e5f7300823f0a8",
         "isWritten": true
       }
     ],
@@ -369,7 +369,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/kickoff.txt\",",
-      "      \"sha256\": \"bf1ffd286642f9cc4394d8ee794a0535f5ddefc30107f6b39e03a812ec4d957b\"",
+      "      \"sha256\": \"08bf8d125705ab8e01e55ca511317b7f5771eb423ecc18fda6e4a5ffa4ab006d\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -399,7 +399,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/kickoff.txt\",",
-      "      \"sha256\": \"8a028589b0bc9772b09c597a8814d8ce2179a92d8fa668e627ed95e2c8742db9\"",
+      "      \"sha256\": \"283fccb025b661c02e802be2bb43b67f9d33e9e061ad31b79c52ba9474b4ce8f\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -434,7 +434,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/kickoff.txt\",",
-      "      \"sha256\": \"56d503e44f226fa624a3db33f7bf6735fb93f59ec48e98e25f64616f1a8ce03b\"",
+      "      \"sha256\": \"937c1de1033196923d0f0f1dca9e033b03d30945cda03a62eff175924023c94c\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -701,7 +701,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/pm/kickoff.txt",
-        "sha256": "bf1ffd286642f9cc4394d8ee794a0535f5ddefc30107f6b39e03a812ec4d957b",
+        "sha256": "08bf8d125705ab8e01e55ca511317b7f5771eb423ecc18fda6e4a5ffa4ab006d",
         "isWritten": true
       },
       {
@@ -731,7 +731,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/security/kickoff.txt",
-        "sha256": "92a46a155228b2b48c132a9d736b04c9d12578bd2bdaa8c801e7c127af557429",
+        "sha256": "6aca202354afd43e3013834f29f83bdd60d25c8a386fa6b81e11309896b30a6a",
         "isWritten": true
       },
       {
@@ -766,7 +766,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/kickoff.txt",
-        "sha256": "bdba2f37beed531ea0ebddd8d8ba675cd5066caf840ef35f5358909be588fb16",
+        "sha256": "67931bb9e6eba557e0e2ecc34f9149e9a2b0164e4811bfa1bae077e804637787",
         "isWritten": true
       },
       {
@@ -791,7 +791,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "959c00d4f244a7c40e0fd3a9e9ae82990c8abc1f020f200d7341426a6cd4cd42",
+        "sha256": "85142755ca14ae8c9e54ed6add0a882aa715248f53dd3673bfc90984604c3d69",
         "isWritten": true
       }
     ],
@@ -844,7 +844,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/kickoff.txt\",",
-      "      \"sha256\": \"bf1ffd286642f9cc4394d8ee794a0535f5ddefc30107f6b39e03a812ec4d957b\"",
+      "      \"sha256\": \"08bf8d125705ab8e01e55ca511317b7f5771eb423ecc18fda6e4a5ffa4ab006d\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -874,7 +874,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/kickoff.txt\",",
-      "      \"sha256\": \"92a46a155228b2b48c132a9d736b04c9d12578bd2bdaa8c801e7c127af557429\"",
+      "      \"sha256\": \"6aca202354afd43e3013834f29f83bdd60d25c8a386fa6b81e11309896b30a6a\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -909,7 +909,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/kickoff.txt\",",
-      "      \"sha256\": \"bdba2f37beed531ea0ebddd8d8ba675cd5066caf840ef35f5358909be588fb16\"",
+      "      \"sha256\": \"67931bb9e6eba557e0e2ecc34f9149e9a2b0164e4811bfa1bae077e804637787\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",

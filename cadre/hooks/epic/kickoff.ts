@@ -5,7 +5,7 @@
  * hands it to its mirror stage. It is pure and imports generate/kickoff and the types; epic/create reads it.
  */
 import type { EpicRecord, RoleSpec } from '../../types'
-import { asciiLine, autopilotCommand, budgetedRoleLine, ROLE_LINE_MAX } from '../generate/kickoff'
+import { asciiLine, autopilotCommand, budgetedRoleLine, KICKOFF_LOAD_TOOLS, ROLE_LINE_MAX } from '../generate/kickoff'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 
@@ -44,10 +44,8 @@ function pmEpicSentence(id: string, key: string, title: string, target: string):
 }
 
 /**
- * The role line of every epic role but PM: who the role is, the epic key and its ROLE.md, then the wait for its
- * parent's session `cadre-<parent>` with wait_for reason session-answer and a timeout, the inbox read, and the work: TL
- * runs the ticket loop of its ROLE.md, every other role works what its parent sends. With no parent named it waits
- * with no `from`, so it never names a session that is not its parent.
+ * The role line of every epic role but PM: it waits with wait_for reason idle-inbox and no timeout for its parent
+ * `cadre-<parent>` (no `from` without one), reads its inbox, then runs TL's ticket loop or works what the parent sends.
  */
 function workerEpicSentence(id: string, key: string, title: string, parent: string | null, isTl: boolean): string {
   const from = parent === null ? '' : fill(PROMPTS.epicFrom, { parent })
@@ -77,15 +75,10 @@ function workerEpicLine(role: RoleSpec, key: string, parent: string | null, isTl
 }
 
 /**
- * The epic kickoff of a role, the text /cadre epic writes to its `.runtime/kickoff.txt`: the positional autopilot
- * command `/autopilot <duration> <threshold> "<line>"` with the role's own duration and threshold, and a newline. PM's
- * line names the epic key and title, tells PM to grill the user and feed the TL `tlId`, else its roles, ticket by
- * ticket, and ends ` --ask-user` whatever its role.json says, as PM is the one role that asks the user. Every other
- * role's line names the role and the key and says to wait for its parent's session `cadre-<parent>` (epicParentOf) with
- * wait_for reason session-answer and a timeout, read its inbox, then run the ticket loop (TL) or work what its parent
- * sends, and never carries ` --ask-user`. Each line is printable ASCII with no quote or backtick (asciiLine), at most
- * ROLE_LINE_MAX long: the epic title (PM) or the role title is cut first, so the key stays whole and the line keeps its
- * end whenever the line with no title fits.
+ * The text /cadre epic writes to a role's `.runtime/kickoff.txt`. PM feeds the epic's tickets and always asks the user
+ * (` --ask-user` whatever role.json says); every other role waits with wait_for reason idle-inbox and no timeout and
+ * never asks. Each line keeps the key whole within ROLE_LINE_MAX by cutting the title first, then ends with the tool
+ * load sentence.
  */
 export function epicKickoffText(input: {
   readonly role: RoleSpec
@@ -95,9 +88,12 @@ export function epicKickoffText(input: {
   readonly parent: string | null
   readonly tlId: string | null
 }): string {
-  const { role, key, title, parent, tlId } = input
+  const { role, key, title, isPm, parent, tlId } = input
   const { duration, threshold } = role.autopilot
-  if (!input.isPm) return autopilotCommand(duration, threshold, workerEpicLine(role, key, parent, role.id === tlId), '')
+  const line = isPm
+    ? pmEpicLine(role.id, key, title, feedTarget(tlId))
+    : workerEpicLine(role, key, parent, role.id === tlId)
+  const flag = isPm ? ' --ask-user' : ''
 
-  return autopilotCommand(duration, threshold, pmEpicLine(role.id, key, title, feedTarget(tlId)), ' --ask-user')
+  return autopilotCommand(duration, threshold, `${line} ${KICKOFF_LOAD_TOOLS}`, flag)
 }

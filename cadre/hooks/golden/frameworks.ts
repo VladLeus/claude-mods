@@ -164,7 +164,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/be/kickoff.txt",
-        "sha256": "fb87acc0c9cde6279de82fa15bfd144ace00d4be03a200fd9c7a2449ae8c926e",
+        "sha256": "2b2ea61ff0291c2c6a84242561afec23e4dcb92209c958c609ee8656968c924a",
         "isWritten": true
       },
       {
@@ -174,7 +174,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "b6d27b4501ea6fb42086096813e882feaf4d4226af4a5aa3b0a49894ad6fa4ad",
+        "sha256": "1b3ed2757d7c6148c4f1f0d028d5bf298863327591cd8d0baf31237b374a328e",
         "isWritten": true
       }
     ],
@@ -204,7 +204,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/be/kickoff.txt\",",
-      "      \"sha256\": \"fb87acc0c9cde6279de82fa15bfd144ace00d4be03a200fd9c7a2449ae8c926e\"",
+      "      \"sha256\": \"2b2ea61ff0291c2c6a84242561afec23e4dcb92209c958c609ee8656968c924a\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -249,7 +249,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/kickoff.txt\",",
-      "      \"sha256\": \"bf1ffd286642f9cc4394d8ee794a0535f5ddefc30107f6b39e03a812ec4d957b\"",
+      "      \"sha256\": \"08bf8d125705ab8e01e55ca511317b7f5771eb423ecc18fda6e4a5ffa4ab006d\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
