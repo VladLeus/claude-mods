@@ -351,6 +351,16 @@ describe('the docker scripts cadre.json records', () => {
     expect(parseCadreState(stateText({ dockerScripts: ['yarn docker:rspec', 'yarn docker:rspec'] }))).toBeNull()
   })
 
+  test('a docker script named with no leading letter or digit, or without docker, makes the state null', () => {
+    const commands = ['yarn exec', 'yarn --cwd', 'pnpm dlx', 'npm run up', 'yarn -docker', 'yarn .docker']
+    for (const command of [...commands, 'yarn Docker:up']) {
+      expect(parseCadreState(stateText({ dockerScripts: [command] }))).toBeNull()
+    }
+    const kept = ['npm run docker:up', 'yarn rspec-docker']
+
+    expect(parseCadreState(stateText({ dockerScripts: kept }))?.dockerScripts).toEqual(kept)
+  })
+
   test("planState records the scan's docker scripts only when the scan found one", () => {
     expect(planState(planInput(['yarn docker:rspec']), '0.5.17').dockerScripts).toEqual(['yarn docker:rspec'])
     expect(Object.hasOwn(planState(planInput([]), '0.5.17'), 'dockerScripts')).toBe(false)

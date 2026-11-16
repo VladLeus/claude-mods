@@ -519,14 +519,22 @@ describe('manifest parsers (G-02-1c)', () => {
 })
 
 describe('the docker scripts of a package.json', () => {
-  test('a script that runs docker or docker-compose gives its runner and name, sorted', () => {
+  test('a docker-named script that runs docker or docker-compose gives its runner and name, sorted', () => {
     const scripts = {
       up: 'docker-compose up',
       'docker:rspec': 'docker compose exec -e RAILS_ENV=test console rspec',
       lint: 'eslint .',
     }
 
-    expect(dockerScriptCommands(scripts, 'yarn')).toEqual(['yarn docker:rspec', 'yarn up'])
+    expect(dockerScriptCommands(scripts, 'yarn')).toEqual(['yarn docker:rspec'])
+  })
+
+  test('a name must start with a letter or digit and hold docker, so no runner built-in or flag passes', () => {
+    const dropped = ['exec', 'dlx', 'node', '--cwd', '-docker', '.docker', ':docker', '_docker', 'up', 'Docker:up']
+    const kept = ['docker', 'rspec-docker', '9docker:up']
+    const scripts = Object.fromEntries([...dropped, ...kept].map(name => [name, 'docker compose up']))
+
+    expect(dockerScriptCommands(scripts, 'yarn')).toEqual(['yarn 9docker:up', 'yarn docker', 'yarn rspec-docker'])
   })
 
   test('a script that runs anything else, or holds a shell operator or a line break, is dropped', () => {
@@ -552,16 +560,16 @@ describe('the docker scripts of a package.json', () => {
     expect(dockerScriptCommands(scripts, 'npm run')).toEqual([])
   })
 
-  test('a script whose name holds a character outside A-Za-z0-9:._-, or whose command is no string, is dropped', () => {
+  test('a docker name with a character outside A-Za-z0-9:._-, or a command that is no string, is dropped', () => {
     const scripts = {
       'docker rspec': 'docker compose up',
       'docker/up': 'docker compose up',
       'up*': 'docker compose up',
       'docker:up': 5,
-      'ok:A9._-': 'docker compose up',
+      'docker:A9._-': 'docker compose up',
     }
 
-    expect(dockerScriptCommands(scripts, 'pnpm')).toEqual(['pnpm ok:A9._-'])
+    expect(dockerScriptCommands(scripts, 'pnpm')).toEqual(['pnpm docker:A9._-'])
   })
 
   test('a scripts value that is not a plain object gives none', () => {
