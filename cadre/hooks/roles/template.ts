@@ -171,6 +171,13 @@ export function isCoreTeam(state: Pick<CadreState, 'structure'>): boolean {
   return state.structure === 'core'
 }
 
+/** Whether a role of a core team starts with --ask-user in an epic: the template row's choice, not role.json. */
+export function asksInEpic(role: Pick<RoleSpec, 'id' | 'basedOn'>, isCoreTeam: boolean): boolean {
+  if (!isCoreTeam) return false
+
+  return ROLE_TEMPLATE.find(row => standsFor(role, row.id))?.askUser ?? false
+}
+
 /**
  * The id of the role that stands for a template role on the team (standsFor): the role with that id first, else the
  * first role based on it; null when there is neither. /cadre epic finds the TL with it (D-159).

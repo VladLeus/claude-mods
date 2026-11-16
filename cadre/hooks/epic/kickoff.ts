@@ -8,6 +8,7 @@ import type { EpicRecord, RoleSpec } from '../../types'
 import { asciiLine, autopilotCommand, budgetedRoleLine, KICKOFF_LOAD_TOOLS, ROLE_LINE_MAX } from '../generate/kickoff'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
+import { asksInEpic } from '../roles/template'
 
 /** The epic worktree as runEpic hands it to its mirror stage once git has made or found it (D-147, D-164). */
 export type EpicWorktree = {
@@ -75,10 +76,10 @@ function workerEpicLine(role: RoleSpec, key: string, parent: string | null, isTl
 }
 
 /**
- * The text /cadre epic writes to a role's `.runtime/kickoff.txt`. PM feeds the epic's tickets and always asks the user
- * (` --ask-user` whatever role.json says); every other role waits with wait_for reason idle-inbox and no timeout and
- * never asks. Each line keeps the key whole within ROLE_LINE_MAX by cutting the title first, then ends with the tool
- * load sentence.
+ * The text /cadre epic writes to a role's `.runtime/kickoff.txt`. PM feeds the epic's tickets; every other role waits
+ * with wait_for reason idle-inbox and no timeout. PM and the core roles asksInEpic names start with ` --ask-user`
+ * whatever role.json says, and no other role does. Each line keeps the key whole within ROLE_LINE_MAX by cutting the
+ * title first, then ends with the tool load sentence.
  */
 export function epicKickoffText(input: {
   readonly role: RoleSpec
@@ -87,13 +88,14 @@ export function epicKickoffText(input: {
   readonly isPm: boolean
   readonly parent: string | null
   readonly tlId: string | null
+  readonly isCoreTeam: boolean
 }): string {
   const { role, key, title, isPm, parent, tlId } = input
   const { duration, threshold } = role.autopilot
   const line = isPm
     ? pmEpicLine(role.id, key, title, feedTarget(tlId))
     : workerEpicLine(role, key, parent, role.id === tlId)
-  const flag = isPm ? ' --ask-user' : ''
+  const flag = isPm || asksInEpic(role, input.isCoreTeam) ? ' --ask-user' : ''
 
   return autopilotCommand(duration, threshold, `${line} ${KICKOFF_LOAD_TOOLS}`, flag)
 }

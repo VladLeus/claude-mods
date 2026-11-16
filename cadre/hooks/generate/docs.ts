@@ -14,7 +14,7 @@ import { fill } from '../locales/t'
 import { cadreStatePath, handoffFolderOf, launcherPath, SIZING_RUBRIC_PATH } from '../paths'
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
-import { standIn, standsFor } from '../roles/template'
+import { asksInEpic, standIn, standsFor } from '../roles/template'
 import type { ChainRole } from '../roles/template'
 import { MAX_PURPOSE_CHARS } from '../roles/validate'
 import { CARD_LIST_WORDS, scopeCardLines } from '../scope/card'
@@ -105,6 +105,13 @@ const COMMON_PART: readonly string[] = [
   ARTIFACT.roleMdHierarchyCommonEpicEnd,
 ]
 
+/** The Hierarchy lines every role of a core team gets: where a question goes, a rejection and the epic end. */
+const CORE_COMMON_PART: readonly string[] = [
+  ARTIFACT.roleMdHierarchyCommonQuestions,
+  ARTIFACT.roleMdHierarchyCommonRejected,
+  ARTIFACT.roleMdHierarchyCommonEpicEnd,
+]
+
 /** PM's grill and epic rules in the Hierarchy section of ROLE.md. */
 const PM_PART: readonly string[] = [
   ARTIFACT.roleMdPmGrill,
@@ -152,8 +159,8 @@ const CORE_WORKER_PART: readonly string[] = [
 
 /**
  * A core team's TL part: the loop on the fed ticket only, a brief for each implementer instead of a plan, no dispatch
- * of what an open product question affects, trust in the reports, and a QA or Security task only when the team has a
- * role standing for it.
+ * of what an open product question affects, what to ask the person, trust in the reports, and a QA or Security task
+ * only when the team has a role standing for it.
  */
 function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
   const qaLines = standIn('qa', roles) === null ? [] : [ARTIFACT.roleMdCoreTlQa]
@@ -164,6 +171,7 @@ function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
     ARTIFACT.roleMdCoreTlFed,
     ARTIFACT.roleMdCoreTlBrief,
     ARTIFACT.roleMdCoreTlHold,
+    ARTIFACT.roleMdCoreTlAsk,
     ARTIFACT.roleMdTlTasks,
     ARTIFACT.roleMdCoreTlTrust,
     ARTIFACT.roleMdCoreTlFailed,
@@ -180,6 +188,7 @@ function rolePart(role: RoleSpec, team: RoleMdTeam): readonly string[] {
   if (team.isCore && standsFor(role, 'tl')) return coreTlPart(team.roles)
   if (standsFor(role, 'pm')) return PM_PART
   if (standsFor(role, 'tl')) return TL_PART
+  if (team.isCore && standsFor(role, 'security')) return [...CORE_WORKER_PART, ARTIFACT.roleMdCoreSecurityAsk]
   if (team.isCore) return CORE_WORKER_PART
 
   return WORKER_PART
@@ -187,12 +196,16 @@ function rolePart(role: RoleSpec, team: RoleMdTeam): readonly string[] {
 
 /**
  * The Hierarchy section of ROLE.md: its heading, the lines every role gets, the ask line of a role started with
- * --ask-user, then the role's own part.
+ * --ask-user, then the role's own part. A core team's role is also told whether it starts with --ask-user in an epic,
+ * in place of the line that only PM asks the user there.
  */
 function hierarchyLines(role: RoleSpec, team: RoleMdTeam): string[] {
-  const askLines = role.autopilot.askUser ? [ARTIFACT.roleMdHierarchyAskUser] : []
+  const askUserLine = team.isCore ? ARTIFACT.roleMdCoreAskUser : ARTIFACT.roleMdHierarchyAskUser
+  const askLines = role.autopilot.askUser ? [askUserLine] : []
+  if (!team.isCore) return [ARTIFACT.roleMdHierarchy, '', ...COMMON_PART, ...askLines, ...rolePart(role, team), '']
+  const epicLine = asksInEpic(role, team.isCore) ? ARTIFACT.roleMdCoreEpicAsk : ARTIFACT.roleMdCoreEpicNoAsk
 
-  return [ARTIFACT.roleMdHierarchy, '', ...COMMON_PART, ...askLines, ...rolePart(role, team), '']
+  return [ARTIFACT.roleMdHierarchy, '', ...CORE_COMMON_PART, ...askLines, epicLine, ...rolePart(role, team), '']
 }
 
 /**

@@ -32,7 +32,7 @@ import { repoGuard } from '../guards/repo'
 import { hasRunFailed, isStepDone } from '../host/steps'
 import { t } from '../locales/t'
 import { inboxHomeOf, inboxTreeOf, launcherPath, parentOf, SIZING_RUBRIC_PATH, userDirOf } from '../paths'
-import { standIn } from '../roles/template'
+import { isCoreTeam, standIn } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeRefusal } from '../start/claude-version'
 import { launcherRead } from '../start/launcher-check'
@@ -215,16 +215,16 @@ async function pmSeed(
 }
 
 /**
- * The render stage of runEpic (D-157, D-102, RESEARCH Pattern 1), once the mirror ran every step: the team, read in the
- * main checkout, is compiled there once (compileTeam), and each picked role, in cadre.json order, is rendered for the
- * worktree by renderRole with the worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every
- * `.runtime/` it writes is the worktree's own, never main's. The render names the main checkout as the epic's, so the
- * role keeps the worktree's CLAUDE.md files out and gets main's code-dir denies too (Pitfalls 1 and 2), and it looks a
- * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
- * user's project servers are recorded, and it names the epic record's slug, which names each role's workstream. Each
- * role's render also writes its epic kickoff into its `.runtime/` (epicKickoffText with the epic key, the worktree's
- * title, the role's parent from epicParentOf over the whole team and the team's TL, D-158 to D-160), and PM's starts
- * a new inbox with the epic brief (epicEntryLine). Its lines: one
+ * The render stage of runEpic, once the mirror ran every step: the team, read in the main checkout, is compiled there
+ * once (compileTeam), and each picked role, in cadre.json order, is rendered for the worktree by renderRole with the
+ * worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every `.runtime/` it writes is the
+ * worktree's own, never main's. The render names the main checkout as the epic's, so the role keeps the worktree's
+ * CLAUDE.md files out and gets main's code-dir denies too, and it looks a server up in the `~/.claude.json` project of
+ * the worktree, then of the main root as resolved and as given, where the user's project servers are recorded, and it
+ * names the epic record's slug, which names each role's workstream. Each role's render also writes its epic kickoff
+ * into its `.runtime/` (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf
+ * over the whole team, the team's TL and whether cadre.json records the core team), and PM's starts a new inbox with
+ * the epic brief (epicEntryLine). Its lines: one
  * `warning: <id>: <text>` line per render warning, then the lines of the open stage (openedLines). A role whose render
  * refuses keeps that refusal as its line, which does not stop the others, and one whose launcher in the worktree reads
  * as a text without the epic kickoff line (hasRuntimeKickoff) gets epicWorktreeLauncherLine and does not open; one
@@ -265,7 +265,15 @@ async function renderedLines(
       continue
     }
     const parent = epicParentOf(role, roles, team.pmId)
-    const kickoff = epicKickoffText({ role, key, title: epicWorktree.title, isPm: id === team.pmId, parent, tlId })
+    const kickoff = epicKickoffText({
+      role,
+      key,
+      title: epicWorktree.title,
+      isPm: id === team.pmId,
+      parent,
+      tlId,
+      isCoreTeam: isCoreTeam(state),
+    })
     const inboxSeed = id === team.pmId && seed !== null ? { inboxSeed: seed } : {}
     const render = await renderRole(io, host, {
       locations: worktreeLocations,

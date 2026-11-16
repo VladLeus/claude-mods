@@ -44,6 +44,14 @@ export const ARTIFACT = Object.freeze({
   roleMdHierarchyCommonAsk: 'In an epic, only PM asks the user; every other role sends its question up.',
   roleMdHierarchyAskUser:
     'Outside an epic you start with --ask-user: ask the person your critical questions yourself with AskUserQuestion.',
+  roleMdCoreAskUser: 'Outside an epic you start with --ask-user: ask the person yourself with AskUserQuestion.',
+  roleMdCoreEpicAsk: `In an epic you start with --ask-user too: ask the person with AskUserQuestion while they are ${
+    ''}here and with queue_question while they are away.`,
+  roleMdCoreEpicNoAsk: `In an epic you start without --ask-user: send what only a person can do or decide (start a ${
+    ''}service, accept a risk) to TL as a question, and TL asks the person.`,
+  roleMdCoreTlAsk: `Ask the person about architecture and high-level decisions, and about what an implementer sends ${
+    ''}you that only a person can do or decide.`,
+  roleMdCoreSecurityAsk: 'Ask the person when a matter is unclear or a risk must be accepted that TL cannot accept.',
   roleMdHierarchyCommonRejected:
     'An entry you mark rejected goes back up to the role that sent it, with your reason.',
   roleMdHierarchyCommonEpicEnd: `On epic-end, mark your open inbox entries, write your handoff and answer with a line ${
