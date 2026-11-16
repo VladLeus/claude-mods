@@ -20,7 +20,9 @@ import { privateLevelsProblem, roleFolderLevels } from '../apply/safety'
 import { sha256Hex } from '../core/hash'
 import { allOrNull, isObject, parseJsonValue } from '../core/json'
 import { sortedUnique } from '../core/text'
+import { GIT_TIMEOUT_MS } from '../git/argv'
 import { gitCommonDirOf, mainCheckoutOf } from '../git/common-dir'
+import { envFilesOf, TRACKED_ENV_ARGV } from '../git/env-files'
 import { isPartsFlowRole } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
 import { t } from '../locales/t'
@@ -39,6 +41,7 @@ import {
   userDirOf,
 } from '../paths'
 import { PER_SKILL_DENY_PLUGINS } from '../roles/infra'
+import { runsRepoChecks } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { isEntryForRoot, SOURCE_ORDER } from '../scan/facts/settings'
 import { claudeMdImports } from '../scan/instructions/imports'
@@ -389,39 +392,51 @@ async function levelsRefusal(
   return problem === null ? null : privateFolderRefusal(shown(problem.path), problem.reason)
 }
 
+async function trackedEnvFilesOf(
+  host: HostIo,
+  role: Pick<RoleSpec, 'id' | 'basedOn'>,
+  root: string,
+): Promise<readonly string[] | null> {
+  if (!runsRepoChecks(role)) return null
+
+  return envFilesOf(await host.run(TRACKED_ENV_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS }))
+}
+
 /**
- * The launching user's facts (D-98), gathered in the root session through the ports:
+ * The launching user's facts, gathered in the root session through the ports:
  * - the repo root as resolved and as given, the home folder, and the user folder (CLAUDE_CONFIG_DIR, else
  *   `<home>/.claude`); an ignored CLAUDE_CONFIG_DIR is warned about by the setup scan of the same run, so it is not
- *   repeated here (D-238, WF-S3);
+ *   repeated here;
  * - the git common dir from GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves
- *   it, else as git gave it, with its SHA-256 (gitCommonDirOf): they name the role memory folders (roleMemoryDir,
- *   D-20, D-91); and, for a root that lies below the main checkout of its git common dir (mainCheckoutOf), that
- *   checkout as `mainRoot`, set before the memories are linked, so a linked worktree links and denies main's memory
- *   folder and gets main's code-dir denies (03.1-W3 M1, S1);
+ *   it, else as git gave it, with its SHA-256 (gitCommonDirOf): they name the role memory folders (roleMemoryDir); and,
+ *   for a root that lies below the main checkout of its git common dir (mainCheckoutOf), that checkout as `mainRoot`,
+ *   set before the memories are linked, so a linked worktree links and denies main's memory folder and gets main's
+ *   code-dir denies;
  * - the carried values of the user settings (launchSettingsOf) and the hooks of each source hookSourcesFor names for
- *   the launch start (launchHooksOf, D-103), and the folder of a dir start (startDir);
+ *   the launch start (launchHooksOf), and the folder of a dir start (startDir);
  * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
- *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
- *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
- *   skills and agents, the skills and agents the root's own `.claude` folders provide (repoFolderEntries, whose
- *   warnings lead the ok result's), and the code dirs given;
+ *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes, the global CLAUDE.md
+ *   with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's skills
+ *   and agents, the skills and agents the root's own `.claude` folders provide (repoFolderEntries, whose warnings lead
+ *   the ok result's), and the code dirs given;
  * - the skill list of the installed mattpocock-skills (pluginSkillsOf), whose install entry is looked up over the same
  *   roots as the user folder, and the plugins the settings files of the repo and of a dir start folder turn on
  *   (projectPluginsOf), each set only when there is one;
+ * - for a role that runs the repo's checks (runsRepoChecks), the env files git tracks at the root from one
+ *   TRACKED_ENV_ARGV run (envFilesOf), left out when the run fails;
  * - for a parts-flow role (isPartsFlowRole), the memories its hand-out record names, linked into its role memory
- *   folder with cadre's MEMORY.md block (linkedMemoriesOf, G-02-1f, D-140 q3-a): their link paths are the user's
- *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
- *   whole-files role gets none, as its memories are linked under `.runtime/instructions/` (instructionPlan).
+ *   folder with cadre's MEMORY.md block (linkedMemoriesOf): their link paths are the user's linkedMemories, and the
+ *   links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A whole-files role gets
+ *   none, as its memories are linked under `.runtime/instructions/` (instructionPlan).
  * A listing or read that fails counts as empty. It refuses with START_NO_HOME when there is no home folder, before
  * any run, and with START_NO_GIT_DIR when git gives no absolute path; only then is the user folder taken, with
- * CLAUDE_CONFIG_DIR checked against the root, the root as given and the main checkout (D-238, WF-S4). Then each level
- * of the role memory folder (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its
- * instructions/ subfolder), then each level of the role's inbox folder (inboxFolderLevels: `<userDir>/cadre`, its
- * `inboxes`, the inbox home of the root and the role's folder) is checked by levelsRefusal, which refuses with
- * privateFolderRefusal when a level is a link, is not a folder, or its parent could not be listed (02-GAPS-B3 C5),
- * before any step runs; `<userDir>` itself is never checked, as a linked config folder is common. The ok result carries
- * the role's inbox folder. No setting value, hook command or file text is ever part of a refusal or a warning.
+ * CLAUDE_CONFIG_DIR checked against the root, the root as given and the main checkout. Then each level of the role
+ * memory folder (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its instructions/
+ * subfolder), then each level of the role's inbox folder (inboxFolderLevels: `<userDir>/cadre`, its `inboxes`, the
+ * inbox home of the root and the role's folder) is checked by levelsRefusal, which refuses with privateFolderRefusal
+ * when a level is a link, is not a folder, or its parent could not be listed, before any step runs; `<userDir>` itself
+ * is never checked, as a linked config folder is common. The ok result carries the role's inbox folder. No setting
+ * value, hook command or file text is ever part of a refusal or a warning.
  */
 export async function gatherLaunchUser(
   io: InitIo,
@@ -430,8 +445,8 @@ export async function gatherLaunchUser(
     readonly locations: InitLocations
     readonly launchStart: LaunchStart
     readonly codeDirs: readonly string[]
-    /** The role to launch; a parts-flow role gets the memories its hand-out record names linked (G-02-1f). */
-    readonly role: Pick<RoleSpec, 'id' | 'instructions'>
+    /** The role to launch; a parts-flow role gets the memories its hand-out record names linked. */
+    readonly role: Pick<RoleSpec, 'id' | 'instructions' | 'basedOn'>
   },
 ): Promise<LaunchUserRead> {
   const { locations } = input
@@ -468,6 +483,7 @@ export async function gatherLaunchUser(
   const agentEntries = await repoFolderEntries(io, ctx, main, `${locations.root}/.claude/agents`, repoWarnings)
   const repoSkills = sortedUnique([...skillFolderNames(skillEntries), ...markdownNames(commandEntries)])
   const repoAgents = markdownNames(agentEntries)
+  const trackedEnvFiles = await trackedEnvFilesOf(host, input.role, locations.root)
   const user: LaunchUser = {
     root: locations.root,
     givenRoot: locations.givenRoot,
@@ -492,6 +508,7 @@ export async function gatherLaunchUser(
     ...(Object.keys(pluginSkills).length === 0 ? {} : { pluginSkills }),
     ...(projectPlugins.length === 0 ? {} : { projectPlugins }),
     ...(startDir === undefined ? {} : { startDir }),
+    ...(trackedEnvFiles === null ? {} : { trackedEnvFiles }),
   }
   if (!isPartsFlowRole(input.role)) {
     return { kind: 'ok', user, warnings: repoWarnings, memories: NO_MEMORY_LINKS, inboxDir }

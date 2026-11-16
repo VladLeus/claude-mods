@@ -46,6 +46,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
     "calls": [
       "claude --version @ /home/u",
       "git rev-parse --path-format=absolute --git-common-dir @ /repo",
+      "git -C /repo ls-files -z -- :(glob)**/.env :(glob)**/.env.* @ -",
       "/bin/mkdir -p -- /repo/.cadre/be/.runtime @ -",
       "/bin/mkdir -p -- /repo/.cadre/be/.runtime/overlay @ -",
       "/bin/mkdir -p -- /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",

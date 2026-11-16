@@ -91,6 +91,8 @@ export type LaunchUser = {
   readonly epicSlug?: string
   /** The repo-relative folder of a dir start; absent for a git-root or here start. */
   readonly startDir?: string
+  /** The env files git tracks at the root, for a role that runs the repo's checks. */
+  readonly trackedEnvFiles?: readonly string[]
 }
 
 /**
