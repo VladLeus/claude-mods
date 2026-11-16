@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { HostRun, InitLocations, LaunchStart, RoleSpec, ScopeContext } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { isObject } from '../core/json'
+import { adapterOf } from '../framework/registry'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import type { LaunchUser } from '../launch/links'
 import { launchPlan } from '../launch/plan'
@@ -711,5 +712,74 @@ describe('the plugin skills and project plugins a launch reads', () => {
       [false, false],
       [false, false],
     ])
+  })
+})
+
+describe('the skills and agents the launch root provides', () => {
+  test('repoSkills and repoAgents are the names of the launch root .claude folders, by kind', async () => {
+    const dirs = {
+      '/repo/.git': [],
+      '/repo/.claude/commands': [
+        entry('gsd-autonomous.md'),
+        entry('gsd-quick.md'),
+        entry('notes.txt'),
+        entry('sub.md', 'dir'),
+        link('linked.md'),
+      ],
+      '/repo/.claude/skills': [entry('own-skill', 'dir'), link('linked-skill'), entry('README.md')],
+      '/repo/.claude/agents': [entry('gsd-executor.md'), entry('folder.md', 'dir'), link('x.md')],
+    }
+    const gathered = await gatheredUser(repoWorld({ dirs }))
+    const none = (await gather(repoWorld(), [GIT_OK])).read
+
+    expect(gathered.repoSkills).toEqual(['gsd-autonomous', 'gsd-quick', 'linked-skill', 'own-skill'])
+    expect(gathered.repoAgents).toEqual(['gsd-executor'])
+    expect(['repoSkills' in userOf(none), 'repoAgents' in userOf(none)]).toEqual([false, false])
+    expect(none.kind === 'ok' ? none.warnings : null).toEqual([])
+  })
+
+  test('a launch root folder that links out of the repo or cannot be read gives no name and a warning', async () => {
+    const dirs = {
+      '/repo/.git': [],
+      '/repo/.claude/skills': [entry('own-skill', 'dir')],
+      '/repo/.claude/commands': [entry('gsd-quick.md')],
+    }
+    const world = repoWorld({
+      dirs,
+      realPaths: { '/repo/.claude/skills': '/elsewhere/skills' },
+      unknownPaths: ['/repo/.claude/agents'],
+    })
+    const { read } = await gather(world, [GIT_OK])
+    const gathered = userOf(read)
+
+    expect([gathered.repoSkills, 'repoAgents' in gathered]).toEqual([['gsd-quick'], false])
+    expect(read.kind === 'ok' ? read.warnings : null).toEqual([
+      'could not read <repo>/.claude/skills (treated as unknown)',
+      'could not read <repo>/.claude/agents (treated as unknown)',
+    ])
+  })
+
+  test('a GSD role whose launch root holds the GSD commands and agent gets no gsd- warning, no repo link', async () => {
+    const commands = adapterOf('gsd').startSkills.map(name => entry(`${name}.md`))
+    const agents = [entry('gsd-executor.md')]
+    const dirs = { '/repo/.git': [], '/repo/.claude/commands': commands, '/repo/.claude/agents': agents }
+    const gathered = await gatheredUser(repoWorld({ dirs }))
+    const scope = compileScope(BE, { ...context(), setup: emptySetupScan({ agents: ['gsd-executor'] }) })
+    const plan = launchPlan(BE, scope, gathered)
+
+    expect(plan.warnings.filter(warning => warning.includes('gsd-'))).toEqual([])
+    expect(plan.warnings).toContain('skill create-handoff-doc was not found in your user skills: not linked')
+    expect(plan.warnings).toContain('skill resume-handoff-doc was not found in your user skills: not linked')
+    expect(plan.links.filter(link => link.target.startsWith('/repo/.claude'))).toEqual([])
+  })
+
+  test("an epic worktree reads its own launch root, never the main checkout's", async () => {
+    const commands = [entry('gsd-autonomous.md')]
+    const mainOnly = await worktreeUser(repoWorld({ dirs: { '/repo/.git': [], '/repo/.claude/commands': commands } }))
+    const worktreeDirs = { '/repo/.git': [], '/repo/.claude/worktrees/proj-1/.claude/commands': commands }
+    const inWorktree = await worktreeUser(repoWorld({ dirs: worktreeDirs }))
+
+    expect('repoSkills' in mainOnly).toBe(false)
+    expect(inWorktree.repoSkills).toEqual(['gsd-autonomous'])
   })
 })

@@ -178,4 +178,15 @@ describe('the per-skill probe lines of a render', () => {
     ])
     expect(warnings).toContain('skill my-notes was not found in your user skills: not linked')
   })
+  test('a given skill the launch root provides as a skill folder gets a skill-present line, no warning', async () => {
+    const role = templateRole('pm', { skills: [...GRILL_SKILLS, 'repo-skill'] })
+    const skills = [entry('repo-skill', 'dir')]
+    const dirs = { ...REPO_DIRS, '/repo/.claude/skills': skills, '/repo/.claude/skills/repo-skill': [] }
+    const world = memWorld({ dirs, files: mattInstall({ scope: 'user' }) })
+    const { rules, warnings } = await renderOf(world, role)
+
+    expect(rules.filter(rule => rule.check === 'skill-present' && rule.token === 'repo-skill')).toHaveLength(1)
+    expect(rules.filter(rule => rule.text === `${UNAVAILABLE}repo-skill`)).toEqual([])
+    expect(warnings.filter(warning => warning.includes('repo-skill'))).toEqual([])
+  })
 })
