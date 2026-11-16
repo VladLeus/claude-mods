@@ -604,16 +604,18 @@ function choiceIds(choice: Choice): string {
 }
 
 /**
- * Whether GSD's own check can change anything (D-269, edge #36, OC-05-U): some role names gsd as its framework, or the
- * framework choice with every user-level GSD found but not proven counted as proven differs, by its kind and its
- * chosen or found ids, from the choice as found.
+ * Whether GSD's own check can change anything: some role names gsd as its framework, GSD is in use (a proven GSD
+ * decides its install offer), or the framework choice with every user-level GSD found but not proven counted as proven
+ * differs, by its kind and its chosen or found ids, from the choice as found.
  */
 export function isGsdCheckUseful(facts: Facts, roles: readonly RoleSpec[]): boolean {
   if (roles.some(role => role.framework === 'gsd')) return true
+  const detections = detectAll(facts)
+  if (detections.some(detection => detection.id === 'gsd' && detection.status === 'in-use')) return true
   const gsd = facts.gsd.map((fact): GsdFact =>
     fact.location === 'user' && fact.identity === 'unknown' ? { ...fact, identity: 'proven' } : fact,
   )
-  const found = chooseFramework(detectAll(facts), null)
+  const found = chooseFramework(detections, null)
   const proven = chooseFramework(detectAll({ ...facts, gsd }), null)
 
   return choiceIds(proven) !== choiceIds(found)
@@ -629,14 +631,10 @@ function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: 
 }
 
 /**
- * The framework step once the GSD check, if any, is behind it. A set kept in the draft is framed again (framedSet)
- * while it holds every framework consented to install and every supported framework a role is set to (keepsNeeded).
- * With any framework found, in use, installed or consented, the set cadre.json stores is kept while all of it is still
- * installed and it holds those same frameworks (storedSet), a kept None with one note that names /cadre frameworks,
- * else the set question is asked (frameworkAnswer): one framework kept is the repo default and the roles keep
- * `framework` absent (an Adjust override stays); two ask whether one framework serves all roles or each picks its own.
- * None found gives the built-in default; an unsupported scan notes what it found. The frameworks flow asks the set
- * question whatever cadre.json stores, also with none found.
+ * The framework step once the GSD check, if any, is behind it. A set kept in the draft is framed again while it holds
+ * what the draft needs (keepsNeeded). With a framework found, init keeps the set cadre.json stores (storedSet), with
+ * one note naming /cadre frameworks for a kept None or for kept frameworks not installed for the repo, else asks the
+ * set question; none found gives the built-in default. The frameworks flow asks the set question whatever is stored.
  */
 function frameworkStep(state: InitState): InitState {
   const { choice, roles, frameworkSet, installed = [] } = state.draft
@@ -649,8 +647,12 @@ function frameworkStep(state: InitState): InitState {
   if (found.length === 0 && !isReframe) return framedDone(noted, roles, 'none')
   const stored = isReframe ? null : storedSet(noted)
   if (stored === null) return setAsked(noted, 1, null)
-  if (stored.length > 0) return setChosen(noted, stored)
-  const line = t('init.frameworks.storedNoneNote', { found: namesOf(found) })
+  const missing = stored.length > 0 ? uninstalledKept(noted, stored) : []
+  if (stored.length > 0 && missing.length === 0) return setChosen(noted, stored)
+  const line =
+    stored.length > 0
+      ? t('init.frameworks.storedUninstalledNote', { names: namesOf(missing) })
+      : t('init.frameworks.storedNoneNote', { found: namesOf(found) })
 
   return setChosen(withOutputs(noted, [{ kind: 'note', line }]), stored)
 }
@@ -710,11 +712,10 @@ function gsdChecked(state: InitState, result: IoResult): InitState {
 }
 
 /**
- * The framework stage (DET-03, D-73, D-17, D-230): the GSD check first when the scan found a user-level GSD that is not
- * proven (D-243, ASKED #20) and whose runtime is built (needsGsdCheck, D-269, edge #31), then the framework step
- * (frameworkStep, frameworkAnswer). A check whose answer cannot change anything (isGsdCheckUseful, edge #36) is not
- * asked: the draft keeps `skipped`, which gives the facts, warnings and choice of a No (D-295). The GSD check is asked
- * at most once per run: its answer stays in the draft, so a review go-back goes straight to the framework step (WF-S2).
+ * The framework stage: the GSD check first when the scan found a user-level GSD that is not proven and whose runtime is
+ * built (needsGsdCheck) and its answer can change something (isGsdCheckUseful), else `skipped`, which gives the facts,
+ * warnings and choice of a No; then the framework step. The check is asked at most once per run: its answer stays in
+ * the draft, so a review go-back goes straight to the framework step.
  */
 export const frameworksStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {

@@ -174,6 +174,8 @@ export const EN = Object.freeze({
   'init.frameworks.storedNoneNote':
     'Frameworks: None is recorded for this repo, and the scan found {found}. Run /cadre frameworks to choose again.',
   'init.frameworks.installReasonInUse': '{name} is in use here ({where}) but not installed',
+  'init.frameworks.storedUninstalledNote':
+    'Frameworks: {names} kept from cadre.json but not installed for this repo. Run /cadre frameworks to install.',
   'init.frameworks.installNo': 'No',
   'init.frameworks.installYes': 'Yes, install it',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',

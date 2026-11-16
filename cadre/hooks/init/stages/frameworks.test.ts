@@ -28,6 +28,7 @@ import {
   emptySetupScan,
   facts,
   firstLines,
+  PROVEN_FACTS,
   repoScan,
   stateAt,
   wholeDraft,
@@ -1071,14 +1072,15 @@ describe('the stored framework answer and the set question', () => {
   const BOTH_IN_USE: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
 
   /**
-   * The frameworks stage entered for `choice` with `installed`, over a cadre.json that stores `stored`, if any; `over`
-   * replaces any draft field.
+   * The frameworks stage entered for `choice` with `installed` and the scanned facts `scanned`, over a cadre.json that
+   * stores `stored`, if any; `over` replaces any draft field.
    */
   function enteredWith(
     choice: Choice,
     installed: readonly FrameworkId[],
     stored: readonly FrameworkId[] | null = null,
     over: InitState['draft'] = {},
+    scanned: Facts = facts({}),
   ): InitState {
     const state: CadreState = {
       schema: 1,
@@ -1091,7 +1093,7 @@ describe('the stored framework answer and the set question', () => {
       ...(stored === null ? {} : { frameworks: stored }),
     }
     const repo = repoScan({ cadre: { ...repoScan().cadre, state } })
-    const gathered = { facts: { facts: facts({}), gsdUserDir: null }, repo, setup: emptySetupScan() }
+    const gathered = { facts: { facts: scanned, gsdUserDir: null }, repo, setup: emptySetupScan() }
 
     return frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles, installed, gathered, ...over })))
   }
@@ -1165,8 +1167,8 @@ describe('the stored framework answer and the set question', () => {
     expect([state.outputs, state.openQuestion, state.draft.frameworkSet]).toEqual([[{ kind: 'note', line }], null, []])
   })
 
-  test('a stored GSD kept gives no note', () => {
-    const state = enteredWith(GSD_CHOSEN, ['gsd', 'none'], ['gsd'])
+  test('a stored GSD kept while GSD is installed gives no note', () => {
+    const state = enteredWith(GSD_CHOSEN, ['gsd', 'none'], ['gsd'], {}, PROVEN_FACTS.facts)
     expect([state.outputs, state.openQuestion, state.draft.frameworkSet]).toEqual([[], null, ['gsd']])
   })
 
