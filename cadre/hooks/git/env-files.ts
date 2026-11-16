@@ -1,29 +1,46 @@
 /**
- * The env files git tracks, a layer 1 module: the git run that lists them at a root and the names a sandbox path may
- * hold from its output. It imports only core and the types, so /cadre start lists them here at launch.
+ * The env files git tracks, a layer 1 module: the git run that lists them at a root with their modes, and the regular
+ * files among them whose paths an exact sandbox path may hold. It imports only core and the types, so /cadre start
+ * lists them here at launch.
  */
 import type { HostRun } from '../../types'
 import { sortedUnique } from '../core/text'
 
-/** The argv that lists, NUL-ended, the `.env` and `.env.*` files git tracks at any depth of `root`. */
+/** The argv that lists, NUL-ended with mode, object and stage, the `.env` and `.env.*` files git tracks in `root`. */
 export function TRACKED_ENV_ARGV(root: string): readonly string[] {
-  return ['git', '-C', root, 'ls-files', '-z', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+  return ['git', '-C', root, 'ls-files', '-z', '-s', '--', ':(glob)**/.env', ':(glob)**/.env.*']
 }
 
-/** A glob or control character, which an exact sandbox path must not hold. */
-const UNSAFE_CHARACTER = /[*?\[{\p{Cc}]/u
+/** An `ls-files -s` entry of a regular file (mode 100644 or 100755): mode, object, stage, a tab, then the path. */
+const REGULAR_ENTRY = /^(100644|100755) [0-9a-f]+ [0-3]\t(.+)$/
 
-function isEnvFile(name: string): boolean {
-  if (UNSAFE_CHARACTER.test(name)) return false
-  if (name.split('/').some(segment => segment === '' || segment === '..')) return false
-  const base = name.slice(name.lastIndexOf('/') + 1)
+/** A path segment an exact sandbox path may hold: letters, digits, dot, dash and underscore only. */
+const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/
+
+function isSafeSegment(segment: string): boolean {
+  return SAFE_SEGMENT.test(segment) && segment !== '.' && segment !== '..'
+}
+
+/** Whether a tracked path is an env file: every segment safe, the last one `.env` or starting with `.env.`. */
+function isEnvFile(path: string): boolean {
+  const segments = path.split('/')
+  if (!segments.every(isSafeSegment)) return false
+  const base = segments.at(-1) ?? ''
 
   return base === '.env' || base.startsWith('.env.')
 }
 
-/** The env files a TRACKED_ENV_ARGV run gives, sorted and once each; null when the host rejected it or it failed. */
+/**
+ * The env files a TRACKED_ENV_ARGV run gives: the paths of its regular-file entries that isEnvFile keeps, sorted and
+ * once each; null when the host rejected the run or it failed.
+ */
 export function envFilesOf(run: HostRun | null): readonly string[] | null {
   if (run === null || run.exitCode !== 0) return null
+  const paths = run.stdout.split('\0').flatMap(entry => {
+    const path = REGULAR_ENTRY.exec(entry)?.[2]
 
-  return sortedUnique(run.stdout.split('\0').filter(isEnvFile))
+    return path === undefined ? [] : [path]
+  })
+
+  return sortedUnique(paths.filter(isEnvFile))
 }
