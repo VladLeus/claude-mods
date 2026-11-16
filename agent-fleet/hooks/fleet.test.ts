@@ -187,6 +187,7 @@ describe('validBeat', () => {
     expect(validBadge(waiting, now)?.waitingFrom).toBe('BE-expert')
     expect(validBadge({ isOn: true, waitingFor: null, waitingFrom: null, waitingSince: null }, now)?.isOn).toBe(true)
     expect(validBadge({ isOn: true, phase: 'running' }, now)?.waitingFor).toBe(undefined)
+    expect(validBadge({ ...waiting, waitingFor: 'idle-inbox' }, now)?.waitingFor).toBe('idle-inbox')
     expect(validBadge({ ...waiting, waitingFor: 'coffee' }, now)).toBe(null)
     expect(validBadge({ ...waiting, waitingFor: 3 }, now)).toBe(null)
     expect(validBadge({ ...waiting, waitingFrom: 5 }, now)).toBe(null)
