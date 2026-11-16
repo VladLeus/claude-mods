@@ -294,6 +294,7 @@ const CORE_TL_BRIEF =
   'Send each implementer a brief, not a plan: the goal, the acceptance criteria, your architecture decisions with ' +
   'their reasons, the areas at risk, what is out of scope, the report form and what must be proven. Leave out ' +
   'method signatures, spec bodies and commands.'
+const CORE_TL_HOLD = 'Do not dispatch the part of a task an open product question affects.'
 
 /** The core TL's trust, failed-report, routing, wait and report lines, spelled out so the specs pin their words. */
 const CORE_TL_TRUST =
@@ -337,6 +338,28 @@ const CORE_PM_BRIEF =
   'Brief: send TL the brief with the planning mode the user confirmed (your roles in a team without TL).'
 const CORE_PM_FEED = 'Feed: send TL one ticket at a time with its key, your scope and risk scores and the report form.'
 const CORE_PM_ACCEPT = "Accept: check each report against the ticket's acceptance criteria, then feed the next ticket."
+const CORE_PM_DEPS =
+  'Before the grill, resolve every dependency a ticket names (linked tickets, spikes, docs) in the tracker and the ' +
+  'repo, and put what you find into the grill.'
+const CORE_PM_FACTS =
+  'For code facts, send TL a question (inbox_send kind question) and keep those grill branches open until TL answers.'
+const CORE_PM_NOT_FOUND =
+  'Report a fact you could not find as "not found by me (searched X)", naming where you searched; never as ' +
+  '"not in the repo".'
+const CORE_PM_OUTCOMES =
+  'State what must be true (acceptance criteria, behaviour, scope); leave code structure, tests and review routing ' +
+  'to TL.'
+const CORE_PM_REPORT_FORM =
+  'In the report form, ask for verification as a summary, with the details in the docs named in docPaths.'
+
+/** The core PM's ask and decide-alone lines, and the custom PM's line they replace, spelled out. */
+const CORE_PM_ASK =
+  'Make no product decision without the user: send a product question to the user (AskUserQuestion while they are ' +
+  'here, queue_question while they are away) whenever its answer changes or narrows an acceptance criterion, a ' +
+  'user-visible flow or a decision the user made, or picks between real alternatives.'
+const CORE_PM_DECIDE_ALONE =
+  'Decide alone only when the answer follows directly from a grill answer, and log which grill answer it follows from.'
+const PM_GRILL_CRITICAL = 'After the grill, ask the user only critical questions.'
 
 /** What the built-in framework's kickoff tells a role and the core PM's How you work leaves out. */
 const BUILD_LOOP_WORDS: readonly string[] = ['plan.md', 'test and lint', 'do not ask the human', 'ExitPlanMode']
@@ -679,9 +702,14 @@ describe("the core PM's How you work", () => {
           '',
           CORE_PM_INTRO,
           CORE_PM_FETCH,
+          CORE_PM_DEPS,
           CORE_PM_GRILL,
+          CORE_PM_FACTS,
+          CORE_PM_NOT_FOUND,
           CORE_PM_BRIEF,
           CORE_PM_FEED,
+          CORE_PM_OUTCOMES,
+          CORE_PM_REPORT_FORM,
           CORE_PM_ACCEPT,
           '',
         ])
@@ -853,6 +881,32 @@ describe('the Hierarchy section of ROLE.md', () => {
     )
   })
 
+  test('the core PM sends every product question that moves an AC, a flow or a user decision to the user', () => {
+    for (const pm of [templateRole('pm'), templateRole('pm', { id: 'product', title: 'Product' })]) {
+      const lines = hierarchyOf(pm, 'none', CORE_TEAM).split('\n')
+
+      expect(lines.slice(lines.indexOf(ARTIFACT.roleMdPmGrillFeed), -1)).toEqual([
+        ARTIFACT.roleMdPmGrillFeed,
+        CORE_PM_ASK,
+        CORE_PM_DECIDE_ALONE,
+      ])
+      expect(lines).not.toContain(PM_GRILL_CRITICAL)
+    }
+    const custom = hierarchyOf(templateRole('pm'), 'none').split('\n')
+
+    expect(custom).toContain(PM_GRILL_CRITICAL)
+    expect(custom.filter(line => line === CORE_PM_ASK || line === CORE_PM_DECIDE_ALONE)).toEqual([])
+  })
+
+  test('the core TL holds the part of a task an open product question affects, right after the brief', () => {
+    for (const text of [hierarchyOf(templateRole('tl'), 'gsd', CORE_TEAM), hierarchyOf(LEAD, 'gsd', LEAD_TEAM)]) {
+      const lines = text.split('\n')
+
+      expect(lines[lines.indexOf(CORE_TL_BRIEF) + 1]).toBe(CORE_TL_HOLD)
+    }
+    expect(hierarchyOf(templateRole('tl'), 'gsd').split('\n')).not.toContain(CORE_TL_HOLD)
+  })
+
   test('BE has no PM part', () => {
     const be = templateRole('be')
     const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
@@ -892,6 +946,7 @@ describe('the Hierarchy section of ROLE.md', () => {
         ARTIFACT.roleMdTlLoop,
         CORE_TL_FED,
         CORE_TL_BRIEF,
+        CORE_TL_HOLD,
         ARTIFACT.roleMdTlTasks,
         CORE_TL_TRUST,
         CORE_TL_FAILED,
@@ -924,6 +979,7 @@ describe('the Hierarchy section of ROLE.md', () => {
         ARTIFACT.roleMdTlLoop,
         CORE_TL_FED,
         CORE_TL_BRIEF,
+        CORE_TL_HOLD,
         ARTIFACT.roleMdTlTasks,
         CORE_TL_TRUST,
         CORE_TL_FAILED,
