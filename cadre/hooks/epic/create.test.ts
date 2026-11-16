@@ -952,7 +952,7 @@ describe("PM's epic brief and the sizing rubric of an epic", () => {
     const copies = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')?.copies
     const paths = run.writes.map(write => write.path)
 
-    expect(run.events).toContain(['/bin/cp', '-p', '--', MAIN_RUBRIC, WORKTREE_RUBRIC].join(' '))
+    expect(run.events).toContain(['/bin/cp', '-pR', '--', MAIN_RUBRIC, WORKTREE_RUBRIC].join(' '))
     expect([excludes.includes('/.cadre/sizing.md'), copies, run.reply.includes('Linked 0, copied 1.')]).toEqual([
       true,
       ['.cadre/sizing.md'],

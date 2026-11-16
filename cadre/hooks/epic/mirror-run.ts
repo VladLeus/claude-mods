@@ -12,16 +12,18 @@ import { GIT_TIMEOUT_MS } from '../git/argv'
 import { hasRunFailed } from '../host/steps'
 import { t } from '../locales/t'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
-import { EXCLUDES_FILE, excludesText, globalExcludesPath, untrackedEntries } from './excludes'
+import { EXCLUDES_FILE, excludesText, globalExcludesPath, includedEntries, untrackedEntries } from './excludes'
 import {
   EXCLUDES_CONFIG_ARGV,
   GLOBAL_EXCLUDES_ARGV,
+  INCLUDED_ARGV,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
   WORKTREE_CONFIG_ARGV,
+  WORKTREE_INCLUDE_FILE,
   XDG_ARGV,
 } from './git'
-import { epicStepArgv, isHiddenCopy, MIRROR_STEP_TIMEOUT_MS, mirrorPaths, mirrorPlan } from './mirror'
+import { epicStepArgv, epicStepTimeoutMs, isHiddenCopy, mirrorPaths, mirrorPlan } from './mirror'
 import type { EpicStep } from './mirror'
 
 /**
@@ -106,15 +108,29 @@ async function globalExcludesOf(
 }
 
 /**
- * The mirror of the main checkout at `root` into the worktree (D-147, D-148), whose git dir `gitDir` is absolute: the
- * two ls-files runs (a run that fails or cannot start stops it with epicListFailedReply), the folders mirrorPaths
- * names listed in both checkouts, and mirrorPlan. The excludes file is then written in the git dir: the user's global
- * excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, and each hidden copy
- * (isHiddenCopy: a copy of a git file or of the sizing rubric), recorded (`recordedCopies`) or planned, once each. The
- * worktree is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are
+ * The paths of the main checkout at `root` that its WORKTREE_INCLUDE_FILE names and git ignores (includedEntries over
+ * the INCLUDED_ARGV run and `ignored`, the LS_IGNORED_ARGV output): [] with no such file, null when the run fails.
+ */
+async function includedOf(io: InitIo, host: HostIo, root: string, ignored: string): Promise<readonly string[] | null> {
+  const include = await io.read(`${root}/${WORKTREE_INCLUDE_FILE}`, MAX_READ_BYTES)
+  if (include.state === 'absent') return []
+  const named = await host.run(INCLUDED_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
+  if (named === null || named.exitCode !== 0) return null
+
+  return includedEntries(named.stdout, ignored)
+}
+
+/**
+ * The mirror of the main checkout at `root` into the worktree, whose git dir `gitDir` is absolute: the two ls-files
+ * runs and, when the main checkout has a WORKTREE_INCLUDE_FILE, a third that lists the paths it names, which the mirror
+ * copies (includedOf); a run that fails or cannot start stops it with epicListFailedReply. Then the folders
+ * mirrorPaths names listed in both checkouts, and mirrorPlan. The excludes file is then written in the git dir: the
+ * user's global excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, and each hidden
+ * copy (isHiddenCopy: a copy of a git file or of the sizing rubric), recorded (`recordedCopies`) or planned, once each.
+ * The worktree is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are
  * idempotent: a write or run that fails stops it with epicExcludesFailedReply, before any step. Each step then runs
- * with its epicStepArgv, and the first one that fails stops it with epicStepFailedReply. What ran before the stop is
- * in the result.
+ * with its epicStepArgv and epicStepTimeoutMs, and the first one that fails stops it with epicStepFailedReply. What
+ * ran before the stop is in the result.
  */
 export async function mirrorSteps(
   io: InitIo,
@@ -136,11 +152,13 @@ export async function mirrorSteps(
   if (others === null || others.exitCode !== 0) return listFailed
   const ignored = await host.run(LS_IGNORED_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
   if (ignored === null || ignored.exitCode !== 0) return listFailed
+  const included = await includedOf(io, host, root, ignored.stdout)
+  if (included === null) return listFailed
   const entries = untrackedEntries(others.stdout, ignored.stdout)
-  const paths = mirrorPaths(entries, input.roleIds)
+  const paths = mirrorPaths(entries, input.roleIds, included)
   const main = await listingsOf(io, root, paths.main)
   const tree = await listingsOf(io, worktree, paths.tree)
-  const plan = mirrorPlan({ root, worktree, entries, roleIds: input.roleIds, main, tree })
+  const plan = mirrorPlan({ root, worktree, entries, roleIds: input.roleIds, main, tree, included })
   const global = await globalExcludesOf(io, host, root, input.home)
   const warnings = [...plan.warnings, ...global.warnings]
 
@@ -158,7 +176,7 @@ export async function mirrorSteps(
   const made = (kind: EpicStep['kind']) =>
     ran.filter(step => step.kind === kind).map(step => step.path.slice(worktree.length + 1))
   for (const step of plan.steps) {
-    const done = await host.run(epicStepArgv(step), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
+    const done = await host.run(epicStepArgv(step), { timeoutMs: epicStepTimeoutMs(step) })
     if (hasRunFailed(done)) {
       const failure = epicStepFailedReply(step.path.slice(worktree.length + 1))
 
