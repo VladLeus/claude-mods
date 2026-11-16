@@ -43,4 +43,24 @@ describe('wakeText', () => {
       expect(text).toContain('inbox_read')
     }
   })
+
+  test('common punctuation maps to ASCII and quotes stay', () => {
+    const wake = (subject: string): string => wakeText({ ...ENTRY, subject })
+    const question = wake('which \u201cconnect\u201d asks?')
+
+    expect(wake('KAN-3 report: partial \u2014 built and reviewed\u2026')).toContain(
+      ': KAN-3 report: partial - built and reviewed... Read it with inbox_read.',
+    )
+    expect(wake('exactly today\u2019s')).toContain("exactly today's. Read it")
+    expect(question).toContain('which "connect" asks? Read it')
+    expect(question).not.toContain('?.')
+    expect(wake('the \u2018fix\u2019 \u2013 done')).toContain("the 'fix' - done. Read it")
+  })
+
+  test('the method wake of a subject that ends in ! puts no period after it', () => {
+    const method = 'superpowers:subagent-driven-development'
+    const task: InboxEntry = { ...ENTRY, kind: 'task', ticketKey: 'PROJ-2', method, subject: 'Ship it!' }
+
+    expect(wakeText(task)).toContain('! Read it with inbox_read and execute it with')
+  })
 })
