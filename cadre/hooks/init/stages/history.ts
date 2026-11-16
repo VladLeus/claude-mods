@@ -216,10 +216,7 @@ function afterConsent(state: InitState, answer: string | null): InitState {
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return withHints(state, 'skipped')
 
-  return withEffect(state, {
-    kind: 'io',
-    call: { id: 'scan-history', dir, startFolder: locations.root, sessions: listing.sessions },
-  })
+  return withEffect(state, { kind: 'io', call: { id: 'scan-history', dir, sessions: listing.sessions } })
 }
 
 /**
@@ -260,7 +257,7 @@ export const historyStage: StageDef = Object.freeze({
     const dir = historyDirOf(state)
     if (dir === null) return skippedWith(state, NO_HISTORY_NOTE)
 
-    return withEffect(state, { kind: 'io', call: { id: 'list-sessions', dir, startFolder: locations.root } })
+    return withEffect(state, { kind: 'io', call: { id: 'list-sessions', dir } })
   },
   answer: historyAnswer,
 })

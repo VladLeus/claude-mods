@@ -427,7 +427,7 @@ const EXAMPLE_SCAN: HistoryScan = {
 describe('the history stage (D-230)', () => {
   test('historyStage lists the session folder as an io effect, then asks with the scan context line', () => {
     const state = historyAt()
-    expect(state.effect).toEqual({ kind: 'io', call: { id: 'list-sessions', dir: DIR, startFolder: '/repo' } })
+    expect(state.effect).toEqual({ kind: 'io', call: { id: 'list-sessions', dir: DIR } })
     expect(state.openQuestion).toBeNull()
     const asking = nextStage(state, listed(ONE_SESSION))
     const spec = { options: HISTORY_OPTIONS, header: 'History', context: scanAskContext(1) }
@@ -470,7 +470,7 @@ describe('the history stage (D-230)', () => {
   test('Yes scans the listed sessions as an io effect, folds the history block and keeps the names as hints', () => {
     const asking = nextStage(historyAt(), listed(ONE_SESSION))
     const scanning = nextStage(asking, { kind: 'answer', text: 'Yes, scan names and counts' })
-    const call = { id: 'scan-history', dir: DIR, startFolder: '/repo', sessions: ONE_SESSION }
+    const call = { id: 'scan-history', dir: DIR, sessions: ONE_SESSION }
     expect(scanning.effect).toEqual({ kind: 'io', call })
     const done = nextStage(scanning, { kind: 'io', result: { id: 'scan-history', result: EXAMPLE_SCAN } })
     expect(done.stage).toBe('roles')
