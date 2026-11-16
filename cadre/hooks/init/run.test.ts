@@ -4361,22 +4361,28 @@ describe('reviewStep', () => {
     expect(run.logged).not.toContain(MODEL_DISMISSED_REASON)
   })
 
-  test('one answer script gives init and --dry-run one plan but the first line, private files and end', async () => {
-    const answers = {
-      ...PARTS_DECLINED,
-      'Review the plan': ['git policy', 'Confirm'],
-      'Git policy': ['Commit all', 'Ignore all of .cadre/'],
-    }
-    const dry = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: true })).split('\n')
-    const host = memHost(hostWorld({}))
-    const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false, host: host.io })).split('\n')
-    const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
-    const confirmAt = dry.indexOf(PRIVATE_FILES_HEADING)
-    expect([appliedAt > 0, confirmAt > 0]).toEqual([true, true])
-    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, confirmAt))
-    expect(dry.slice(1, confirmAt)).toContain('File plan:')
-    expect(dry.slice(1, confirmAt)).toContain(policyLine('ignore'))
-  })
+  test(
+    'one answer script gives init and --dry-run one plan but the first line, the rows of the hunks not run, ' +
+      'private files and end',
+    async () => {
+      const answers = {
+        ...PARTS_DECLINED,
+        'Review the plan': ['git policy', 'Confirm'],
+        'Git policy': ['Commit all', 'Ignore all of .cadre/'],
+      }
+      const dry = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: true })).split('\n')
+      const host = memHost(hostWorld({}))
+      const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false, host: host.io })).split('\n')
+      const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
+      const confirmAt = dry.indexOf(PRIVATE_FILES_HEADING)
+      const waits = (line: string): string =>
+        line.trimStart().startsWith('run: ') ? `${line.slice(0, line.indexOf('run: '))}run: ${GSD_WAIT_COMMAND}` : line
+      expect([appliedAt > 0, confirmAt > 0]).toEqual([true, true])
+      expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, confirmAt).map(waits))
+      expect(dry.slice(1, confirmAt)).toContain('File plan:')
+      expect(dry.slice(1, confirmAt)).toContain(policyLine('ignore'))
+    },
+  )
 
   test('a cancelled run keeps nothing: the next run on the same port starts fresh (D-45, D-82)', async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': [null, 'Confirm'] })

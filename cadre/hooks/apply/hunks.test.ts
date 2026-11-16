@@ -5,7 +5,15 @@ import { GSD_AUTONOMY } from '../framework/gsd/adapter'
 import { isUnmetHunk } from '../framework/gsd/hunks'
 import type { GsdToolContext } from '../framework/gsd/tools'
 import { BIDI_OVERRIDE, EMPTY_FACTS, emptySetupScan, file, PROVEN_USER_GSD } from '../testkit'
-import { hunkFailureLine, hunkNotRunLines, hunkProposal, hunkRuns, hunksAfterRuns, hunksNotRun } from './hunks'
+import {
+  hunkFailureLine,
+  hunkNotRunLines,
+  hunkProposal,
+  hunkRuns,
+  hunksAfterRuns,
+  hunksNotRun,
+  hunksShown,
+} from './hunks'
 import type { HunkRun } from './hunks'
 
 /** A user-level GSD in the fixture home, as hunkStep builds the tool context from proven facts (D-71). */
@@ -73,6 +81,9 @@ const REPO_MODE = 'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
 
 /** What the not-run line of a required hunk ends with: the next step once the person ran its command. */
 const NEXT_STEP = ', then /cadre regen; the GSD roles stay attended until then'
+
+/** What the plan row of an accepted hunk not run shows in place of a command when no GSD is known. */
+const GSD_WAIT = 'waits for GSD (not installed for this repo)'
 
 describe('hunk runs (D-106)', () => {
   test('hunkProposal finds the proposal an adapter offers for this setup by the hunk file and key; else null', () => {
@@ -206,5 +217,47 @@ describe('hunk runs (D-106)', () => {
     expect(hunkNotRunLines([repoWarnings], statusline, UNPROVEN_USER, SHOWN)).toEqual([
       `${change}${GSD_TOOLS} config-set hooks.context_warnings false`,
     ])
+  })
+})
+
+describe('hunksShown: the hunks as the post-apply plan shows them', () => {
+  const repoMode: HunkOp = { ...MODE_HUNK, command: REPO_MODE }
+
+  test('with a repo copy an accepted hunk not run keeps its own command', () => {
+    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), REPO_COPY, SHOWN)).toEqual([repoMode])
+  })
+
+  test('with no repo copy an unproven user-level GSD gives the ~/ command', () => {
+    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), UNPROVEN_USER, SHOWN)).toEqual([
+      { ...repoMode, command: `${GSD_TOOLS} config-set mode yolo` },
+    ])
+  })
+
+  test('with no GSD known an accepted hunk not run shows the wait text', () => {
+    expect(hunksShown([repoMode], [repoMode], emptySetupScan(), NONE_KNOWN, SHOWN)).toEqual([
+      { ...repoMode, command: GSD_WAIT },
+    ])
+  })
+
+  test('a hunk cadre ran, one that failed and one declined are returned as they are', () => {
+    const failed: HunkOp = { ...WARNINGS_HUNK, isRunnable: false }
+    const declined: HunkOp = { ...repoMode, key: 'workflow.text_mode', isAccepted: false }
+    const waiting: HunkOp = { ...repoMode, key: 'workflow.unknown' }
+    const shown = hunksShown([MODE_HUNK, failed, declined, waiting], [waiting], emptySetupScan(), NONE_KNOWN, SHOWN)
+
+    expect(shown).toEqual([MODE_HUNK, failed, declined, { ...waiting, command: GSD_WAIT }])
+  })
+
+  test('the hunks given and their array are not changed', () => {
+    const hunks = [repoMode]
+    const shown = hunksShown(hunks, hunks, emptySetupScan(), NONE_KNOWN, SHOWN)
+
+    expect([shown === hunks, hunks.length, hunks[0] === repoMode, repoMode.command]).toEqual([
+      false,
+      1,
+      true,
+      REPO_MODE,
+    ])
+    expect(shown[0]?.command).toBe(GSD_WAIT)
   })
 })

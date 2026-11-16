@@ -35,7 +35,7 @@ import {
   parseConflictAnswer,
 } from '../apply/conflict'
 import type { ConflictChoice } from '../apply/conflict'
-import { hunkNotRunLines, hunkRuns, hunksAfterRuns, hunksNotRun } from '../apply/hunks'
+import { hunkNotRunLines, hunkRuns, hunksAfterRuns, hunksNotRun, hunksShown } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
 import {
@@ -663,6 +663,7 @@ async function applyConfirmed(
   const ran = await projectInstalled(io, host, draft)
   const { scanned, failed, landed, roles, repoDefault, landedPlugins, failedPlugins } = ran
   const { failures, hunks, notRun } = await hunksRan(io, host, draft)
+  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations)
   const installCount = countsText([['plugins', draft.pluginInstalls.length]])
   if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
   const installs =
@@ -686,7 +687,7 @@ async function applyConfirmed(
     policy: draft.policy,
     launchStart,
     scopes,
-    hunks,
+    hunks: shownHunks,
     repo: gathered.repo,
     locations,
     readUserMcp: draft.readUserMcp,
@@ -741,6 +742,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
   if (asked.kind === 'cancelled') return asked
   const { scanned, failed, landed, roles, repoDefault } = await projectInstalled(io, host, draft)
   const { failures, hunks, notRun } = await hunksRan(io, host, draft)
+  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations)
   const setup = setupAfterInstalls(gathered.setup, consentedPluginKeys(draft, failed))
   const recorded = initFrameworks(draft, failed)
   const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
@@ -750,7 +752,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
     policy: draft.policy,
     launchStart,
     scopes,
-    hunks,
+    hunks: shownHunks,
     repo: gathered.repo,
     locations,
     readUserMcp: draft.readUserMcp,

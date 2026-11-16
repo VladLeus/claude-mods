@@ -92,10 +92,25 @@ function notRunLine(hunk: HunkOp, display: string): string {
   return hunk.isRequired ? t('apply.hunks.hunkNotRunRequiredLine', shown) : t('apply.hunks.hunkNotRunLine', shown)
 }
 
+/** The command a hunk cadre did not run is shown with, from the GSD known after the installs; null when none is. */
+function shownCommand(
+  hunk: HunkOp,
+  setup: SetupScan,
+  after: InitFacts,
+  shown: Omit<GsdToolContext, 'userDir'>,
+): string | null {
+  if (hasRepoGsd(after.facts)) return hunk.command
+  const userDir = foundUserDir(after)
+  if (userDir === null) return null
+  const proposal = hunkProposal(setup, hunk)
+  if (proposal === null) return hunk.command
+
+  return resolveToolCommand(proposal.write, { ...shown, userDir }).display
+}
+
 /**
- * The lines of the accepted hunks cadre did not run, from the GSD known after the installs: each hunk's own command
- * with the repo's GSD copy, else its command through a user-level GSD found (shown, never run), else one line naming
- * the keys that wait for GSD.
+ * The lines of the accepted hunks cadre did not run: each with its shownCommand, or one line naming the keys that wait
+ * for GSD when none is known.
  */
 export function hunkNotRunLines(
   notRun: readonly HunkOp[],
@@ -105,17 +120,28 @@ export function hunkNotRunLines(
 ): string[] {
   const [first] = notRun
   if (first === undefined) return []
-  if (hasRepoGsd(after.facts)) return notRun.map(hunk => notRunLine(hunk, hunk.command))
-  const userDir = foundUserDir(after)
-  if (userDir !== null) {
-    return notRun.map(hunk => {
-      const proposal = hunkProposal(setup, hunk)
-      if (proposal === null) return notRunLine(hunk, hunk.command)
+  if (shownCommand(first, setup, after, shown) === null) {
+    const keys = notRun.map(hunk => reportText(hunk.key)).join(', ')
 
-      return notRunLine(hunk, resolveToolCommand(proposal.write, { ...shown, userDir }).display)
-    })
+    return [t('apply.hunks.gsdNotInstalledLine', { file: reportText(first.file), keys })]
   }
-  const keys = notRun.map(hunk => reportText(hunk.key)).join(', ')
 
-  return [t('apply.hunks.gsdNotInstalledLine', { file: reportText(first.file), keys })]
+  return notRun.map(hunk => notRunLine(hunk, shownCommand(hunk, setup, after, shown) ?? hunk.command))
+}
+
+/** The hunks as the post-apply plan shows them. */
+export function hunksShown(
+  hunks: readonly HunkOp[],
+  notRun: readonly HunkOp[],
+  setup: SetupScan,
+  after: InitFacts,
+  shown: Omit<GsdToolContext, 'userDir'>,
+): HunkOp[] {
+  const notRunKeys = new Set(notRun.map(hunk => hunk.key))
+
+  return hunks.map(hunk => {
+    if (!notRunKeys.has(hunk.key)) return hunk
+
+    return { ...hunk, command: shownCommand(hunk, setup, after, shown) ?? t('apply.hunks.gsdWaitCommand') }
+  })
 }
