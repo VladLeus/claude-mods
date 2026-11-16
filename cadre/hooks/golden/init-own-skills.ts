@@ -158,7 +158,7 @@ export const GOLDEN_INIT_OWN_SKILLS: Readonly<Record<string, GoldenRun>> = {
     ],
     "shown": [],
     "promptHashes": [
-      "a069abe0cd128173fcc0a0cbe670363ea4216d7fe1a6eb8b5b150556c721a6db"
+      "9cb77981f3a3eacf845ffb03da1d73f048f529f80ec5326d028b75d9a8da729e"
     ],
     "reply": [
       "cadre init --dry-run",

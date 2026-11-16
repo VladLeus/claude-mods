@@ -72,6 +72,20 @@ export const ARTIFACT = Object.freeze({
   roleMdCoreTlBrief: `Send each implementer a brief, not a plan: the goal, the acceptance criteria, your ${
     ''}architecture decisions with their reasons, the areas at risk, what is out of scope, the report form and what ${
     ''}must be proven. Leave out method signatures, spec bodies and commands.`,
+  roleMdCoreTlTrust: `Trust the implementer's report: read the diff for architecture and scope fit, and do not ${
+    ''}re-run the checks it lists as run.`,
+  roleMdCoreTlFailed: `On a failed or partial report, decide on the implementer's proposed answer; dig deeper only ${
+    ''}when that answer does not hold.`,
+  roleMdCoreTlQa: `Once the implementer reports, send QA a verify task (inbox_send kind task): QA runs the specs and ${
+    ''}checks and reports.`,
+  roleMdCoreTlSecurity: `When the ticket's risk is at or over sizing.threshold, or it touches auth, payments, secrets ${
+    ''}or migrations, send Security a review task with the diff and the vector.`,
+  roleMdCoreTlWait: `Wait for a report with wait_for reason session-answer and a timeout, and for your own ${
+    ''}subagents with reason subagent-result and a timeout; with nothing to wait for, use reason idle-inbox and no ${
+    ''}timeout.`,
+  roleMdCoreTlReport: `Wait for the implementer's report and the QA and Security reports you asked for, then report ${
+    ''}to PM in the form PM asked (by default: outcome, changes, verification, the vector with its reason, the ${
+    ''}framework used, the doc paths and the open questions) and wait for the next ticket.`,
   roleMdTlTasks: `Send BE and FE their tasks in parallel (inbox_send kind task), split by area; a file both ${
     ''}would touch is yours to serialise.`,
   roleMdTlReport: `Wait for every report, then report to PM in the form PM asked (by default: outcome, changes, ${
@@ -84,6 +98,13 @@ export const ARTIFACT = Object.freeze({
     'Report each task to TL when it is done (to PM in a team without TL), then wait for the next.',
   roleMdWorkerNoTl: `In a team without TL, PM sends you the ticket: add complexity and effort to its scope and risk ${
     ''}yourself, and take the no-TL step of Planning docs when it has one.`,
+  roleMdCoreWorkerPlan: `Plan each task yourself from TL's brief (the brief is not a plan), do it, and run the repo's ${
+    ''}specs, lint and checks with the commands you know.`,
+  roleMdCoreWorkerBlocked: `When a check fails or cannot run (a service is down, the environment blocks it), study it ${
+    ''}and send TL a question at once with your analysis and a proposed answer (PM in a team without TL); do not ${
+    ''}hold it to the end of the task.`,
+  roleMdCoreWorkerReport: `Report each task to TL when it is done (to PM in a team without TL), then wait for the ${
+    ''}next; report a task whose checks did not run as partial, never as complete.`,
   roleMdSizing: '## Sizing',
   roleMdSizeVector: `A ticket's size is a vector of four scores, each from 0.1 to 1.0: scope, complexity, risk and ${
     ''}effort. PM scores scope and risk; TL adds complexity and effort (in a team without TL, the role PM sends ${
@@ -239,7 +260,7 @@ export const ARTIFACT = Object.freeze({
   // roles/template.ts
   templatePmPurpose: 'Owns product decisions: scope, requirements and acceptance.',
   templateTlTitle: 'Team Lead',
-  templateTlPurpose: 'Owns architecture and QA decisions; reviews and merges the work.',
+  templateTlPurpose: 'Owns architecture and high-level decisions; briefs the implementers.',
   templateBePurpose: 'Implements the backend and core code.',
   templateFePurpose: 'Implements the frontend.',
   templateQaPurpose: 'Owns tests and end-to-end checks.',

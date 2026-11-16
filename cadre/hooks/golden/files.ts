@@ -9,7 +9,7 @@
 /** The sha256 of each generated file, by path, for each team. */
 export const GOLDEN_FILES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   "template": {
-    ".cadre/INDEX.md": "fac11e2baf61525cd1e0ed6fe8f7b9d6b76142f68c3301fcb645d560bf3f2e77",
+    ".cadre/INDEX.md": "af318d391f5705f3167fb0e4a82e8efbfb105779d48e340a2e3629876d652b5a",
     ".cadre/be/ROLE.md": "5496a2fe450de61e6091c572ff57db1657bcaa24a9b5d5b9205f56d1a2d31d2e",
     ".cadre/be/kickoff.txt": "ed913bd42d3826f073807b1d348124b343f1fd71ff14c8fe8074a13cb22ab1e4",
     ".cadre/be/mcp.json": "5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf",
@@ -43,14 +43,14 @@ export const GOLDEN_FILES: Readonly<Record<string, Readonly<Record<string, strin
     ".cadre/security/role.json": "2751a64f49341b940610939630bb7752f42b3dace47bac0cc50cb53029717630",
     ".cadre/security/settings.json": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a",
     ".cadre/sizing.md": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
-    ".cadre/tl/ROLE.md": "dd51143e381ddfd0c771cf29ae7513a7dfc9cb275fcabbc66f212b8d58d30b21",
+    ".cadre/tl/ROLE.md": "531e8345cd3ece673016c6a3fda349f19fe2b75039e656d8f8cadbcbee968da3",
     ".cadre/tl/kickoff.txt": "56d503e44f226fa624a3db33f7bf6735fb93f59ec48e98e25f64616f1a8ce03b",
     ".cadre/tl/mcp.json": "5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf",
-    ".cadre/tl/role.json": "742e325982bf79f4a4c864e9d08251f648a5203270be2d943cd8766ed5d3909b",
+    ".cadre/tl/role.json": "3e70ad863b51ae6a370aae560efd0e36310263b7499347e8b8227d3438885139",
     ".cadre/tl/settings.json": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a"
   },
   "gsd": {
-    ".cadre/INDEX.md": "587209ffd1ab35a174060981b053b0b39ea7e8a68a0fb81862cae9c6dd12c6dd",
+    ".cadre/INDEX.md": "453652682ffa96f7650aec0cbdedf47e565f3800397de866b793ecd7815b3c6d",
     ".cadre/be/ROLE.md": "c1f0be01430a6199105cd4e7b27e15114d3162c067f86c47e8589ee0e883eebf",
     ".cadre/be/kickoff.txt": "fb87acc0c9cde6279de82fa15bfd144ace00d4be03a200fd9c7a2449ae8c926e",
     ".cadre/be/mcp.json": "5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf",
@@ -84,10 +84,10 @@ export const GOLDEN_FILES: Readonly<Record<string, Readonly<Record<string, strin
     ".cadre/security/role.json": "2751a64f49341b940610939630bb7752f42b3dace47bac0cc50cb53029717630",
     ".cadre/security/settings.json": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a",
     ".cadre/sizing.md": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
-    ".cadre/tl/ROLE.md": "2c718a3f03c9e1ec23cb200a07179c1a77e87411e98cd48678cc284f87280c94",
+    ".cadre/tl/ROLE.md": "0b6bea205202c02673ab441d54ae473d2c53d97e4a7f11237edbc889de2750bf",
     ".cadre/tl/kickoff.txt": "bdba2f37beed531ea0ebddd8d8ba675cd5066caf840ef35f5358909be588fb16",
     ".cadre/tl/mcp.json": "5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf",
-    ".cadre/tl/role.json": "742e325982bf79f4a4c864e9d08251f648a5203270be2d943cd8766ed5d3909b",
+    ".cadre/tl/role.json": "3e70ad863b51ae6a370aae560efd0e36310263b7499347e8b8227d3438885139",
     ".cadre/tl/settings.json": "03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a"
   }
 }

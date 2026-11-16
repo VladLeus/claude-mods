@@ -14,7 +14,7 @@ import { fill } from '../locales/t'
 import { cadreStatePath, handoffFolderOf, launcherPath, SIZING_RUBRIC_PATH } from '../paths'
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
-import { standsFor } from '../roles/template'
+import { standIn, standsFor } from '../roles/template'
 import type { ChainRole } from '../roles/template'
 import { MAX_PURPOSE_CHARS } from '../roles/validate'
 import { CARD_LIST_WORDS, scopeCardLines } from '../scope/card'
@@ -105,22 +105,45 @@ const WORKER_PART: readonly string[] = [
   ARTIFACT.roleMdWorkerNoTl,
 ]
 
-/** A core team's TL part: the loop on the fed ticket only, and a brief for each implementer instead of a plan. */
+/** A core worker's part: it plans from TL's brief, raises a blocker at once and reports unrun checks as partial. */
+const CORE_WORKER_PART: readonly string[] = [
+  ARTIFACT.roleMdCoreWorkerPlan,
+  ARTIFACT.roleMdWorkerCommit,
+  ARTIFACT.roleMdCoreWorkerBlocked,
+  ARTIFACT.roleMdCoreWorkerReport,
+  ARTIFACT.roleMdWorkerNoTl,
+]
+
+/**
+ * A core team's TL part: the loop on the fed ticket only, a brief for each implementer instead of a plan, trust in
+ * the reports, and a QA or Security task only when the team has a role standing for it.
+ */
 function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
+  const qaLines = standIn('qa', roles) === null ? [] : [ARTIFACT.roleMdCoreTlQa]
+  const securityLines = standIn('security', roles) === null ? [] : [ARTIFACT.roleMdCoreTlSecurity]
+
   return [
     ARTIFACT.roleMdTlLoop,
     ARTIFACT.roleMdCoreTlFed,
     ARTIFACT.roleMdCoreTlBrief,
     ARTIFACT.roleMdTlTasks,
-    ARTIFACT.roleMdTlReport,
+    ARTIFACT.roleMdCoreTlTrust,
+    ARTIFACT.roleMdCoreTlFailed,
+    ...qaLines,
+    ...securityLines,
+    ARTIFACT.roleMdCoreTlWait,
+    ARTIFACT.roleMdCoreTlReport,
   ]
 }
 
-/** The role's own part of the Hierarchy section: PM's, TL's (a core team's TL has its own) or a worker's. */
+/**
+ * The role's own part of the Hierarchy section: PM's, TL's or a worker's; a core team's TL and workers have their own.
+ */
 function rolePart(role: RoleSpec, team: RoleMdTeam): readonly string[] {
   if (team.isCore && standsFor(role, 'tl')) return coreTlPart(team.roles)
   if (standsFor(role, 'pm')) return PM_PART
   if (standsFor(role, 'tl')) return TL_PART
+  if (team.isCore) return CORE_WORKER_PART
 
   return WORKER_PART
 }

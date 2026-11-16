@@ -990,12 +990,12 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
     ],
     "shown": [],
     "promptHashes": [
-      "73ed8a25af823e7774847203e3339bade6da6f7cdfe71913f7258a90cfca6f63",
-      "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",
-      "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",
-      "a5452cf1b1e18f52222fc72b9effa70502e0bed5559e357ade2dd50ed907c30c",
-      "11d63e0be53d8180ea3aa5348775dd81a9fce25081e868f42f313ad7e1ffa72c",
-      "11d63e0be53d8180ea3aa5348775dd81a9fce25081e868f42f313ad7e1ffa72c"
+      "05f625b9310c497e9098cc1cac56b4aa99fde5437426a465ac9c7cbd0f3588c3",
+      "e53c22d1bdf4e437bcec25607b2658a321b0b5bdae1539f908143e8a67098b78",
+      "e53c22d1bdf4e437bcec25607b2658a321b0b5bdae1539f908143e8a67098b78",
+      "d4b82b6fc072954b7c25f21908eeb45686b9a36d1a01eeda2c7d6b62f0301601",
+      "7dc8be37e04448d0b226a008f9a38255df7de6f51a0f850ac6000b7ff516432b",
+      "7dc8be37e04448d0b226a008f9a38255df7de6f51a0f850ac6000b7ff516432b"
     ],
     "reply": [
       "cadre init --dry-run",
@@ -1222,7 +1222,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
     "shown": [],
     "promptHashes": [
       "a89364612765f874c3ebf9fc7baa79ff4797b916d202f79f24ebe06c5084b5ef",
-      "6823fc05883d034a7f4c21868cea7b0780bbf7395d1546a1ba19fec0c9ae809a"
+      "1541d9bc5ed1169f6a23675f227e7893a9274c8b824d40c5f015afe3611cd0bd"
     ],
     "reply": [
       "cadre init --dry-run",

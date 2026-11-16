@@ -62,7 +62,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -140,7 +140,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -293,7 +293,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -318,7 +318,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -363,7 +363,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -388,7 +388,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -433,7 +433,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -458,7 +458,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -503,7 +503,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -528,7 +528,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -727,7 +727,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -800,7 +800,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -994,7 +994,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1020,7 +1020,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1070,7 +1070,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1096,7 +1096,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1146,7 +1146,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1172,7 +1172,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1222,7 +1222,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1248,7 +1248,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1546,7 +1546,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1619,7 +1619,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1853,7 +1853,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1879,7 +1879,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1929,7 +1929,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1955,7 +1955,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2005,7 +2005,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -2031,7 +2031,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2081,7 +2081,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -2107,7 +2107,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2313,7 +2313,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2397,7 +2397,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2714,7 +2714,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2739,7 +2739,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2784,7 +2784,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2809,7 +2809,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2854,7 +2854,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2879,7 +2879,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3023,7 +3023,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3048,7 +3048,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3565,7 +3565,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3643,7 +3643,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3796,7 +3796,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3821,7 +3821,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3866,7 +3866,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3891,7 +3891,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3936,7 +3936,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3961,7 +3961,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -4006,7 +4006,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -4031,7 +4031,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
