@@ -9,8 +9,8 @@ import {
   isInputShowing,
   isPromptOrQuestion,
   modelCallReason,
+  PRINTED_REASON_CHARS,
   squashed,
-  STDERR_REASON_CHARS,
 } from './claude.ts'
 
 const RULE = '─'.repeat(20)
@@ -134,29 +134,41 @@ test('isPromptOrQuestion is false for the folder trust dialog and a working scre
   assert.equal(isPromptOrQuestion(working), false)
 })
 
-test('modelCallReason names only the exit code when stderr is empty', () => {
-  assert.equal(modelCallReason(1, '', [], { HOME }), BASE)
+test('modelCallReason says the call printed nothing when stderr and stdout are empty', () => {
+  assert.equal(modelCallReason({ code: 1, stdout: '', stderr: '' }, [], { HOME }), `${BASE}: printed nothing`)
 })
 
-test('modelCallReason adds the first non-empty stderr line', () => {
-  assert.equal(modelCallReason(1, '\n\nError: boom\nsecond line', [], { HOME }), `${BASE}: Error: boom`)
+test('modelCallReason gives the whole stderr with its whitespace folded', () => {
+  const reason = modelCallReason({ code: 1, stdout: '', stderr: '\n\nError: boom\nsecond line' }, [], { HOME })
+
+  assert.equal(reason, `${BASE}: stderr: Error: boom second line`)
 })
 
-test('modelCallReason filters identity values, env secrets and the home path out of the stderr line', () => {
-  const stderr = `Error: ${IDENTITY} at ${HOME}/work sent ${SECRET}\nmore`
-  const reason = modelCallReason(1, stderr, [IDENTITY], { HOME, UNIT_API_TOKEN: SECRET })
+test('modelCallReason gives stdout when stderr is empty, and both parts when both printed', () => {
+  const stdoutOnly = modelCallReason({ code: 1, stdout: 'Error: x\nmore', stderr: '' }, [], { HOME })
+  const both = modelCallReason({ code: 1, stdout: 'Error: x\nmore', stderr: 'Error: boom\n' }, [], { HOME })
 
-  assert.equal(reason, `${BASE}: Error: <identity> at ~/work sent <secret>`)
+  assert.equal(stdoutOnly, `${BASE}: stdout: Error: x more`)
+  assert.equal(both, `${BASE}: stderr: Error: boom; stdout: Error: x more`)
+})
+
+test('modelCallReason filters identity values, env secrets and the home path out of both parts', () => {
+  const printed = `Error: ${IDENTITY} at ${HOME}/work sent ${SECRET}\nmore`
+  const env = { HOME, UNIT_API_TOKEN: SECRET }
+  const reason = modelCallReason({ code: 1, stdout: printed, stderr: printed }, [IDENTITY], env)
+  const part = 'Error: <identity> at ~/work sent <secret> more'
+
+  assert.equal(reason, `${BASE}: stderr: ${part}; stdout: ${part}`)
   for (const value of [IDENTITY, HOME, SECRET]) assert.equal(reason.includes(value), false)
 })
 
-test('modelCallReason cuts the stderr line to STDERR_REASON_CHARS after filtering it', () => {
-  const lead = 'x'.repeat(STDERR_REASON_CHARS - 10)
-  const stderr = `${lead}${SECRET} ${'y'.repeat(STDERR_REASON_CHARS)}`
-  const reason = modelCallReason(1, stderr, [], { HOME, UNIT_API_TOKEN: SECRET })
+test('modelCallReason cuts each part to PRINTED_REASON_CHARS after filtering it', () => {
+  const lead = 'x'.repeat(PRINTED_REASON_CHARS - 10)
+  const stderr = `${lead}${SECRET} ${'y'.repeat(PRINTED_REASON_CHARS)}`
+  const reason = modelCallReason({ code: 1, stdout: '', stderr }, [], { HOME, UNIT_API_TOKEN: SECRET })
 
-  assert.equal(reason, `${BASE}: ${lead}<secret> y`)
-  assert.equal(reason.length, `${BASE}: `.length + STDERR_REASON_CHARS)
+  assert.equal(reason, `${BASE}: stderr: ${lead}<secret> y`)
+  assert.equal(reason.length, `${BASE}: stderr: `.length + PRINTED_REASON_CHARS)
 })
 
 test('dialogText is the screen from the start of the last ☐ header line', () => {
