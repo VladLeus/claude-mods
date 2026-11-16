@@ -227,8 +227,8 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
 
 /**
  * The deny of the files a later launch or session runs or trusts, `Edit(//...)` under every launch root: the two
- * `.claude` settings files of the root and of a dir start's folder, `.cadre/bin/**`, `.cadre/manifest.json`,
- * `.cadre/cadre.json`, the team's role.json files and each framework's project install folder, so an Edit-only role
+ * `.claude` settings files and each framework's project install folders, of the root and of a dir start's folder,
+ * `.cadre/bin/**`, `.cadre/manifest.json`, `.cadre/cadre.json` and the team's role.json files, so an Edit-only role
  * cannot plant a hook, rewrite a launcher or change the team. A path no exact rule can hold gets none and no warning:
  * runtimeDeny already warns about such a root.
  */
@@ -243,12 +243,12 @@ function launchFilesDeny(user: LaunchUser, id: string): DenyResult {
       ...settingsFolders.flatMap(folder => [
         editRules(`${folder}/.claude/settings.json`, ''),
         editRules(`${folder}/.claude/settings.local.json`, ''),
+        ...runs.map(dir => editRules(`${folder}/${dir}`, '/**')),
       ]),
       editRules(`${root}/.cadre/bin`, '/**'),
       editRules(`${root}/.cadre/manifest.json`, ''),
       editRules(`${root}/${cadreStatePath()}`, ''),
       ...ids.map(teamId => editRules(`${root}/${roleJsonPath(teamId)}`, '')),
-      ...runs.map(dir => editRules(`${root}/${dir}`, '/**')),
     ]
   })
 
