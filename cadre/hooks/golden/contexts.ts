@@ -2234,7 +2234,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 13)",
+        "title": "Review (page 1 of 14)",
         "lines": [
           "Roles:",
           "  PM (pm)",
@@ -2260,7 +2260,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "summary": "47 files, 6 roles",
         "pane": {
           "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 47 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 13)"
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 14)"
         }
       },
       "acceptsTyped": false

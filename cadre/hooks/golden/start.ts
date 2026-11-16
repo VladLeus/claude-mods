@@ -34,7 +34,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.cadre/be/.runtime/probe-expectations.json",
-        "sha256": "f206cba9b55bcff6e80a084f099cc78f2b20e8aaf048372528493a953ff79efe",
+        "sha256": "7d6dcd0d1a19971552131be0a489824a13aa6c653ea668635b53bf04fd57d78c",
         "isWritten": true
       },
       {

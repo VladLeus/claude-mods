@@ -1233,6 +1233,8 @@ export type CadreState = {
   readonly sizing?: Sizing
   /** The frameworks recorded for the repo; absent in a setup from before they were recorded. */
   readonly frameworks?: readonly FrameworkId[]
+  /** The repo's docker scripts init found, as `<runner> <name>`; absent when it found none. */
+  readonly dockerScripts?: readonly string[]
 }
 
 /** What the repo scan found (SCAN-01): a separate type beside the frozen Facts (D-88). */
@@ -1255,6 +1257,8 @@ export type RepoScan = {
     readonly stateState: ReadState
   }
   readonly warnings: readonly string[]
+  /** The docker wrapper scripts of the root package.json, as `<runner> <name>`, sorted; absent in a hand-built scan. */
+  readonly dockerScripts?: readonly string[]
 }
 
 /** A skill or plugin command by name, with the plugin that adds it; null for user and project skills. */
@@ -1418,6 +1422,8 @@ export type ScopeContext = {
   readonly alsoRuns?: readonly FrameworkId[]
   /** The repo root the launch denies are written under; absent when not known. */
   readonly root?: string
+  /** The repo's docker scripts, which a role that runs the repo's checks runs outside the sandbox; absent when none. */
+  readonly dockerScripts?: readonly string[]
 }
 
 /** The committed settings template: portable keys only (D-84). Per-user values are rendered at launch. */

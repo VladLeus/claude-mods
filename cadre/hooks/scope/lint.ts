@@ -16,8 +16,8 @@ import { CADRE_TOOLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOL
 import { runnableFrameworks } from './frameworks'
 
 /**
- * The reads every role is denied, best effort (ROLE-05, D-97c): the repo's .env files and the user's ssh and aws
- * folders. A subprocess that reads the file itself is not stopped by a Read rule, so the card never calls these hard.
+ * The reads every role is denied: the repo's .env files and the user's ssh and aws folders. With the sandbox on, the
+ * engine applies them to Bash commands too; a command run outside the sandbox is not stopped.
  */
 export const SECRET_READ_DENY: readonly string[] = Object.freeze([
   'Read(./.env)',

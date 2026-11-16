@@ -136,6 +136,9 @@ export function planState(input: PlanStepInput, cadreVersion: string): CadreStat
     readUserMcp: input.readUserMcp,
     ...(input.sizing === undefined ? {} : { sizing: input.sizing }),
     ...(input.frameworks === undefined ? {} : { frameworks: input.frameworks }),
+    ...(input.repo.dockerScripts === undefined || input.repo.dockerScripts.length === 0
+      ? {}
+      : { dockerScripts: input.repo.dockerScripts }),
   }
 }
 

@@ -25,10 +25,11 @@ import { ARTIFACT } from '../locales/artifact'
 import { fill } from '../locales/t'
 import { handoffFolderOf, isSafeRoot } from '../paths'
 import { INFRA_MCP_SERVERS, INFRA_SKILLS, PER_SKILL_DENY_PLUGINS } from '../roles/infra'
-import { chainLines } from '../roles/template'
+import { chainLines, runsRepoChecks } from '../roles/template'
 import { runnableFrameworks } from './frameworks'
 import {
   checkedRule,
+  DOCKER_COMMANDS,
   INFRA_CHECKS,
   isContextMonitorScript,
   MEMORY_PATTERN,
@@ -172,6 +173,26 @@ function bashRule(role: RoleSpec): ScopeRule {
   if (!role.hasBash) return checkedRule(ARTIFACT.cardNoBash, 'hard', [{ kind: 'tool-absent', token: 'Bash' }])
 
   return rule(ARTIFACT.cardSandbox, 'best-effort')
+}
+
+function dockerRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
+  if (!role.hasBash || !runsRepoChecks(role)) return []
+  const programs = DOCKER_COMMANDS.map(pattern => pattern.replace(/ \*$/, ''))
+  const scripts = (ctx.dockerScripts ?? []).map(command => shown(command))
+  const commands = cardList([...programs, ...scripts], CARD_LIST_WORDS)
+
+  return [rule(fill(ARTIFACT.cardDocker, { commands }), 'none')]
+}
+
+/**
+ * The secrets rule per role kind: the sandbox of a Bash role applies the Read denies to its commands too, and a role
+ * that runs the repo's checks may read the env files git tracks.
+ */
+function secretsRule(role: RoleSpec): ScopeRule {
+  if (!role.hasBash) return rule(ARTIFACT.cardSecrets, 'best-effort')
+  if (runsRepoChecks(role)) return rule(ARTIFACT.cardSecretsChecks, 'best-effort')
+
+  return rule(ARTIFACT.cardSecretsSandbox, 'best-effort')
 }
 
 /** The rule for the code dirs that are denied; none when no dir is. */
@@ -395,7 +416,8 @@ function isStartPluginsUnknown(ctx: ScopeContext): boolean {
  * The rules of the card in their fixed order. The label of each rule is fixed here: a rule an engine setting enforces
  * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none. The rules the startup
  * inventory can prove carry their probe checks: the Bash rule, the MCP deny list, the infra rule and the permission
- * mode, which the init event reports for manual as default. Right after the Skills rule a none rule names what the
+ * mode, which the init event reports for manual as default. Right after the Bash rule a role that runs the repo's
+ * checks has a none rule naming what runs outside the sandbox. Right after the Skills rule a none rule names what the
  * role loads as its instructions: its built `.cadre/<id>/CLAUDE.md` and its private instructions folder in the config
  * folder. Right after the infra rule come the inbox rules.
  */
@@ -408,11 +430,12 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     ...bypassRules(role),
     rule(fill(ARTIFACT.cardPlugins, { plugins: pluginList }), pluginsEnforcement),
     bashRule(role),
+    ...dockerRules(role, ctx),
     ...deniedDirRules(deny),
     ...ownDirRules(deny),
     ...skippedDirRules(deny),
     ...unusualDirRules(deny),
-    rule(ARTIFACT.cardSecrets, 'best-effort'),
+    secretsRule(role),
     ...mcpRules(deny, ctx.mcpRoute),
     ...partialMcpRules(ctx.setup),
     rule(ARTIFACT.cardSkills, SKILLS_RULE_ENFORCEMENT),

@@ -169,14 +169,15 @@ function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
 
 /**
  * The sandbox of a role: off without Bash, else on with the tool caches writable; a role that runs the repo's checks
- * also runs Docker outside it.
+ * also runs Docker and the repo's docker scripts outside it.
  */
-function sandboxFor(role: RoleSpec): SettingsTemplate['sandbox'] {
+function sandboxFor(role: RoleSpec, ctx: ScopeContext): SettingsTemplate['sandbox'] {
   if (!role.hasBash) return { enabled: false }
   const filesystem = { allowWrite: [SANDBOX_CACHE_DIR] }
   if (!runsRepoChecks(role)) return { enabled: true, filesystem }
+  const scripts = (ctx.dockerScripts ?? []).map(command => `${command} *`)
 
-  return { enabled: true, excludedCommands: [...DOCKER_COMMANDS], filesystem }
+  return { enabled: true, excludedCommands: [...DOCKER_COMMANDS, ...scripts], filesystem }
 }
 
 /**
@@ -194,7 +195,7 @@ export function compileScope(role: RoleSpec, ctx: ScopeContext): CompiledScope {
     settings: {
       enabledPlugins,
       permissions: { defaultMode: role.permissionMode, deny: deny.entries },
-      sandbox: sandboxFor(role),
+      sandbox: sandboxFor(role, ctx),
     },
     mcp: { schema: 1, servers: sortedUnique(role.mcp) },
     flags: flagsFor(role, ctx),

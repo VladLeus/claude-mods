@@ -74,10 +74,10 @@ function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySe
 
 /**
  * One compiled scope per role, by role id: each role is compiled for the framework it runs on (resolvedFramework),
- * with the setup and the code dirs of the scans, the MCP route of every role (MCP_ROUTE), where the launchers start, so
- * the card tells what loads there, the whole team for the decision chain, with the repo's `frameworks`, when given, as
- * what it may also run, and with the repo `root`, when given, so the card labels the inbox rule as the launch can deny
- * it. A role is attended when any framework it may run is in `attended`.
+ * with the setup, the code dirs and the docker scripts of the scans, the MCP route of every role (MCP_ROUTE), where the
+ * launchers start, so the card tells what loads there, the whole team for the decision chain, with the repo's
+ * `frameworks`, when given, as what it may also run, and with the repo `root`, when given, so the card labels the inbox
+ * rule as the launch can deny it. A role is attended when any framework it may run is in `attended`.
  */
 export function compileAll(
   roles: readonly RoleSpec[],
@@ -104,6 +104,7 @@ export function compileAll(
         roles,
         ...alsoRuns,
         ...rootOf,
+        dockerScripts: gathered.repo.dockerScripts ?? [],
       }
 
       return [role.id, compileScope(role, context)]
@@ -299,12 +300,12 @@ export async function attendedByConfig(
 }
 
 /**
- * The scans and the compiled scopes of a team, as regen and /cadre start use them (D-68, D-70, D-72): the scans of one
- * run (gatherScans), which read ~/.claude.json only when cadre.json records the consent (readUserMcp, A1), with the
- * start folder's settings of a dir start (withStartSettings); attended
- * judged from the config on disk with no question asked (attendedByConfig); and every role compiled on its own
- * framework or the repo default, for cadre.json's launch start, with the frameworks the repo records (repoFrameworks)
- * as what it may also run (compileAll, D-122).
+ * The scans and the compiled scopes of a team, as regen and /cadre start use them: the scans of one run (gatherScans),
+ * which read ~/.claude.json only when cadre.json records the consent (readUserMcp), with the start folder's settings of
+ * a dir start (withStartSettings); attended judged from the config on disk with no question asked (attendedByConfig);
+ * and every role compiled on its own framework or the repo default, for cadre.json's launch start, with the
+ * frameworks the repo records (repoFrameworks) as what it may also run and the docker scripts cadre.json records, never
+ * those of this run's scan (compileAll).
  */
 export async function compileTeam(
   io: InitIo,
@@ -318,7 +319,8 @@ export async function compileTeam(
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
 
   const recorded = repoFrameworks(state)
-  const scopes = compileAll(roles, state.framework, gathered, attended, state.launchStart, recorded, locations.root)
+  const compiled = { ...gathered, repo: { ...gathered.repo, dockerScripts: state.dockerScripts ?? [] } }
+  const scopes = compileAll(roles, state.framework, compiled, attended, state.launchStart, recorded, locations.root)
 
   return { gathered, scopes }
 }

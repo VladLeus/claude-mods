@@ -103,13 +103,28 @@ function frameworksOf(value: unknown): FrameworkId[] | null {
   return ids
 }
 
+/** A recorded docker script: the runner, then a script name an exact permission pattern can hold. */
+const DOCKER_SCRIPT = /^(npm run|yarn|pnpm) [A-Za-z0-9:._-]+$/
+
+/** The docker scripts recorded for the repo, or null when they are not a list of runner commands, each listed once. */
+function dockerScriptsOf(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null
+  const commands: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string' || !DOCKER_SCRIPT.test(item) || commands.includes(item)) return null
+    commands.push(item)
+  }
+
+  return commands
+}
+
 /**
- * The text of `.cadre/cadre.json` as the repo state, or null when it is not one (T-02-12): JSON with schema 1, a cadre
- * version, a framework that is gsd, superpowers, none or null, a git policy, a list of role ids that are each a
- * usable role id (isRoleId: a slug, not reserved) and are not listed twice, a launch start (launchStartOf), and
- * whether init may read ~/.claude.json (a boolean; missing or any other value makes the state null, fail closed, A1).
- * A missing or invalid launch start makes the state null (fail closed). A sizing block and the recorded frameworks
- * may be absent; present and malformed, they make the state null. A field the contract does not name is dropped.
+ * The text of `.cadre/cadre.json` as the repo state, or null when it is not one: JSON with schema 1, a cadre version,
+ * a framework that is gsd, superpowers, none or null, a git policy, a list of role ids that are each a usable role id
+ * (isRoleId: a slug, not reserved) and are not listed twice, a launch start (launchStartOf), and whether init may read
+ * ~/.claude.json (a boolean; missing or any other value makes the state null, fail closed). A missing or invalid
+ * launch start makes the state null (fail closed). A sizing block, the recorded frameworks and the docker scripts may
+ * be absent; present and malformed, they make the state null. A field the contract does not name is dropped.
  */
 export function parseCadreState(text: string): CadreState | null {
   const value = parseJsonValue(text)?.value
@@ -128,7 +143,8 @@ export function parseCadreState(text: string): CadreState | null {
   }
   const sizing = value.sizing === undefined ? undefined : sizingOf(value.sizing)
   const frameworks = value.frameworks === undefined ? undefined : frameworksOf(value.frameworks)
-  if (sizing === null || frameworks === null) return null
+  const dockerScripts = value.dockerScripts === undefined ? undefined : dockerScriptsOf(value.dockerScripts)
+  if (sizing === null || frameworks === null || dockerScripts === null) return null
 
   return {
     schema: 1,
@@ -140,6 +156,7 @@ export function parseCadreState(text: string): CadreState | null {
     readUserMcp: value.readUserMcp,
     ...(sizing === undefined ? {} : { sizing }),
     ...(frameworks === undefined ? {} : { frameworks }),
+    ...(dockerScripts === undefined ? {} : { dockerScripts }),
   }
 }
 

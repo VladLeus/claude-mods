@@ -135,13 +135,19 @@ export const ARTIFACT = Object.freeze({
   cardBypass: 'WARNING: bypassPermissions is set in role.json: permission prompts are skipped',
   cardPlugins: 'Plugins: only {plugins} load (--setting-sources project whitelist)',
   cardNoBash: 'No Bash tool (denied)',
-  cardSandbox: 'Bash runs in the sandbox (hard on macOS, best-effort on Linux)',
+  cardSandbox: 'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache',
+  cardDocker: 'These run outside the sandbox: {commands}. Run each one alone, with no cd, pipe or redirect.',
   cardDeniedDirs: 'Reads and edits under {dirs} are denied; the patterns match at any depth',
   cardOwnDirs: 'Reads and edits under {dirs} are never denied (own folders)',
   cardSkippedDirs: `Reads and edits under {dirs} are not denied in the committed template: ${
     ''}those names match the role's own folders at any depth (exact denies are rendered at launch)`,
   cardUnusualDir: 'code dir {dir} has an unusual name and is not denied',
   cardSecrets: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied',
+  cardSecretsSandbox: `Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the ${
+    ''}sandbox; a command run outside the sandbox is not stopped`,
+  cardSecretsChecks: `Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the ${
+    ''}sandbox, except the env files git tracks, which Bash commands may read; a command run outside the sandbox is ${
+    ''}not stopped`,
   cardNoMcpToDeny: 'No other scanned MCP servers to deny',
   cardDeniedMcp: 'Scanned MCP servers not given are denied: {servers}',
   cardMcpReachable: 'Denied servers: tools removed and the whole server denied (deniedMcpServers; best-effort)',

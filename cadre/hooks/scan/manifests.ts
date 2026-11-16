@@ -1,12 +1,13 @@
 /**
- * The dependency names the scan reads, a layer 3 module: the package.json files at the root and one folder down, the
- * root manifests of MANIFEST_FILES with one parser per kind, and the findings their names prove (SCAN-01, D-55,
- * D-137, T-02-57). It reads only dependency names, through readRepoFile and at most MAX_READ_BYTES. It imports core,
- * the facts read cap, the marker table, the port reads, the walk and the types, so the repo scan reads them here.
+ * The dependency names and docker scripts the scan reads, a layer 3 module: the package.json files at the root and one
+ * folder down, the root manifests of MANIFEST_FILES with one parser per kind, the findings their names prove, and the
+ * docker wrapper scripts of a package.json with the runner the root's lock file names. It reads only dependency names
+ * and package.json scripts, through readRepoFile and at most MAX_READ_BYTES. It imports core, the facts read cap, the
+ * marker table, the port reads, the walk and the types, so the repo scan reads them here.
  */
 import type { InitIo } from '../../types'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from '../core/json'
-import { shown } from '../core/text'
+import { shown, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
 import { MAX_READ_BYTES } from './facts/normalize'
 import { addFinding, MANIFEST_FILES, MARKER_ROWS } from './markers'
@@ -30,24 +31,28 @@ export function packageFilesOf(seen: readonly Seen[]): string[] {
 }
 
 /**
- * Adds a finding for each dependency of one package.json that a dependency row names. Only the dependency names are
- * read; their versions and every other field are ignored. Returns the warning when the file cannot be read or parsed,
- * else null.
+ * Adds a finding for each dependency of one package.json that a dependency row names, and hands back its parsed
+ * `scripts` value, so the file is read once. The warning is set when the file cannot be read or parsed, and `scripts`
+ * is then undefined.
  */
 export async function readDependencies(
   found: Findings,
   io: InitIo,
   root: string,
   path: string,
-): Promise<string | null> {
+): Promise<{ readonly warning: string | null; readonly scripts: unknown }> {
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
   if (read.state !== 'text') {
-    return t('scan.unknown', { what: t('scan.couldNotRead', { what: shown(path, MAX_WARNING_PATH_CHARS) }) })
+    const what = t('scan.couldNotRead', { what: shown(path, MAX_WARNING_PATH_CHARS) })
+
+    return { warning: t('scan.unknown', { what }), scripts: undefined }
   }
 
   const value = parseJsonValue(read.text)?.value
   if (!isObject(value)) {
-    return t('scan.unknown', { what: t('scan.couldNotParse', { what: shown(path, MAX_WARNING_PATH_CHARS) }) })
+    const what = t('scan.couldNotParse', { what: shown(path, MAX_WARNING_PATH_CHARS) })
+
+    return { warning: t('scan.unknown', { what }), scripts: undefined }
   }
 
   const names = new Set(DEPENDENCY_GROUPS.flatMap(group => keysOf(value[group])))
@@ -55,7 +60,41 @@ export async function readDependencies(
     if ('dep' in row.match && names.has(row.match.dep)) addFinding(found, row.kind, row.label, path)
   }
 
-  return null
+  return { warning: null, scripts: value.scripts }
+}
+
+/** A script name an exact permission pattern can hold. */
+const SCRIPT_NAME = /^[A-Za-z0-9:._-]+$/
+
+/** A command whose first word is docker or docker-compose. */
+const DOCKER_CALL = /^(?:docker|docker-compose)(?:\s|$)/
+
+/** A shell operator, a backslash or a line break, any of which would let the script run more than the docker call. */
+const SHELL_OPERATOR = /[;&|`$<>()\\\n\r]/
+
+/**
+ * The repo's docker wrapper scripts as `<runner> <name>`, sorted: each own key of the package.json `scripts` object
+ * whose name is plain and whose command is a docker or docker-compose call with no shell operator. A value that is not
+ * a plain object gives none.
+ */
+export function dockerScriptCommands(scripts: unknown, runner: string): string[] {
+  if (!isObject(scripts)) return []
+  const names = Object.keys(scripts).filter(name => {
+    const command = scripts[name]
+    if (typeof command !== 'string' || !SCRIPT_NAME.test(name)) return false
+
+    return DOCKER_CALL.test(command) && !SHELL_OPERATOR.test(command)
+  })
+
+  return sortedUnique(names.map(name => `${runner} ${name}`))
+}
+
+/** How the repo runs a package.json script, by the lock file at its root: yarn, pnpm, else npm run. */
+export function scriptRunner(rootNames: readonly string[]): string {
+  if (rootNames.includes('yarn.lock')) return 'yarn'
+  if (rootNames.includes('pnpm-lock.yaml')) return 'pnpm'
+
+  return 'npm run'
 }
 
 /** A Gemfile line, trimmed, that declares a gem: `gem`, spaces, and a name in matching single or double quotes. */
