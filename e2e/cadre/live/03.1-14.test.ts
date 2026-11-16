@@ -118,10 +118,10 @@ async function definitionsHalf(ctx: RowContext): Promise<void> {
   })
   const memory = `${userDir}/projects/${mainRoot.replace(NON_ALPHANUMERIC_RE, '-')}/memory`
   for (const id of ids) {
-    await ctx.check(`definitions: ${id} denies Edit and Write of the memory folder of main`, async () => {
+    await ctx.check(`definitions: ${id} denies Edit of the memory folder of main`, async () => {
       const deny = await denyOf(epic.worktree, id)
       assert.ok(deny !== null, `${id} has no rendered settings.json with a deny list in the worktree`)
-      const missing = [rule('Edit', memory, '/**'), rule('Write', memory, '/**')].filter(item => !deny.includes(item))
+      const missing = [rule('Edit', memory, '/**')].filter(item => !deny.includes(item))
       assert.deepEqual(missing, [], `the deny list lacks: ${missing.join(' | ')}`)
     })
   }

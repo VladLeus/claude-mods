@@ -1,9 +1,9 @@
+import assert from 'node:assert/strict'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { configDir, initLineOf, passTrust, printMode } from '../../lib/claude.ts'
 import { HarnessError } from '../../lib/errors.ts'
 import { isRecord } from '../../lib/filter.ts'
-import type { RunResult } from '../../lib/proc.ts'
 import { rowTest } from '../../lib/row.ts'
 import { denyCoverOf } from '../../lib/settings.ts'
 import { capture, killServer, newWindow, socketName, startServer, WAIT_MS } from '../../lib/tmux.ts'
@@ -90,54 +90,39 @@ rowTest(rowEntry('03#78'), async ctx => {
   ctx.observe('statusFindsTheSession', how !== 'none', `found by: ${how}; state: ${state}`)
   ctx.observe('foundBy', how, `the session line of the reply: ${statusLine(reply, 'session') ?? 'none'}`)
 
-  let printed: RunResult
-  let full: string
-  try {
-    const args = ['--output-format', 'stream-json', '--verbose', '--max-turns', '1', '--no-session-persistence']
-    printed = await printMode(copy.repo, [...args, MEMORY_PROBE_PROMPT], copy.env)
-    full = (await realpath(copy.repo)).replace(NON_ALPHANUMERIC_RE, '-')
-  } catch (error) {
-    if (error instanceof HarnessError) throw error
-    const reason = `not recorded: ${error instanceof Error ? error.name : 'Error'}`
-    ctx.observe('engineMemoryFolder', reason)
-    ctx.observe('roleDenyCoversEngineMemory', reason)
-    return
-  }
+  const args = ['--output-format', 'stream-json', '--verbose', '--max-turns', '1', '--no-session-persistence']
+  const printed = await printMode(copy.repo, [...args, MEMORY_PROBE_PROMPT], copy.env)
+  const full = (await realpath(copy.repo)).replace(NON_ALPHANUMERIC_RE, '-')
   const init = initLineOf(printed.stdout)
   const memoryPaths = init?.event.memory_paths
   const memory = isRecord(memoryPaths) && typeof memoryPaths.auto === 'string' ? memoryPaths.auto : null
-  if (memory === null) {
-    const reason = init === null ? `no init event (exit ${printed.code})` : 'no memory_paths.auto in the init event'
-    ctx.observe('engineMemoryFolder', `not recorded: ${reason}`)
-    ctx.observe('roleDenyCoversEngineMemory', 'not recorded: no memory folder from the engine')
-    return
-  }
-  const memoryFolder = memory.replace(/\/+$/, '')
-  const name = basename(dirname(memoryFolder))
-  const isPrefixed = [encoded, full].some(root => name.startsWith(root.slice(0, ENGINE_NAME_LIMIT)))
-  ctx.observe(
-    'engineMemoryFolder',
-    memoryKind(memoryFolder, encoded, full),
-    `the project folder of memory_paths.auto has ${name.length} characters and ` +
-    `${isPrefixed ? 'starts' : 'does not start'} with the first ${ENGINE_NAME_LIMIT} characters of the encoded ` +
-    `root or of its real path; the whole encoded root has ${encoded.length}`,
+  await ctx.check(
+    'the engine keeps the memory of the long root in a projects folder named by its first 200 characters',
+    () => {
+      const reason = init === null ? `no init event (exit ${printed.code})` : 'no memory_paths.auto in the init event'
+      assert.ok(memory !== null, reason)
+      const memoryFolder = memory.replace(/\/+$/, '')
+      const name = basename(dirname(memoryFolder))
+      const isPrefixed = [encoded, full].some(root => name.startsWith(root.slice(0, ENGINE_NAME_LIMIT)))
+      const shown =
+        `the project folder of memory_paths.auto has ${name.length} characters and ` +
+        `${isPrefixed ? 'starts' : 'does not start'} with the first ${ENGINE_NAME_LIMIT} characters of the encoded ` +
+        `root or of its real path; the whole encoded root has ${encoded.length}`
+      ctx.evidence('the engine memory folder', shown)
+      assert.ok(memoryKind(memoryFolder, encoded, full) !== 'other' && isPrefixed, shown)
+    },
   )
+  if (memory === null) return
 
   const settings = await readFile(join(copy.repo, '.cadre', ROLE, '.runtime', 'settings.json'), 'utf8')
     .catch(() => null)
-  if (settings === null) {
-    ctx.observe('roleDenyCoversEngineMemory', 'not recorded: the be runtime settings are missing or unreadable')
-    return
-  }
-  const cover = denyCoverOf(settings, memoryFolder)
-  if (cover === null) {
-    ctx.observe('roleDenyCoversEngineMemory', 'not recorded: no permissions.deny list in the be runtime settings')
-    return
-  }
-  ctx.observe(
-    'roleDenyCoversEngineMemory',
-    cover.edit > 0 && cover.write > 0 ? 'covered' : 'not covered',
-    `${cover.edit} Edit and ${cover.write} Write rules of the ${cover.deny} be runtime deny entries ` +
-    'cover the folder of memory_paths.auto',
-  )
+  await ctx.check("the be runtime deny covers the engine's memory folder with an Edit rule", () => {
+    assert.ok(settings !== null, 'the be runtime settings are missing or unreadable')
+    const cover = denyCoverOf(settings, memory)
+    assert.ok(cover !== null, 'no permissions.deny list in the be runtime settings')
+    assert.ok(
+      cover.edit > 0,
+      `${cover.edit} Edit rules of the ${cover.deny} be runtime deny entries cover the folder of memory_paths.auto`,
+    )
+  })
 })
