@@ -57,7 +57,7 @@ Handoffs are written to `thoughts/shared/handoffs/` of the project.
 /autopilot extend [<time>] [--restarts N]   # add time and/or restarts
 /autopilot shorten [<time>] [--restarts N]  # take time and/or restarts off
 /autopilot until HH:MM     # end at a local time
-/autopilot 0 0 stop        # hand the wheel back (also clears the goal)
+/autopilot 0 0 stop        # hand the wheel back (also clears the goal); /autopilot stop works too
 ```
 
 `extend`, `shorten` and `until` only work when you type them (in the prompt or over Remote Control), never from the session itself. Give a time, `--restarts N` (1–99), or both. With a limited run, `--restarts` raises or lowers the max restarts by N (lowering never goes below the restarts already used). With an unlimited run, `extend --restarts N` allows N more restarts from now, and `shorten --restarts` is ignored (the reply says so).
@@ -84,13 +84,19 @@ Example, a night run:
 While it runs:
 
 - Ordinary questions (`AskUserQuestion`) are answered with "decide yourself within your role"; the decision goes into the handoff. Only a question that truly cannot wait is sent to your phone (`PushNotification`). With asking on and you available (you are not away, and no ended away is still waiting for you to write), an `AskUserQuestion` reaches you as a dialog instead, the menus of a workflow the session runs (a GSD menu, for example) included, so a session started with `--ask-user` can stop at such a menu until you answer or go `/away`; the session's own questions stay for critical ones.
-- Permissions stay as they are. Run the session in auto mode or with allow rules. An action the permission mode refuses (a push, a commit) is never retried another way: it is logged as deferred and left for you.
+- Permissions stay as they are. Run the session in auto mode or with allow rules. A refused action is never retried another way.
+  - An action the permission mode refuses (a push, a commit), or its classifier or safety check, is logged as deferred and left for you.
+  - A refusal by a settings rule (a deny in `permissions`) is final: it reaches the session unchanged and is logged.
 - The session never ends or hands off on its own; autopilot decides. If the work is done it answers `AUTOPILOT_DONE` and autopilot wraps up.
 - Waiting: when the session hands work to someone else and has nothing useful left, it calls the `wait_for` tool and ends its turn. While it waits, autopilot does not nudge it, does not count idle turns and drops the goal's re-prompt. Any new turn (a message from another session, a subagent or workflow finishing, you) wakes it.
-  - Reasons: `session-answer`, `session-ping`, `subagent-result`, `workflow-end`, `background-task`, `other`, and, while it may ask you (asking is on with `--ask-user` or `/ask-user on`, you are not away, and no ended away is still waiting for you to write), also `user-answer` and `user-input` (these need the question as `note`). `from` names who it waits for.
+  - Reasons: `session-answer`, `session-ping`, `subagent-result`, `workflow-end`, `background-task`, `idle-inbox`, `other`, and, while it may ask you (asking is on with `--ask-user` or `/ask-user on`, you are not away, and no ended away is still waiting for you to write), also `user-answer` and `user-input` (these need the question as `note`). `from` names who it waits for.
+  - `idle-inbox`: nothing to do until a message comes (a cadre role with an empty inbox). Give it no timeout; any incoming message wakes the session.
   - `timeout` (`30m`, `1h`): past it, autopilot asks the session once to check whether the answer is stuck. It never runs past the run's time.
+  - Polling (a build, a deploy, a slow job): wait with `background-task` and a timeout, not the same check every turn.
+  - Stops: the run's time ends a wait. The weekly stop also ends a run in the turn that declares a wait. The 5-hour stop never ends an idle wait.
   - The status and the fleet badge show what it waits for, from whom and for how long: `/autopilot` prints `Waiting: session-answer ← "BE-expert" · 12m`, the fleet badge `⏸ session-answer ← BE-expert · 12m00s`.
-- Log: `~/.claude/autopilot/<session id>.log` (decisions, deferrals, restarts, limits).
+- Stalls: two turns in a row without progress (no tool call, or exactly the same calls as the turn before) park a run without `--goal`. It waits with reason `other` and you get the toast "Autopilot parked: no progress for two turns"; any new message resumes it. A run with a goal pauses instead.
+- Log: `~/.claude/autopilot/<session id>.log` (decisions, deferrals, refusals, restarts, limits).
 
 ### Away, back and ask-user
 
@@ -188,6 +194,21 @@ A known limit: under the ignore-all git policy, or while `.cadre` is not committ
 A known limit: in a role started below the git root (a dir start, or a here start from a sub-folder), the kickoff's relative read of `.cadre/<id>/ROLE.md` may not resolve. The role still has its ROLE.md, since it is part of the system prompt.
 
 A known limit: when the repo's root path holds a `#`, tmux expands the window's start folder as a format, so a here-start tmux window may open in `~` instead of the start folder.
+
+More known limits:
+
+- On a dir start, a hook cadre carries that the start folder's settings also register runs twice.
+- On a repo root whose encoded folder name is over 200 characters, init finds no session history and gives no auto-memory; `/cadre status` still finds the session.
+  A stale full-name folder from before the engine shortened names wins over the live shortened one.
+  A main-checkout session that moved into an epic worktree can make status verify the main folder for the worktree.
+- A start folder or settings file reached through a link inside the repo stays editable at its real path: the start-folder denies name the path as typed.
+- A start settings file cadre cannot read (unreadable, over the read cap, or outside the repo) switches off none of the plugins it enables.
+  The scope card then labels its plugins rule best-effort.
+- A repo command file granted to a role as a skill gets a `skill-present` probe line. The engine lists a command only under `slash_commands`, so that line can fail the probe.
+- A `/cadre` reply is not markdown-escaped: a single `*` in a path such as `.cadre/*/.runtime/` disappears on screen.
+- A role that polls by repeating the same calls every turn parks on its third turn; poll with `wait_for` reason `background-task` and a timeout.
+- A weekly limit crossed by other sessions while a role waits idle acts at its next wake. The 5-hour stop never ends an idle wait.
+- "Parked" in autopilot's toasts and log names both the 5-hour-limit wait and the stall wait.
 
 Launchers are POSIX `sh` and run on macOS and Linux; `/cadre start` copies and opens terminals on macOS only, and elsewhere prints the command for you to run.
 
