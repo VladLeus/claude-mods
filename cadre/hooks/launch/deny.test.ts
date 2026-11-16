@@ -763,6 +763,19 @@ describe('the start folder settings deny and the shortened memory folder deny', 
     expect(plain.filter(entry => entry.includes('/src/.claude/'))).toEqual([])
   })
 
+  test('a dir start denies Edit of the folders its settings run code from under every launch root', () => {
+    const folders = ['.claude/hooks', '.claude/gsd-core', '.claude/scripts']
+    const runsRules = (roots: readonly string[]) =>
+      roots.flatMap(root => folders.map(folder => `Edit(/${root}/src/${folder}/**)`))
+    const dir = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src' })).deny
+    const main = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src', mainRoot: '/main' })).deny
+    const plain = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo' })).deny
+
+    expect(runsRules(['/repo', '/link/repo']).filter(rule => !dir.includes(rule))).toEqual([])
+    expect(runsRules(['/repo', '/link/repo', '/main']).filter(rule => !main.includes(rule))).toEqual([])
+    expect(plain.filter(entry => entry.includes('/src/.claude/'))).toEqual([])
+  })
+
   test('a root with a long encoded name also gets one glob Edit rule over its shortened memory folder', () => {
     const root = `/r/${'a'.repeat(250)}`
     const glob = `Edit(//home/u/.claude/projects/-r-${'a'.repeat(197)}*/memory/**)`
