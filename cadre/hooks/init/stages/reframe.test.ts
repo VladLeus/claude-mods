@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FileOp, HunkOp, Op } from '../../../types'
+import type { CadreState, FileOp, HunkOp, Op } from '../../../types'
 import { projectInstallOf } from '../../apply/installs'
 import { appliedLines, NOTHING_APPLIED } from '../../apply/run'
 import { REDACTED } from '../../core/redact'
@@ -9,7 +9,7 @@ import { DRY_RUN_NOTE, renderPlan } from '../../plan/text'
 import { DEFAULT_LOCATIONS, driven, stateAt, stateOf, templateRole, wholeDraft, withFramework } from '../../testkit'
 import { quotedLabels, refusalLine } from '../../ui/ask'
 import type { Draft, PlanResult } from '../draft'
-import { consentedPluginKeys, draftScopes } from '../initplan'
+import { consentedPluginKeys, draftScopes, planState } from '../initplan'
 import type { Answer, InitState } from '../state'
 import { reframeDraft, reframeReplyText, reframeReviewStage } from './reframe'
 import { REVIEW_DISMISSED_REASON } from './review'
@@ -180,6 +180,23 @@ describe('the review of /cadre frameworks', () => {
     expect([cancelled.sub, dismissed.sub]).toEqual([
       { kind: 'cancelled', reason: t('frameworks.review.cancelledReason') },
       { kind: 'cancelled', reason: REVIEW_DISMISSED_REASON },
+    ])
+  })
+
+  test('/cadre frameworks keeps the recorded structure in cadre.json', () => {
+    const recorded: Draft = { ...DRAFT, structure: 'core' }
+    const writtenOf = (draft: Draft): CadreState | null => {
+      const { effect } = entered(draft)
+      const call = effect.kind === 'io' ? effect.call : null
+
+      return call?.id === 'reframe-plan' ? planState(call.input, '0.5.18') : null
+    }
+    const kept = writtenOf(recorded)
+    const unrecorded = writtenOf(DRAFT)
+    expect(reframeDraft(recorded)).toEqual({ ...reframeDraft(DRAFT), structure: 'core' })
+    expect([kept?.structure, unrecorded === null ? null : Object.hasOwn(unrecorded, 'structure')]).toEqual([
+      'core',
+      false,
     ])
   })
 })

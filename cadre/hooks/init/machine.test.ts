@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Facts, FrameworkId, InitFacts, InstructionPart, RepoEntry, RoleSpec } from '../../types'
+import type { Facts, FrameworkId, InitFacts, InstructionPart, RepoEntry, RoleSpec, TeamStructure } from '../../types'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
 import type { GuardResult } from '../guards/repo'
@@ -266,6 +266,17 @@ describe('the frameworks flow', () => {
   test('the seed clears every GSD or superpowers role value and keeps an explicit none', () => {
     const frameworks = (started().draft.roles ?? []).map(role => [role.id, role.framework])
     expect(frameworks).toEqual([['be', undefined], ['tl', undefined], ['pm', 'none'], ['qa', undefined]])
+  })
+
+  test('frameworksState seeds the recorded structure, and none when the team has none', () => {
+    const seed = { locations: DEFAULT_LOCATIONS, gathered: gatheredWith(['gsd']) }
+    const structures: readonly TeamStructure[] = ['core', 'custom']
+
+    for (const structure of structures) {
+      const team: TeamState = { ...TEAM, state: { ...TEAM.state, structure } }
+      expect(frameworksState(true, undefined, { ...seed, team }).draft.structure).toBe(structure)
+    }
+    expect(Object.hasOwn(started().draft, 'structure')).toBe(false)
   })
 
   test('it asks the set question over a stored GSD and over a stored None, in the frameworks flow', () => {
