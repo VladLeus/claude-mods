@@ -2,7 +2,7 @@
  * The size of a ticket, a layer 7 module: the four-score vector, its size and class against the repo threshold, the
  * planning modes a repo's frameworks offer, and the framework or GSD path a size maps to in each mode.
  */
-import type { FrameworkId, GsdPath, PlanningMode, ProductScores, SizeVector, Sizing } from '../../types'
+import type { FrameworkId, GsdPath, PlanningMode, ProductScores, SizeClass, SizeVector, Sizing } from '../../types'
 import { SUPPORTED_IDS } from '../core/framework-id'
 import { isObject } from '../core/json'
 import { PROMPTS } from '../locales/prompts'
@@ -105,20 +105,39 @@ export function pickFor(isLargeTicket: boolean, mode: PlanningMode, sizing: Sizi
   return { framework, gsdPath: framework === 'gsd' ? gsdPath : null }
 }
 
-/** The size of the vector, its class at the threshold, then the pick in each mode given, as the repo offers them. */
-export function sizeText(vector: SizeVector, sizing: Sizing, modes: readonly PlanningMode[]): string {
-  const isLargeTicket = isLarge(vector, sizing.threshold)
-  const size = fill(PROMPTS.inboxSize, {
-    size: sizeOf(vector),
-    sizeClass: isLargeTicket ? 'large' : 'small',
-    threshold: sizing.threshold,
-  })
+/** The size computed from a vector, if any, the class, and the pin that set the class instead of the threshold. */
+export type SizeVerdict = {
+  readonly size: number | null
+  readonly large: boolean
+  readonly pinned: SizeClass | null
+}
+
+/** A pin sets the class whatever the vector; with no pin the vector's size sets it at the threshold; else null. */
+export function sizeClassOf(vector: SizeVector | null, threshold: number, pin: SizeClass | null): SizeVerdict | null {
+  if (pin !== null) return { size: vector === null ? null : sizeOf(vector), large: pin === 'large', pinned: pin }
+  if (vector === null) return null
+
+  return { size: sizeOf(vector), large: isLarge(vector, threshold), pinned: null }
+}
+
+/** A verdict with no size always comes from a pin, since with no pin the size sets the class. */
+function sizeLine(verdict: SizeVerdict, threshold: number): string {
+  const sizeClass = verdict.large ? 'large' : 'small'
+  const { size } = verdict
+  if (size === null) return fill(PROMPTS.inboxSizePinnedOnly, { sizeClass })
+  if (verdict.pinned !== null) return fill(PROMPTS.inboxSizePinned, { sizeClass, size })
+
+  return fill(PROMPTS.inboxSize, { size, sizeClass, threshold })
+}
+
+/** The verdict's size and class, then the pick in each mode given, as the repo offers them. */
+export function sizeText(verdict: SizeVerdict, sizing: Sizing, modes: readonly PlanningMode[]): string {
   const picks = modes.map(mode => {
-    const { framework, gsdPath } = pickFor(isLargeTicket, mode, sizing)
+    const { framework, gsdPath } = pickFor(verdict.large, mode, sizing)
     if (gsdPath === null) return fill(PROMPTS.inboxSizePick, { mode, framework })
 
     return fill(PROMPTS.inboxSizePickGsd, { mode, gsdPath })
   })
 
-  return [size, ...picks].join(' ')
+  return [sizeLine(verdict, sizing.threshold), ...picks].join(' ')
 }

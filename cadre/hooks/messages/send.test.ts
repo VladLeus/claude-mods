@@ -345,7 +345,7 @@ describe('parseSendInput: the fields each kind takes', () => {
   })
 
   test('the stamps cadre adds are never read from the input', () => {
-    const stamps = { size: 0.1, large: false, planPath: 'x.md', method: 'ask' }
+    const stamps = { size: 0.1, large: false, pinned: 'small', planPath: 'x.md', method: 'ask' }
     const input = parseSendInput({ ...TASK_INPUT, ...stamps }, BE, TEAM)
 
     expect(input).toEqual(parseSendInput(TASK_INPUT, BE, TEAM))

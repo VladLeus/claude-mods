@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { SizeVector, Sizing } from '../../types'
+import type { PlanningMode, SizeVector, Sizing } from '../../types'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import {
@@ -10,11 +10,13 @@ import {
   parseScore,
   parseVector,
   pickFor,
+  sizeClassOf,
   sizeOf,
   sizeText,
   SP_METHOD,
   SP_PLAN_DIR,
 } from './sizing'
+import type { SizeVerdict } from './sizing'
 
 const BOTH: Sizing = { threshold: 0.5, mapping: { small: 'superpowers', large: 'gsd' }, rubric: '.cadre/sizing.md' }
 const GSD_ONLY: Sizing = { threshold: 0.5, mapping: { small: 'gsd', large: 'gsd' }, rubric: '.cadre/sizing.md' }
@@ -22,6 +24,11 @@ const GSD_ONLY: Sizing = { threshold: 0.5, mapping: { small: 'gsd', large: 'gsd'
 /** A vector with every dimension at `score`. */
 function even(score: number): SizeVector {
   return { scope: score, complexity: score, risk: score, effort: score }
+}
+
+/** sizeText of a verdict; '' when there is none. */
+function textOf(verdict: SizeVerdict | null, sizing: Sizing, modes: readonly PlanningMode[]): string {
+  return verdict === null ? '' : sizeText(verdict, sizing, modes)
 }
 
 describe('sizeOf and isLarge', () => {
@@ -120,7 +127,7 @@ describe('sizeText', () => {
   const vector = { scope: 0.2, complexity: 0.3, risk: 0.4, effort: 0.3 }
 
   test('the size, its class at the threshold, then the pick of each mode it is given', () => {
-    expect(sizeText(vector, BOTH, ['gsd-epic', 'ticket'])).toBe(
+    expect(textOf(sizeClassOf(vector, 0.5, null), BOTH, ['gsd-epic', 'ticket'])).toBe(
       [
         fill(PROMPTS.inboxSize, { size: 0.4, sizeClass: 'small', threshold: 0.5 }),
         fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'quick' }),
@@ -130,13 +137,53 @@ describe('sizeText', () => {
   })
 
   test('a mode the repo does not offer is not named, and with no mode only the size is', () => {
-    expect(sizeText(vector, GSD_ONLY, ['ticket'])).toBe(
+    expect(textOf(sizeClassOf(vector, 0.5, null), GSD_ONLY, ['ticket'])).toBe(
       [
         fill(PROMPTS.inboxSize, { size: 0.4, sizeClass: 'small', threshold: 0.5 }),
         fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'quick' }),
       ].join(' '),
     )
-    expect(sizeText(vector, BOTH, [])).toBe(fill(PROMPTS.inboxSize, { size: 0.4, sizeClass: 'small', threshold: 0.5 }))
+    expect(textOf(sizeClassOf(vector, 0.5, null), BOTH, [])).toBe(
+      fill(PROMPTS.inboxSize, { size: 0.4, sizeClass: 'small', threshold: 0.5 }),
+    )
+  })
+})
+
+describe('sizeClassOf', () => {
+  const vector = { scope: 0.2, complexity: 0.6, risk: 0.3, effort: 0.4 }
+
+  test('no vector and no pin give no verdict; a vector gives its size and its class at the threshold', () => {
+    expect(sizeClassOf(null, 0.5, null)).toBeNull()
+    expect(sizeClassOf(vector, 0.5, null)).toEqual({ size: 0.6, large: true, pinned: null })
+    expect(sizeClassOf(vector, 0.7, null)).toEqual({ size: 0.6, large: false, pinned: null })
+  })
+
+  test("a pin sets the class whatever the vector and the threshold; the size is the vector's or null", () => {
+    expect(sizeClassOf(vector, 0.5, 'small')).toEqual({ size: 0.6, large: false, pinned: 'small' })
+    expect(sizeClassOf(vector, 0.7, 'large')).toEqual({ size: 0.6, large: true, pinned: 'large' })
+    expect(sizeClassOf(null, 0.5, 'large')).toEqual({ size: null, large: true, pinned: 'large' })
+  })
+
+  test('sizeText names the size at the threshold, the pin with the computed size, or the pin alone', () => {
+    expect(textOf(sizeClassOf(vector, 0.5, null), BOTH, ['ticket'])).toBe(
+      [
+        fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'large', threshold: 0.5 }),
+        fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'phase' }),
+      ].join(' '),
+    )
+    expect(textOf(sizeClassOf(vector, 0.5, 'small'), BOTH, ['gsd-epic', 'ticket'])).toBe(
+      [
+        fill(PROMPTS.inboxSizePinned, { sizeClass: 'small', size: 0.6 }),
+        fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'quick' }),
+        fill(PROMPTS.inboxSizePick, { mode: 'ticket', framework: 'superpowers' }),
+      ].join(' '),
+    )
+    expect(textOf(sizeClassOf(null, 0.5, 'large'), BOTH, ['ticket'])).toBe(
+      [
+        fill(PROMPTS.inboxSizePinnedOnly, { sizeClass: 'large' }),
+        fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'phase' }),
+      ].join(' '),
+    )
   })
 })
 

@@ -870,6 +870,7 @@ export type InboxEntryFields = {
   readonly tickets?: readonly string[]
   readonly size?: number
   readonly large?: boolean
+  readonly pinned?: SizeClass
   readonly planPath?: string
   readonly method?: string
 }

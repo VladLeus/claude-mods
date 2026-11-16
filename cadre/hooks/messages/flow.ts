@@ -16,6 +16,7 @@ import type {
   RoleContext,
   RoleSession,
   SessionLink,
+  SizeClass,
   TeamView,
   ToolOutcome,
 } from '../../types'
@@ -47,6 +48,7 @@ import {
   recordLine,
   sessionFilePath,
   sessionRecordText,
+  ticketPinOf,
 } from './record'
 import {
   INBOX_APPEND_TIMEOUT_MS,
@@ -55,7 +57,8 @@ import {
   parseSendInput,
   SUBJECT_MAX_CHARS,
 } from './send'
-import { isLarge, modesOffered, sizeOf, sizeText, SP_METHOD, SP_PLAN_DIR } from './sizing'
+import { modesOffered, sizeClassOf, sizeText, SP_METHOD, SP_PLAN_DIR } from './sizing'
+import type { SizeVerdict } from './sizing'
 import { wakeText } from './wake'
 
 /** The most bytes of a session.json that are read. */
@@ -232,22 +235,67 @@ async function deliver(
 }
 
 /**
- * The kind fields with cadre's stamps: an entry with a vector gets its size and class at the team's threshold, and a
- * superpowers task the plan file of its receiver and ticket and the one method a worker executes it with.
+ * The pin a task inherits: that of the last ticket of its key in the sender's own inbox; null for any other kind or
+ * when the inbox cannot be read.
  */
-function stampedFields(fields: InboxEntryFields, to: string, team: TeamView): InboxEntryFields {
+async function taskPinOf(
+  io: InitIo,
+  session: RoleSession,
+  kindName: MessageKind,
+  fields: InboxEntryFields,
+): Promise<SizeClass | null> {
+  const { ticketKey } = fields
+  if (kindName !== 'task' || ticketKey === undefined) return null
+  const events = await readOwnInbox(io, session)
+
+  return events === null ? null : ticketPinOf(events, ticketKey)
+}
+
+/** A verdict's stamps; none without a computed size, since a stored entry holds the size and the class together. */
+function sizeStamps(verdict: SizeVerdict | null): InboxEntryFields {
+  if (verdict === null || verdict.size === null) return {}
+  const { size, large, pinned } = verdict
+
+  return pinned === null ? { size, large } : { size, large, pinned }
+}
+
+/**
+ * The kind fields with cadre's stamps: a task gets its size and its class from the pin it inherits, else from its
+ * vector at the team's threshold, and a superpowers task the plan file of its receiver and ticket and the one method a
+ * worker executes it with.
+ */
+function stampedFields(
+  kindName: MessageKind,
+  fields: InboxEntryFields,
+  to: string,
+  team: TeamView,
+  pin: SizeClass | null,
+): InboxEntryFields {
   const { vector, use, ticketKey } = fields
-  const sized =
-    vector === undefined ? fields : { ...fields, size: sizeOf(vector), large: isLarge(vector, team.sizing.threshold) }
+  const verdict = kindName === 'task' ? sizeClassOf(vector ?? null, team.sizing.threshold, pin) : null
+  const sized = { ...fields, ...sizeStamps(verdict) }
   if (use?.framework !== 'superpowers' || ticketKey === undefined) return sized
 
   return { ...sized, planPath: `${SP_PLAN_DIR}/${to}-${ticketKey}.md`, method: SP_METHOD }
 }
 
+/** The verdict a send result ends with: a task's, and a ticket's when it is pinned; null for any other kind. */
+function resultVerdictOf(
+  kindName: MessageKind,
+  fields: InboxEntryFields,
+  threshold: number,
+  pin: SizeClass | null,
+): SizeVerdict | null {
+  if (kindName === 'task') return sizeClassOf(fields.vector ?? null, threshold, pin)
+  if (kindName === 'ticket') return sizeClassOf(null, threshold, fields.pin ?? null)
+
+  return null
+}
+
 /**
  * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A
- * session whose own inbox folder is absent or unsafe is refused before anything runs; a sent vector's result ends with
- * its size and the pick in each mode the repo offers.
+ * session whose own inbox folder is absent or unsafe is refused before anything runs; the result of a task or a
+ * pinned ticket ends with its size class and the pick in each mode the repo offers.
  */
 export async function runInboxSend(
   io: InitIo,
@@ -262,14 +310,15 @@ export async function runInboxSend(
   if (input.kind === 'error') return deny(input.message)
   const own = await ownInboxRefusal(io, session)
   if (own !== null) return deny(own)
+  const pin = await taskPinOf(io, session, input.kindName, input.fields)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
-  const fields = stampedFields(input.fields, input.to, team)
+  const fields = stampedFields(input.kindName, input.fields, input.to, team, pin)
   const outcome = await deliver(io, host, link, session, at, { ...input, fields })
-  const { vector } = fields
-  if (outcome.kind === 'deny' || vector === undefined) return outcome
+  const verdict = resultVerdictOf(input.kindName, input.fields, team.sizing.threshold, pin)
+  if (outcome.kind === 'deny' || verdict === null) return outcome
 
-  return { kind: 'result', text: `${outcome.text} ${sizeText(vector, team.sizing, modesOffered(team.frameworks))}` }
+  return { kind: 'result', text: `${outcome.text} ${sizeText(verdict, team.sizing, modesOffered(team.frameworks))}` }
 }
 
 /**

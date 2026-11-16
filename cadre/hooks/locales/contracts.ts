@@ -77,7 +77,7 @@ export const INBOX_ENTRY_FIELDS: readonly string[] = Object.freeze([
 ])
 
 /** The fields cadre stamps on an entry itself, after the kind fields, and never reads from a model's input. */
-export const INBOX_ENTRY_STAMPS: readonly string[] = Object.freeze(['size', 'large', 'planPath', 'method'])
+export const INBOX_ENTRY_STAMPS: readonly string[] = Object.freeze(['size', 'large', 'pinned', 'planPath', 'method'])
 
 /**
  * The answer the engine gives a dialog submitted from its notes field with no option chosen (seen on 2.1.318, RF-01):

@@ -10,6 +10,7 @@ import type {
   InboxItem,
   InboxMark,
   InboxState,
+  SizeClass,
   SizeVector,
   TaskUse,
 } from '../../types'
@@ -31,6 +32,7 @@ import {
   MESSAGE_KINDS,
   NOTE_MAX_CHARS,
   REPORT_FORM_MAX_CHARS,
+  SIZE_PINS,
   SPEC_PATH_MAX_CHARS,
   VERIFICATION_MAX_CHARS,
 } from './send'
@@ -89,7 +91,7 @@ function orderedUse(use: TaskUse): TaskUse {
 /** The kind fields and stamps of an entry in the record's fixed order, each nested object in its own fixed order. */
 function orderedFields(entry: InboxEntry): InboxEntryFields {
   const { ticketKey, scores, pin, reportForm, vector, use, specPath, outcome, changes, verification } = entry
-  const { reason, frameworkUsed, docPaths, openQuestions, mode, tickets, size, large, planPath, method } = entry
+  const { reason, frameworkUsed, docPaths, openQuestions, mode, tickets, size, large, pinned, planPath, method } = entry
 
   return {
     ...(ticketKey === undefined ? {} : { ticketKey }),
@@ -110,6 +112,7 @@ function orderedFields(entry: InboxEntry): InboxEntryFields {
     ...(tickets === undefined ? {} : { tickets }),
     ...(size === undefined ? {} : { size }),
     ...(large === undefined ? {} : { large }),
+    ...(pinned === undefined ? {} : { pinned }),
     ...(planPath === undefined ? {} : { planPath }),
     ...(method === undefined ? {} : { method }),
   }
@@ -191,6 +194,15 @@ function sizeStampsOf(value: Readonly<Record<string, unknown>>): InboxEntryField
   return { size: score, large }
 }
 
+/** The pin stamp of a stored entry: absent, or a pin. */
+function pinStampOf(value: Readonly<Record<string, unknown>>): InboxEntryFields | null {
+  const { pinned } = value
+  if (pinned === undefined) return {}
+  const pin = SIZE_PINS.find(known => known === pinned)
+
+  return pin === undefined ? null : { pinned: pin }
+}
+
 /** The plan stamps of a stored entry: both absent, or a plan file under the superpowers plan folder and the method. */
 function planStampsOf(value: Readonly<Record<string, unknown>>): InboxEntryFields | null {
   const { planPath, method } = value
@@ -214,11 +226,12 @@ function entryOf(value: Readonly<Record<string, unknown>>): InboxEntry | null {
   if (replyTo !== undefined && !isEntryId(replyTo)) return null
   const fields = kindFieldsOf(kindName, value)
   const sized = sizeStampsOf(value)
+  const pinned = pinStampOf(value)
   const planned = planStampsOf(value)
-  if (fields.kind === 'error' || sized === null || planned === null) return null
+  if (fields.kind === 'error' || sized === null || pinned === null || planned === null) return null
   const entry: InboxEntry = { v: 1, type: CONTRACTS.inboxEntryType, id, at, from, to, kind: kindName, subject, body }
 
-  return { ...entry, ...(replyTo === undefined ? {} : { replyTo }), ...fields.fields, ...sized, ...planned }
+  return { ...entry, ...(replyTo === undefined ? {} : { replyTo }), ...fields.fields, ...sized, ...pinned, ...planned }
 }
 
 function markOf(value: Readonly<Record<string, unknown>>): InboxMark | null {
@@ -334,6 +347,13 @@ export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
   })
 }
 
+/** The pin of the last ticket with this key in the inbox; null when that ticket has none or no ticket has the key. */
+export function ticketPinOf(events: readonly InboxEvent[], ticketKey: string): SizeClass | null {
+  const tickets = events.filter(isEntry).filter(entry => entry.kind === 'ticket' && entry.ticketKey === ticketKey)
+
+  return tickets.at(-1)?.pin ?? null
+}
+
 /** The states inbox_read leaves out unless it is asked for all items. */
 export const CLOSED_STATES: readonly InboxState[] = Object.freeze(['done', 'rejected'])
 
@@ -347,13 +367,15 @@ function listShown(items: readonly string[], separator: string): string {
   return items.length === 0 ? PROMPTS.inboxItemNone : items.map(item => reportText(item)).join(separator)
 }
 
-/** The four scores, with the size and its class when the entry holds the size stamps. */
+/** The four scores, with the size and its class when the entry holds the size stamps, and the pin that set it. */
 function vectorShown(entry: InboxEntry, vector: SizeVector): string {
   const shown = fill(PROMPTS.inboxItemVector, vector)
-  const { size, large } = entry
+  const { size, large, pinned } = entry
   if (size === undefined || large === undefined) return shown
+  const sizeClass = large ? 'large' : 'small'
+  if (pinned !== undefined) return fill(PROMPTS.inboxItemSizedPinned, { vector: shown, sizeClass, size })
 
-  return fill(PROMPTS.inboxItemSized, { vector: shown, size, sizeClass: large ? 'large' : 'small' })
+  return fill(PROMPTS.inboxItemSized, { vector: shown, size, sizeClass })
 }
 
 function useShown(use: TaskUse): string {

@@ -16,6 +16,7 @@ import {
   parseSessionRecord,
   recordLine,
   sessionRecordText,
+  ticketPinOf,
 } from './record'
 import {
   BODY_MAX_CHARS,
@@ -234,6 +235,20 @@ describe('the kind fields of an entry on its line', () => {
       parseInboxLine(JSON.stringify({ ...TASK, planPath: '../x.md' })),
     ]).toEqual([null, null, null, null, null])
   })
+
+  test('a pinned stamp is written after large and read back; a stored pinned medium makes the line null', () => {
+    const pinned: InboxEntry = { ...TASK, large: false, pinned: 'small' }
+
+    expect(parseInboxLine(recordLine(pinned))).toEqual(pinned)
+    expect(Object.keys(parseInboxLine(recordLine(pinned)) ?? {}).slice(13)).toEqual([
+      'size',
+      'large',
+      'pinned',
+      'planPath',
+      'method',
+    ])
+    expect(parseInboxLine(JSON.stringify({ ...TASK, pinned: 'medium' }))).toBeNull()
+  })
 })
 
 describe('parseInbox and foldInbox', () => {
@@ -422,6 +437,23 @@ describe('inboxReadText of the kind fields', () => {
     expect(linesOf(brief).slice(2)).toEqual([field('mode', 'gsd-epic'), field('tickets', 'PROJ-2, PROJ-3')])
   })
 
+  test('a task whose class a pin set shows the pinned class and the computed size on its vector line', () => {
+    const task: InboxEntry = {
+      ...A,
+      kind: 'task',
+      ticketKey: 'PROJ-2',
+      vector: VECTOR,
+      use: { framework: 'gsd', gsdPath: 'quick' },
+      size: 0.6,
+      large: false,
+      pinned: 'small',
+    }
+
+    expect(inboxReadText([unread(task)], true).split('\n')[3]).toBe(
+      'vector: scope 0.4, complexity 0.6, risk 0.3, effort 0.5; size small (pinned; computed 0.6)',
+    )
+  })
+
   test('a specPath at its cap of 200 is shown whole', () => {
     const specPath = `docs/${'a'.repeat(192)}.md`
     const task: InboxEntry = {
@@ -542,6 +574,20 @@ describe('parseReadInput', () => {
     expect(parseReadInput({ id: A.id })).toEqual({ kind: 'ok', all: false, id: A.id })
     expect(parseReadInput({ all: 'yes' })).toEqual({ kind: 'error', message: PROMPTS.inboxAllNotBoolean })
     expect(parseReadInput({ id: 'not-an-id' })).toEqual({ kind: 'error', message: PROMPTS.inboxReadIdBad })
+  })
+})
+
+describe('ticketPinOf', () => {
+  test('the pin of the last ticket of the key, even none; a task or a ticket of another key does not count', () => {
+    const large: InboxEntry = { ...B, ticketKey: 'PROJ-2', pin: 'large' }
+    const small: InboxEntry = { ...B, id: 'pm-3000-89abcdef', at: 3000, ticketKey: 'PROJ-2', pin: 'small' }
+    const unpinned: InboxEntry = { ...B, id: 'pm-4000-89abcdef', at: 4000, ticketKey: 'PROJ-2' }
+    const other: InboxEntry = { ...B, id: 'pm-5000-89abcdef', at: 5000, ticketKey: 'PROJ-3', pin: 'large' }
+    const task: InboxEntry = { ...A, id: 'tl-6000-0123abcd', at: 6000, kind: 'task', ticketKey: 'PROJ-2' }
+
+    expect(ticketPinOf([large, small, other, task], 'PROJ-2')).toBe('small')
+    expect(ticketPinOf([large, small, unpinned], 'PROJ-2')).toBeNull()
+    expect(ticketPinOf([large, task], 'PROJ-9')).toBeNull()
   })
 })
 
