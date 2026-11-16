@@ -32,6 +32,7 @@ export const WAIT_REASONS: readonly WaitReason[] = [
   'workflow-end',
   'subagent-result',
   'background-task',
+  'idle-inbox',
   'other',
 ]
 const MAX_WAIT_FROM = 64
@@ -677,6 +678,11 @@ export function afterTurn(
   return 'continue'
 }
 
+/** The heartbeat's time stop, also for a run that waits or is parked. */
+export function isTimeUp(run: Run, now: number): boolean {
+  return (run.phase === 'running' || run.phase === 'waiting' || run.phase === 'awaiting') && now >= run.until
+}
+
 /** Whether a tool result mid-turn should carry the wrap-up instruction now. */
 export function wrapMidTurn(
   run: Run,
@@ -716,11 +722,7 @@ function waitField(value: unknown, name: string, max: number): { value: string |
   return { value: text || null, cut: whole.length > max }
 }
 
-/**
- * The wait_for tool's input as a wait starting now: a known reason, optional
- * `from` and `note`, and an optional `timeout` ("30m", "1h") after which
- * autopilot checks once, never later than the run's end.
- */
+/** The wait_for input as a wait starting now; a timeout checks once, never past the run's end. */
 export function parseWaitInput(
   input: unknown,
   now: number,

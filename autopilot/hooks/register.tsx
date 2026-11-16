@@ -56,6 +56,7 @@ import {
   isIdleTurn,
   isLiveFinishedValue,
   isModeDeny,
+  isTimeUp,
   isValidHandoffPath,
   kickoffPrompt,
   limitAction,
@@ -1080,7 +1081,7 @@ export const register: Register = on => {
         const now = await $.clock.now()
         // The clock read is an await: the run may have ended meanwhile.
         if (!run) return
-        if ((run.phase === 'running' || run.phase === 'waiting' || run.phase === 'awaiting') && now >= run.until) {
+        if (isTimeUp(run, now)) {
           const instruction = await enterFinal($, 'time')
           if (instruction) queue($, instruction)
           return
