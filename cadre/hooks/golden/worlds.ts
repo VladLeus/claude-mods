@@ -221,9 +221,14 @@ export function queuedIo(world: MemWorld, answers: Readonly<Record<string, strin
   return { ...run, io }
 }
 
+/** A GSD project's config with no key set, so init asks each GSD hunk. */
+const GSD_CONFIG = { '/repo/.planning/config.json': '{}' }
+
 /** A world where every per-role step asks: two frameworks in use, the secret world's names, GSD hunks to answer. */
 function everyStepWorld(): MemWorld {
-  return { ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }
+  const world = secretWorld()
+
+  return { ...world, files: { ...world.files, ...GSD_CONFIG }, facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }
 }
 
 /**
@@ -308,6 +313,7 @@ export const GOLDEN_WORLDS = Object.freeze({
         ...PROVEN_FACTS,
         facts: { ...PROVEN_FACTS.facts, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] },
       },
+      files: { ...FULL_FILES, ...GSD_CONFIG },
     }),
     answers: INIT_ANSWERS,
   },
@@ -527,7 +533,9 @@ export async function regenWorld(
 
 /** The applied team of BE and PM that stores None in cadre.json while GSD is in use, for /cadre frameworks. */
 export async function frameworksWorld(): Promise<MemWorld> {
-  return regenWorld(team, { framework: 'none', frameworks: [] }, gitWorld({ facts: GOLDEN_WORLDS.gsd.world.facts }))
+  const base = gitWorld({ facts: GOLDEN_WORLDS.gsd.world.facts, files: GSD_CONFIG })
+
+  return regenWorld(team, { framework: 'none', frameworks: [] }, base)
 }
 
 /** BE alone on the built-in default, as `.cadre/cadre.json` lists it. */

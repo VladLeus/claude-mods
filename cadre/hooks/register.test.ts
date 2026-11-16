@@ -324,6 +324,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
       '/repo/docs': [entry('superpowers', 'dir')],
     },
     files: {
+      '/repo/.planning/config.json': '{}',
       '/home/u/.claude/gsd-core/VERSION': '1.16.0\n',
       '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs': 'const packageName = "@opengsd/gsd-core";\n',
       '/home/u/.claude/gsd-core/bin/lib/cli-exit.cjs': '',

@@ -154,12 +154,13 @@ function hunkInput(state: InitState): HunkInput | null {
   }
 }
 
-/** The hunks the offers give, in their order: each config read so far gives the candidates of its offer. */
+/** The hunks the offers give, in their order; a config that does not exist gives none. */
 function candidatesOf(offers: readonly AutonomyHunks[], reads: readonly PortRead[]): HunkCandidate[] {
   return offers.flatMap((offer, at) => {
     const read = reads[at]
+    if (read === undefined || read.state === 'absent') return []
 
-    return read === undefined ? [] : hunkCandidates(offer.proposals, read)
+    return hunkCandidates(offer.proposals, read)
   })
 }
 

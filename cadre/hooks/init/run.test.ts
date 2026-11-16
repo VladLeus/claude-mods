@@ -2978,7 +2978,7 @@ describe('carryStep', () => {
 
 describe('hunkStep', () => {
   test('init asks the hunks of GSD roles after the carried settings, right before the git policy', async () => {
-    const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, PARTS_DECLINED)
+    const run = memIo(everyStepWorld(), PARTS_DECLINED)
     const reply = await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const policyAt = asked.indexOf(GIT_POLICY_QUESTION)
@@ -3010,7 +3010,10 @@ describe('hunkStep', () => {
     await runInit(plain.io, { dryRun: true })
     expect(plain.asked.some(question => question.startsWith('.planning/config.json:'))).toBe(false)
     expect(plain.logged.some(text => text.startsWith('attended:'))).toBe(false)
-    const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
+    const world = gitWorld({
+      facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null },
+      files: { '/repo/.planning/config.json': '{}' },
+    })
     const dismissed = memIo(world, answersWithout('.planning/config.json:'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(HUNK_DISMISSED_REASON))
     expect(dismissed.logged).not.toContain(HUNK_DISMISSED_REASON)
@@ -3133,7 +3136,10 @@ function dismissedAt(world: MemWorld, prefix: string, question: string, reason: 
 
 describe('runInit cancel reasons (A1)', () => {
   test('a dismissal at each of the twelve steps cancels init and prints its reason once, in the reply', async () => {
-    const gsd = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
+    const gsd = gitWorld({
+      facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null },
+      files: { '/repo/.planning/config.json': '{}' },
+    })
     const sentryNone = { 'Which roles get all the MCP servers': 'None', 'Which roles get codex': 'None' }
     const memory: CancelCase = {
       world: secretWorld(),
@@ -3922,7 +3928,13 @@ function between(asked: readonly string[], question: string): string[] {
 
 /** A world where every per-role step asks: two frameworks in use, the secret world's names, GSD hunks to answer. */
 function everyStepWorld(): MemWorld {
-  return { ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }
+  const world = secretWorld()
+
+  return {
+    ...world,
+    files: { ...world.files, '/repo/.planning/config.json': '{}' },
+    facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null },
+  }
 }
 
 /**
@@ -7682,7 +7694,9 @@ describe('runFrameworks', () => {
 
   /** An applied team that stores None while GSD is in use; `over` changes its cadre.json. */
   async function storedNoneWorld(over: Partial<CadreState> = {}): Promise<MemWorld> {
-    return regenWorld(TEAM, { framework: 'none', frameworks: [], ...over }, gitWorld({ facts: GSD_IN_USE }))
+    const base = gitWorld({ facts: GSD_IN_USE, files: { '/repo/.planning/config.json': '{}' } })
+
+    return regenWorld(TEAM, { framework: 'none', frameworks: [], ...over }, base)
   }
 
   /** An epic worktree of the main checkout /m as /cadre epic made it: its .git file and the epic record. */

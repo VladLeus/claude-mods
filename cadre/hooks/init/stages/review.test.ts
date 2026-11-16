@@ -379,7 +379,10 @@ describe('the review stage (D-230)', () => {
     const going = nextStage(asking, { kind: 'answer', text: 'hunks' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['hunks', 'review', 'hunks'])
     expect(going.effect.kind === 'io' ? going.effect.call.id : null).toBe('read-repo-file')
-    const read = nextStage(going, { kind: 'io', result: { id: 'read-repo-file', result: { state: 'absent' } } })
+    const read = nextStage(going, {
+      kind: 'io',
+      result: { id: 'read-repo-file', result: { state: 'text', text: '{}' } },
+    })
     const back = driven(read, ['Accept', 'Accept']).state
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.hunks?.map(hunk => [hunk.key, hunk.isAccepted])).toEqual([
