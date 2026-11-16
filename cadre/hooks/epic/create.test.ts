@@ -923,7 +923,7 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
     const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
     const kickoff = (id: string) => lastWrite(run, `${BARE_WORKTREE}/.cadre/${id}/.runtime/kickoff.txt`) ?? ''
 
-    expect(kickoff('be')).toContain('session-answer')
+    expect(kickoff('be')).toContain('idle-inbox')
     expect(kickoff('be')).toContain('cadre-tl')
     expect(kickoff('be')).not.toContain(' --ask-user')
     expect(kickoff('pm')).toContain('then feed cadre-tl ticket by ticket.')
