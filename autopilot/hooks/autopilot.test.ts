@@ -26,6 +26,7 @@ import {
   availMode,
   availStatusLines,
   awayUntil,
+  callSignature,
   canDeliver,
   canRestart,
   combinedPingText,
@@ -57,6 +58,7 @@ import {
   isDoneAnswer,
   isGraceEligible,
   isGraceLive,
+  isIdleTurn,
   isLiveFinishedValue,
   isModeDeny,
   isValidHandoffPath,
@@ -742,6 +744,33 @@ describe('after a turn', () => {
   test('two turns without tools pause it', async () => {
     expect(afterTurn(run({ idleTurns: 0 }), 10, 30, false)).toBe('continue')
     expect(afterTurn(run({ idleTurns: 1 }), 10, 30, false)).toBe('pause')
+  })
+
+  test('a turn that repeats the calls of the turn before counts as idle; any difference resets it', async () => {
+    expect(isIdleTurn(null, [])).toBe(true)
+    expect(isIdleTurn(['a'], [])).toBe(true)
+    expect(isIdleTurn(null, ['a'])).toBe(false)
+    expect(isIdleTurn(['a', 'b'], ['a', 'b'])).toBe(true)
+    expect(isIdleTurn(['a', 'b'], ['b', 'a'])).toBe(false)
+    expect(isIdleTurn(['a'], ['a', 'a'])).toBe(false)
+    expect(isIdleTurn(['a', 'b'], ['a'])).toBe(false)
+    const s = callSignature({ tool: 'mcp__notes__check' })
+    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, !isIdleTurn([s], [s]))).toBe('pause')
+    expect(afterTurn(run({ idleTurns: 0 }), 10, 30, !isIdleTurn([s], [s]))).toBe('continue')
+  })
+
+  test("a call's signature is its tool and its input, without the engine's per-call keys", async () => {
+    const check = callSignature({ tool: 'mcp__notes__check', tool_use_id: 'toolu_1' })
+    expect(callSignature({ tool: 'mcp__notes__check', tool_use_id: 'toolu_2' })).toBe(check)
+    const listed = callSignature({ tool: 'Bash', command: 'ls', description: 'list' })
+    expect(callSignature({ tool: 'Bash', description: 'list', command: 'ls' })).toBe(listed)
+    const ls = callSignature({ tool: 'Bash', command: 'ls' })
+    const withKeys = { tool: 'Bash', command: 'ls', agentId: 'a1', requestMeta: { k: 'v' }, consent: 'yes' }
+    expect(callSignature(withKeys)).toBe(ls)
+    expect(callSignature({ tool: 'Bash', command: 'pwd' })).not.toBe(ls)
+    expect(callSignature({ tool: 'Read', command: 'ls' })).not.toBe(ls)
+    expect(callSignature(null)).toBe('')
+    expect(callSignature('Bash')).toBe('')
   })
 
   test('phases: restart resumes, final finishes, wrapping and paused wait', async () => {
