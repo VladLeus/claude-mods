@@ -630,6 +630,21 @@ describe('copying what .worktreeinclude names into the epic worktree', () => {
     expect([record?.copies, record?.links]).toEqual([[], ['node_modules']])
   })
 
+  test('a path named below an ignored folder records the walked folder; with no walk none is recorded', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/shared/\n' })
+    const dirs = { ...world.dirs, '/repo/thoughts': [entry('notes.md'), entry('shared', 'dir')] }
+    const rules = [rule(INCLUDED_ARGV('/repo'), 0, 'thoughts/shared/\0'), ...INCLUDE_RULES]
+    const run = await epic({ ...world, dirs }, rules, 'PROJ-1', '')
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+    const whole = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    const plain = await epic(whole, INCLUDE_RULES, 'PROJ-1', '')
+
+    expect([record?.walked, record?.copies]).toEqual([['thoughts'], ['thoughts/shared']])
+    expect(record?.links).toContain('thoughts/notes.md')
+    expect(lastWrite(plain, BARE_RECORD)).not.toContain('walked')
+    expect(parseEpicRecord(lastWrite(plain, BARE_RECORD) ?? '')?.copies).toEqual(['thoughts'])
+  })
+
   test('with no .worktreeinclude there is no INCLUDED_ARGV run, and thoughts stays a link', async () => {
     const run = await epic(await includeWorld(), INCLUDE_RULES, 'PROJ-1', '')
     const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')

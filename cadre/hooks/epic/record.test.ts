@@ -16,6 +16,17 @@ describe('the epic record (D-164)', () => {
       expect([path, bad({ links: [path] }), bad({ copies: [path] })]).toEqual([path, null, null])
     }
   })
+
+  test('the walked folders read back; a record without them has no walked key; a bad list refuses the record', () => {
+    const walked: EpicRecord = { ...RECORD, copies: ['thoughts/shared'], walked: ['thoughts'] }
+    const bad = (value: unknown) => parseEpicRecord(JSON.stringify({ ...walked, walked: value }))
+
+    expect(parseEpicRecord(epicRecordText(walked))).toEqual(walked)
+    expect(Object.keys(parseEpicRecord(epicRecordText(RECORD)) ?? {})).not.toContain('walked')
+    for (const value of ['thoughts', null, [1], ['/etc'], ['a/../b']]) {
+      expect([value, bad(value)]).toEqual([value, null])
+    }
+  })
 })
 
 describe('safety net: epic helpers (A8)', () => {

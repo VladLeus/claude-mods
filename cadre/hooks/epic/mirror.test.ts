@@ -277,6 +277,20 @@ describe('what .worktreeinclude names in the mirror', () => {
     expect([plan.copies, plan.links]).toEqual([['thoughts/shared'], ['thoughts/local', 'thoughts/notes.md']])
   })
 
+  test('the folders a named path below an ignored folder makes real are the walked ones, in plan order', () => {
+    const main = new Map([
+      ['', [entry('a', 'dir'), entry('thoughts', 'dir')]],
+      ['a', [entry('b', 'dir')]],
+      ['a/b', [entry('c', 'dir')]],
+      ['thoughts', [entry('shared', 'dir')]],
+    ])
+    const reuse = new Map([['', [entry('thoughts', 'dir')]]])
+
+    expect(planOf(['thoughts'], main, new Map(), ['thoughts/shared']).walked).toEqual(['thoughts'])
+    expect(planOf(['a'], main, new Map(), ['a/b/c']).walked).toEqual(['a', 'a/b'])
+    expect(planOf(['thoughts'], main, reuse, ['thoughts/shared']).walked).toEqual([])
+  })
+
   test('a named path the worktree lists already, as a folder or a link, gets no step, nor anything below it', () => {
     for (const listed of [entry('thoughts', 'dir'), link('thoughts')]) {
       const tree = new Map([['', [listed]]])
