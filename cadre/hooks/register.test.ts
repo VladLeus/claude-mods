@@ -26,6 +26,7 @@ import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
 import { PROMPTS } from './locales/prompts'
 import { fill, t } from './locales/t'
 import { sessionRecordText } from './messages/record'
+import { BODY_MAX_CHARS, CHANGES_MAX_CHARS, LIST_ITEM_MAX_CHARS, LIST_MAX_ITEMS } from './messages/send'
 import { inboxDirOf, inboxFolderLevels, inboxHomeOf, ROLE_ENV, ROOT_ENV } from './paths'
 import { autopilotReply } from './scan/autopilot'
 import { noStateReply, REGEN_NO_STATE, regenNoRole } from './team'
@@ -172,6 +173,8 @@ type HostLog = {
   readonly writes: string[]
   /** Each live send of a role world, as `<to> <text>`. */
   readonly sends: string[]
+  /** Each tool spec a role world registered, as the host got it. */
+  readonly toolSpecs: unknown[]
 }
 
 /**
@@ -217,6 +220,7 @@ function newLog(): HostLog {
     statuses: [],
     writes: [],
     sends: [],
+    toolSpecs: [],
   }
 }
 
@@ -738,6 +742,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   if (world.roleEnv !== undefined) {
     on('tool.register', async (_$, e) => {
       log.ops.push(`tool.register ${e.name}`)
+      log.toolSpecs.push(e)
 
       return { value: { tool: `mcp__cadre__${e.name}` } }
     })
@@ -4078,6 +4083,24 @@ describe('the inbox tools in a role session', () => {
       'tool.register inbox_mark',
     ])
     expect(log.writes).toEqual([ROLE_BE_SESSION])
+  })
+
+  test('a role session registers inbox_send with every cap in its schema and its description', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, beFolderWorld(), log)
+    await startSession($, on)
+    const at = (value: unknown, key: string): unknown => (isObject(value) ? value[key] : undefined)
+    const spec = log.toolSpecs.find(held => at(held, 'name') === 'inbox_send')
+    const properties = at(at(spec, 'inputSchema'), 'properties')
+    const description = at(spec, 'description')
+    const text = typeof description === 'string' ? description : ''
+
+    expect(at(at(properties, 'body'), 'maxLength')).toBe(BODY_MAX_CHARS)
+    expect(at(at(properties, 'changes'), 'maxLength')).toBe(CHANGES_MAX_CHARS)
+    expect(at(at(properties, 'openQuestions'), 'maxItems')).toBe(LIST_MAX_ITEMS)
+    expect(at(at(at(properties, 'openQuestions'), 'items'), 'maxLength')).toBe(LIST_ITEM_MAX_CHARS)
+    expect(text).toContain(`body ${BODY_MAX_CHARS}`)
+    expect(text).toContain(`changes ${CHANGES_MAX_CHARS}`)
   })
 
   test('a role session with no inbox folder writes nothing, and inbox_read and inbox_send refuse', async ($, on) => {
