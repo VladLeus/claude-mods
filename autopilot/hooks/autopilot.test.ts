@@ -885,11 +885,13 @@ describe('refusals while autopilot drives', () => {
   test('while away every refusal is logged, a mode refusal as deferred', async () => {
     expect(refusalLogText('Bash', ruleDeny)).toBe(`refused (passed through): Bash: ${ruleDeny}`)
     expect(refusalLogText('Write', dontAsk)).toBe(`deferred (refused by the permission mode): Write: ${dontAsk}`)
+    expect(refusalLogText('Bash', 'x'.repeat(400))).toBe(`refused (passed through): Bash: ${'x'.repeat(300)}`)
   })
 
-  test('every engine permission refusal shape is deferred', async () => {
+  test('mode, classifier and safety refusals are deferred', async () => {
     const texts = [
-      "Permission to use Bash has been denied because Claude Code is running in don't ask mode.",
+      dontAsk,
+      "Permission to use Bash with command ls has been denied because Claude Code is running in don't ask mode.",
       'Permission for this action was denied by the Claude Code auto mode classifier. Reason: pushes to main',
       'Permission for this action has been denied. Reason: outside the role',
       'Permission for this tool use was denied. It requires approval, and this session has no approval surface',
@@ -899,15 +901,22 @@ describe('refusals while autopilot drives', () => {
     for (const text of texts) expect(isModeDeny(text)).toBe(true)
   })
 
-  test("a hook's or a tool's own deny is not a permission refusal", async () => {
+  test("rule refusals and a hook's or a tool's own deny pass through", async () => {
     const texts = [
+      'Permission to use Bash with command printf probe-one has been denied.',
+      'Permission to use Write has been denied.',
+      'Permission to edit /repo/a.ts has been denied.',
+      'Permission to read /etc/hosts has been denied.',
+      'Permission denied for: git push origin main',
+      'Skill execution blocked by permission rules',
+      'File is in a directory that is denied by your permission settings.',
+      "Claude requested permissions to write to /repo/a.ts, but you haven't granted it yet.",
       'Permission denied by hook',
       'Permission denied for Bash: blocked by a hook',
-      'The cadre inbox tool failed. Try again.',
+      'The notes tool failed. Try again.',
       'Autopilot could not record the wait. Continue your work.',
-      ' Permission to use Bash has been denied.',
-      'permission to use Bash has been denied.',
-      'Permission to use',
+      ' Permission for this action has been denied. Reason: x',
+      'permission for this action has been denied.',
     ]
     for (const text of texts) expect(isModeDeny(text)).toBe(false)
   })
