@@ -391,8 +391,8 @@ describe('inboxReadText of the kind fields', () => {
     expect(linesOf(brief).slice(2)).toEqual([field('mode', 'gsd-epic'), field('tickets', 'PROJ-2, PROJ-3')])
   })
 
-  test('a specPath longer than a report cell is shown whole, as the send keeps it', () => {
-    const specPath = `docs/${'a'.repeat(290)}.md`
+  test('a specPath at its cap of 200 is shown whole', () => {
+    const specPath = `docs/${'a'.repeat(192)}.md`
     const task: InboxEntry = {
       ...A,
       kind: 'task',

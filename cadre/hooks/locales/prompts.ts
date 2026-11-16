@@ -188,6 +188,11 @@ export const PROMPTS = Object.freeze({
   inboxSize: 'Size {size}, so {sizeClass} (the threshold is {threshold}).',
   inboxSizePick: 'In {mode} mode: {framework}.',
   inboxSizePickGsd: 'In {mode} mode: gsd, GSD path {gsdPath}.',
+  // The sentences of an inbox_send property's description (messages/send inboxSendSchema).
+  inboxPropertyKinds: 'Only on {kinds}.',
+  inboxPropertyRequired: 'Required on {kinds}.',
+  inboxPropertyChars: 'At most {max} characters.',
+  inboxPropertyList: 'At most {max} items of at most {chars} characters each.',
   // The descriptions of the inbox tools (register.tsx), the refusals of a call outside a role session or a call that
   // failed, and the line of a role session whose role.json is not found.
   inboxSendDescription:
@@ -196,7 +201,11 @@ export const PROMPTS = Object.freeze({
     ''}answer, epic-end or note. replyTo: the id of the entry you answer, if any. A ticket needs ticketKey and ${
     ''}scores (pin and reportForm optional); a task needs ticketKey, vector and use (specPath optional); a report ${
     ''}needs outcome, changes, verification, vector, reason, frameworkUsed, docPaths and openQuestions; a note may ${
-    ''}carry mode and tickets (a brief); question, answer and epic-end take no kind fields.`,
+    ''}carry mode and tickets (a brief); question, answer and epic-end take no kind fields. Each field says the ${
+    ''}kinds it goes on. Caps in characters: subject {subjectMax}, body {bodyMax}, reportForm {reportFormMax}, ${
+    ''}changes {changesMax}, verification {verificationMax}, reason {reasonMax}, specPath {specPathMax}, ticketKey ${
+    ''}{ticketKeyMax}; docPaths and openQuestions at most {listMax} items of {itemMax}; tickets at most ${
+    ''}{ticketsMax} keys.`,
   inboxReadDescription:
     `cadre: read your own inbox. Each entry shows its id, state, kind, sender and subject, then its body. all: true ${
     ''}also lists the entries marked done or rejected.`,

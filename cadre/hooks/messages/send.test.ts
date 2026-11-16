@@ -1,21 +1,33 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleContext, TeamView } from '../../types'
+import { FRAMEWORK_IDS } from '../core/framework-id'
+import { isObject } from '../core/json'
+import { INBOX_ENTRY_FIELDS } from '../locales/contracts'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import {
   BODY_MAX_CHARS,
   CHANGES_MAX_CHARS,
+  inboxSendDescriptionText,
+  inboxSendSchema,
   LIST_ITEM_MAX_CHARS,
   LIST_MAX_ITEMS,
   MESSAGE_KINDS,
   NOTE_MAX_CHARS,
   parseMarkInput,
   parseSendInput,
+  REASON_MAX_CHARS,
+  REPORT_FORM_MAX_CHARS,
+  REPORT_OUTCOMES,
+  SIZE_PINS,
+  SPEC_PATH_MAX_CHARS,
   SUBJECT_MAX_CHARS,
   TICKET_KEY_MAX_CHARS,
   TICKETS_MAX_ITEMS,
+  VERIFICATION_MAX_CHARS,
 } from './send'
+import { GSD_PATHS, PLANNING_MODES } from './sizing'
 
 const BE: RoleContext = { id: 'be', root: '/repo' }
 const TEAM: TeamView = {
@@ -194,6 +206,15 @@ describe('parseSendInput of a task', () => {
     expect(refusalOf({ ...TASK, ticketKey: '../x' })).toBe(refusal)
     expect(refusalOf({ ...TASK, ticketKey: 'a b' })).toBe(refusal)
   })
+
+  test('a specPath over its cap of 200 characters is refused; one at its cap is kept', () => {
+    const atCap = `docs/${'a'.repeat(192)}.md`
+
+    expect(refusalOf({ ...TASK, specPath: `docs/${'a'.repeat(193)}.md` })).toBe(
+      'specPath is over 200 characters: shorten it.',
+    )
+    expect(parseSendInput({ ...TASK, specPath: atCap }, BE, TEAM)).toMatchObject({ fields: { specPath: atCap } })
+  })
 })
 
 describe('parseSendInput of a ticket', () => {
@@ -352,6 +373,83 @@ describe('parseSendInput: the fields each kind takes', () => {
     )
 
     expect(unnamed).toEqual([])
+  })
+})
+
+describe('inboxSendSchema', () => {
+  const schema = inboxSendSchema()
+  const at = (value: unknown, ...keys: readonly string[]): unknown =>
+    keys.reduce<unknown>((held, key) => (isObject(held) ? held[key] : undefined), value)
+  const property = (...keys: readonly string[]): unknown => at(schema, 'properties', ...keys)
+
+  test('every cap in the schema equals its constant; it composes no variants and requires the envelope', () => {
+    const texts: readonly (readonly [string, number])[] = [
+      ['subject', SUBJECT_MAX_CHARS],
+      ['body', BODY_MAX_CHARS],
+      ['ticketKey', TICKET_KEY_MAX_CHARS],
+      ['reportForm', REPORT_FORM_MAX_CHARS],
+      ['specPath', SPEC_PATH_MAX_CHARS],
+      ['changes', CHANGES_MAX_CHARS],
+      ['verification', VERIFICATION_MAX_CHARS],
+      ['reason', REASON_MAX_CHARS],
+    ]
+    const lists: readonly (readonly [string, number, number])[] = [
+      ['docPaths', LIST_MAX_ITEMS, LIST_ITEM_MAX_CHARS],
+      ['openQuestions', LIST_MAX_ITEMS, LIST_ITEM_MAX_CHARS],
+      ['tickets', TICKETS_MAX_ITEMS, TICKET_KEY_MAX_CHARS],
+    ]
+
+    expect(texts.map(([field]) => property(field, 'maxLength'))).toEqual(texts.map(([, max]) => max))
+    expect(lists.map(([field]) => [property(field, 'maxItems'), property(field, 'items', 'maxLength')])).toEqual(
+      lists.map(([, items, chars]) => [items, chars]),
+    )
+    expect(['oneOf', 'anyOf', 'allOf'].filter(word => JSON.stringify(schema).includes(word))).toEqual([])
+    expect(at(schema, 'required')).toEqual(['to', 'kind', 'subject', 'body'])
+  })
+
+  test('the enums of kind, pin, use, outcome, frameworkUsed and mode name the same values as before', () => {
+    expect([
+      property('kind', 'enum'),
+      property('pin', 'enum'),
+      property('use', 'properties', 'framework', 'enum'),
+      property('use', 'properties', 'gsdPath', 'enum'),
+      property('outcome', 'enum'),
+      property('frameworkUsed', 'enum'),
+      property('mode', 'enum'),
+    ]).toEqual([
+      [...MESSAGE_KINDS],
+      [...SIZE_PINS],
+      [...FRAMEWORK_IDS],
+      [...GSD_PATHS],
+      [...REPORT_OUTCOMES],
+      [...FRAMEWORK_IDS],
+      [...PLANNING_MODES],
+    ])
+  })
+
+  test('each kind field says the kinds it goes on, the kinds that require it and its cap', () => {
+    const startsOnly = (field: string): boolean => {
+      const description = property(field, 'description')
+
+      return typeof description === 'string' && description.startsWith('Only on ')
+    }
+
+    expect(property('ticketKey', 'description')).toBe(
+      'Only on ticket, task. Required on ticket, task. At most 64 characters.',
+    )
+    expect(property('docPaths', 'description')).toBe(
+      'Only on report. Required on report. At most 10 items of at most 200 characters each.',
+    )
+    expect(property('pin', 'description')).toBe('Only on ticket.')
+    expect(property('specPath', 'description')).toBe('Only on task. At most 200 characters.')
+    expect(INBOX_ENTRY_FIELDS.filter(field => !startsOnly(field))).toEqual([])
+  })
+
+  test('the inbox_send description states every cap, filled from the constants', () => {
+    const text = inboxSendDescriptionText()
+
+    expect(text.includes('{')).toBe(false)
+    expect(['body 3000', 'specPath 200', 'tickets at most 100'].filter(part => !text.includes(part))).toEqual([])
   })
 })
 

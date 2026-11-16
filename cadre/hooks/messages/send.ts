@@ -1,7 +1,8 @@
 /**
  * The inbox_send input check, a layer 7 module: the message kinds and states, the caps of an inbox line and of the
- * kind fields, and the parse of the model's tool input into a message cadre can stamp. Only the keys it names are
- * read, so a sender, a stamp or any other key the model adds is never used.
+ * kind fields, the inbox_send schema and description built from them, and the parse of the model's tool input into a
+ * message cadre can stamp. Only the keys it names are read, so a sender, a stamp or any other key the model adds is
+ * never used.
  */
 import type {
   GsdPath,
@@ -76,11 +77,33 @@ export const REPORT_FORM_MAX_CHARS = 500
 export const CHANGES_MAX_CHARS = 1000
 export const VERIFICATION_MAX_CHARS = 500
 export const REASON_MAX_CHARS = 200
+export const SPEC_PATH_MAX_CHARS = 200
 export const LIST_MAX_ITEMS = 10
 export const LIST_ITEM_MAX_CHARS = 200
 
 /** The most ticket keys a brief lists; the line cap is the real bound of a long list. */
 export const TICKETS_MAX_ITEMS = 100
+
+/** The cap in characters of each text field, as the check holds it and the schema and the description state it. */
+const TEXT_CAPS = Object.freeze({
+  subject: SUBJECT_MAX_CHARS,
+  body: BODY_MAX_CHARS,
+  ticketKey: TICKET_KEY_MAX_CHARS,
+  reportForm: REPORT_FORM_MAX_CHARS,
+  specPath: SPEC_PATH_MAX_CHARS,
+  changes: CHANGES_MAX_CHARS,
+  verification: VERIFICATION_MAX_CHARS,
+  reason: REASON_MAX_CHARS,
+})
+
+/** The caps of one list: its most items and the most characters of each item. */
+type ListCap = { readonly items: number; readonly chars: number }
+
+const LIST_CAPS: Readonly<Record<'docPaths' | 'openQuestions' | 'tickets', ListCap>> = Object.freeze({
+  docPaths: { items: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS },
+  openQuestions: { items: LIST_MAX_ITEMS, chars: LIST_ITEM_MAX_CHARS },
+  tickets: { items: TICKETS_MAX_ITEMS, chars: TICKET_KEY_MAX_CHARS },
+})
 
 /** A GSD workstream of a role, as a report may list it among its documents. */
 const WORKSTREAM_NAME = /^cadre-[a-z0-9-]{1,80}$/
@@ -256,6 +279,9 @@ function usePart(raw: unknown): FieldPart {
 
 function specPathPart(raw: unknown): FieldPart {
   if (raw === undefined) return {}
+  if (typeof raw === 'string' && Array.from(raw).length > SPEC_PATH_MAX_CHARS) {
+    return fill(PROMPTS.inboxFieldTooLong, { field: 'specPath', max: SPEC_PATH_MAX_CHARS })
+  }
 
   return typeof raw === 'string' && isSafeRelativePath(raw) ? { specPath: raw } : PROMPTS.inboxSpecPathBad
 }
@@ -311,15 +337,15 @@ const FIELD_PARTS: Readonly<Record<string, (raw: unknown) => FieldPart>> = Objec
   ticketKey: ticketKeyPart,
   scores: scoresPart,
   pin: pinPart,
-  reportForm: (raw: unknown) => textPart(raw, 'reportForm', REPORT_FORM_MAX_CHARS, reportForm => ({ reportForm })),
+  reportForm: (raw: unknown) => textPart(raw, 'reportForm', TEXT_CAPS.reportForm, reportForm => ({ reportForm })),
   vector: vectorPart,
   use: usePart,
   specPath: specPathPart,
   outcome: outcomePart,
-  changes: (raw: unknown) => textPart(raw, 'changes', CHANGES_MAX_CHARS, changes => ({ changes })),
+  changes: (raw: unknown) => textPart(raw, 'changes', TEXT_CAPS.changes, changes => ({ changes })),
   verification: (raw: unknown) =>
-    textPart(raw, 'verification', VERIFICATION_MAX_CHARS, verification => ({ verification })),
-  reason: (raw: unknown) => textPart(raw, 'reason', REASON_MAX_CHARS, reason => ({ reason })),
+    textPart(raw, 'verification', TEXT_CAPS.verification, verification => ({ verification })),
+  reason: (raw: unknown) => textPart(raw, 'reason', TEXT_CAPS.reason, reason => ({ reason })),
   frameworkUsed: frameworkUsedPart,
   docPaths: docPathsPart,
   openQuestions: openQuestionsPart,
@@ -398,6 +424,111 @@ export function parseSendInput(event: unknown, ctx: RoleContext, team: TeamView)
   if (typeof replyTo !== 'string' || !ENTRY_ID_PATTERN.test(replyTo)) return sendError(PROMPTS.inboxReplyToBad)
 
   return { kind: 'ok', to, kindName, subject, body, replyTo, fields: read.fields }
+}
+
+const SCORE_SCHEMA = Object.freeze({ type: 'number' })
+
+/** The inbox_send properties in their input order, before their caps and descriptions. */
+const BASE_PROPERTIES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = Object.freeze({
+  to: { type: 'string' },
+  kind: { type: 'string', enum: [...MESSAGE_KINDS] },
+  subject: { type: 'string' },
+  body: { type: 'string' },
+  replyTo: { type: 'string' },
+  ticketKey: { type: 'string' },
+  scores: { type: 'object', properties: { scope: SCORE_SCHEMA, risk: SCORE_SCHEMA } },
+  pin: { type: 'string', enum: [...SIZE_PINS] },
+  reportForm: { type: 'string' },
+  vector: {
+    type: 'object',
+    properties: { scope: SCORE_SCHEMA, complexity: SCORE_SCHEMA, risk: SCORE_SCHEMA, effort: SCORE_SCHEMA },
+  },
+  use: {
+    type: 'object',
+    properties: {
+      framework: { type: 'string', enum: [...FRAMEWORK_IDS] },
+      gsdPath: { type: 'string', enum: [...GSD_PATHS] },
+    },
+  },
+  specPath: { type: 'string' },
+  outcome: { type: 'string', enum: [...REPORT_OUTCOMES] },
+  changes: { type: 'string' },
+  verification: { type: 'string' },
+  reason: { type: 'string' },
+  frameworkUsed: { type: 'string', enum: [...FRAMEWORK_IDS] },
+  docPaths: { type: 'array' },
+  openQuestions: { type: 'array' },
+  mode: { type: 'string', enum: [...PLANNING_MODES] },
+  tickets: { type: 'array' },
+})
+
+function textCapOf(field: string): number | undefined {
+  return Object.entries(TEXT_CAPS).find(([name]) => name === field)?.[1]
+}
+
+function listCapOf(field: string): ListCap | undefined {
+  return Object.entries(LIST_CAPS).find(([name]) => name === field)?.[1]
+}
+
+/**
+ * The description of an inbox_send property: the kinds it goes on, the kinds that require it and its cap, as
+ * KIND_FIELDS, REQUIRED_FIELDS and the caps say; '' when none applies.
+ */
+function propertyDescription(field: string): string {
+  const takes = MESSAGE_KINDS.filter(kind => KIND_FIELDS[kind].includes(field))
+  const needs = MESSAGE_KINDS.filter(kind => REQUIRED_FIELDS[kind].includes(field))
+  const textCap = textCapOf(field)
+  const listCap = listCapOf(field)
+
+  return [
+    ...(takes.length === 0 ? [] : [fill(PROMPTS.inboxPropertyKinds, { kinds: takes.join(', ') })]),
+    ...(needs.length === 0 ? [] : [fill(PROMPTS.inboxPropertyRequired, { kinds: needs.join(', ') })]),
+    ...(textCap === undefined ? [] : [fill(PROMPTS.inboxPropertyChars, { max: textCap })]),
+    ...(listCap === undefined ? [] : [fill(PROMPTS.inboxPropertyList, { max: listCap.items, chars: listCap.chars })]),
+  ].join(' ')
+}
+
+/** One inbox_send property with its cap and, when one applies, its description. */
+function propertySchema(field: string, base: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const textCap = textCapOf(field)
+  const listCap = listCapOf(field)
+  const description = propertyDescription(field)
+
+  return {
+    ...base,
+    ...(textCap === undefined ? {} : { maxLength: textCap }),
+    ...(listCap === undefined ? {} : { maxItems: listCap.items, items: { type: 'string', maxLength: listCap.chars } }),
+    ...(description === '' ? {} : { description }),
+  }
+}
+
+/**
+ * The inbox_send input schema: each property with its cap and the kinds it goes on, from the caps and the kind
+ * tables. It stays one flat object, since the API refuses a schema that composes variants at its top level.
+ */
+export function inboxSendSchema(): Readonly<Record<string, unknown>> {
+  const properties = Object.fromEntries(
+    Object.entries(BASE_PROPERTIES).map(([field, base]) => [field, propertySchema(field, base)]),
+  )
+
+  return { type: 'object', properties, required: ['to', 'kind', 'subject', 'body'] }
+}
+
+/** The inbox_send description with every cap filled from its constant. */
+export function inboxSendDescriptionText(): string {
+  return fill(PROMPTS.inboxSendDescription, {
+    subjectMax: SUBJECT_MAX_CHARS,
+    bodyMax: BODY_MAX_CHARS,
+    reportFormMax: REPORT_FORM_MAX_CHARS,
+    changesMax: CHANGES_MAX_CHARS,
+    verificationMax: VERIFICATION_MAX_CHARS,
+    reasonMax: REASON_MAX_CHARS,
+    specPathMax: SPEC_PATH_MAX_CHARS,
+    ticketKeyMax: TICKET_KEY_MAX_CHARS,
+    listMax: LIST_MAX_ITEMS,
+    itemMax: LIST_ITEM_MAX_CHARS,
+    ticketsMax: TICKETS_MAX_ITEMS,
+  })
 }
 
 /** A mark the model asked for, checked, or why it is refused. */
