@@ -4,6 +4,7 @@ import type { HostRun, InitLocations, LaunchStart, RoleSpec, ScopeContext } from
 import { sha256Hex } from '../core/hash'
 import { isObject } from '../core/json'
 import { adapterOf } from '../framework/registry'
+import { GIT_TIMEOUT_MS } from '../git/argv'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import type { LaunchUser } from '../launch/links'
 import { launchPlan } from '../launch/plan'
@@ -94,6 +95,17 @@ function gitRule(result: HostRun | null): HostRunRule {
 /** The git run of the fixture repo: git answers /repo/.git, with its line break. */
 const GIT_OK = gitRule({ exitCode: 0, stdout: '/repo/.git\n', stderr: '' })
 
+/** The argv that lists the env files git tracks at /repo, NUL-ended. */
+const TRACKED_ENV = ['git', '-C', '/repo', 'ls-files', '-z', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+
+/** The run of the tracked env files as the host is asked for it: no cwd, as the argv names the root. */
+const TRACKED_ENV_CALL = { argv: TRACKED_ENV, options: { timeoutMs: GIT_TIMEOUT_MS } }
+
+/** A fake host rule that answers the tracked env files run with this run; null is a run the host rejected. */
+function trackedEnvRule(result: HostRun | null): HostRunRule {
+  return { argv: TRACKED_ENV, result }
+}
+
 /** A launcher start at the git root. */
 const GIT_ROOT: LaunchStart = { kind: 'git-root' }
 
@@ -150,12 +162,12 @@ describe('gatherLaunchUser (D-98)', () => {
 
     expect(read).toEqual({
       kind: 'ok',
-      user: user({ commonDirHash, codeDirs: ['src'] }),
+      user: user({ commonDirHash, codeDirs: ['src'], trackedEnvFiles: [] }),
       warnings: [],
       memories: NO_MEMORY_LINKS,
       inboxDir: inboxDirOf(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')), 'be'),
     })
-    expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
+    expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }, TRACKED_ENV_CALL])
   })
 
   test('the common dir is its stat realpath, else as git gave it; CLAUDE_CONFIG_DIR is the user folder', async () => {
@@ -170,6 +182,7 @@ describe('gatherLaunchUser (D-98)', () => {
         userDir: '/cfg',
         gitCommonDir: '/data/repo/.git',
         commonDirHash: await sha256Hex('/data/repo/.git'),
+        trackedEnvFiles: [],
       }),
       warnings: [],
       memories: NO_MEMORY_LINKS,
@@ -820,5 +833,33 @@ describe('the skills and agents the launch root provides', () => {
     expect(read.kind === 'ok' ? read.warnings : null).toEqual([
       'could not read <repo>/.claude/commands (treated as unknown)',
     ])
+  })
+})
+
+describe('the env files git tracks, for a role that runs the repo checks', () => {
+  test('a BE launch lists them at the root once and carries what git gave', async () => {
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: '.env.test\0', stderr: '' })
+    const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked])
+
+    expect(userOf(read).trackedEnvFiles).toEqual(['.env.test'])
+    expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }, TRACKED_ENV_CALL])
+  })
+
+  test('a PM or TL launch makes no such run and has no field', async () => {
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: '.env.test\0', stderr: '' })
+    for (const role of [templateRole('pm'), templateRole('tl')]) {
+      const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked], DEFAULT_LOCATIONS, GIT_ROOT, [], role)
+
+      expect(Object.hasOwn(userOf(read), 'trackedEnvFiles')).toBe(false)
+      expect(calls.map(call => call.argv)).toEqual([GIT_ARGV])
+    }
+  })
+
+  test('a run the host rejects or that exits non-zero leaves the field out', async () => {
+    for (const result of [null, { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' }]) {
+      const { read } = await gather(repoWorld(), [GIT_OK, trackedEnvRule(result)])
+
+      expect(Object.hasOwn(userOf(read), 'trackedEnvFiles')).toBe(false)
+    }
   })
 })

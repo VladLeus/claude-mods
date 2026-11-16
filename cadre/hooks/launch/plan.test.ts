@@ -1004,3 +1004,40 @@ describe('the GSD workstream env', () => {
     })
   })
 })
+
+describe('the env files git tracks in the runtime sandbox', () => {
+  /** The env files git tracks at the root, as gatherLaunchUser carries them. */
+  const TRACKED = ['.env.test', 'web/.env.development']
+
+  /** The runtime sandbox of a template role launched by this user. */
+  function sandboxOf(id: 'be' | 'tl', launching: LaunchUser): unknown {
+    const role = templateRole(id)
+
+    return launchPlan(role, compileScope(role, context()), launching).settings.sandbox
+  }
+
+  test('BE may read them through the sandbox, each as a plain absolute path under the root', () => {
+    expect(sandboxOf('be', user({ trackedEnvFiles: TRACKED }))).toEqual({
+      ...BE_SANDBOX,
+      filesystem: { allowWrite: ['~/.cache'], allowRead: ['/repo/.env.test', '/repo/web/.env.development'] },
+    })
+  })
+
+  test('TL gets no allowRead for the same files, and BE gets none at an unsafe root', () => {
+    expect(sandboxOf('tl', user({ trackedEnvFiles: TRACKED }))).toEqual({
+      enabled: true,
+      filesystem: { allowWrite: ['~/.cache'] },
+    })
+    expect(sandboxOf('be', user({ root: '/my repo', trackedEnvFiles: TRACKED }))).toEqual(BE_SANDBOX)
+  })
+
+  test('the Read denies of BE are the same with or without the tracked files', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context())
+    const withFiles = launchPlan(be, scope, user({ trackedEnvFiles: TRACKED })).settings
+    const without = launchPlan(be, scope, user()).settings
+
+    expect(denyOf(withFiles)).toEqual(denyOf(without))
+    expect(denyOf(withFiles)).toContain('Read(//repo/**/.env.*)')
+  })
+})
