@@ -929,6 +929,21 @@ test('the subfolder-settings seed denies denied.txt by ./denied.txt and by src/d
   }
 })
 
+test('the subfolder-settings seed enables one plugin the roles are not given', async () => {
+  const seed = SEEDS.get('subfolder-settings')
+  const repo = await mkdtemp(join(scratchRoot(), 'unit-agent-seed-'))
+  try {
+    assert.ok(seed)
+    await seed({ repo, e2eDir: repo })
+    const settings: unknown = JSON.parse(await readFile(join(repo, 'src', '.claude', 'settings.json'), 'utf8'))
+    const enabled = isRecord(settings) ? settings.enabledPlugins : undefined
+
+    assert.deepEqual(enabled, { 'superpowers@claude-plugins-official': true })
+  } finally {
+    await removeTree(repo, scratchRoot())
+  }
+})
+
 test('parseCommand reads commit with .cadre/ or .cadre and refuses any other path, flag or extra argument', () => {
   assert.deepEqual(parseCommand(['commit', WS, '.cadre/']), { verb: 'commit', ws: WS })
   assert.deepEqual(parseCommand(['commit', WS, '.cadre']), { verb: 'commit', ws: WS })

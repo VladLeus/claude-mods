@@ -5,7 +5,9 @@ import {
   dialogText,
   initEventOf,
   initLineOf,
+  inputBoxOf,
   isInputShowing,
+  isPromptOrQuestion,
   modelCallReason,
   squashed,
   STDERR_REASON_CHARS,
@@ -44,6 +46,7 @@ const PAGED_DIALOG: readonly string[] = [
   'Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel',
 ]
 const NO_DIALOG = ['⏺ cadre: done, and a ☐ inside a line is no header', '', RULE, '❯', RULE].join('\n')
+const WORKING_TOP: readonly string[] = ['✻ Working… (1s · esc to interrupt)', '']
 
 function initLine(fields: Record<string, unknown>): string {
   return JSON.stringify({ type: 'system', subtype: 'init', ...fields })
@@ -83,6 +86,52 @@ test('isInputShowing is false for a typed line that is not between two rules', (
   assert.equal(isInputShowing(echoed, COMMAND), false)
   assert.equal(isInputShowing([`❯ ${COMMAND}`, RULE].join('\n'), COMMAND), false)
   assert.equal(isInputShowing([RULE, `❯ ${COMMAND}`].join('\n'), COMMAND), false)
+})
+
+test('isInputShowing is true for a typed text the input box wraps over indented lines', () => {
+  const text = 'PM here, for epic PROJ-1 Add retry: add a helper'
+  const screen = [RULE, '❯ PM here, for epic PROJ-1 Add', '  retry: add a helper', RULE].join('\n')
+
+  assert.equal(isInputShowing(screen, text), true)
+})
+
+test('isInputShowing is true for a text the box breaks inside a word', () => {
+  const screen = [RULE, '❯ PM here, for ep', '  ic PROJ-1', RULE].join('\n')
+
+  assert.equal(isInputShowing(screen, 'PM here, for epic PROJ-1'), true)
+})
+
+test('inputBoxOf is the same for two screens of a working session that differ only above the box', () => {
+  const box = [RULE, '❯ hello there', RULE]
+  const first = inputBoxOf([...WORKING_TOP, ...box].join('\n'))
+  const later = inputBoxOf(['✻ Working… (2s · esc to interrupt)', '', ...box].join('\n'))
+
+  assert.notEqual(first, null)
+  assert.equal(later, first)
+})
+
+test('inputBoxOf is null when no input box is on the screen', () => {
+  assert.equal(inputBoxOf(PAGED_DIALOG.join('\n')), null)
+})
+
+test('isPromptOrQuestion is true for the ready prompt and for a question of the session', () => {
+  assert.equal(isPromptOrQuestion(NO_DIALOG), true)
+  assert.equal(isPromptOrQuestion(PAGED_DIALOG.join('\n')), true)
+})
+
+test('isPromptOrQuestion is false for the folder trust dialog and a working screen', () => {
+  const trust = [
+    'Do you trust the files in this folder?',
+    '',
+    '❯ 1. Yes, I trust this folder',
+    '  2. No, exit',
+    '',
+    'Enter to confirm · Esc to cancel',
+  ].join('\n')
+  const working = [...WORKING_TOP, RULE, '❯ hello there', RULE].join('\n')
+
+  assert.equal(isPromptOrQuestion(trust), false)
+  assert.equal(isPromptOrQuestion(working), false)
 })
 
 test('modelCallReason names only the exit code when stderr is empty', () => {
