@@ -53,7 +53,7 @@ import {
   isGraceEligible,
   isGraceLive,
   isLiveFinishedValue,
-  isPermissionDeny,
+  isModeDeny,
   isValidHandoffPath,
   kickoffPrompt,
   limitAction,
@@ -74,6 +74,7 @@ import {
   questionsBlock,
   queuedAcross,
   queuedResult,
+  refusalLogText,
   removesDrainedQuestion,
   resolveHandoffPath,
   restartsText,
@@ -1621,8 +1622,8 @@ export const register: Register = on => {
     const ran = await next(e)
     if (ran.deny !== undefined) {
       if (!isAway) return ran
-      if (!isPermissionDeny(ran.deny)) return ran
-      await log($, `deferred (refused by the permission mode): ${e.tool}: ${ran.deny.slice(0, 300)}`)
+      await log($, refusalLogText(e.tool, ran.deny))
+      if (!isModeDeny(ran.deny)) return ran
       return { deny: `${ran.deny}\n\n${DEFERRED_NOTE}` }
     }
 

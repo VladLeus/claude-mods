@@ -1422,20 +1422,25 @@ export function askAnswer(mode: Mode): string {
 export const DEFERRED_NOTE =
   'Autopilot: this action was refused by the permission mode. Do not try to get around it. It is logged as deferred until the person returns; put it in your handoff and continue with other work.'
 
-// The deny texts the engine's permission system writes; any other deny is a hook's or a tool's own.
-const PERMISSION_DENY_PREFIXES: readonly string[] = [
-  'Permission to use ',
-  'Permission to edit ',
-  'Permission to read ',
+// Refusals of the permission mode, its classifier and safety check; a settings rule's refusal is final, not among them.
+const MODE_DENY_PREFIXES: readonly string[] = [
   'Permission for this action ',
   'Permission for this tool use was denied',
   'Permission for this command was denied by a built-in Claude Code safety check',
-  'Permission denied for: ',
 ]
+const MODE_DENY_MARKER = ' has been denied because Claude Code is running in '
+const MAX_LOGGED_DENY = 300
 
-/** Whether a deny comes from the permission mode rather than a hook or a tool. */
-export function isPermissionDeny(deny: string): boolean {
-  return PERMISSION_DENY_PREFIXES.some(prefix => deny.startsWith(prefix))
+/** Whether a deny waits for the person (the mode, its classifier or its safety check refused it) or is final. */
+export function isModeDeny(deny: string): boolean {
+  if (MODE_DENY_PREFIXES.some(prefix => deny.startsWith(prefix))) return true
+  return deny.startsWith('Permission to use ') && deny.includes(MODE_DENY_MARKER)
+}
+
+/** The log line of a refusal while autopilot drives. */
+export function refusalLogText(tool: string, deny: string): string {
+  if (isModeDeny(deny)) return `deferred (refused by the permission mode): ${tool}: ${deny.slice(0, MAX_LOGGED_DENY)}`
+  return `refused (passed through): ${tool}: ${deny.slice(0, MAX_LOGGED_DENY)}`
 }
 
 /** How far ahead of now a record's `setAt` may lie (two processes' clocks differ a little); further is a broken or forged write. */
