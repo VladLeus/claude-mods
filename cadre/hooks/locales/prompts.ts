@@ -200,6 +200,9 @@ export const PROMPTS = Object.freeze({
   inboxListItemsTooLong: '{field}: items {items} are {sizes} characters, over the cap of {chars} each.',
   inboxProblemsHead: 'Not sent, {count} problems:',
   inboxProblemLine: '- {problem}',
+  // The refusals of an inbox_read id (messages/record parseReadInput, messages/flow runInboxRead).
+  inboxReadIdBad: 'id must be the id of an inbox entry, as inbox_read shows it.',
+  inboxReadUnknownId: 'id names no entry of your inbox: call inbox_read with no id for the ids.',
   // The descriptions of the inbox tools (register.tsx), the refusals of a call outside a role session or a call that
   // failed, and the line of a role session whose role.json is not found.
   inboxSendDescription:
@@ -214,8 +217,9 @@ export const PROMPTS = Object.freeze({
     ''}{ticketKeyMax}; docPaths and openQuestions at most {listMax} items of {itemMax}; tickets at most ${
     ''}{ticketsMax} keys. A send within the caps is always stored. A refusal lists every problem at once.`,
   inboxReadDescription:
-    `cadre: read your own inbox. Each entry shows its id, state, kind, sender and subject, then its body. all: true ${
-    ''}also lists the entries marked done or rejected.`,
+    `cadre: read your own inbox. Unread entries show in full: id, state, kind, sender, subject, body and fields. ${
+    ''}Read, awaiting and blocked entries show as one line with their note and reply. id: an entry id prints that ${
+    ''}entry in full. all: true also lists the entries marked done or rejected.`,
   inboxNoRole: 'The cadre inbox tools work only in a cadre role session.',
   inboxFailed: 'The cadre inbox tool failed. Try again.',
   inboxRoleMissing:

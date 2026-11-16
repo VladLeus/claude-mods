@@ -253,16 +253,22 @@ export function parseInboxLine(text: string): InboxEvent | null {
 
 /** The inbox_read input, or why it is refused. */
 export type ReadInput =
-  | { readonly kind: 'ok'; readonly all: boolean }
+  | { readonly kind: 'ok'; readonly all: boolean; readonly id: string | null }
   | { readonly kind: 'error'; readonly message: string }
 
-/** The inbox_read input: `all` also lists the items marked done or rejected; false when absent. */
+/** What inbox_read takes from the model. */
+export function inboxReadSchema(): Readonly<Record<string, unknown>> {
+  return { type: 'object', properties: { all: { type: 'boolean' }, id: { type: 'string' } } }
+}
+
+/** The inbox_read input: `all` is false and `id` null when absent; an `id` must be an entry id. */
 export function parseReadInput(event: unknown): ReadInput {
   const all = isObject(event) ? event.all : undefined
-  if (all === undefined) return { kind: 'ok', all: false }
-  if (typeof all !== 'boolean') return { kind: 'error', message: PROMPTS.inboxAllNotBoolean }
+  const id = isObject(event) ? event.id : undefined
+  if (all !== undefined && typeof all !== 'boolean') return { kind: 'error', message: PROMPTS.inboxAllNotBoolean }
+  if (id !== undefined && !isEntryId(id)) return { kind: 'error', message: PROMPTS.inboxReadIdBad }
 
-  return { kind: 'ok', all }
+  return { kind: 'ok', all: all === true, id: isEntryId(id) ? id : null }
 }
 
 /** Every inbox.jsonl line that parses, in file order; any other line is skipped on its own. */
@@ -385,25 +391,36 @@ function fieldLines(entry: InboxEntry): string[] {
   )
 }
 
-/**
- * One item as inbox_read shows it: its head, its body lines whole and indented two spaces, a line per kind field, then
- * its note and reply. The body is cleaned as the send keeps it, and the note is cut only over the mark's cap.
- */
-function itemLines(item: InboxItem): string[] {
-  const { id, kind, from, subject, body } = item.entry
-  const head = fill(PROMPTS.inboxItemHead, { id, state: item.state, kind, from, subject: reportText(subject) })
+function headOf(item: InboxItem): string {
+  const { id, kind, from, subject } = item.entry
+
+  return fill(PROMPTS.inboxItemHead, { id, state: item.state, kind, from, subject: reportText(subject) })
+}
+
+/** The note, cut only over the mark's cap, and the reply of an item, each when it holds one. */
+function markParts(item: InboxItem): string[] {
   const note = item.note === null ? [] : [fill(PROMPTS.inboxItemNote, { note: clean(item.note, NOTE_MAX_CHARS) })]
   const reply = item.reply === null ? [] : [fill(PROMPTS.inboxItemReply, { reply: item.reply })]
-  const bodyLines = bodyShown(body)
+
+  return [...note, ...reply]
+}
+
+function headLine(item: InboxItem): string {
+  return [headOf(item), ...markParts(item)].join('; ')
+}
+
+/** One item in full: its head, its body lines indented two spaces, a line per kind field, then its note and reply. */
+function itemLines(item: InboxItem): string[] {
+  const bodyLines = bodyShown(item.entry.body)
     .split('\n')
     .map(line => `  ${line}`)
 
-  return [head, ...bodyLines, ...fieldLines(item.entry), ...note, ...reply]
+  return [headOf(item), ...bodyLines, ...fieldLines(item.entry), ...markParts(item)]
 }
 
 /**
- * The inbox_read view: one block per item, blocks apart by a blank line. Unless `all`, the items marked done or
- * rejected are left out and a last line counts them. With none left to show, the idle wait sentence follows.
+ * The inbox_read view, items apart by a blank line: an unread item in full, any other as its head line. Unless `all`,
+ * the items marked done or rejected are left out and a last line counts them; with none left, the idle wait follows.
  */
 export function inboxReadText(items: readonly InboxItem[], all: boolean): string {
   if (items.length === 0) return PROMPTS.inboxEmpty
@@ -411,6 +428,14 @@ export function inboxReadText(items: readonly InboxItem[], all: boolean): string
   const hidden = items.length - shown.length
   const last = hidden === 0 ? [] : [fill(inboxHiddenOf(hidden), { count: hidden })]
   if (shown.length === 0) return [...last, IDLE_INBOX_WAIT].join('\n\n')
+  const blocks = shown.map(item => (item.state === 'unread' ? itemLines(item).join('\n') : headLine(item)))
 
-  return [...shown.map(item => itemLines(item).join('\n')), ...last].join('\n\n')
+  return [...blocks, ...last].join('\n\n')
+}
+
+/** The entry with this id in full, whatever its state; null when no item of the inbox has it. */
+export function inboxEntryText(items: readonly InboxItem[], id: string): string | null {
+  const item = items.find(held => held.entry.id === id)
+
+  return item === undefined ? null : itemLines(item).join('\n')
 }

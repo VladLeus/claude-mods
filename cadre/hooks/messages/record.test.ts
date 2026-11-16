@@ -352,11 +352,11 @@ describe('inboxReadText', () => {
 
   test('a note of 300 code points is shown whole; a stored note of 301 is cut to 299 and an ellipsis', () => {
     const note = 'n'.repeat(300)
-    const lastLine = (held: string): string | undefined =>
-      inboxReadText([{ ...unread(A), state: 'blocked', note: held }], true).split('\n').at(-1)
+    const head = 'be-1000-0123abcd [blocked] note from be: Hi; note: '
+    const line = (held: string): string => inboxReadText([{ ...unread(A), state: 'blocked', note: held }], true)
 
-    expect(lastLine(note)).toBe(`note: ${note}`)
-    expect(lastLine(`${note}n`)).toBe(`note: ${'n'.repeat(299)}…`)
+    expect(line(note)).toBe(`${head}${note}`)
+    expect(line(`${note}n`)).toBe(`${head}${'n'.repeat(299)}…`)
   })
 })
 
@@ -533,13 +533,15 @@ describe('the line cap', () => {
 })
 
 describe('parseReadInput', () => {
-  test('all is false when absent and must be true or false when given', () => {
+  test('all is false and id null when absent; all must be true or false, and an id must be an entry id', () => {
     expect([parseReadInput({}), parseReadInput({ all: true }), parseReadInput(undefined)]).toEqual([
-      { kind: 'ok', all: false },
-      { kind: 'ok', all: true },
-      { kind: 'ok', all: false },
+      { kind: 'ok', all: false, id: null },
+      { kind: 'ok', all: true, id: null },
+      { kind: 'ok', all: false, id: null },
     ])
+    expect(parseReadInput({ id: A.id })).toEqual({ kind: 'ok', all: false, id: A.id })
     expect(parseReadInput({ all: 'yes' })).toEqual({ kind: 'error', message: PROMPTS.inboxAllNotBoolean })
+    expect(parseReadInput({ id: 'not-an-id' })).toEqual({ kind: 'error', message: PROMPTS.inboxReadIdBad })
   })
 })
 

@@ -39,6 +39,7 @@ import {
   runInboxSend,
   teamRootOf,
 } from './messages/flow'
+import { inboxReadSchema } from './messages/record'
 import { INBOX_STATES, inboxSendDescriptionText, inboxSendSchema } from './messages/send'
 import type { MAIN_ENV, ROLE_ENV, ROOT_ENV } from './paths'
 import { runRegen } from './regen/run'
@@ -624,9 +625,6 @@ async function closePane($: EngineInterface): Promise<void> {
   await update($, paneState, () => IDLE_PANE).catch(() => undefined)
 }
 
-/** What inbox_read takes from the model. */
-const INBOX_READ_SCHEMA = { type: 'object', properties: { all: { type: 'boolean' } } }
-
 /** What inbox_mark takes from the model. */
 const INBOX_MARK_SCHEMA = {
   type: 'object',
@@ -708,7 +706,7 @@ async function startRole($: EngineInterface, ctx: RoleContext): Promise<void> {
     await $.tool.register({
       name: INBOX_READ_TOOL,
       description: PROMPTS.inboxReadDescription,
-      inputSchema: INBOX_READ_SCHEMA,
+      inputSchema: inboxReadSchema(),
     })
     await $.tool.register({
       name: INBOX_MARK_TOOL,

@@ -37,6 +37,7 @@ import {
 import {
   entryIdOf,
   foldInbox,
+  inboxEntryText,
   inboxLogPath,
   inboxReadText,
   lineRefusal,
@@ -271,7 +272,10 @@ export async function runInboxSend(
   return { kind: 'result', text: `${outcome.text} ${sizeText(vector, team.sizing, modesOffered(team.frameworks))}` }
 }
 
-/** inbox_read: the session's own inbox, folded; an absent inbox in its present, safe folder reads as empty. */
+/**
+ * inbox_read: the session's own inbox folded, or with an id the one entry of it the id names; an absent inbox in its
+ * present, safe folder reads as empty.
+ */
 export async function runInboxRead(io: InitIo, session: RoleSession, event: unknown): Promise<ToolOutcome> {
   const input = parseReadInput(event)
   if (input.kind === 'error') return deny(input.message)
@@ -279,8 +283,11 @@ export async function runInboxRead(io: InitIo, session: RoleSession, event: unkn
   if (own !== null) return deny(own)
   const events = await readOwnInbox(io, session)
   if (events === null) return deny(PROMPTS.inboxUnreadable)
+  const items = foldInbox(events)
+  if (input.id === null) return { kind: 'result', text: inboxReadText(items, input.all) }
+  const text = inboxEntryText(items, input.id)
 
-  return { kind: 'result', text: inboxReadText(foldInbox(events), input.all) }
+  return text === null ? deny(PROMPTS.inboxReadUnknownId) : { kind: 'result', text }
 }
 
 /** Where a rejection goes: the sender's parent, or the sender itself when it has none or the parent is the marker. */
