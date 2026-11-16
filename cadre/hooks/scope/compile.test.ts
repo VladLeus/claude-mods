@@ -49,7 +49,9 @@ const PLUGIN_RULE =
   '(--setting-sources project whitelist)'
 
 /** The Bash rule of a role that has Bash: one rule for both platforms, with the weaker label (ROLE-06). */
-const SANDBOX_RULE = 'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache'
+const SANDBOX_RULE =
+  'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache, which tools run outside ' +
+  'the sandbox load from'
 
 /** The secrets rule of BE, FE and QA: Bash is stopped through the sandbox, but for the env files git tracks. */
 const SECRETS_CHECKS_RULE =

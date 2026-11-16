@@ -874,7 +874,9 @@ describe('the not-given plugin skills on the card', () => {
 
 describe('the sandbox, docker and secrets rows of a card', () => {
   /** The sandbox row of a role with Bash. */
-  const SANDBOX_ROW = 'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache'
+  const SANDBOX_ROW =
+    'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache, which tools run outside ' +
+    'the sandbox load from'
 
   /** The docker row of BE, FE and QA in a repo whose one docker script runs through yarn. */
   const DOCKER_ROW =

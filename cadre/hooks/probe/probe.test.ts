@@ -76,7 +76,9 @@ describe('probe expectations (D-130)', () => {
       checks: [{ kind: 'tool-absent', token: 'Bash' }],
     })
     expect(be.find(rule => rule.text.startsWith('Bash runs in the sandbox'))).toEqual({
-      text: 'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache',
+      text:
+        'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache, which tools run ' +
+        'outside the sandbox load from',
       enforcement: 'best-effort',
     })
   })
