@@ -10,6 +10,7 @@ import {
   modelCallReason,
   PRINTED_REASON_CHARS,
   squashed,
+  submitRefusal,
 } from './claude.ts'
 
 const RULE = '─'.repeat(20)
@@ -111,6 +112,21 @@ test('inputBoxOf is the same for two screens of a working session that differ on
 
 test('inputBoxOf is null when no input box is on the screen', () => {
   assert.equal(inputBoxOf(PAGED_DIALOG.join('\n')), null)
+})
+
+test('submitRefusal is null while the input box shows the typed text', () => {
+  const screen = [...WORKING_TOP, RULE, `❯ ${COMMAND}`, RULE].join('\n')
+
+  assert.equal(submitRefusal(screen, COMMAND), null)
+})
+
+test('submitRefusal gives the reason and the screen when a question or other text took the input box', () => {
+  const reason = 'the input box no longer shows the typed text: answer the question on the screen first'
+  const dialog = PAGED_DIALOG.join('\n')
+  const other = [RULE, '❯ /cadre status', RULE].join('\n')
+
+  assert.equal(submitRefusal(dialog, COMMAND), `${reason}\n${dialog}`)
+  assert.equal(submitRefusal(other, COMMAND), `${reason}\n${other}`)
 })
 
 test('isPromptOrQuestion is true for the ready prompt and for a question of the session', () => {

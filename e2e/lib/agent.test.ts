@@ -17,6 +17,7 @@ import {
   HISTORY_LINES_MAX,
   isWsId,
   keysRefusal,
+  matchedLine,
   NOTE_MAX_CHARS,
   NOTES_MAX,
   parseCommand,
@@ -659,6 +660,23 @@ test('afterEcho gives the whole screen as missing when the sent text has no echo
   const screen = ['❯ Other text', '⏺ smoke ok'].join('\n')
 
   assert.deepEqual(afterEcho(screen, SMOKE_TEXT), { text: screen, echo: 'missing' })
+})
+
+test('matchedLine gives how many lines above the bottom the match starts and the first line of the match', () => {
+  const region = ['⏺ earlier', '⏺ cadre - inbox_read (MCP)', '  ⎿  Your inbox is empty.', '', '❯'].join('\n')
+
+  assert.equal(matchedLine(region, /inbox_read \(MCP\)/m), '3 lines up: inbox_read (MCP)')
+  assert.equal(matchedLine(region, /empty\.\n\n❯/m), '2 lines up: empty.')
+  assert.equal(matchedLine('⏺ smoke ok', /smoke ok/), '0 lines up: smoke ok')
+})
+
+test('matchedLine ignores a global flag on the pattern and gives nothing when nothing matches', () => {
+  const pattern = /smoke ok/g
+  const region = ['⏺ smoke ok', '❯'].join('\n')
+
+  assert.equal(matchedLine(region, pattern), '1 lines up: smoke ok')
+  assert.equal(matchedLine(region, pattern), '1 lines up: smoke ok')
+  assert.equal(matchedLine(region, /missing/), '')
 })
 
 test('sendRefusal refuses !, /login, --global, /plugin, an unsafe epic and root free text and allows the rest', () => {
