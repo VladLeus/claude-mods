@@ -18,7 +18,7 @@ import { isObject, parseJsonValue } from '../core/json'
 import { isRoleId } from '../core/role-id'
 import { clean, isChangedByClean, reportText } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
-import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
+import { IDLE_INBOX_WAIT, inboxHiddenOf, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { INBOX_LOG_FILE, inboxDirOf, isSafeRelativePath, SESSION_FILE } from '../paths'
 import {
@@ -383,13 +383,14 @@ function itemLines(item: InboxItem): string[] {
 
 /**
  * The inbox_read view: one block per item, blocks apart by a blank line. Unless `all`, the items marked done or
- * rejected are left out and a last line counts them.
+ * rejected are left out and a last line counts them. With none left to show, the idle wait sentence follows.
  */
 export function inboxReadText(items: readonly InboxItem[], all: boolean): string {
   if (items.length === 0) return PROMPTS.inboxEmpty
   const shown = all ? items : items.filter(item => !CLOSED_STATES.includes(item.state))
   const hidden = items.length - shown.length
   const last = hidden === 0 ? [] : [fill(inboxHiddenOf(hidden), { count: hidden })]
+  if (shown.length === 0) return [...last, IDLE_INBOX_WAIT].join('\n\n')
 
   return [...shown.map(item => itemLines(item).join('\n')), ...last].join('\n\n')
 }
