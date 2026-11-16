@@ -213,25 +213,35 @@ export async function waitFor(
   }
 }
 
-export async function waitIdle(pane: Pane, quietMs: number = IDLE_MS, timeoutMs: number = WAIT_MS): Promise<string> {
+export async function waitSteady(
+  pane: Pane,
+  view: (screen: string) => string,
+  label: string,
+  quietMs: number = IDLE_MS,
+  timeoutMs: number = WAIT_MS,
+): Promise<string> {
   let previous: string | null = null
   let stableSince = 0
   const isQuiet = (screen: string): boolean => {
     const now = Date.now()
-    if (screen !== previous) {
-      previous = screen
+    const shown = view(screen)
+    if (shown !== previous) {
+      previous = shown
       stableSince = now
       return false
     }
     return now - stableSince >= quietMs
   }
-  const label = `the screen to stay unchanged for ${quietMs} ms`
   const opts = { timeoutMs, intervalMs: POLL_MS, now: Date.now, sleep: delay, isDead: () => isPaneDead(pane), label }
   try {
     return await pollUntil(() => capture(pane), isQuiet, opts)
   } catch (error) {
     return deadNote(pane, error)
   }
+}
+
+export async function waitIdle(pane: Pane, quietMs: number = IDLE_MS, timeoutMs: number = WAIT_MS): Promise<string> {
+  return waitSteady(pane, screen => screen, `the screen to stay unchanged for ${quietMs} ms`, quietMs, timeoutMs)
 }
 
 export async function waitDead(pane: Pane, timeoutMs: number = WAIT_MS): Promise<number | null> {

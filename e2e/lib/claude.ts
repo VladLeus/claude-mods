@@ -13,6 +13,7 @@ import { run } from './proc.ts'
 import type { Env, RunResult } from './proc.ts'
 import { isUnder, scratchRoot } from './scratch.ts'
 import { listWindows, matches, newWindow, POLL_MS, sendKeys, sendText, WAIT_MS, waitFor, waitIdle } from './tmux.ts'
+import { waitSteady } from './tmux.ts'
 import type { Matcher, Pane, Server } from './tmux.ts'
 
 export type PluginBaseline = 'fresh' | 'fresh after a cache reset'
@@ -274,6 +275,7 @@ export const TUI_TRUST: readonly TuiStep[] = [
 ]
 const TUI_LOGIN_RE = /Please run \/login|Select login method/
 const CURSOR_RE = /^\s*❯ +/
+const INPUT_MARK_RE = /^❯(?: |$)/
 const MARK_RE = /^✔ +/
 const NUMBER_RE = /^[0-9]+\.\s+/
 const OTHER_LABELS: readonly string[] = ['Other', 'Type something.']
@@ -312,18 +314,24 @@ function isReadyScreen(screen: string): boolean {
   return TUI_READY.test(screen)
 }
 
-export function isInputShowing(screen: string, text: string): boolean {
+// The box holds the typed text between two rules and wraps it onto indented lines.
+export function inputBoxOf(screen: string): string | null {
   const lines = screen.split('\n')
-  const typed = `❯ ${text}`
+  const start = lines.findLastIndex(
+    (line, index) => INPUT_MARK_RE.test(line) && lines[index - 1]?.startsWith('─') === true,
+  )
+  if (start === -1) return null
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('─'))
+  if (end === -1) return null
 
-  return lines.some((line, index) => {
-    if (line.trimEnd() !== typed) return false
-    const above = lines[index - 1]
-    const below = lines[index + 1]
-    if (above === undefined || below === undefined) return false
+  return lines.slice(start, end).join('\n')
+}
 
-    return above.startsWith('─') && below.startsWith('─')
-  })
+export function isInputShowing(screen: string, text: string): boolean {
+  const box = inputBoxOf(screen)
+  if (box === null) return false
+
+  return box.replace(INPUT_MARK_RE, '').replace(WHITESPACE_RE, '') === text.replace(WHITESPACE_RE, '')
 }
 
 function authChecked(screen: string): string {
@@ -347,7 +355,7 @@ export async function idleTui(pane: Pane, quietMs?: number, timeoutMs?: number):
   return authChecked(await waitIdle(pane, quietMs, timeoutMs))
 }
 
-// The engine takes an Enter sent while it still draws the typed text as a newline.
+// The engine takes an Enter sent while it still draws the typed text as a newline: Enter waits for a still input box.
 export async function submitTui(pane: Pane, text: string): Promise<void> {
   await sendText(pane, text)
   await waitTui(
@@ -356,7 +364,7 @@ export async function submitTui(pane: Pane, text: string): Promise<void> {
     WAIT_MS,
     `the typed ${JSON.stringify(text)} in the input box`,
   )
-  await idleTui(pane)
+  authChecked(await waitSteady(pane, screen => inputBoxOf(screen) ?? screen, 'the input box to hold still'))
   await sendKeys(pane, 'Enter')
 }
 
