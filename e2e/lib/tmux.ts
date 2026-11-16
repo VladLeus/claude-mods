@@ -204,10 +204,11 @@ export async function waitFor(
   matcher: Matcher,
   timeoutMs: number = WAIT_MS,
   label: string = labelOf(matcher),
+  captureOpts: CaptureOptions = {},
 ): Promise<string> {
   const opts = { timeoutMs, intervalMs: POLL_MS, now: Date.now, sleep: delay, isDead: () => isPaneDead(pane), label }
   try {
-    return await pollUntil(() => capture(pane), screen => matches(matcher, screen), opts)
+    return await pollUntil(() => capture(pane, captureOpts), screen => matches(matcher, screen), opts)
   } catch (error) {
     return deadNote(pane, error)
   }

@@ -16,7 +16,7 @@ import { WAIT_MAX_S, WAIT_TIMEOUT_DEFAULT_S } from '../lib/agent.ts'
 import type { AgentCommand, Location, RunState, WsState } from '../lib/agent.ts'
 import { e2eConfigDir, e2eConfigPath, writeFilterFile } from '../lib/auth.ts'
 import { answer, answerOther, authPreflight, idleTui, isDialogScreen, passTrust, startTui } from '../lib/claude.ts'
-import { submitTui } from '../lib/claude.ts'
+import { isPromptOrQuestion, submitTui } from '../lib/claude.ts'
 import type { PreflightStage } from '../lib/claude.ts'
 import { otherEntryChanges, restoreState, snapshotState } from '../lib/config-state.ts'
 import { hostUser, liveEnv, SYSTEM_PATH, writeClaudeFence } from '../lib/env.ts'
@@ -62,7 +62,7 @@ const REFUSED = 2
 const FAILED = 1
 const GUARD_FAILED = 3
 const NOT_FINISHED = 'not finished: the agent did not call finish'
-const NO_ECHO_LINE = 'no echo of the last sent text on the screen: matched against every line'
+const NO_ECHO_LINE = 'no echo of the last sent text in the history: matched against every line'
 const CLAIMS_LOCK = 'claims.lock'
 const EXCLUSIVE_DIR = 'exclusive'
 const EXCLUSIVE_HOLDER_FILE = 'ws'
@@ -370,13 +370,13 @@ function helpText(): string {
 claim <ws> <role...> [--wait <s>]: claim roles for this workspace before starting them (--wait retries every ${CLAIM_RETRY_MS / 1000} s, at most ${WAIT_MAX_S})
 start <ws> root|<role> [--cwd <folder>] [--wt <worktree>] [--raw]: open the root window or a claimed role window (--raw starts the launcher without /cadre start)
 windows <ws>: list the windows, live or dead, with their folder
-trust <ws> <window>: pass the trust screens of a window cadre opened and take it into the workspace
+trust <ws> <window>: pass the trust screens of a window cadre opened and take it into the workspace; it returns at the ready prompt or at a question
 send <ws> <window> <text>: type one line into a window and submit it (a root window takes slash commands only)
 keys <ws> <window> <key...>: press keys in a window: ${SAFE_KEYS.join(', ')}
 answer <ws> <window> <label>: pick the option with this label in the question on the screen
 other <ws> <window> <text>: answer the question on the screen with typed text
 capture <ws> <window> [--history] [--lines <n>]: print the last lines of a window (${HISTORY_LINES_DEFAULT} by default, at most ${HISTORY_LINES_MAX})
-wait <ws> <window> <regex> [--timeout <s>]: wait until the screen matches, ^ and $ at each line; after a send only the lines below its echo count (${WAIT_TIMEOUT_DEFAULT_S} s by default, at most ${WAIT_MAX_S})
+wait <ws> <window> <regex> [--timeout <s>]: wait until the window history matches, ^ and $ at each line; after a send only the lines below its echo count (${WAIT_TIMEOUT_DEFAULT_S} s by default, at most ${WAIT_MAX_S})
 idle <ws> <window>: wait until the screen stops changing and print it
 stop <ws> <window>: exit the session in a window and print its exit status
 cadre <ws> <args...> [--wt <worktree>]: run /cadre <args> in print mode in the copy and print the reply (opens no epic)
@@ -792,7 +792,7 @@ async function showWindows(run: RunState, ws: WsState): Promise<number> {
 async function trust(cmd: Command<'trust'>, run: RunState, ws: WsState): Promise<number> {
   const server = serverOf(ws)
   if (!await isServerUp(server)) return refuse(`${ws.id} has no windows yet: run start first`)
-  await passTrust(server, cmd.window)
+  await passTrust(server, cmd.window, isPromptOrQuestion)
   await saveWs(run, withWindow(ws, { name: cmd.window, kind: 'role' }))
   say(`trusted ${cmd.window}`)
 
@@ -850,13 +850,15 @@ async function waitWindow(cmd: Command<'wait'>, ws: WsState): Promise<number> {
   if (!pane) return refuse(`no window ${cmd.window} in ${ws.id}`)
   const sent = ws.windows.find(item => item.name === cmd.window)?.lastSent
   const isMatch = (shown: string): boolean => matches(cmd.pattern, afterEcho(shown, sent).text)
-  const screen = await waitFor(pane, isMatch, cmd.timeoutMs, String(cmd.pattern)).catch((error: unknown) => {
+  const waiting = waitFor(pane, isMatch, cmd.timeoutMs, String(cmd.pattern), { history: true })
+  const screen = await waiting.catch((error: unknown) => {
     if (error instanceof HarnessError) return null
     throw error
   })
   if (screen !== null) {
     const isEchoMissing = afterEcho(screen, sent).echo === 'missing'
-    say(isEchoMissing ? `matched\n${NO_ECHO_LINE}\n${screen}` : `matched\n${screen}`)
+    const shown = lastLines(screen, SCREEN_LINES)
+    say(isEchoMissing ? `matched\n${NO_ECHO_LINE}\n${shown}` : `matched\n${shown}`)
     return 0
   }
   const isExited = (await windowOf(server, cmd.window))?.dead === true

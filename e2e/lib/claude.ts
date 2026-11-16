@@ -490,6 +490,10 @@ export function isAppDialog(screen: string): boolean {
   return isDialogScreen(screen) && stepOf(screen) === undefined
 }
 
+export function isPromptOrQuestion(screen: string): boolean {
+  return isReadyScreen(screen) || isAppDialog(screen)
+}
+
 async function passTrustIn(pane: Pane, until: ScreenTest, seen?: StepSeen): Promise<string> {
   const known = (screen: string): boolean => until(screen) || stepOf(screen) !== undefined
   const label = 'the ready prompt, a settings warning, the folder trust dialog or a first-run screen'
@@ -526,13 +530,13 @@ export async function startTui(server: Server, cwd: string, args: readonly strin
   return startTuiUntil(server, cwd, args, isReadyScreen, seen)
 }
 
-export async function passTrust(server: Server, window: string): Promise<Pane> {
+export async function passTrust(server: Server, window: string, until: ScreenTest = isReadyScreen): Promise<Pane> {
   const opts = { timeoutMs: WAIT_MS, intervalMs: POLL_MS, now: Date.now, sleep: delay, label: `the window ${window}` }
   const windows = await pollUntil(() => listWindows(server), list => list.some(item => item.name === window), opts)
   const found = windows.find(item => item.name === window)
   if (!found) throw new HarnessError(`no tmux window named ${window}`)
   const pane = { server, id: found.pane }
-  await passTrustIn(pane, isReadyScreen)
+  await passTrustIn(pane, until)
 
   return pane
 }
