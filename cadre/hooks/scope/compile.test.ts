@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CompiledScope, FrameworkId, McpRoute, PermissionMode, ProbeCheck, RoleSpec, ScopeRule } from '../../types'
+import type {
+  CompiledScope,
+  FrameworkId,
+  McpRoute,
+  PermissionMode,
+  ProbeCheck,
+  RoleSpec,
+  ScopeRule,
+  TemplateRoleId,
+} from '../../types'
 import { adapterOf } from '../framework/registry'
 import type { LaunchUser } from '../launch/links'
 import { renderRuntimeSettings } from '../launch/settings'
@@ -15,6 +24,7 @@ import {
   HASH,
   hook,
   leaks,
+  role,
   session,
   skillRef,
   templateRole,
@@ -40,6 +50,16 @@ const PLUGIN_RULE =
 
 /** The Bash rule of a role that has Bash: one rule for both platforms, with the weaker label (ROLE-06). */
 const SANDBOX_RULE = 'Bash runs in the sandbox (hard on macOS, best-effort on Linux)'
+
+/** The sandbox of a role that runs the repo's checks: docker outside it, the tool caches writable. */
+const IMPLEMENTER_SANDBOX = {
+  enabled: true,
+  excludedCommands: ['docker *', 'docker-compose *'],
+  filesystem: { allowWrite: ['~/.cache'] },
+}
+
+/** The sandbox of any other role with Bash: only the tool caches writable. */
+const CACHE_SANDBOX = { enabled: true, filesystem: { allowWrite: ['~/.cache'] } }
 
 /** The warning that leads the card of a role whose role.json sets bypassPermissions by hand (D-95). */
 const BYPASS_RULE = 'WARNING: bypassPermissions is set in role.json: permission prompts are skipped'
@@ -434,7 +454,7 @@ describe('scope rules', () => {
       'Read(~/.aws/**)',
       'Read(~/.ssh/**)',
     ])
-    expect(scope.settings.sandbox).toEqual({ enabled: true })
+    expect(scope.settings.sandbox).toEqual(IMPLEMENTER_SANDBOX)
     expect(ruleOf(scope, SANDBOX_RULE)).toEqual({ text: SANDBOX_RULE, enforcement: 'best-effort' })
     expect(ruleOf(scope, 'No Bash tool (denied)')).toBeUndefined()
     expect(scope.card.rules.filter(candidate => candidate.text.startsWith('Reads and edits'))).toEqual([])
@@ -1135,5 +1155,33 @@ describe('union scope over the frameworks the repo records', () => {
 
     expect(union.overlay.agents).toEqual(['gsd-executor', 'gsd-planner'])
     expect([alone.overlay.agents, none.overlay.agents]).toEqual([[], []])
+  })
+})
+
+describe('the sandbox of a role', () => {
+  test('BE, FE and QA run docker and docker-compose outside the sandbox and may write ~/.cache', () => {
+    const ids: readonly TemplateRoleId[] = ['be', 'fe', 'qa']
+    const sandboxes = ids.map(id => compileScope(templateRole(id), context()).settings.sandbox)
+
+    expect(sandboxes).toEqual([IMPLEMENTER_SANDBOX, IMPLEMENTER_SANDBOX, IMPLEMENTER_SANDBOX])
+  })
+
+  test('TL and Security may write ~/.cache and run no command outside the sandbox', () => {
+    const ids: readonly TemplateRoleId[] = ['tl', 'security']
+    const sandboxes = ids.map(id => compileScope(templateRole(id), context()).settings.sandbox)
+
+    expect(sandboxes).toEqual([CACHE_SANDBOX, CACHE_SANDBOX])
+  })
+
+  test('the PM has no Bash, so its sandbox is off and holds no other key', () => {
+    const sandbox = compileScope(templateRole('pm'), context()).settings.sandbox
+
+    expect(sandbox).toEqual({ enabled: false })
+    expect(Object.keys(sandbox)).toEqual(['enabled'])
+  })
+
+  test('a role based on BE runs docker outside the sandbox, a Bash role based on none does not', () => {
+    expect(compileScope(role('api', 'be'), context()).settings.sandbox).toEqual(IMPLEMENTER_SANDBOX)
+    expect(compileScope(role('docs', null), context()).settings.sandbox).toEqual(CACHE_SANDBOX)
   })
 })

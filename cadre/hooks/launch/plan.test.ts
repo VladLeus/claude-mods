@@ -59,6 +59,13 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
   }
 }
 
+/** The sandbox of BE as the template holds it: docker outside it, the tool caches writable. */
+const BE_SANDBOX = {
+  enabled: true,
+  excludedCommands: ['docker *', 'docker-compose *'],
+  filesystem: { allowWrite: ['~/.cache'] },
+}
+
 /** What a role carries from the user's settings: the window, the status line, one env name and one hook script. */
 const CARRY_ALL = {
   autoCompactWindow: true,
@@ -405,8 +412,18 @@ describe('launch render', () => {
           ...teamFileRules('/repo', ['be']),
         ]),
       },
-      sandbox: { enabled: true },
+      sandbox: BE_SANDBOX,
     })
+  })
+
+  test('the runtime sandbox is the template sandbox: BE keeps docker and ~/.cache, the PM stays off', () => {
+    const be = templateRole('be')
+    const beScope = compileScope(be, context())
+    const pm = templateRole('pm')
+
+    expect(launchPlan(be, beScope, user()).settings.sandbox).toEqual(beScope.settings.sandbox)
+    expect(launchPlan(be, beScope, user()).settings.sandbox).toEqual(BE_SANDBOX)
+    expect(launchPlan(pm, compileScope(pm, context()), user()).settings.sandbox).toEqual({ enabled: false })
   })
 
   test('the context monitor hook is never rendered, even when the role lists it (D-62)', () => {
