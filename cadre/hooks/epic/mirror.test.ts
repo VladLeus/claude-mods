@@ -4,6 +4,7 @@ import type { PortEntry } from '../../types'
 import { BARE_WORKTREE, entry, link } from '../testkit'
 import {
   epicStepArgv,
+  epicStepTimeoutMs,
   isHiddenCopy,
   mirrorLinkedParentWarning,
   mirrorPaths,
@@ -19,7 +20,15 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
 
     expect(epicStepArgv({ kind: 'mkdir', path: '/w/a' })).toEqual(['/bin/mkdir', '-p', '--', '/w/a'])
     expect(epicStepArgv(linkStep)).toEqual(['/bin/ln', '-s', '--', '/repo/a', '/w/a'])
-    expect(epicStepArgv(copyStep)).toEqual(['/bin/cp', '-p', '--', '/repo/.env', '/w/.env'])
+    expect(epicStepArgv(copyStep)).toEqual(['/bin/cp', '-pR', '--', '/repo/.env', '/w/.env'])
+  })
+
+  test('a copy step may run for 120 s, as a whole folder takes long to copy; a mkdir or link step for 10 s', () => {
+    const copyStep: EpicStep = { kind: 'copy', path: '/w/thoughts', source: '/repo/thoughts' }
+
+    expect(epicStepTimeoutMs(copyStep)).toBe(120_000)
+    expect(epicStepTimeoutMs({ kind: 'mkdir', path: '/w/a' })).toBe(10_000)
+    expect(epicStepTimeoutMs({ kind: 'link', path: '/w/a', target: '/repo/a' })).toBe(10_000)
   })
 })
 
@@ -84,13 +93,14 @@ const SCRATCH_STEPS: readonly string[] = [
   'copy web/.env',
 ]
 
-/** mirrorPlan of `entries` for the role pm from /repo into BARE_WORKTREE, over these listings. */
+/** mirrorPlan of `entries` for the role pm from /repo into BARE_WORKTREE, over these listings and named paths. */
 function planOf(
   entries: readonly string[],
   main: ReadonlyMap<string, readonly PortEntry[]>,
   tree: ReadonlyMap<string, readonly PortEntry[]>,
+  included: readonly string[] = [],
 ): ReturnType<typeof mirrorPlan> {
-  return mirrorPlan({ root: '/repo', worktree: BARE_WORKTREE, entries, roleIds: ['pm'], main, tree })
+  return mirrorPlan({ root: '/repo', worktree: BARE_WORKTREE, entries, roleIds: ['pm'], main, tree, included })
 }
 
 describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
@@ -181,9 +191,71 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
   })
 
   test('mirrorPaths names every folder the rules read, in the main checkout and in the worktree, sorted', () => {
-    expect(mirrorPaths(['.cadre', 'a/b/c', 'web/.env'], ['pm'])).toEqual({
+    expect(mirrorPaths(['.cadre', 'a/b/c', 'web/.env'], ['pm'], [])).toEqual({
       main: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'a/b', 'web'],
       tree: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'a', 'a/b', 'web'],
+    })
+  })
+})
+
+describe('what .worktreeinclude names in the mirror', () => {
+  /** Main's root listing thoughts and node_modules as real folders. */
+  const MAIN = new Map([['', [entry('node_modules', 'dir'), entry('thoughts', 'dir')]]])
+
+  test('a named folder is copied whole in one step and recorded as a copy, not a link', () => {
+    const plan = planOf(['node_modules', 'thoughts'], MAIN, new Map(), ['thoughts'])
+
+    expect(plan.steps.map(stepLine)).toEqual(['link node_modules', 'copy thoughts'])
+    expect(plan.steps[1]).toEqual({ kind: 'copy', path: `${BARE_WORKTREE}/thoughts`, source: '/repo/thoughts' })
+    expect([plan.copies, plan.links]).toEqual([['thoughts'], ['node_modules']])
+  })
+
+  test('a named file below .claude is copied, while the other children of .claude are linked', () => {
+    const main = new Map([['.claude', [entry('settings.local.json'), entry('skills', 'dir')]]])
+    const plan = planOf(['.claude'], main, new Map(), ['.claude/settings.local.json'])
+
+    expect(plan.steps.map(stepLine)).toEqual([
+      'mkdir .claude',
+      'copy .claude/settings.local.json',
+      'link .claude/skills',
+    ])
+  })
+
+  test('a named path below an ignored folder makes the folder real: the named child copied, the others linked', () => {
+    const main = new Map([
+      ['', [entry('node_modules', 'dir'), entry('thoughts', 'dir')]],
+      ['thoughts', [entry('local', 'dir'), entry('notes.md'), entry('shared', 'dir')]],
+    ])
+    const plan = planOf(['thoughts'], main, new Map(), ['thoughts/shared'])
+
+    expect(plan.steps.map(stepLine)).toEqual([
+      'mkdir thoughts',
+      'link thoughts/local',
+      'link thoughts/notes.md',
+      'copy thoughts/shared',
+    ])
+    expect([plan.copies, plan.links]).toEqual([['thoughts/shared'], ['thoughts/local', 'thoughts/notes.md']])
+  })
+
+  test('a named path the worktree lists already, as a folder or a link, gets no step, nor anything below it', () => {
+    for (const listed of [entry('thoughts', 'dir'), link('thoughts')]) {
+      const tree = new Map([['', [listed]]])
+
+      expect(planOf(['thoughts'], MAIN, tree, ['thoughts']).steps).toEqual([])
+      expect(planOf(['thoughts'], MAIN, tree, ['thoughts/shared']).steps).toEqual([])
+    }
+  })
+
+  test('a named entry that is a link in main is linked, never copied', () => {
+    const plan = planOf(['thoughts'], new Map([['', [link('thoughts')]]]), new Map(), ['thoughts'])
+
+    expect([plan.steps.map(stepLine), plan.copies]).toEqual([['link thoughts'], []])
+  })
+
+  test('mirrorPaths also names the folders above each named path, in the main checkout and in the worktree', () => {
+    expect(mirrorPaths(['thoughts'], ['pm'], ['thoughts/shared/handoffs'])).toEqual({
+      main: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'thoughts', 'thoughts/shared'],
+      tree: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'thoughts', 'thoughts/shared'],
     })
   })
 })

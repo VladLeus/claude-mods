@@ -46,6 +46,7 @@ import {
   EXCLUDES_CONFIG_ARGV,
   GIT_DIR_ARGV,
   GLOBAL_EXCLUDES_ARGV,
+  INCLUDED_ARGV,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
   WORKTREE_CONFIG_ARGV,
@@ -548,6 +549,57 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
       'mkdir .cadre/pm',
       'link .cadre/pm/role.json',
     ])
+  })
+})
+
+/** git ignoring thoughts/ and node_modules/ in the main checkout, and naming thoughts/ as .worktreeinclude lists it. */
+const INCLUDE_RULES: readonly HostRunRule[] = [
+  rule(LS_OTHERS_ARGV('/repo'), 0, ''),
+  rule(LS_IGNORED_ARGV('/repo'), 0, 'thoughts/\0node_modules/\0'),
+  rule(INCLUDED_ARGV('/repo'), 0, 'thoughts/\0'),
+  rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`),
+]
+
+/** A team world whose main checkout lists node_modules and thoughts as real folders, with `files` added. */
+async function includeWorld(files: Readonly<Record<string, string>> = {}): Promise<MemWorld> {
+  const world = await teamWorld()
+  const dirs = { ...world.dirs, '/repo': [entry('node_modules', 'dir'), entry('thoughts', 'dir')] }
+
+  return { ...world, files: { ...world.files, ...files }, dirs }
+}
+
+describe('copying what .worktreeinclude names into the epic worktree', () => {
+  test('a folder .worktreeinclude names is copied whole and recorded as a copy, an unnamed one linked', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    const run = await epic(world, INCLUDE_RULES, 'PROJ-1', '')
+    const cp = ['/bin/cp', '-pR', '--', '/repo/thoughts', `${BARE_WORKTREE}/thoughts`]
+    const ln = ['/bin/ln', '-s', '--', '/repo/node_modules', `${BARE_WORKTREE}/node_modules`]
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+
+    expect(run.events).toContain(cp.join(' '))
+    expect(run.events).toContain(ln.join(' '))
+    expect(run.calls.find(call => call.argv[0] === '/bin/cp')?.options.timeoutMs).toBe(120_000)
+    expect([record?.copies, record?.links]).toEqual([['thoughts'], ['node_modules']])
+  })
+
+  test('with no .worktreeinclude there is no INCLUDED_ARGV run, and thoughts stays a link', async () => {
+    const run = await epic(await includeWorld(), INCLUDE_RULES, 'PROJ-1', '')
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+
+    expect(run.events).not.toContain(INCLUDED_ARGV('/repo').join(' '))
+    expect(stepRuns(run)).toEqual(['link node_modules', 'link thoughts'])
+    expect([record?.copies, record?.links]).toEqual([[], ['node_modules', 'thoughts']])
+  })
+
+  test('a failed or rejected INCLUDED_ARGV run stops before the excludes file and any step', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    for (const failure of [rule(INCLUDED_ARGV('/repo'), 128), rule(INCLUDED_ARGV('/repo'), null)]) {
+      const run = await epic(world, [failure, ...INCLUDE_RULES], 'PROJ-1', '')
+
+      expect(run.reply).toBe(epicListFailedReply('PROJ-1'))
+      expect(run.writes.filter(write => write.path === BARE_EXCLUDES)).toEqual([])
+      expect(run.calls.filter(call => (call.argv[0] ?? '').startsWith('/bin/'))).toEqual([])
+    }
   })
 })
 
