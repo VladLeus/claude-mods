@@ -65,6 +65,7 @@ import {
   isTimeUp,
   isValidHandoffPath,
   limitAction,
+  limitStopsFor,
   lockStale,
   namedSkills,
   parkedWait,
@@ -1338,6 +1339,19 @@ describe('token limits', () => {
     }
     for (const phase of ['paused', 'final', 'wrapping', 'restarting', 'resuming'] as const) {
       expect(isTimeUp(run({ phase, until: 100 }), 100)).toBe(false)
+    }
+  })
+
+  test('the limit stops by phase: all while working, only the weekly stop at the end of the turn that declares a wait, none otherwise', async () => {
+    for (const phase of ['running', 'resuming', 'waiting'] as const) {
+      expect(limitStopsFor(phase, true)).toBe('all')
+      expect(limitStopsFor(phase, false)).toBe('all')
+    }
+    expect(limitStopsFor('awaiting', true)).toBe('week')
+    expect(limitStopsFor('awaiting', false)).toBe('none')
+    for (const phase of ['paused', 'final', 'wrapping', 'restarting'] as const) {
+      expect(limitStopsFor(phase, true)).toBe('none')
+      expect(limitStopsFor(phase, false)).toBe('none')
     }
   })
 
