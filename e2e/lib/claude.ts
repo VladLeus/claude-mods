@@ -54,7 +54,7 @@ const PRINT_MODE_MS = 300_000
 const PLUGIN_COMMAND_MS = 60_000
 const PREFLIGHT_PROMPT = 'Reply with OK'
 const PREFLIGHT_PROMPT_MS = 120_000
-export const STDERR_REASON_CHARS = 200
+export const PRINTED_REASON_CHARS = 200
 const AUTH_LOST_RE = /authentication|\b401\b|oauth/i
 const MARKETPLACE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const FRESHNESS_PLUGIN = 'cadre'
@@ -221,19 +221,20 @@ function failed(stage: PreflightStage, reason: string, identities: readonly stri
   return { ok: false, stage, reason, identities }
 }
 
-// The line is filtered before the cut, so a cut never leaves part of a secret the filter can no longer match.
+// Each part is filtered before the cut, so a cut never leaves part of a secret the filter can no longer match.
 export function modelCallReason(
-  code: number,
-  stderr: string,
+  result: RunResult,
   identities: readonly string[],
   env: Env = process.env,
 ): string {
-  const base = `model call failed: claude -p exited ${code}`
-  const line = firstLine(stderr)
-  if (line === '') return base
-  const detail = filterText(line, filterContext(env, { identities })).slice(0, STDERR_REASON_CHARS)
+  const base = `model call failed: claude -p exited ${result.code}`
+  const ctx = filterContext(env, { identities })
+  const parts = Object.entries({ stderr: result.stderr, stdout: result.stdout })
+    .filter(([, raw]) => raw.trim() !== '')
+    .map(([label, raw]) => `${label}: ${squashed(filterText(raw.trim(), ctx)).slice(0, PRINTED_REASON_CHARS)}`)
+  if (parts.length === 0) return `${base}: printed nothing`
 
-  return `${base}: ${detail}`
+  return `${base}: ${parts.join('; ')}`
 }
 
 export async function authPreflight(opts: PreflightOptions): Promise<Preflight> {
@@ -250,7 +251,7 @@ export async function authPreflight(opts: PreflightOptions): Promise<Preflight> 
   }
   const answer = await printMode(opts.cwd, [PREFLIGHT_PROMPT], env, PREFLIGHT_PROMPT_MS).catch(messageOf)
   if (typeof answer === 'string') return failed('login', `model call failed: ${answer}`, identities)
-  if (answer.code !== 0) return failed('login', modelCallReason(answer.code, answer.stderr, identities), identities)
+  if (answer.code !== 0) return failed('login', modelCallReason(answer, identities), identities)
   if (answer.stdout.trim() === '') return failed('login', 'model call failed: claude -p printed no answer', identities)
 
   return { ok: true, identities, plugins }

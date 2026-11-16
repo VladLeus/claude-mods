@@ -30,7 +30,8 @@ CLAUDE_CONFIG_DIR=~/.cache/claude-mods-e2e/config claude auth login
 - The dir is used in place. The harness never reads, copies, prints or writes a credential: no credentials file, no
   token in an env var, no copy of the login. claude reads its own keychain item and keeps the login fresh itself.
 - When the login cannot be refreshed, the preflight stops with `log in again: CLAUDE_CONFIG_DIR=<dir> claude auth
-  login` and a reason (`not logged in`, `login expires soon` when the login ends within 3 hours, `model call failed`).
+  login` and a reason (`not logged in`, `login expires soon` when the login ends within 3 hours, `model call failed`,
+  with what the call printed on stderr and stdout, filtered).
 - `error: auth lost mid-run` means a session showed the login screen during a row: log in again and rerun.
 - One live run at a time holds the dir through the lock `<dir>.lock`.
 - The dir's `projects/` grows with the transcripts of scratch sessions. Empty it whenever you like, but only between
