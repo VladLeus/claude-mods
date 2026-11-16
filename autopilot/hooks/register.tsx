@@ -26,6 +26,7 @@ import {
   availMode,
   availStatusLines,
   awayUntil,
+  callSignature,
   canDeliver,
   combinedPingText,
   criticalCount,
@@ -52,6 +53,7 @@ import {
   isDoneAnswer,
   isGraceEligible,
   isGraceLive,
+  isIdleTurn,
   isLiveFinishedValue,
   isModeDeny,
   isValidHandoffPath,
@@ -105,7 +107,8 @@ let sessionId = ''
 // Empty when HOME is unset: then no state or log file is written at all.
 let home = ''
 let isTurnRunning = false
-let toolsThisTurn = 0
+let callsThisTurn: string[] = []
+let callsLastTurn: string[] | null = null
 // Counts main turns, so a delayed check can tell whether a new turn started meanwhile.
 let turnSeq = 0
 // Whether this run's /goal is set right now (/clear removes it; autopilot sets it again).
@@ -1401,7 +1404,7 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     isTurnRunning = true
-    toolsThisTurn = 0
+    callsThisTurn = []
     turnSeq += 1
     // Read and reset before any await: only the prompt that starts this turn can be the answer.
     const isAnswer = lastSubmitHuman
@@ -1594,7 +1597,7 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     if (e.agentId || !run || run.phase === 'paused') return next(e)
-    toolsThisTurn += 1
+    callsThisTurn.push(callSignature(e))
     // Working on after wait_for ends the wait; the call is then handled as usual.
     // A sibling call in the same parallel batch ends it too: working means not waiting.
     if (endsWait(run.phase, e.tool)) await endWait($, e.tool)
@@ -1701,7 +1704,8 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const usage = await $.session.usage().catch(() => null)
     const percent = usage?.context.percent ?? null
-    const calledTools = toolsThisTurn > 0
+    const madeProgress = !isIdleTurn(callsLastTurn, callsThisTurn)
+    callsLastTurn = callsThisTurn
 
     // A turn with no tool calls never passed through the mid-turn check.
     const limitInstruction = await applyLimits($, usage?.rateLimits ?? [], now)
@@ -1724,10 +1728,10 @@ export const register: Register = on => {
       return result
     }
 
-    const action = afterTurn(run, now, percent, calledTools, ceiling)
+    const action = afterTurn(run, now, percent, madeProgress, ceiling)
 
     if (action === 'continue') {
-      run.idleTurns = calledTools ? 0 : run.idleTurns + 1
+      run.idleTurns = madeProgress ? 0 : run.idleTurns + 1
       await save($)
       if (!run) return result
       // With a goal set, its own loop starts the next turn; autopilot only watches.
