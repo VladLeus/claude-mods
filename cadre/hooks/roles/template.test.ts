@@ -8,6 +8,7 @@ import { SUPERPOWERS_GATES } from '../framework/superpowers/adapter'
 import { row, TEMPLATE_ORDER } from '../testkit'
 import { applyAdjust } from './adjust'
 import {
+  asksInEpic,
   AUTOPILOT_THRESHOLD,
   chainLines,
   DECISION_OWNERS,
@@ -270,5 +271,23 @@ describe('the core team', () => {
     const recorded = [isCoreTeam({ structure: 'core' }), isCoreTeam({ structure: 'custom' }), isCoreTeam({})]
 
     expect(recorded).toEqual([true, false, false])
+  })
+
+  test('asksInEpic: core PM, TL and Security ask in an epic', () => {
+    const others: readonly Pick<RoleSpec, 'id' | 'basedOn'>[] = [
+      { id: 'lead', basedOn: 'tl' },
+      { id: 'docs', basedOn: null },
+    ]
+    const roles = [...TEAM, ...others]
+
+    expect(roles.filter(role => asksInEpic(role, true)).map(role => role.id)).toEqual(['pm', 'tl', 'security', 'lead'])
+    expect(roles.filter(role => asksInEpic(role, false))).toEqual([])
+  })
+
+  test('every decision-chain owner of the core team asks the person in an epic', () => {
+    const owners = TEAM.filter(role => DECISION_TYPES.some(decision => decisionChain(decision, TEAM)[0] === role.id))
+
+    expect(owners.map(role => role.id)).toEqual(['pm', 'tl', 'security'])
+    expect(owners.filter(role => !asksInEpic(role, true))).toEqual([])
   })
 })

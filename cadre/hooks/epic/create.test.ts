@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HostIo, ManifestEntry, MemoryItem, RoleSpec } from '../../types'
+import type { HostIo, ManifestEntry, MemoryItem, RoleSpec, TeamStructure } from '../../types'
 import { instructionsRecordPath, instructionsRecordText } from '../apply/private'
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue, stableJson } from '../core/json'
@@ -95,10 +95,15 @@ function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
 
 /**
  * A git repo at /repo after a plain init of `roles` (PM and BE by default): cadre.json lists them on the built-in
- * default, launched at the git root, recording `readUserMcp` (no consent to read ~/.claude.json by default), each
- * role.json is written from its role, and each launcher lies in `.cadre/bin/` with its sha256 in the manifest.
+ * default, launched at the git root, recording `readUserMcp` (no consent to read ~/.claude.json by default) and
+ * `structure` when given (none by default), each role.json is written from its role, and each launcher lies in
+ * `.cadre/bin/` with its sha256 in the manifest.
  */
-async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
+async function teamWorld(
+  roles: readonly RoleSpec[] = TEAM,
+  readUserMcp = false,
+  structure?: TeamStructure,
+): Promise<MemWorld> {
   const ids = roles.map(role => role.id)
   const state = cadreJsonText({
     schema: 1,
@@ -108,6 +113,7 @@ async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false)
     roles: ids,
     launchStart: { kind: 'git-root' },
     readUserMcp,
+    ...(structure === undefined ? {} : { structure }),
   })
   const entries = await Promise.all(ids.map(launcherEntry))
   const files: Record<string, string> = {
@@ -812,11 +818,16 @@ const COMMON_DIR = rule(GIT_COMMON_DIR_ARGV, 0, '/repo/.git\n')
 const RENDER_RULES: readonly HostRunRule[] = [rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`), COMMON_DIR]
 
 /**
- * The team world of `roles` (PM and BE by default) and `readUserMcp` with each role folder a real folder in the main
- * checkout and in BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its role folder.
+ * The team world of `roles` (PM and BE by default), `readUserMcp` and `structure` with each role folder a real folder
+ * in the main checkout and in BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its
+ * role folder.
  */
-async function renderWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
-  const world = await teamWorld(roles, readUserMcp)
+async function renderWorld(
+  roles: readonly RoleSpec[] = TEAM,
+  readUserMcp = false,
+  structure?: TeamStructure,
+): Promise<MemWorld> {
+  const world = await teamWorld(roles, readUserMcp, structure)
   const folders = roles.flatMap(role => [`/repo/.cadre/${role.id}`, `${BARE_WORKTREE}/.cadre/${role.id}`])
 
   return { ...world, dirs: { ...world.dirs, ...Object.fromEntries(folders.map(folder => [folder, []])) } }
@@ -912,7 +923,7 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
 })
 
 describe('the epic kickoff of each role (D-158 to D-160)', () => {
-  test('a worker starts by waiting for its parent and never asks the user; PM always does (D-159, D-160)', async () => {
+  test('a worker starts by waiting for its parent and never asks the user; PM and TL of a core team do', async () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
     const team = [
@@ -920,7 +931,7 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
       templateRole('tl'),
       { ...be, autopilot: { ...be.autopilot, askUser: true } },
     ]
-    const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
+    const run = await epic(await renderWorld(team, false, 'core'), RENDER_RULES, 'PROJ-1', '')
     const kickoff = (id: string) => lastWrite(run, `${BARE_WORKTREE}/.cadre/${id}/.runtime/kickoff.txt`) ?? ''
 
     expect(kickoff('be')).toContain('idle-inbox')
@@ -928,6 +939,16 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
     expect(kickoff('be')).not.toContain(' --ask-user')
     expect(kickoff('pm')).toContain('then feed cadre-tl ticket by ticket.')
     expect(kickoff('pm').endsWith(' --ask-user\n')).toBe(true)
+    expect(kickoff('tl').endsWith(' --ask-user\n')).toBe(true)
+  })
+
+  test('an unrecorded team gives only PM --ask-user', async () => {
+    const team = [templateRole('pm'), templateRole('tl'), templateRole('be'), templateRole('security')]
+    const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
+    const kickoff = (id: string) => lastWrite(run, `${BARE_WORKTREE}/.cadre/${id}/.runtime/kickoff.txt`) ?? ''
+
+    expect(team.filter(role => !kickoff(role.id).startsWith('/autopilot '))).toEqual([])
+    expect(team.map(role => kickoff(role.id).endsWith(' --ask-user\n'))).toEqual([true, false, false, false])
   })
 
   test('a role whose worktree launcher predates the epic kickoff is named, not copied; others go on', async () => {

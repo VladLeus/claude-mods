@@ -9,6 +9,9 @@ const WAIT = 'wait_for reason idle-inbox '
 
 const LOAD_TOOLS_END = ` ${KICKOFF_LOAD_TOOLS}`
 
+/** The epic PROJ-1 of a team whose TL is tl, as the single-role specs kick it off. */
+const EPIC = { key: 'PROJ-1', title: 'Epic', tlId: 'tl' }
+
 /** The quoted role line of a kickoff: what lies between its first and its last double quote. */
 function kickoffLine(kickoff: string): string {
   return kickoff.slice(kickoff.indexOf('"') + 1, kickoff.lastIndexOf('"'))
@@ -29,7 +32,7 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
       const pm = templateRole('pm', { id: 'p'.repeat(size) })
       const tl = templateRole('tl', { id: 't'.repeat(size), title })
       const be = templateRole('be', { id: 'b'.repeat(size), title })
-      const input = { key, title, tlId: tl.id }
+      const input = { key, title, tlId: tl.id, isCoreTeam: false }
 
       return [
         kickoffLine(epicKickoffText({ ...input, role: pm, isPm: true, parent: null })),
@@ -53,7 +56,7 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
     const pm = templateRole('pm')
     const { duration, threshold } = pm.autopilot
     const title = 'T'.repeat(300)
-    const kickoff = epicKickoffText({ role: pm, key: 'PROJ-1', title, isPm: true, parent: null, tlId: 'tl' })
+    const kickoff = epicKickoffText({ ...EPIC, role: pm, title, isPm: true, parent: null, isCoreTeam: false })
     const line = kickoffLine(kickoff)
 
     expect(kickoff).toBe(`/autopilot ${duration} ${threshold} "${line}" --ask-user\n`)
@@ -67,7 +70,7 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
   test('a worker waits on the inbox with no timeout and reads it, budgeted to ROLE_LINE_MAX, any title', () => {
     const be = templateRole('be', { title: 'B'.repeat(300) })
     const role = { ...be, autopilot: { ...be.autopilot, askUser: true } }
-    const kickoff = epicKickoffText({ role, key: 'PROJ-1', title: 'Epic', isPm: false, parent: 'tl', tlId: 'tl' })
+    const kickoff = epicKickoffText({ ...EPIC, role, isPm: false, parent: 'tl', isCoreTeam: true })
     const line = kickoffLine(kickoff)
 
     expect(kickoff).not.toContain('--ask-user')
@@ -78,19 +81,38 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
     expect(budgetedPart(line).endsWith('work what it sends.')).toBe(true)
   })
 
-  test("TL's line waits on the inbox with no timeout from PM, reads it, then names its ROLE.md ticket loop", () => {
-    const tl = templateRole('tl')
-    const kickoff = epicKickoffText({ role: tl, key: 'PROJ-1', title: 'Epic', isPm: false, parent: 'pm', tlId: 'tl' })
+  test('a core TL waits on the inbox with no timeout from PM, names its ticket loop and starts with --ask-user', () => {
+    const kickoff = epicKickoffText({ ...EPIC, role: templateRole('tl'), isPm: false, parent: 'pm', isCoreTeam: true })
     const line = kickoffLine(kickoff)
 
-    expect(kickoff).not.toContain('--ask-user')
+    expect(kickoff.endsWith(' --ask-user\n')).toBe(true)
     expect(line).toContain(`${WAIT}from cadre-pm with no timeout, then read your inbox with inbox_read and `)
     expect(line).not.toContain('session-answer')
     expect(budgetedPart(line).endsWith('and run the ticket loop in ROLE.md.')).toBe(true)
   })
 
+  test('core Security starts with --ask-user in an epic', () => {
+    const security = templateRole('security')
+    const kickoff = epicKickoffText({ ...EPIC, role: security, isPm: false, parent: 'tl', isCoreTeam: true })
+
+    expect(kickoff.endsWith(' --ask-user\n')).toBe(true)
+    expect(kickoffLine(kickoff)).toContain(`${WAIT}from cadre-tl with no timeout`)
+  })
+
+  test('TL of a custom or unrecorded team does not start with --ask-user in an epic, nor does any role but PM', () => {
+    const others = TEMPLATE_ROLES.filter(role => role.id !== 'pm')
+    const flagged = others.filter(role => {
+      const parent = role.id === 'tl' ? 'pm' : 'tl'
+
+      return epicKickoffText({ ...EPIC, role, isPm: false, parent, isCoreTeam: false }).includes('--ask-user')
+    })
+
+    expect(others.map(role => role.id)).toEqual(['tl', 'be', 'fe', 'qa', 'security'])
+    expect(flagged).toEqual([])
+  })
+
   test('every epic line ends with the tool load sentence', () => {
-    const input = { key: 'PROJ-1', title: 'Epic', tlId: 'tl' }
+    const input = { ...EPIC, isCoreTeam: false }
     const workers = TEMPLATE_ROLES.filter(role => role.id !== 'pm' && role.id !== 'tl')
     const lines = [
       kickoffLine(epicKickoffText({ ...input, role: templateRole('pm'), isPm: true, parent: null })),

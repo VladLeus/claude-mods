@@ -361,6 +361,19 @@ const CORE_PM_DECIDE_ALONE =
   'Decide alone only when the answer follows directly from a grill answer, and log which grill answer it follows from.'
 const PM_GRILL_CRITICAL = 'After the grill, ask the user only critical questions.'
 
+/** The core team's ask lines, spelled out so the specs pin their words. */
+const CORE_ASK_USER = 'Outside an epic you start with --ask-user: ask the person yourself with AskUserQuestion.'
+const CORE_EPIC_ASK =
+  'In an epic you start with --ask-user too: ask the person with AskUserQuestion while they are here and with ' +
+  'queue_question while they are away.'
+const CORE_EPIC_NO_ASK =
+  'In an epic you start without --ask-user: send what only a person can do or decide (start a service, accept a ' +
+  'risk) to TL as a question, and TL asks the person.'
+const CORE_TL_ASK =
+  'Ask the person about architecture and high-level decisions, and about what an implementer sends you that only ' +
+  'a person can do or decide.'
+const CORE_SECURITY_ASK = 'Ask the person when a matter is unclear or a risk must be accepted that TL cannot accept.'
+
 /** What the built-in framework's kickoff tells a role and the core PM's How you work leaves out. */
 const BUILD_LOOP_WORDS: readonly string[] = ['plan.md', 'test and lint', 'do not ask the human', 'ExitPlanMode']
 
@@ -947,6 +960,7 @@ describe('the Hierarchy section of ROLE.md', () => {
         CORE_TL_FED,
         CORE_TL_BRIEF,
         CORE_TL_HOLD,
+        CORE_TL_ASK,
         ARTIFACT.roleMdTlTasks,
         CORE_TL_TRUST,
         CORE_TL_FAILED,
@@ -980,6 +994,7 @@ describe('the Hierarchy section of ROLE.md', () => {
         CORE_TL_FED,
         CORE_TL_BRIEF,
         CORE_TL_HOLD,
+        CORE_TL_ASK,
         ARTIFACT.roleMdTlTasks,
         CORE_TL_TRUST,
         CORE_TL_FAILED,
@@ -1003,6 +1018,7 @@ describe('the Hierarchy section of ROLE.md', () => {
         CORE_WORKER_BLOCKED,
         CORE_WORKER_REPORT,
         ARTIFACT.roleMdWorkerNoTl,
+        ...(worker.id === 'security' ? [CORE_SECURITY_ASK] : []),
       ])
       expect(lines).not.toContain(ARTIFACT.roleMdWorkerTask)
       expect(lines).not.toContain(ARTIFACT.roleMdWorkerReport)
@@ -1027,7 +1043,8 @@ describe('the Hierarchy section of ROLE.md', () => {
   )
 
   test(
-    'every role is told where a question goes, that in an epic only PM asks the user, a rejection and the epic end',
+    'every role is told where a question goes, that in an epic only PM asks the user, a rejection and the epic end ' +
+      '(custom or unrecorded team)',
     () => {
       for (const role of TEMPLATE_ROLES) {
         const text = hierarchyOf(role, 'gsd')
@@ -1053,14 +1070,72 @@ describe('the Hierarchy section of ROLE.md', () => {
     }
   })
 
-  test('a role started with --ask-user gets the line to ask the person outside an epic, after the epic line', () => {
-    for (const role of TEMPLATE_ROLES) {
-      const lines = hierarchyOf(role, 'gsd').split('\n')
-      const at = lines.indexOf(ARTIFACT.roleMdHierarchyAskUser)
-      const isAfter = at > lines.indexOf(ARTIFACT.roleMdHierarchyCommonAsk)
+  test(
+    'a role started with --ask-user gets the line to ask the person outside an epic, after the epic line ' +
+      '(custom or unrecorded team)',
+    () => {
+      for (const role of TEMPLATE_ROLES) {
+        const lines = hierarchyOf(role, 'gsd').split('\n')
+        const at = lines.indexOf(ARTIFACT.roleMdHierarchyAskUser)
+        const isAfter = at > lines.indexOf(ARTIFACT.roleMdHierarchyCommonAsk)
 
-      expect([role.id, at >= 0, isAfter]).toEqual([role.id, role.autopilot.askUser, role.autopilot.askUser])
+        expect([role.id, at >= 0, isAfter]).toEqual([role.id, role.autopilot.askUser, role.autopilot.askUser])
+      }
+    },
+  )
+
+  test('a core role is told whether it starts with --ask-user in an epic, with no PM-only line and no critical', () => {
+    const ops = templateRole('be', { id: 'ops', autopilot: { ...templateRole('be').autopilot, askUser: true } })
+    const cases: readonly [RoleSpec, readonly string[]][] = [
+      [templateRole('pm'), [CORE_ASK_USER, CORE_EPIC_ASK]],
+      [templateRole('tl'), [CORE_ASK_USER, CORE_EPIC_ASK]],
+      [templateRole('be'), [CORE_EPIC_NO_ASK]],
+      [templateRole('fe'), [CORE_EPIC_NO_ASK]],
+      [templateRole('qa'), [CORE_EPIC_NO_ASK]],
+      [templateRole('security'), [CORE_ASK_USER, CORE_EPIC_ASK]],
+      [ops, [CORE_ASK_USER, CORE_EPIC_NO_ASK]],
+    ]
+
+    for (const [role, askLines] of cases) {
+      const text = hierarchyOf(role, 'gsd', CORE_TEAM)
+      const custom = hierarchyOf(role, 'gsd')
+
+      expect(text.split('\n').slice(0, 5 + askLines.length)).toEqual([
+        '## Hierarchy',
+        '',
+        ARTIFACT.roleMdHierarchyCommonQuestions,
+        ARTIFACT.roleMdHierarchyCommonRejected,
+        ARTIFACT.roleMdHierarchyCommonEpicEnd,
+        ...askLines,
+      ])
+      expect(text).not.toContain('In an epic, only PM asks the user')
+      expect([role.id, /critical/i.test(text)]).toEqual([role.id, false])
+      expect(custom).toContain('In an epic, only PM asks the user')
+      expect([CORE_ASK_USER, CORE_EPIC_ASK, CORE_EPIC_NO_ASK].filter(line => custom.includes(line))).toEqual([])
     }
+  })
+
+  test('the core TL and Security say what they ask the person about', () => {
+    for (const text of [hierarchyOf(templateRole('tl'), 'gsd', CORE_TEAM), hierarchyOf(LEAD, 'gsd', LEAD_TEAM)]) {
+      const lines = text.split('\n')
+
+      expect(lines.slice(0, 7)).toEqual([
+        '## Hierarchy',
+        '',
+        ARTIFACT.roleMdHierarchyCommonQuestions,
+        ARTIFACT.roleMdHierarchyCommonRejected,
+        ARTIFACT.roleMdHierarchyCommonEpicEnd,
+        CORE_ASK_USER,
+        CORE_EPIC_ASK,
+      ])
+      expect(lines[lines.indexOf(CORE_TL_HOLD) + 1]).toBe(CORE_TL_ASK)
+    }
+    const security = hierarchyOf(templateRole('security'), 'gsd', CORE_TEAM).split('\n')
+
+    expect(security.slice(-2)).toEqual([CORE_SECURITY_ASK, ''])
+    expect(hierarchyOf(templateRole('be'), 'gsd', CORE_TEAM)).not.toContain(CORE_SECURITY_ASK)
+    expect(hierarchyOf(templateRole('tl'), 'gsd')).not.toContain(CORE_TL_ASK)
+    expect(hierarchyOf(templateRole('security'), 'gsd')).not.toContain(CORE_SECURITY_ASK)
   })
 
   test('a custom role started with --ask-user gets the line to ask the person outside an epic too', () => {
