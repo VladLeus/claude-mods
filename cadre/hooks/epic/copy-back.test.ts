@@ -19,9 +19,31 @@ function mainOf(rest: readonly (readonly [string, readonly PortEntry[]])[]): Lis
   return new Map<string, readonly PortEntry[]>([['', [entry('thoughts', 'dir')]], ...rest])
 }
 
-/** copyBackPlan of the copied folder thoughts from BARE_WORKTREE into /repo, the copy made at `since`. */
+/** The worktree's root listing thoughts as a real folder, then the listings `rest` names. */
+function treeOf(rest: readonly (readonly [string, readonly PortEntry[]])[]): Listings {
+  return new Map<string, readonly PortEntry[]>([['', [entry('thoughts', 'dir')]], ...rest])
+}
+
+/**
+ * copyBackPlan of the recorded copy thoughts, which .worktreeinclude names, from BARE_WORKTREE into /repo, the copy
+ * made at `since`; a tree with no root listing gets one that shows thoughts as a real folder.
+ */
 function planOf(main: Listings, tree: Listings, since = 1000): CopyBack {
-  return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, folders: ['thoughts'], since, main, tree })
+  const listed = tree.has('') ? tree : treeOf([...tree])
+  const input = { copies: ['thoughts'], included: ['thoughts'], since, main, tree: listed }
+
+  return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, ...input })
+}
+
+/** copyBackPlan of the recorded `copies` from BARE_WORKTREE into /repo, the copy made at 1000 unless `since` says. */
+function backOf(
+  copies: readonly string[],
+  included: readonly string[],
+  main: Listings,
+  tree: Listings,
+  since = 1000,
+): CopyBack {
+  return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, copies, included, since, main, tree })
 }
 
 /** The step that copies the worktree's file at `path` over main's. */
@@ -115,10 +137,12 @@ describe('copying back what the roles wrote in a copied folder at epic done', ()
       ['', [link('thoughts')]],
       ['thoughts', [entry('shared', 'dir')]],
     ])
-    const tree = new Map([['thoughts/shared', [fileAt('x.md', 2000)]]])
-    const input = { root: '/repo', worktree: BARE_WORKTREE, folders: ['thoughts/shared'], since: 1000, main, tree }
+    const tree = treeOf([
+      ['thoughts', [entry('shared', 'dir')]],
+      ['thoughts/shared', [fileAt('x.md', 2000)]],
+    ])
 
-    expect(copyBackPlan(input)).toEqual({ steps: [], unsafe: ['thoughts'] })
+    expect(backOf(['thoughts/shared'], ['thoughts/shared'], main, tree)).toEqual({ steps: [], unsafe: ['thoughts'] })
   })
 
   test('a worktree folder the listings do not hold, or a real folder of main they do not hold, is unsafe', () => {
@@ -134,15 +158,88 @@ describe('copying back what the roles wrote in a copied folder at epic done', ()
 
   test('with no real creation time no step is planned and every copied folder is unsafe', () => {
     const main = mainOf([['thoughts', []]])
-    const tree = new Map([['thoughts', [fileAt('x.md', 2000)]]])
-    const folders = ['thoughts', 'docs']
+    const tree = new Map([
+      ['', [entry('docs', 'dir'), entry('thoughts', 'dir')]],
+      ['thoughts', [fileAt('x.md', 2000)]],
+    ])
+    const copies = ['thoughts', 'docs']
 
     for (const since of [0, -1]) {
       expect(planOf(main, tree, since)).toEqual({ steps: [], unsafe: ['thoughts'] })
-      expect(copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, folders, since, main, tree })).toEqual({
-        steps: [],
-        unsafe: ['docs', 'thoughts'],
-      })
+      expect(backOf(copies, copies, main, tree, since)).toEqual({ steps: [], unsafe: ['docs', 'thoughts'] })
     }
+  })
+})
+
+describe('what epic done may copy back', () => {
+  test('a recorded copy whose folder the worktree cannot list is unsafe, named, and not walked', () => {
+    const main = mainOf([['thoughts', [entry('shared', 'dir')]]])
+    const shared = treeOf([['thoughts/shared', [fileAt('x.md', 2000)]]])
+
+    expect(backOf(['thoughts/shared'], ['thoughts/shared'], main, shared)).toEqual({
+      steps: [],
+      unsafe: ['thoughts/shared'],
+    })
+    expect(backOf(['thoughts'], ['thoughts'], main, new Map([['thoughts', [fileAt('x.md', 2000)]]]))).toEqual({
+      steps: [],
+      unsafe: ['thoughts'],
+    })
+  })
+
+  test('a recorded copy the worktree lists as a file, a link or not at all gives nothing, included or not', () => {
+    const tree = new Map([['', [fileAt('.env', 2000), link('docs')]]])
+    const copies = ['.env', 'docs', 'gone']
+
+    for (const included of [[], copies]) {
+      expect(backOf(copies, included, mainOf([]), tree)).toEqual({ steps: [], unsafe: [] })
+    }
+  })
+
+  test('a recorded copied folder the include file does not name now is unsafe, named, and not walked', () => {
+    const folders = [entry('node_modules', 'dir'), entry('thoughts', 'dir')]
+    const main = new Map([
+      ['', folders],
+      ['node_modules', []],
+      ['thoughts', []],
+    ])
+    const tree = new Map([
+      ['', folders],
+      ['node_modules', [fileAt('x.js', 2000)]],
+      ['thoughts', [fileAt('x.md', 2000)]],
+    ])
+    const copies = ['node_modules', 'thoughts']
+
+    expect(backOf(copies, ['thoughts'], main, tree)).toEqual({
+      steps: [copyOf('thoughts/x.md')],
+      unsafe: ['node_modules'],
+    })
+    expect(backOf(copies, [], main, tree)).toEqual({ steps: [], unsafe: ['node_modules', 'thoughts'] })
+  })
+
+  test('with no real creation time the unsafe copies and every copied folder are unsafe, a skipped one not', () => {
+    const tree = new Map([
+      ['', [fileAt('.env', 2000), entry('docs', 'dir'), entry('node_modules', 'dir'), entry('thoughts', 'dir')]],
+      ['thoughts', [fileAt('x.md', 2000)]],
+    ])
+    const copies = ['.env', 'a/b', 'docs', 'node_modules', 'thoughts']
+
+    expect(backOf(copies, ['.env', 'a/b', 'docs', 'thoughts'], mainOf([]), tree, 0)).toEqual({
+      steps: [],
+      unsafe: ['a/b', 'docs', 'node_modules', 'thoughts'],
+    })
+  })
+
+  test('a path above or at a copied folder whose parent main cannot list is unsafe, nothing below it walked', () => {
+    const tree = treeOf([
+      ['thoughts', [entry('shared', 'dir')]],
+      ['thoughts/shared', [fileAt('x.md', 2000)]],
+    ])
+    const rootOnly = new Map([['', [entry('thoughts', 'dir')]]])
+
+    expect(backOf(['thoughts/shared'], ['thoughts/shared'], rootOnly, tree)).toEqual({
+      steps: [],
+      unsafe: ['thoughts/shared'],
+    })
+    expect(backOf(['thoughts'], ['thoughts'], new Map(), tree)).toEqual({ steps: [], unsafe: ['thoughts'] })
   })
 })
