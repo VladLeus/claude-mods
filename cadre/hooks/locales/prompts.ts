@@ -96,6 +96,7 @@ export const PROMPTS = Object.freeze({
   kickoffIntro: 'You are the {title} role of this repo (cadre role {id}).',
   kickoffNext: 'Read .cadre/{id}/ROLE.md, read your inbox with inbox_read, then start with {start}.',
   kickoffLoadTools: 'Load your tools first with one ToolSearch query: select:{tools}.',
+  kickoffPmStart: 'the How you work steps of your ROLE.md',
   // The built-in framework's start (framework/none roleStart): the {start} of kickoffNext.
   builtinRoleStart: 'the plan in .cadre/{roleId}/.runtime/plan.md',
   epicFeedRoles: 'your roles',

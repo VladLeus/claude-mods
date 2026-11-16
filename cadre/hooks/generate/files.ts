@@ -62,9 +62,9 @@ function builtFiles(id: string, parts: readonly InstructionPart[] | null): Desir
 }
 
 /**
- * The files of one role: the five in its folder, ROLE.md given `team`, its built CLAUDE.md (builtFiles) and its
- * launcher, each with the framework its scope was compiled for, the launcher starting where `start` says. A role with
- * no scope gives none, so nothing is generated from a half-known role.
+ * The files of one role: the five in its folder, ROLE.md and kickoff.txt given `team`, its built CLAUDE.md
+ * (builtFiles) and its launcher, each with the framework its scope was compiled for, the launcher starting where
+ * `start` says. A role with no scope gives none, so nothing is generated from a half-known role.
  */
 function roleFiles(
   role: RoleSpec,
@@ -78,7 +78,11 @@ function roleFiles(
   return [
     { path: roleJsonPath(role.id), content: roleJsonText(role), mode: 'file' },
     { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope, team), mode: 'file' },
-    { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, scope.card.framework), mode: 'file' },
+    {
+      path: rolePath(role.id, 'kickoff.txt'),
+      content: kickoffText(role, scope.card.framework, team.isCore),
+      mode: 'file',
+    },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
     ...builtFiles(role.id, parts),

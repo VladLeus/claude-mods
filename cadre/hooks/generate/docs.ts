@@ -4,7 +4,7 @@
  * value from outside is cleaned. It imports the scope card, records, paths, core, the framework registry, the infra
  * catalog, role validation and the types, so the file set and apply read them here.
  */
-import type { CadreState, CompiledScope, InstructionPart, RoleSpec, ScopeCard } from '../../types'
+import type { CadreState, CompiledScope, FrameworkAdapter, InstructionPart, RoleSpec, ScopeCard } from '../../types'
 import { stableJson } from '../core/json'
 import { MAX_ROLE_CHARS } from '../core/kickoff-text'
 import { cardList, clean, reportText } from '../core/text'
@@ -39,6 +39,27 @@ export function mcpText(scope: CompiledScope): string {
 
 /** The line ROLE.md adds after the framework line of an attended role. It is no card rule, so it never repeats one. */
 const ATTENDED_LINE = ARTIFACT.roleMdAttended
+
+/** The core PM's How you work: fetch, grill, brief, feed and accept, with no build loop and no ask gate. */
+const CORE_PM_WORK: readonly string[] = [
+  ARTIFACT.roleMdCorePmIntro,
+  ARTIFACT.roleMdCorePmFetch,
+  ARTIFACT.roleMdCorePmGrillStep,
+  ARTIFACT.roleMdCorePmBrief,
+  ARTIFACT.roleMdCorePmFeed,
+  ARTIFACT.roleMdCorePmAccept,
+]
+
+/**
+ * The How you work text of ROLE.md: the core PM's own steps, else the kickoff text of the role's framework, worded
+ * for the core lead when the role is a core team's TL.
+ */
+function howYouWork(role: RoleSpec, adapter: FrameworkAdapter, team: RoleMdTeam): string {
+  if (team.isCore && standsFor(role, 'pm')) return CORE_PM_WORK.join('\n')
+  const isCoreLead = team.isCore && standsFor(role, 'tl')
+
+  return adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null, isCoreLead })
+}
 
 /**
  * The Planning docs section of ROLE.md: the start steps of each framework the role may run, own framework first and
@@ -182,14 +203,13 @@ const CUSTOM_TEAM: RoleMdTeam = Object.freeze({ isCore: false, roles: [] })
 /**
  * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session (never named CLAUDE.md
  * or AGENTS.md), section by section. The framework is the one the scope was compiled for, so the document and the card
- * cannot disagree. A core team's TL gets the kickoff, start steps and Hierarchy part of a lead that plans no
- * implementation.
+ * cannot disagree. A core team's PM gets its own How you work; its TL gets the kickoff, start steps and Hierarchy part
+ * of a lead that plans no implementation.
  */
 export function roleMdText(role: RoleSpec, scope: CompiledScope, team: RoleMdTeam = CUSTOM_TEAM): string {
   const { card } = scope
   const adapter = adapterOf(card.framework)
   const isCoreLead = team.isCore && standsFor(role, 'tl')
-  const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null, isCoreLead })
   const model = fill(ARTIFACT.roleMdModel, { model: role.model, effort: role.effort })
   const lines = [
     fill(ARTIFACT.roleMdTitle, { title: clean(role.title, MAX_ROLE_CHARS), id: role.id }),
@@ -201,7 +221,7 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope, team: RoleMdTea
     '',
     ARTIFACT.roleMdHowYouWork,
     '',
-    kickoff,
+    howYouWork(role, adapter, team),
     '',
     ARTIFACT.roleMdDecisions,
     '',

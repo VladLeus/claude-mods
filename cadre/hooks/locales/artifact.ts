@@ -64,6 +64,14 @@ export const ARTIFACT = Object.freeze({
   roleMdPmGrillFeed: `Send TL the brief, then feed it one ticket at a time (in a team without TL, your roles); when ${
     ''}every ticket is reported, send epic-end.`,
   roleMdPmGrillCritical: 'After the grill, ask the user only critical questions.',
+  roleMdCorePmIntro: `As PM you fetch the work, grill the user, brief TL, feed it the tickets and accept the ${
+    ''}reports; you do not plan, build or verify code.`,
+  roleMdCorePmFetch: 'Fetch: get the epic and its tickets with your tracker MCP.',
+  roleMdCorePmGrillStep: 'Grill: grill the user on the epic and every ticket, as the Hierarchy section says.',
+  roleMdCorePmBrief:
+    'Brief: send TL the brief with the planning mode the user confirmed (your roles in a team without TL).',
+  roleMdCorePmFeed: 'Feed: send TL one ticket at a time with its key, your scope and risk scores and the report form.',
+  roleMdCorePmAccept: "Accept: check each report against the ticket's acceptance criteria, then feed the next ticket.",
   roleMdTlLoop: `Your ticket loop as TL: on each ticket PM sends, add complexity and effort to PM's scope and ${
     ''}risk, compute the size and pick the framework or GSD path; record the vector with a one-line reason.`,
   roleMdTlPlan: 'Plan the ticket in your own planning docs.',
