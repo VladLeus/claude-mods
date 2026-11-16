@@ -61,6 +61,7 @@ import {
   isIdleTurn,
   isLiveFinishedValue,
   isModeDeny,
+  isTimeUp,
   isValidHandoffPath,
   limitAction,
   lockStale,
@@ -1047,6 +1048,7 @@ describe('AskUserQuestion while asking is on', () => {
 describe('wait_for', () => {
   const now = 1_000
   const until = 10 * 60 * 60_000
+  const idle: Awaiting = { reason: 'idle-inbox', from: null, note: null, since: now, timeoutAt: null, pinged: false }
 
   test('a valid wait: reason, from, note, timeout', async () => {
     expect(parseWaitInput({ reason: 'session-answer', from: 'BE-expert', note: 'API shape', timeout: '30m' }, now, until)).toEqual({
@@ -1065,6 +1067,33 @@ describe('wait_for', () => {
     expect(parseWaitInput({}, now, until).kind).toBe('error')
     expect(parseWaitInput(null, now, until).kind).toBe('error')
     expect(parseWaitInput('session-answer', now, until).kind).toBe('error')
+  })
+
+  test('idle-inbox: a reason for nothing to do until a message comes, with no timeout', async () => {
+    expect(WAIT_REASONS).toEqual([
+      'user-input',
+      'user-answer',
+      'session-answer',
+      'session-ping',
+      'workflow-end',
+      'subagent-result',
+      'background-task',
+      'idle-inbox',
+      'other',
+    ])
+    expect(parseWaitInput({ reason: 'idle-inbox' }, now, until)).toEqual({ kind: 'ok', awaiting: idle })
+    for (const mode of ['plain', 'queueing', 'overdue', 'draining', 'asking'] as const) {
+      expect(waitRefusal(idle, mode)).toBe(null)
+    }
+  })
+
+  test('an unknown reason is refused with the list of reasons', async () => {
+    expect(parseWaitInput({ reason: 'coffee' }, now, until)).toEqual({
+      kind: 'error',
+      message:
+        'reason must be one of: user-input, user-answer, session-answer, session-ping, workflow-end, ' +
+          'subagent-result, background-task, idle-inbox, other.',
+    })
   })
 
   test('non-string fields and unreadable or zero timeouts are refused', async () => {
@@ -1140,6 +1169,14 @@ describe('wait_for', () => {
     for (const phase of ['running', 'resuming', 'wrapping', 'restarting', 'final', 'paused', 'waiting'] as const) {
       expect(endsWait(phase, 'Bash')).toBe(false)
     }
+  })
+
+  test('an idle-inbox wait is not nudged, ends on any other tool call and ends on time', async () => {
+    expect(afterTurn(run({ phase: 'awaiting', awaiting: idle, idleTurns: 5 }), 10, 99, false)).toBe('none')
+    expect(wrapMidTurn(run({ phase: 'awaiting', awaiting: idle }), 10, 99)).toBe(null)
+    expect(endsWait('awaiting', 'mcp__notes__check')).toBe(true)
+    expect(isTimeUp(run({ phase: 'awaiting', awaiting: idle, until: 100 }), 100)).toBe(true)
+    expect(isTimeUp(run({ phase: 'awaiting', awaiting: idle, until: 100 }), 99)).toBe(false)
   })
 
   test('wait_for is taken while running and again while awaiting; refused while resuming or not driving', async () => {
@@ -1275,6 +1312,15 @@ describe('token limits', () => {
 
   test('a waiting run queues nothing after a turn', async () => {
     expect(afterTurn(run({ phase: 'waiting' }), 10, 30, true)).toBe('none')
+  })
+
+  test("the heartbeat's time stop takes a running, a parked or an awaiting run, nothing else", async () => {
+    for (const phase of ['running', 'waiting'] as const) {
+      expect(isTimeUp(run({ phase, until: 100 }), 100)).toBe(true)
+    }
+    for (const phase of ['paused', 'final', 'wrapping', 'restarting', 'resuming'] as const) {
+      expect(isTimeUp(run({ phase, until: 100 }), 100)).toBe(false)
+    }
   })
 
   test('the weekly stop asks for a phone notification', async () => {
