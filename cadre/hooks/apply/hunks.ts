@@ -87,8 +87,9 @@ export function hunksNotRun(hunks: readonly HunkOp[], runs: readonly HunkRun[]):
 
 function notRunLine(hunk: HunkOp, display: string): string {
   const change = t('apply.hunks.hunkFailureLine', { file: reportText(hunk.file), key: reportText(hunk.key) })
+  const shown = { change, display: reportText(display) }
 
-  return t('apply.hunks.hunkNotRunLine', { change, display: reportText(display) })
+  return hunk.isRequired ? t('apply.hunks.hunkNotRunRequiredLine', shown) : t('apply.hunks.hunkNotRunLine', shown)
 }
 
 /**
