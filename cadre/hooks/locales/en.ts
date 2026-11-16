@@ -1042,6 +1042,9 @@ export const EN = Object.freeze({
   'epic.mirrorRun.epicStepFailedReply':
     `cadre epic could not make {path} in the worktree (a folder, link or copy), so it stopped there. The ${
     ''}worktree stays: fix it and run /cadre epic with the same key again.`,
+  'epic.mirrorRun.epicCopyFailedReply':
+    `cadre epic could not copy {path} into the worktree, so it stopped there. The worktree stays: remove ${
+    ''}{temp} if it is there, fix what stopped the copy and run /cadre epic with the same key again.`,
 
   'epic.mirror.mirrorLinkedParentWarning':
     `cadre epic left {path} out of the worktree: a folder above it there is a link, and cadre never ${
@@ -1049,6 +1052,9 @@ export const EN = Object.freeze({
   'epic.mirror.mirrorUnhideableWarning':
     `cadre epic left {path} out of the worktree: its name holds a line break or another control ${
     ''}character, so no excludes line could hide it from git.`,
+  'epic.mirror.mirrorCopyTempWarning':
+    `cadre epic left {path} out of the worktree: {temp} is there, left by a copy that did not finish. ${
+    ''}Remove {temp}, then run /cadre epic with the same key again.`,
 
   'epic.pick.epicUnknownCheckout':
     'cadre epic could not tell from git whether this is the main checkout, so it stopped before creating anything.',

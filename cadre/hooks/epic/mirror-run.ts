@@ -52,11 +52,29 @@ export function epicExcludesFailedReply(key: string): string {
 }
 
 /**
- * The reply when a mirror step fails (D-147): the mirror stops at that step, named by its path below the worktree
- * root, cleaned. What ran before it stays and is recorded, and the next /cadre epic run of the key makes the rest.
+ * The reply when a mirror mkdir or link step fails: the mirror stops at that step, named by its path below the
+ * worktree root, cleaned. What ran before it stays and is recorded, and the next /cadre epic run of the key makes the
+ * rest.
  */
 export function epicStepFailedReply(path: string): string {
   return t('epic.mirrorRun.epicStepFailedReply', { path: reportText(path) })
+}
+
+/**
+ * The reply when a mirror copy, or the move that places it, fails: the mirror stops there, and the reply names the
+ * repo-relative path and its temporary sibling, cleaned, which the user removes before running /cadre epic again.
+ */
+export function epicCopyFailedReply(path: string, temp: string): string {
+  return t('epic.mirrorRun.epicCopyFailedReply', { path: reportText(path), temp: reportText(temp) })
+}
+
+/** The reply of a failed step: a copy or a move names the copied path and its temporary sibling, else the path. */
+function stepFailedReply(step: EpicStep, root: string, worktree: string): string {
+  const inWorktree = (path: string) => path.slice(worktree.length + 1)
+  if (step.kind === 'copy') return epicCopyFailedReply(step.source.slice(root.length + 1), inWorktree(step.path))
+  if (step.kind === 'move') return epicCopyFailedReply(inWorktree(step.path), inWorktree(step.source))
+
+  return epicStepFailedReply(inWorktree(step.path))
 }
 
 /** What the mirror stage of runEpic did: the reply it stopped with (else null), what it made, and its warnings. */
@@ -64,7 +82,7 @@ export type Mirrored = {
   readonly failure: string | null
   /** The repo-relative paths of the links whose step ran. */
   readonly links: readonly string[]
-  /** The repo-relative paths of the copies whose step ran. */
+  /** The repo-relative paths of the copies whose move into place ran. */
   readonly copies: readonly string[]
   readonly warnings: readonly string[]
 }
@@ -135,8 +153,8 @@ export async function includedOf(
  * copy (isHiddenCopy: a copy of a git file or of the sizing rubric), recorded (`recordedCopies`) or planned, once each.
  * The worktree is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are
  * idempotent: a write or run that fails stops it with epicExcludesFailedReply, before any step. Each step then runs
- * with its epicStepArgv and epicStepTimeoutMs, and the first one that fails stops it with epicStepFailedReply. What
- * ran before the stop is in the result.
+ * with its epicStepArgv and epicStepTimeoutMs, and the first one that fails stops it: epicCopyFailedReply for a copy
+ * or its move, else epicStepFailedReply. What ran before the stop is in the result, a copy only once its move ran.
  */
 export async function mirrorSteps(
   io: InitIo,
@@ -184,12 +202,12 @@ export async function mirrorSteps(
   for (const step of plan.steps) {
     const done = await host.run(epicStepArgv(step), { timeoutMs: epicStepTimeoutMs(step) })
     if (hasRunFailed(done)) {
-      const failure = epicStepFailedReply(step.path.slice(worktree.length + 1))
+      const failure = stepFailedReply(step, root, worktree)
 
-      return { failure, links: made('link'), copies: made('copy'), warnings }
+      return { failure, links: made('link'), copies: made('move'), warnings }
     }
     ran.push(step)
   }
 
-  return { failure: null, links: made('link'), copies: made('copy'), warnings }
+  return { failure: null, links: made('link'), copies: made('move'), warnings }
 }

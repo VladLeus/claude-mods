@@ -16,22 +16,24 @@ import { WORKTREES_DIR } from './git'
  * One step of the mirror into the epic worktree, in the order runEpic runs it; every path is absolute:
  * - `mkdir`: make a real folder in the worktree, and the folders above it;
  * - `link`: make `path` a symbolic link to `target` in the main checkout, never over something that is there;
- * - `copy`: copy `source` of the main checkout, a regular file or a real folder, to `path`, keeping modes and times.
+ * - `copy`: copy `source` of the main checkout, a regular file or a real folder, to `path`, keeping modes and times;
+ * - `move`: move `source` to `path`, replacing what is there only with `overwrite`.
  */
 export type EpicStep =
   | { readonly kind: 'mkdir'; readonly path: string }
   | { readonly kind: 'link'; readonly path: string; readonly target: string }
   | { readonly kind: 'copy'; readonly path: string; readonly source: string }
+  | { readonly kind: 'move'; readonly path: string; readonly source: string; readonly overwrite: boolean }
 
 /** How long a mkdir or link step may run before it is given up. */
 export const MIRROR_STEP_TIMEOUT_MS = 10_000
 
-/** How long a copy step may run before it is given up: a whole folder may take long to copy. */
+/** How long a copy or move step may run before it is given up: a whole folder may take long to copy. */
 export const MIRROR_COPY_TIMEOUT_MS = 120_000
 
-/** How long a step may run: MIRROR_COPY_TIMEOUT_MS for a copy, MIRROR_STEP_TIMEOUT_MS for a mkdir or a link. */
+/** How long a step may run: MIRROR_COPY_TIMEOUT_MS for a copy or move, MIRROR_STEP_TIMEOUT_MS for a mkdir or link. */
 export function epicStepTimeoutMs(step: EpicStep): number {
-  if (step.kind === 'copy') return MIRROR_COPY_TIMEOUT_MS
+  if (step.kind === 'copy' || step.kind === 'move') return MIRROR_COPY_TIMEOUT_MS
 
   return MIRROR_STEP_TIMEOUT_MS
 }
@@ -39,13 +41,20 @@ export function epicStepTimeoutMs(step: EpicStep): number {
 /**
  * The argv that runs a mirror step, absolute and with no shell, `--` before the paths: `/bin/mkdir -p --` for a
  * folder; `/bin/ln -s --` for a link, with no `-f`, so it never replaces what is there; `/bin/cp -pR --` for a copy,
- * which copies a regular file or a real folder whole.
+ * which copies a regular file or a real folder whole; `/bin/mv -n --` places a finished copy without replacing what is
+ * there, and `/bin/mv -f --` replaces main's file at epic done.
  */
 export function epicStepArgv(step: EpicStep): readonly string[] {
   if (step.kind === 'mkdir') return ['/bin/mkdir', '-p', '--', step.path]
   if (step.kind === 'link') return ['/bin/ln', '-s', '--', step.target, step.path]
+  if (step.kind === 'move') return ['/bin/mv', step.overwrite ? '-f' : '-n', '--', step.source, step.path]
 
   return ['/bin/cp', '-pR', '--', step.source, step.path]
+}
+
+/** Where a mirror copy is made before it is moved into place, so a copy that did not finish never sits at `path`. */
+export function copyTempPath(path: string): string {
+  return `${path}.cadre-copy`
 }
 
 /** The folder of cadre's own files, which the worktree gets as a real folder and never as one link (D-156). */
@@ -149,11 +158,13 @@ export function mirrorPaths(
  *   folder (not a link): a mkdir step, then each child of its main listing, by these same rules;
  * - (i) a named path the main listing of its folder shows as a regular file or a real folder, or a file whose last
  *   segment starts with `.env`, or is `.gitignore`, `.gitattributes` or `.mailmap` (GIT_FILE_NAMES, which git never
- *   reads through a link), as that listing shows (a regular file, not a link): a copy step;
+ *   reads through a link), as that listing shows (a regular file, not a link): a copy step to its temporary sibling
+ *   (copyTempPath), then a move step that places it; when the worktree lists that sibling already: nothing, and the
+ *   mirrorCopyTempWarning line;
  * - (j) anything else: a link step to the main checkout's path;
  * - (k) once the entries are done, `.cadre/sizing.md` (SIZING_RUBRIC_PATH) when the main listing of `.cadre` shows
- *   it as a regular file, not a link: the rules above apply first, as for an entry, and then it gets a copy step,
- *   never a link, so a rubric main has and the worktree lacks is copied into it.
+ *   it as a regular file, not a link: the rules above apply first, as for an entry, and then it is copied as in rule
+ *   (i), never linked, so a rubric main has and the worktree lacks is copied into it.
  * A step below a folder the worktree does not list gets a mkdir step for each such folder from the top first, once
  * each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, and the
  * warnings.
@@ -230,7 +241,13 @@ export function mirrorPlan(input: {
     const name = path.slice(path.lastIndexOf('/') + 1)
     const isCopied = isCopy || isNamed || name.startsWith(ENV_PREFIX) || GIT_FILE_NAMES.includes(name)
     if (isCopied && isReal && (shown.kind === 'file' || (isNamed && shown.kind === 'dir'))) {
-      steps.push({ kind: 'copy', path: `${worktree}/${path}`, source: `${root}/${path}` })
+      const temp = copyTempPath(path)
+      if (listedEntry(tree, temp) !== undefined) {
+        warnings.push(mirrorCopyTempWarning(path, temp))
+        return
+      }
+      steps.push({ kind: 'copy', path: `${worktree}/${temp}`, source: `${root}/${path}` })
+      steps.push({ kind: 'move', path: `${worktree}/${path}`, source: `${worktree}/${temp}`, overwrite: false })
       copies.push(path)
       return
     }
@@ -259,4 +276,12 @@ export function mirrorLinkedParentWarning(path: string): string {
  */
 export function mirrorUnhideableWarning(path: string): string {
   return t('epic.mirror.mirrorUnhideableWarning', { path: reportText(path) })
+}
+
+/**
+ * The warning line for a path the mirror leaves out because the worktree holds its temporary sibling, left by a copy
+ * that did not finish, which cadre never copies into. Both repo-relative paths are shown cleaned.
+ */
+export function mirrorCopyTempWarning(path: string, temp: string): string {
+  return t('epic.mirror.mirrorCopyTempWarning', { path: reportText(path), temp: reportText(temp) })
 }
