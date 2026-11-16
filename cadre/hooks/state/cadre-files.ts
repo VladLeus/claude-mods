@@ -103,15 +103,20 @@ function frameworksOf(value: unknown): FrameworkId[] | null {
   return ids
 }
 
-/** A recorded docker script: the runner, then a script name an exact permission pattern can hold. */
-const DOCKER_SCRIPT = /^(npm run|yarn|pnpm) [A-Za-z0-9:._-]+$/
+/** A recorded docker script: the runner, then a script name that starts with a letter or digit. */
+const DOCKER_SCRIPT = /^(npm run|yarn|pnpm) ([A-Za-z0-9][A-Za-z0-9:._-]*)$/
 
-/** The docker scripts recorded for the repo, or null when they are not a list of runner commands, each listed once. */
+/**
+ * The docker scripts recorded for the repo, or null when they are not a list of runner commands whose names contain
+ * docker, each listed once.
+ */
 function dockerScriptsOf(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null
   const commands: string[] = []
   for (const item of value) {
-    if (typeof item !== 'string' || !DOCKER_SCRIPT.test(item) || commands.includes(item)) return null
+    if (typeof item !== 'string' || commands.includes(item)) return null
+    const name = DOCKER_SCRIPT.exec(item)?.[2]
+    if (name === undefined || !name.includes('docker')) return null
     commands.push(item)
   }
 

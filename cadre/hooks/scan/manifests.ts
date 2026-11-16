@@ -63,8 +63,8 @@ export async function readDependencies(
   return { warning: null, scripts: value.scripts }
 }
 
-/** A script name an exact permission pattern can hold. */
-const SCRIPT_NAME = /^[A-Za-z0-9:._-]+$/
+/** A script name an exact permission pattern can hold, starting with a letter or digit so no runner reads a flag. */
+const SCRIPT_NAME = /^[A-Za-z0-9][A-Za-z0-9:._-]*$/
 
 /** A command whose first word is docker or docker-compose. */
 const DOCKER_CALL = /^(?:docker|docker-compose)(?:\s|$)/
@@ -74,14 +74,14 @@ const SHELL_OPERATOR = /[;&|`$<>()\\\n\r]/
 
 /**
  * The repo's docker wrapper scripts as `<runner> <name>`, sorted: each own key of the package.json `scripts` object
- * whose name is plain and whose command is a docker or docker-compose call with no shell operator. A value that is not
- * a plain object gives none.
+ * whose name is plain and contains docker, so no runner built-in passes, and whose command is a docker or
+ * docker-compose call with no shell operator. A value that is not a plain object gives none.
  */
 export function dockerScriptCommands(scripts: unknown, runner: string): string[] {
   if (!isObject(scripts)) return []
   const names = Object.keys(scripts).filter(name => {
     const command = scripts[name]
-    if (typeof command !== 'string' || !SCRIPT_NAME.test(name)) return false
+    if (typeof command !== 'string' || !SCRIPT_NAME.test(name) || !name.includes('docker')) return false
 
     return DOCKER_CALL.test(command) && !SHELL_OPERATOR.test(command)
   })
