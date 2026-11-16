@@ -1461,28 +1461,23 @@ describe('cadre init with a faked host', () => {
     expect(order).toEqual([0, 1, 1, 2, 3, 4, 5, 6, 7])
   })
 
-  test('a GSD repo with no config file asks two hunks after the model questions, before the policy', async ($, on) => {
-    const log = newLog()
-    fakeHost(on, initWorld(), log)
-    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    const hunkAts = log.asks.flatMap((ask, at) => (ask.startsWith('ask .planning/config.json:') ? [at] : []))
-    const modelAt = askHeads(log).indexOf('ask Model and effort for all roles?')
-    const policyAt = askHeads(log).indexOf(POLICY_ASK)
-    expect(hunkAts).toHaveLength(2)
-    expect(modelAt).not.toBe(-1)
-    expect(hunkAts.map(at => at > modelAt && at < policyAt)).toEqual([true, true])
-    expect(hunkAts.map(at => (log.asks[at] ?? '').split('\n')[0])).toEqual([
-      'ask .planning/config.json: mode',
-      'ask .planning/config.json: workflow.text_mode',
-    ])
-    expect(hunkAts.map(at => log.askOptions[at])).toEqual([
-      ['Accept', 'Decline'],
-      ['Accept', 'Decline'],
-    ])
-    expect(log.logs.some(text => text.includes('attended:'))).toBe(false)
-    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(log.runs).toEqual([])
-  })
+  test(
+    'a GSD repo with no .planning/config.json asks no hunk, and plain init runs no config-set and writes nothing ' +
+      'under .planning/',
+    async ($, on) => {
+      const log = newLog()
+      const files = Object.fromEntries(
+        Object.entries(ambiguousWorld().files).filter(([file]) => file !== '/repo/.planning/config.json'),
+      )
+      fakeHost(on, initWorld({ isWriteAllowed: true, files }), log)
+      const out = await $.command.run({ command: 'cadre', args: 'init' })
+      expect(log.asks.filter(ask => ask.startsWith('ask .planning/config.json:'))).toEqual([])
+      expect(log.runs.filter(argv => argv.includes('config-set'))).toEqual([])
+      expect(log.writes.filter(path => path.includes('/repo/.planning/'))).toEqual([])
+      expect(planRows(out.text).filter(row => row.kind === 'hunk')).toEqual([])
+      expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    },
+  )
 
   test('commit all prints its own policy line and no worktree line', async ($, on) => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), newLog())

@@ -2994,7 +2994,7 @@ describe('hunkStep', () => {
     expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
     const proven = memIo({ ...secretWorld(), facts: PROVEN_FACTS }, PARTS_DECLINED)
     const provenReply = await runInit(proven.io, { dryRun: true })
-    expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(3)
+    expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(0)
     const provenText = [
       ...proven.asked,
       ...proven.logged,

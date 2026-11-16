@@ -366,13 +366,12 @@ describe('hunkStep', () => {
     expect(run.reads).not.toContain(CONFIG)
   })
 
-  test('a missing config file offers both required hunks as not set', async () => {
-    const run = await hunkRun(memWorld({}), 'gsd', gatheredOf(PROVEN_FACTS), ['Decline', 'Decline'])
-    expect(run.state.draft.hunks?.map(hunk => [hunk.key, hunk.before, hunk.isAccepted])).toEqual([
-      ['mode', NOT_SET_TEXT, false],
-      ['workflow.text_mode', NOT_SET_TEXT, false],
-    ])
-    expect(run.outputs).toEqual([{ kind: 'note', line: attendedNote(['mode', 'workflow.text_mode']) }])
+  test('a missing config file offers no hunk, asks nothing and notes nothing', async () => {
+    const run = await hunkRun(memWorld({}), 'gsd', gatheredOf(PROVEN_FACTS), [])
+    expect(run.state.draft.hunks).toEqual([])
+    expect(run.asked).toEqual([])
+    expect(run.outputs).toEqual([])
+    expect(run.reads).toContain(CONFIG)
   })
 
   test('only Accept accepts: an answer that is neither Accept nor Decline is asked again with why on top', async () => {
