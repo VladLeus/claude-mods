@@ -269,9 +269,9 @@ function redecided(role: RoleSpec): RoleSpec {
 
 /**
  * The first state of /cadre frameworks: the framework step entered in the frameworks flow over a draft of the stored
- * team (its roles, git policy, launcher start and ~/.claude.json consent) and the fresh scans, with every role's GSD or
- * superpowers value cleared; the step and the stages after it set the framework answers. A run given no surface runs
- * on the desktop pane.
+ * team (its roles, git policy, launcher start, ~/.claude.json consent and recorded structure) and the fresh scans, with
+ * every role's GSD or superpowers value cleared; the step and the stages after it set the framework answers. A run
+ * given no surface runs on the desktop pane.
  */
 export function frameworksState(
   dryRun: boolean,
@@ -279,9 +279,18 @@ export function frameworksState(
   seed: { readonly locations: InitLocations; readonly gathered: Gathered; readonly team: TeamState },
 ): InitState {
   const { locations, gathered, team } = seed
-  const { gitPolicy, launchStart, readUserMcp } = team.state
+  const { gitPolicy, launchStart, readUserMcp, structure } = team.state
   const roles = team.roles.map(redecided)
-  const draft = { locations, gathered, ...detectedOf(gathered), readUserMcp, policy: gitPolicy, launchStart, roles }
+  const draft = {
+    locations,
+    gathered,
+    ...detectedOf(gathered),
+    readUserMcp,
+    policy: gitPolicy,
+    launchStart,
+    roles,
+    ...(structure === undefined ? {} : { structure }),
+  }
   const blank = blankState(dryRun, surface ?? PANE_DESKTOP)
 
   return settled(entered({ ...blank, draft, flow: 'frameworks' }, 'frameworks'))

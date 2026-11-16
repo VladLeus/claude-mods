@@ -43,13 +43,14 @@ export function reframeDraft(draft: Partial<Draft>): ReframeDraft | null {
   if (locations === undefined || gathered === undefined || readUserMcp === undefined) return null
   if (installed === undefined || roles === undefined || repoDefault === undefined) return null
   if (hunks === undefined || policy === undefined || launchStart === undefined) return null
-  const { frameworkSet, frameworkInstalls } = draft
+  const { frameworkSet, frameworkInstalls, structure } = draft
   const fields = { locations, gathered, readUserMcp, installed, roles, repoDefault, hunks, policy, launchStart }
 
   return {
     ...fields,
     ...(frameworkSet === undefined ? {} : { frameworkSet }),
     ...(frameworkInstalls === undefined ? {} : { frameworkInstalls }),
+    ...(structure === undefined ? {} : { structure }),
   }
 }
 
@@ -68,6 +69,7 @@ function reframeInput(draft: ReframeDraft): PlanStepInput {
     locations: draft.locations,
     readUserMcp: draft.readUserMcp,
     ...recorded,
+    ...(draft.structure === undefined ? {} : { structure: draft.structure }),
   }
 }
 

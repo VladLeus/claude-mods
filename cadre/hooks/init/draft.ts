@@ -100,6 +100,7 @@ export type ReframeDraft = Pick<
   | 'readUserMcp'
   | 'installed'
   | 'roles'
+  | 'structure'
   | 'repoDefault'
   | 'hunks'
   | 'policy'

@@ -758,6 +758,7 @@ export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframe
     locations,
     readUserMcp: draft.readUserMcp,
     ...recorded,
+    ...(draft.structure === undefined ? {} : { structure: draft.structure }),
   })
   const problem = planMismatchProblem(planned.plan, planned.desired)
   const steps = problem === null ? await applySteps({ ...planned, choices: asked.value }) : []
