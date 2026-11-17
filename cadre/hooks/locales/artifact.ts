@@ -223,8 +223,8 @@ export const ARTIFACT = Object.freeze({
   cardPartialMcp:
     'MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied',
   cardSkills: 'Skills: only the listed skills are linked',
-  cardLoads: `Loads .cadre/{id}/CLAUDE.md and its private instructions ${
-    ''}(<config dir>/cadre/<repo>-<hash8>/{id}/instructions/)`,
+  cardLoads: `Loads the repo CLAUDE.md, rule and AGENTS.md files .cadre/{id}/role.json names, from their originals, ${
+    ''}and its private instructions (<config dir>/cadre/<repo>-<hash8>/{id}/instructions/)`,
   cardInfra: 'Autopilot, agent-fleet and the handoff skills are always available',
   cardInbox: 'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them',
   cardHeldMessages: 'Live messages may be held in this permission mode; the inbox is the record',

@@ -159,7 +159,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/be/ROLE.md",
-        "sha256": "fd24b720f318662e14689bbed30f13d4dcbfc5ef4d89ee9e71e1b6d1104bc45d",
+        "sha256": "7e94bcef3998a7de841de5bfdeb846818a09afd68d0307766f8f7cdf94c333f2",
         "isWritten": true
       },
       {
@@ -174,7 +174,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "7db32656fbde52766b6a69aa1b191459ec6cfc59c896ad91dc58d8167cb815b7",
+        "sha256": "7f07a821abd670428db6925ac8216e0f02d2741494169ac9dbb56965955066e9",
         "isWritten": true
       }
     ],
@@ -199,7 +199,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/be/ROLE.md\",",
-      "      \"sha256\": \"fd24b720f318662e14689bbed30f13d4dcbfc5ef4d89ee9e71e1b6d1104bc45d\"",
+      "      \"sha256\": \"7e94bcef3998a7de841de5bfdeb846818a09afd68d0307766f8f7cdf94c333f2\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -244,7 +244,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/ROLE.md\",",
-      "      \"sha256\": \"7a1592daca6317d45a2aa99fff2c1b9a4894b23bd620f41ad4f0a42e5f6fa47a\"",
+      "      \"sha256\": \"eb450bf899f9ceca263870743bccef4d4e02f2e13d146a72c86f7212efa859a2\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
