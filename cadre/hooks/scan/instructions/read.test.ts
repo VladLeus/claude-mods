@@ -12,13 +12,10 @@ import { unreadableWarning } from './memories'
 import {
   configFileWarning,
   isReadableConfigFile,
-  moreDocsWarning,
   morePartsWarning,
   outsideWarning,
   overSizeWarning,
   readInstructionFiles,
-  referencedDocs,
-  repoImportWarning,
   repoInstructionNames,
   RULES_UNLISTED_WARNING,
   totalCapWarning,
@@ -308,12 +305,8 @@ describe('readInstructionFiles', () => {
     expect(outsideWarning('/x/a.md')).toBe(
       '/x/a.md is outside the repo and your config folder, not read: no role gets it',
     )
-    expect(repoImportWarning('~/a.md')).toBe(
-      '~/a.md is imported by a repo file and is outside the repo, not read: no role gets it',
-    )
     expect(totalCapWarning(1)).toBe('stopped reading at 512 KiB in total, 1 file not read: no role gets it')
     expect(totalCapWarning(3)).toBe('stopped reading at 512 KiB in total, 3 files not read: no role gets them')
-    expect(moreDocsWarning(2)).toBe('2 more referenced docs were not read: no role gets them')
   })
 
   test('with no config folder nothing global is read, and the chain still is', async () => {
@@ -452,32 +445,6 @@ function repoSources(
 }
 
 describe('rules, AGENTS.md and referenced docs', () => {
-  test('referencedDocs gives the relative .md links that land in the repo, once each, in text order', () => {
-    const text = [
-      'Read [the guide](docs/guide.md), [setup](./docs/setup.md#install) and [notes](../notes.md "Notes").',
-      'Again [the guide](docs/guide.md); out of the repo [x](../../outside.md).',
-    ].join('\n')
-    expect(referencedDocs(text, '/repo/pkg', '/repo')).toEqual([
-      '/repo/pkg/docs/guide.md',
-      '/repo/pkg/docs/setup.md',
-      '/repo/notes.md',
-    ])
-  })
-
-  test('a line of many unclosed links is read in linear time: no doc, in under 2 s (M1)', () => {
-    const started = Date.now()
-    expect(referencedDocs('[a](x'.repeat(20_000), '/repo', '/repo')).toEqual([])
-    expect(Date.now() - started).toBeLessThanOrEqual(1_999)
-  })
-
-  test('a link with a scheme, an absolute path, another extension, only an anchor or a folder is no doc', () => {
-    const text = [
-      '[web](https://example.com/a.md) [mail](mailto:x@y.md) [abs](/repo/a.md)',
-      '[txt](docs/a.txt) [top](#top) [dir](docs/) [query](docs/a.md?raw=1)',
-    ].join('\n')
-    expect(referencedDocs(text, '/repo', '/repo')).toEqual([])
-  })
-
   test('after the chain: each rule file in name order, then AGENTS.md, each whole; no doc they link to', async () => {
     const run = memIo(
       filesWorld({

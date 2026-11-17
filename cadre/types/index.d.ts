@@ -1032,14 +1032,13 @@ export type InstructionGroup = 'global-claude-md' | 'auto-memory' | 'project-cla
 export type PartSource = 'global' | 'repo'
 
 /**
- * One part of an instruction file (G-02-1f Part unit): a section of a CLAUDE.md file, a rule file, AGENTS.md or a doc
- * a repo file links to, cut at its `#` and `##` headings. `id` is `P<n>` in read order; `file` is the raw repo-relative
- * path for a repo part, the display form for a global one (`~/.claude/CLAUDE.md` style); cleaned only where shown
- * (02-GAPS-B2 N3); `heading` is '' for the text before the first heading. `text` is the section as read, its heading
- * line included, held in memory for this run; it is never logged, shown, asked or put in a reply; a repo part a role
- * is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited. `hash`
- * is the SHA-256 of `text` as 64 lowercase hex characters, for regen (G-02-1f Regen): the same text gives the same
- * hash, whatever file it is in.
+ * One part of an instruction file: a whole repo CLAUDE.md, rule file or AGENTS.md, or a section of a global file, cut
+ * at its `#` and `##` headings. `id` is `P<n>` in read order; `file` is the raw repo-relative path for a repo part, the
+ * display form for a global one (`~/.claude/CLAUDE.md` style), cleaned only where shown; `heading` is '' for a repo
+ * part and for the text before a global file's first heading. `text` is the file or section as read, held in memory
+ * for this run; it is never logged, shown, asked or put in a reply, and originals are never edited. `hash` is the
+ * SHA-256 of `text` as 64 lowercase hex characters, for regen: the same text gives the same hash, whatever file it is
+ * in.
  */
 export type InstructionPart = {
   readonly id: string

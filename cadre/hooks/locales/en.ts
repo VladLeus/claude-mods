@@ -1203,14 +1203,9 @@ export const EN = Object.freeze({
   'scan.instructions.memories.unreadableWarning': 'could not read {file}: no role gets it',
   'scan.instructions.memories.memoryOverSizeWarning': '{file} is over {value} KiB: not offered',
 
-  'scan.instructions.read.moreDocsWarning': '{count} more referenced docs were not read: no role gets them',
   'scan.instructions.read.overSizeWarning': '{file} is over {value} KiB, not split: no role gets it',
   'scan.instructions.read.outsideWarning':
     '{file} is outside the repo and your config folder, not read: no role gets it',
-  'scan.instructions.read.repoImportWarning':
-    '{file} is imported by a repo file and is outside the repo, not read: no role gets it',
-  'scan.instructions.read.unfollowedImportWarning':
-    '{file} is linked from a repo file and is a dotfile, under .git/ or not a .md file, not read: no role gets it',
   'scan.instructions.read.configFileWarning':
     `{file} is not a plain .md file of your config folder (no dot name, not under projects/, cadre/ or ${
     ''}plugins/), not read: no role gets it`,
