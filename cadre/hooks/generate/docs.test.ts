@@ -746,6 +746,64 @@ describe("the core PM's How you work", () => {
   })
 })
 
+/** The built-in question gate of a role that asks the person in an epic, spelled out so the specs pin its words. */
+const BUILTIN_ASK_GATE =
+  '- any open question: Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ' +
+  'Security); ask the person only as your Hierarchy section says.'
+
+describe('How you work of the core TL and Security on the built-in framework', () => {
+  const howYouWork = (role: RoleSpec, team?: RoleMdTeam): string[] =>
+    sectionLines(roleMdText(role, scopeOf(role, 'none', TEMPLATE_ROLES), team), '## How you work')
+
+  test('the core TL works each ticket PM feeds as its Hierarchy says, with the ask gate and no build loop', () => {
+    const cases: readonly [RoleSpec, RoleMdTeam, string, string][] = [
+      [
+        templateRole('tl'),
+        CORE_TEAM,
+        'You are the Team Lead role. This repo has no dev framework: work each ticket PM feeds as your Hierarchy ' +
+          'section says.',
+        'Write .cadre/tl/.runtime/DONE.md with what you did and how you verified it, then answer with a line that ' +
+          'starts with AUTOPILOT_DONE.',
+      ],
+      [
+        LEAD,
+        LEAD_TEAM,
+        'You are the Lead role. This repo has no dev framework: work each ticket PM feeds as your Hierarchy section ' +
+          'says.',
+        'Write .cadre/lead/.runtime/DONE.md with what you did and how you verified it, then answer with a line that ' +
+          'starts with AUTOPILOT_DONE.',
+      ],
+    ]
+
+    for (const [tl, team, intro, doneLine] of cases) {
+      const section = howYouWork(tl, team)
+
+      expect(section).toEqual(['## How you work', '', intro, 'Human gates:', BUILTIN_ASK_GATE, doneLine, ''])
+      expect(BUILD_LOOP_WORDS.filter(words => section.join('\n').includes(words))).toEqual([])
+    }
+  })
+
+  test('core Security keeps its plan file and the ExitPlanMode gate, with no verify line and no ban on asking', () => {
+    const text = howYouWork(templateRole('security'), CORE_TEAM).join('\n')
+
+    expect(BUILD_LOOP_WORDS.filter(words => text.includes(words))).toEqual(['plan.md', 'ExitPlanMode'])
+  })
+
+  test('core BE and a custom TL and Security keep the whole build loop', () => {
+    const cases: readonly [RoleSpec, RoleMdTeam | undefined][] = [
+      [templateRole('be'), CORE_TEAM],
+      [templateRole('tl'), undefined],
+      [templateRole('security'), undefined],
+    ]
+
+    for (const [role, team] of cases) {
+      const text = howYouWork(role, team).join('\n')
+
+      expect([role.id, BUILD_LOOP_WORDS.filter(words => text.includes(words))]).toEqual([role.id, BUILD_LOOP_WORDS])
+    }
+  })
+})
+
 describe('the Planning docs section of ROLE.md', () => {
   const planningDocs = (text: string): string[] => sectionLines(text, '## Planning docs')
   const stepLines = (adapter: FrameworkAdapter, roleId: string, isLead: boolean): string[] =>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, RepoEntry } from '../../../types'
+import type { Detection, KickoffContext, RepoEntry } from '../../../types'
 import { isDecisionType } from '../contract'
 import { adapterOf } from '../registry'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './adapter'
@@ -256,6 +256,83 @@ describe('builtinKickoffText', () => {
       expect(roleLines[roleLines.length - 1]).toContain('AUTOPILOT_DONE')
       expect(specLines[specLines.length - 1]).toContain('AUTOPILOT_DONE')
     }
+  })
+})
+
+/** The kickoff context of the TL and of Security, with no spec and no flag. */
+const TL_CTX: KickoffContext = { title: 'TL', roleId: 'tl', specPath: null }
+const SECURITY_CTX: KickoffContext = { title: 'Security', roleId: 'security', specPath: null }
+
+/** The intros of the core TL and of core Security, spelled out so the specs pin their words. */
+const CORE_TL_INTRO =
+  'You are the TL role. This repo has no dev framework: work each ticket PM feeds as your Hierarchy section says.'
+const CORE_SECURITY_INTRO =
+  'You are the Security role. This repo has no dev framework: review each ticket TL sends you as your Hierarchy ' +
+  'section says.'
+
+/** The ExitPlanMode gate line and the question gate line without and with asking the person, spelled out. */
+const EXIT_GATE_LINE = '- ExitPlanMode: Never call ExitPlanMode (it waits for a human); write the plan file instead.'
+const NO_ASK_GATE_LINE =
+  '- any open question: Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ' +
+  'Security); do not ask the human directly.'
+const ASK_GATE_LINE =
+  '- any open question: Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ' +
+  'Security); ask the person only as your Hierarchy section says.'
+
+/** The last line of the built-in kickoff of the TL and of Security. */
+const TL_DONE_LINE =
+  'Write .cadre/tl/.runtime/DONE.md with what you did and how you verified it, ' +
+  'then answer with a line that starts with AUTOPILOT_DONE.'
+const SECURITY_DONE_LINE =
+  'Write .cadre/security/.runtime/DONE.md with what you did and how you verified it, ' +
+  'then answer with a line that starts with AUTOPILOT_DONE.'
+
+describe('builtinKickoffText for the core TL and core Security', () => {
+  test('the core TL has its intro, the gates and the DONE line, with no plan, verify or ExitPlanMode line', () => {
+    const lines = builtinKickoffText({ ...TL_CTX, isCoreLead: true }).split('\n')
+
+    expect(lines).toEqual([CORE_TL_INTRO, 'Human gates:', NO_ASK_GATE_LINE, TL_DONE_LINE])
+  })
+
+  test('a core TL that asks the person in an epic gets the question gate that defers to its Hierarchy', () => {
+    const lines = builtinKickoffText({ ...TL_CTX, isCoreLead: true, asksInEpic: true }).split('\n')
+
+    expect(lines).toEqual([CORE_TL_INTRO, 'Human gates:', ASK_GATE_LINE, TL_DONE_LINE])
+  })
+
+  test('core Security keeps its plan line and the ExitPlanMode gate, and has no verify line', () => {
+    const lines = builtinKickoffText({ ...SECURITY_CTX, isCoreReviewer: true, asksInEpic: true }).split('\n')
+
+    expect(lines).toEqual([
+      CORE_SECURITY_INTRO,
+      'Write your plan to .cadre/security/.runtime/plan.md, then execute it with subagents.',
+      'Human gates:',
+      EXIT_GATE_LINE,
+      ASK_GATE_LINE,
+      SECURITY_DONE_LINE,
+    ])
+  })
+
+  test('a spec path gives the Spec line second with either flag', () => {
+    const lead = builtinKickoffText({ ...TL_CTX, specPath: 'x.md', isCoreLead: true }).split('\n')
+    const reviewer = builtinKickoffText({ ...SECURITY_CTX, specPath: 'x.md', isCoreReviewer: true }).split('\n')
+
+    expect([lead[1], reviewer[1]]).toEqual(['Spec: x.md', 'Spec: x.md'])
+  })
+
+  test('asksInEpic alone changes only the question gate line of the default text', () => {
+    const today = kickoffLines('BE')
+    const asks = builtinKickoffText({ title: 'BE', roleId: 'be', specPath: null, asksInEpic: true }).split('\n')
+
+    expect(today).toContain(NO_ASK_GATE_LINE)
+    expect(asks).toEqual(today.map(line => (line === NO_ASK_GATE_LINE ? ASK_GATE_LINE : line)))
+  })
+
+  test('every flag false gives the text of no flag', () => {
+    const ctx: KickoffContext = { title: 'BE', roleId: 'be', specPath: null }
+    const off = builtinKickoffText({ ...ctx, isCoreLead: false, isCoreReviewer: false, asksInEpic: false })
+
+    expect(off).toBe(builtinKickoffText(ctx))
   })
 })
 
