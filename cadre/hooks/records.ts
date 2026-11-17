@@ -1,10 +1,10 @@
 /**
  * The instruction part records apply, init, roles and regen share, a layer 1 module: a part's record as a role.json and
  * a role's hand-out record hold it (its file, heading and hash), the checks a recorded part must pass to be read back,
- * and the name of the text above a file's first heading. It imports only core and the types,
- * so those modules can all import it with no cycle, and none of them reaches into another for a record.
+ * the name of the text above a file's first heading and whether a part is a whole repo file. It imports only core and
+ * the types, so those modules can all import it with no cycle, and none of them reaches into another for a record.
  */
-import type { InstructionPart, InstructionPartRecord, RoleSpec } from '../types'
+import type { InstructionPart, InstructionPartRecord, PartSource, RoleSpec } from '../types'
 import { allOrNull, isObject } from './core/json'
 import { MAX_HEADING_CHARS, SHA256_HEX } from './core/names'
 import { isChangedByClean } from './core/text'
@@ -82,6 +82,11 @@ export function recordedParts(value: unknown): InstructionPartRecord[] | null {
  * markers name it the same way (generate.ts).
  */
 export const TOP_OF_FILE = CONTRACTS.topOfFile
+
+/** Whether a part is a whole repo file: a repo part with no heading, named by its file alone. */
+export function isWholeFilePart(source: PartSource, heading: string): boolean {
+  return source === 'repo' && heading === ''
+}
 
 /**
  * A role with these repo part records in place of any it had (G-02-1f Regen, AUTO-PICK #19 Q1): the parts it was

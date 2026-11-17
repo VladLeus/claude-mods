@@ -430,8 +430,8 @@ describe('readInstructionFiles', () => {
     const shownFile = `${'d'.repeat(119)}…`
     expect(instructionLines(scan, topics, new Map()).filter(line => line.startsWith('    from: '))).toEqual([
       '    from: ~/.claude/CLAUDE.md > G',
-      `    from: ${shownFile} > (top of file)`,
-      `    from: ${shownFile} > (top of file)`,
+      `    from: ${shownFile}`,
+      `    from: ${shownFile}`,
     ])
     const contexts = topics.map(topic => topicContextLine(topic, scan.parts, [], SCREEN_LIST_WORDS))
     expect(contexts.filter(line => line.includes(`From: ${'d'.repeat(100)}`))).toHaveLength(2)
