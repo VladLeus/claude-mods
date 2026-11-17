@@ -203,9 +203,11 @@ export const PROMPTS = Object.freeze({
   // The refusals of an inbox_read id (messages/record parseReadInput, messages/flow runInboxRead).
   inboxReadIdBad: 'id must be the id of an inbox entry, as inbox_read shows it.',
   inboxReadUnknownId: 'id names no entry of your inbox: call inbox_read with no id for the ids.',
-  // A size line whose class a pin set (messages/sizing sizeText) and a pinned task's vector line (messages/record).
+  // A size line whose class a pin set (messages/sizing sizeText), the sentence of a task whose key has no ticket in
+  // the sender's inbox (messages/flow) and a pinned task's vector line (messages/record).
   inboxSizePinned: 'Size {sizeClass} (pinned; computed {size}).',
   inboxSizePinnedOnly: 'Size {sizeClass} (pinned).',
+  inboxPinNoTicket: 'No ticket {key} is in your inbox, so no pin applies.',
   inboxItemSizedPinned: '{vector}; size {sizeClass} (pinned; computed {size})',
   // The descriptions of the inbox tools (register.tsx), the refusals of a call outside a role session or a call that
   // failed, and the line of a role session whose role.json is not found.

@@ -347,11 +347,18 @@ export function foldInbox(events: readonly InboxEvent[]): InboxItem[] {
   })
 }
 
-/** The pin of the last ticket with this key in the inbox; null when that ticket has none or no ticket has the key. */
-export function ticketPinOf(events: readonly InboxEvent[], ticketKey: string): SizeClass | null {
-  const tickets = events.filter(isEntry).filter(entry => entry.kind === 'ticket' && entry.ticketKey === ticketKey)
+/** What the tickets of a key in an inbox say about the pin a task inherits. */
+export type TicketPin = SizeClass | 'unpinned' | 'no-ticket'
 
-  return tickets.at(-1)?.pin ?? null
+/**
+ * The pin of the last ticket of the key that carries one; unpinned when none does, no-ticket when no ticket has the
+ * key.
+ */
+export function ticketPinOf(events: readonly InboxEvent[], ticketKey: string): TicketPin {
+  const tickets = events.filter(isEntry).filter(entry => entry.kind === 'ticket' && entry.ticketKey === ticketKey)
+  if (tickets.length === 0) return 'no-ticket'
+
+  return tickets.findLast(ticket => ticket.pin !== undefined)?.pin ?? 'unpinned'
 }
 
 /** The states inbox_read leaves out unless it is asked for all items. */

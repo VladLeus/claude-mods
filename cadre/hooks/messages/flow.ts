@@ -234,21 +234,33 @@ async function deliver(
   return { kind: 'result', text: fill(isDelivered ? PROMPTS.inboxSent : PROMPTS.inboxSentUndelivered, { id, to }) }
 }
 
+/** The pin a task inherits, and its key when the sender's readable inbox holds no ticket of it. */
+type TaskPin = {
+  readonly pin: SizeClass | null
+  readonly missingKey: string | null
+}
+
+const NO_TASK_PIN: TaskPin = Object.freeze({ pin: null, missingKey: null })
+
 /**
- * The pin a task inherits: that of the last ticket of its key in the sender's own inbox; null for any other kind or
- * when the inbox cannot be read.
+ * The pin a task inherits from the last pinned ticket of its key in the sender's own inbox, and the key when no ticket
+ * of it is there; neither for any other kind or an inbox that cannot be read.
  */
 async function taskPinOf(
   io: InitIo,
   session: RoleSession,
   kindName: MessageKind,
   fields: InboxEntryFields,
-): Promise<SizeClass | null> {
+): Promise<TaskPin> {
   const { ticketKey } = fields
-  if (kindName !== 'task' || ticketKey === undefined) return null
+  if (kindName !== 'task' || ticketKey === undefined) return NO_TASK_PIN
   const events = await readOwnInbox(io, session)
+  if (events === null) return NO_TASK_PIN
+  const found = ticketPinOf(events, ticketKey)
+  if (found === 'no-ticket') return { pin: null, missingKey: ticketKey }
+  if (found === 'unpinned') return NO_TASK_PIN
 
-  return events === null ? null : ticketPinOf(events, ticketKey)
+  return { pin: found, missingKey: null }
 }
 
 /** A verdict's stamps; none without a computed size, since a stored entry holds the size and the class together. */
@@ -295,7 +307,8 @@ function resultVerdictOf(
 /**
  * inbox_send: one entry from the session's own role, stamped with the clock, appended and then announced live. A
  * session whose own inbox folder is absent or unsafe is refused before anything runs; the result of a task or a
- * pinned ticket ends with its size class and the pick in each mode the repo offers.
+ * pinned ticket ends with its size class and the pick in each mode the repo offers. The result of a task whose key
+ * has no ticket in the sender's inbox says so before its size line.
  */
 export async function runInboxSend(
   io: InitIo,
@@ -310,15 +323,19 @@ export async function runInboxSend(
   if (input.kind === 'error') return deny(input.message)
   const own = await ownInboxRefusal(io, session)
   if (own !== null) return deny(own)
-  const pin = await taskPinOf(io, session, input.kindName, input.fields)
+  const taskPin = await taskPinOf(io, session, input.kindName, input.fields)
   const at = await io.now()
   if (at === null) return deny(PROMPTS.inboxNoClock)
-  const fields = stampedFields(input.kindName, input.fields, input.to, team, pin)
+  const fields = stampedFields(input.kindName, input.fields, input.to, team, taskPin.pin)
   const outcome = await deliver(io, host, link, session, at, { ...input, fields })
-  const verdict = resultVerdictOf(input.kindName, input.fields, team.sizing.threshold, pin)
+  const verdict = resultVerdictOf(input.kindName, input.fields, team.sizing.threshold, taskPin.pin)
   if (outcome.kind === 'deny' || verdict === null) return outcome
+  const noTicket = taskPin.missingKey === null ? [] : [fill(PROMPTS.inboxPinNoTicket, { key: taskPin.missingKey })]
 
-  return { kind: 'result', text: `${outcome.text} ${sizeText(verdict, team.sizing, modesOffered(team.frameworks))}` }
+  return {
+    kind: 'result',
+    text: [outcome.text, ...noTicket, sizeText(verdict, team.sizing, modesOffered(team.frameworks))].join(' '),
+  }
 }
 
 /**
