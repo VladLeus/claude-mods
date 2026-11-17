@@ -37,13 +37,13 @@ export function asciiLine(text: string, maxChars: number): string {
 }
 
 /**
- * What the role line starts the session with: the How you work steps for a core team's PM, else the GSD workflow, a
- * superpowers skill, or the built-in plan file.
+ * What the role line starts the session with: the How you work steps for a core team's PM, else the adapter's start,
+ * which may differ for a core team's TL.
  */
 function startText(role: RoleSpec, framework: FrameworkId, isCoreTeam: boolean): string {
   if (isCoreTeam && standsFor(role, 'pm')) return PROMPTS.kickoffPmStart
 
-  return adapterOf(framework).roleStart(role.id)
+  return adapterOf(framework).roleStart(role.id, isCoreTeam && standsFor(role, 'tl'))
 }
 
 /**

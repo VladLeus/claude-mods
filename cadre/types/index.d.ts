@@ -395,8 +395,11 @@ export type FrameworkAdapter = {
   readonly agentPrefix: string | null
   /** Whether the framework's workflows need Bash: a role on it without Bash runs them through a person (A1). */
   readonly needsBash: boolean
-  /** What the kickoff role line of a role starts the session with: a command, a skill or a file. */
-  readonly roleStart: (roleId: string) => string
+  /**
+   * What the kickoff role line of a role starts the session with: a command, a skill or a file. A core team's TL may
+   * start elsewhere.
+   */
+  readonly roleStart: (roleId: string, isCoreLead?: boolean) => string
   /** The command a person runs to install the framework; null when there is nothing to install. */
   readonly install: string | null
   /** The install cadre runs at project scope on consent; null when there is nothing to install. */

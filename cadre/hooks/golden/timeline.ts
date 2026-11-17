@@ -458,12 +458,12 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/sizing.md 9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3 true",
     "write /repo/.cadre/tl/CLAUDE.md a77e9dd5552ffce1e5b1c4402fa884759db6cf017af7d98bfb88c8ba6fd554e8 true",
     "write /repo/.cadre/tl/ROLE.md 709fd696f85ea87e311be353a83b1623dc6d502e761e40151be65c7f3e292f75 true",
-    "write /repo/.cadre/tl/kickoff.txt 937c1de1033196923d0f0f1dca9e033b03d30945cda03a62eff175924023c94c true",
+    "write /repo/.cadre/tl/kickoff.txt 7f7b3acb7dc35273d3874d7f05a9ade5625bed7070616fd4d4789620fde0daac true",
     "write /repo/.cadre/tl/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/tl/role.json 0b3b5ee6a4f7152de6c5afe5e4f201a252bf66609999ebcd4c2de1025a69b2b6 true",
     "write /repo/.cadre/tl/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json a81b4fff47277fa7edd1affd1fe0e4f33b80c3f8adc8ef7b3fb62506935b8b42 true"
+    "write /repo/.cadre/manifest.json 16d72de5932b4f983fcb7b19f0fd17f04d085e51de5d5942e28321d3078db6a8 true"
   ],
   "applyGsd": [
     "ask Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.",

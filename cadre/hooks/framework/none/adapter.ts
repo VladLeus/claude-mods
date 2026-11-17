@@ -119,6 +119,12 @@ export function builtinKickoffText(ctx: KickoffContext): string {
   ].join('\n')
 }
 
+function builtinRoleStart(roleId: string, isCoreLead = false): string {
+  if (isCoreLead) return PROMPTS.kickoffPmStart
+
+  return fill(PROMPTS.builtinRoleStart, { roleId })
+}
+
 /**
  * The built-in adapter: the contract every framework implements, filled for the built-in fallback. It has no framework
  * config, so its autonomy comes from the kickoff text alone. Its done signal is the DONE.md marker in the role's
@@ -155,8 +161,11 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   pluginsToEnable: Object.freeze([]),
   agentPrefix: null,
   needsBash: false,
-  /** The role's plan file, which the built-in kickoff asks the role to write first. */
-  roleStart: (roleId: string) => fill(PROMPTS.builtinRoleStart, { roleId }),
+  /**
+   * The role's plan file, which the built-in kickoff asks the role to write first; a core team's TL starts with the How
+   * you work steps of its ROLE.md instead.
+   */
+  roleStart: builtinRoleStart,
   install: null,
   projectInstall: null,
   factsHeading: null,
