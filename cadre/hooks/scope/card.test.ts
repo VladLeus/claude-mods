@@ -83,11 +83,11 @@ const MERGED_REACHABLE_RULE =
   'Denied servers: tools removed and the whole server denied ' +
   '(deniedMcpServers; best-effort)'
 
-/** The card rule that names what a role loads as its instructions: its built and private files (02-GAPS-B2 N9). */
+/** The card rule naming what a role loads: the repo files its role.json names and its private instructions. */
 function loadsRule(id: string): string {
   return (
-    `Loads .cadre/${id}/CLAUDE.md and its private instructions ` +
-    `(<config dir>/cadre/<repo>-<hash8>/${id}/instructions/)`
+    `Loads the repo CLAUDE.md, rule and AGENTS.md files .cadre/${id}/role.json names, from their originals, ` +
+    `and its private instructions (<config dir>/cadre/<repo>-<hash8>/${id}/instructions/)`
   )
 }
 
@@ -142,7 +142,7 @@ describe('the inbox rules on the card', () => {
 })
 
 describe('the loaded instructions on the card (02-GAPS-B2 N9)', () => {
-  test("every card names the role's built and private instructions as a none rule, after the Skills rule", () => {
+  test('every card names the repo files role.json gives and the private instructions, a none rule after Skills', () => {
     for (const role of [templateRole('pm'), templateRole('be')]) {
       const rules = compileScope(role, context()).card.rules
       const skills = rules.findIndex(found => found.text === 'Skills: only the listed skills are linked')
