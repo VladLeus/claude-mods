@@ -151,9 +151,12 @@ function orderedEvent(event: InboxEvent): InboxEvent {
   }
 }
 
-/** One inbox.jsonl line: the event as JSON with no spaces, then a newline. */
+/**
+ * One inbox.jsonl line: the event as JSON with no spaces and an end key last, then a newline. The end key echoes the
+ * id, so two records torn into one line never read as one.
+ */
 export function recordLine(event: InboxEvent): string {
-  return `${JSON.stringify(orderedEvent(event))}\n`
+  return `${JSON.stringify({ ...orderedEvent(event), end: event.id })}\n`
 }
 
 /**
@@ -254,10 +257,14 @@ function markOf(value: Readonly<Record<string, unknown>>): InboxMark | null {
   }
 }
 
-/** One inbox.jsonl line read back; null for anything cadre would not have written. */
+/**
+ * One inbox.jsonl line read back; null for anything cadre would not have written. An end key that is not the id drops
+ * the line, so two records torn into one line never read as one; a line without one reads as before.
+ */
 export function parseInboxLine(text: string): InboxEvent | null {
   const value = parseJsonValue(text)?.value
   if (!isObject(value) || value.v !== 1) return null
+  if (value.end !== undefined && value.end !== value.id) return null
   if (value.type === CONTRACTS.inboxEntryType) return entryOf(value)
   if (value.type === CONTRACTS.inboxMarkType) return markOf(value)
 
