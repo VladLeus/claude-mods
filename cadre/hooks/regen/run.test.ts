@@ -724,6 +724,23 @@ describe('regen apply', () => {
 /** A section the root CLAUDE.md gained after init. */
 const DEPLOY_SECTION = '## Deploy\nShip on Fridays.\n'
 
+const LOADS_AS_NOW_BE =
+  'warning: 1 repo instruction file given to be changed since init and loads as it is now: ' +
+  'run /cadre regen be in a session to review it'
+
+const NOT_HANDED_OUT_BE =
+  'warning: 1 new or changed instruction part or memory for be was not handed out: ' +
+  'run /cadre regen be in a session to answer it'
+
+const AGENTS_TRACKED: readonly HostRunRule[] = [
+  { argv: ['git', '--literal-pathspecs', 'ls-files', '-z', '--', 'AGENTS.md'], result: trackedRun(['AGENTS.md']) },
+]
+
+/** The root AGENTS.md with this text as the read gives it: one whole-file repo part. */
+async function agentsPart(text: string): Promise<InstructionPart> {
+  return { id: 'P1', file: 'AGENTS.md', heading: '', source: 'repo', text, hash: await sha256Hex(text) }
+}
+
 /** The host rules of a plain regen of BE: git names the common dir and tracks the root CLAUDE.md. */
 const REGEN_RUNS: readonly HostRunRule[] = [COMMON_DIR_RULE, ...BUILT_TRACKED]
 
@@ -947,16 +964,49 @@ describe('regen by part hashes (G-02-1f)', () => {
     ])
   })
 
-  test('in claude -p nothing is asked: a changed file is left out with a warning, records kept', async () => {
-    for (const interactive of [false, null]) {
-      const claudeMd = `${RULES_SECTION}${GIT_EDITED}${DEPLOY_SECTION}`
-      const { reply, run, host } = await regenPlainBe(await wholeWorld({ claudeMd, over: { interactive } }), {})
-      expect([interactive, run.asked, run.prompts]).toEqual([interactive, [], []])
-      expect([interactive, warningLines(reply)]).toEqual([interactive, [`warning: ${notHandedOutWarning('be', 1)}`]])
-      expect([interactive, host.writes]).toEqual([interactive, []])
-      expect(opKinds(reply).get('.cadre/be/role.json')).toBe(undefined)
-    }
+  test(
+    'in claude -p nothing is asked: a changed given file stays given and loads as it is now, records kept',
+    async () => {
+      for (const interactive of [false, null]) {
+        const claudeMd = `${RULES_SECTION}${GIT_EDITED}${DEPLOY_SECTION}`
+        const { reply, run, host } = await regenPlainBe(await wholeWorld({ claudeMd, over: { interactive } }), {})
+        expect([interactive, run.asked, run.prompts]).toEqual([interactive, [], []])
+        expect([interactive, warningLines(reply)]).toEqual([interactive, [LOADS_AS_NOW_BE]])
+        expect([interactive, host.writes]).toEqual([interactive, []])
+        expect(opKinds(reply).get('.cadre/be/role.json')).toBe(undefined)
+      }
+    },
+  )
+
+  test('in claude -p a changed given AGENTS.md stays given: the built file keeps its @ line', async () => {
+    const world = await regenPartsWorld({
+      given: [await agentsPart('# Agents\n')],
+      notGiven: [],
+      claudeMd: null,
+      over: { interactive: false, files: { '/repo/AGENTS.md': '# Agents\nRun the linter.\n' } },
+    })
+    expect(world.files['/repo/.cadre/be/CLAUDE.md']).toContain('@../../AGENTS.md')
+    const { reply, run, host } = await regenPlainBe(world, {}, [COMMON_DIR_RULE, ...AGENTS_TRACKED])
+    expect([run.asked, run.prompts]).toEqual([[], []])
+    expect(warningLines(reply)).toEqual([LOADS_AS_NOW_BE])
+    expect(host.writes).toEqual([])
+    expect(opKinds(reply).get('.cadre/be/role.json')).toBe(undefined)
+    expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).not.toBe('change')
   })
+
+  test(
+    'in claude -p a file a given section record names loads whole; one only not-given records name stays left out',
+    async () => {
+      const held = await regenPlainBe(await regenPartsWorld({ over: { interactive: false } }), {})
+      expect(warningLines(held.reply)).toEqual([LOADS_AS_NOW_BE])
+      expect(held.host.writes).toEqual([])
+      const notGiven = [await rootPart('P1', 'Rules', RULES_SECTION)]
+      const world = await regenPartsWorld({ given: [], notGiven, over: { interactive: false } })
+      const leftOut = await regenPlainBe(world, {})
+      expect(warningLines(leftOut.reply)).toEqual([NOT_HANDED_OUT_BE])
+      expect(leftOut.host.writes).toEqual([])
+    },
+  )
 
   test('a --dry-run in a session asks, plans the rebuild, writes and runs nothing, names what it skipped', async () => {
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
@@ -992,7 +1042,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const world = await wholeWorld({ claudeMd: RULES_SECTION, over })
     const { reply, host } = await regenPlainBe(world, {})
     expect(improverCalls(host)).toEqual([])
-    expect(warningLines(reply)).toEqual([`warning: ${notHandedOutWarning('be', 1)}`])
+    expect(warningLines(reply)).toEqual([LOADS_AS_NOW_BE])
     expect(host.writes).toEqual([])
   })
 
