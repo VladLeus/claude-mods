@@ -812,6 +812,16 @@ describe('the GSD start steps of a role', () => {
     expect(today.filter(isLeftOut)).toEqual([ARTIFACT.gsdKickoffStart, ARTIFACT.gsdKickoffVerify])
     expect(core).toEqual(today.filter(line => !isLeftOut(line)))
   })
+
+  test('core Security has no Verify kickoff line and keeps its Start, new project, specs, gate and done lines', () => {
+    const ctx = { title: 'Security', roleId: 'security', specPath: null }
+    const today = gsdKickoffText(ctx).split('\n')
+    const reviewer = gsdKickoffText({ ...ctx, isCoreReviewer: true }).split('\n')
+
+    expect(today).toContain(ARTIFACT.gsdKickoffVerify)
+    expect(reviewer).toEqual(today.filter(line => line !== ARTIFACT.gsdKickoffVerify))
+    expect(reviewer).toContain(ARTIFACT.gsdKickoffStart)
+  })
 })
 
 describe('GSD_ADAPTER.isInstalled', () => {

@@ -804,6 +804,36 @@ describe('How you work of the core TL and Security on the built-in framework', (
   })
 })
 
+describe('How you work of core Security on GSD and superpowers', () => {
+  const security = templateRole('security')
+  const textOn = (framework: FrameworkId): string =>
+    roleMdText(security, scopeOf(security, framework, TEMPLATE_ROLES), CORE_TEAM)
+
+  test('it is the kickoff of a core reviewer that asks in an epic, on GSD with its Start and no Verify line', () => {
+    const frameworks: readonly FrameworkId[] = ['gsd', 'superpowers']
+
+    for (const framework of frameworks) {
+      const kickoff = ADAPTER_OF[framework].kickoffText({
+        title: 'Security',
+        roleId: 'security',
+        specPath: null,
+        isCoreReviewer: true,
+        asksInEpic: true,
+      })
+
+      expect(textOn(framework)).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
+    }
+    const gsd = sectionLines(textOn('gsd'), '## How you work').join('\n')
+
+    expect(gsd).not.toContain('Verify with /gsd-validate-phase')
+    expect(gsd).toContain('Start: /gsd-autonomous')
+  })
+
+  test('core Security keeps its Planning docs section on GSD', () => {
+    expect(headings(textOn('gsd'))).toContain('## Planning docs')
+  })
+})
+
 describe('the Planning docs section of ROLE.md', () => {
   const planningDocs = (text: string): string[] => sectionLines(text, '## Planning docs')
   const stepLines = (adapter: FrameworkAdapter, roleId: string, isLead: boolean): string[] =>

@@ -459,6 +459,14 @@ describe('superpowersKickoffText', () => {
       expect(specLines[specLines.length - 1]).toContain('AUTOPILOT_DONE')
     }
   })
+
+  test('a core lead and a core reviewer get the text of any role, since no verify line is rendered', () => {
+    const ctx = { title: 'Security', roleId: 'security', specPath: null }
+    const today = superpowersKickoffText(ctx)
+
+    expect(superpowersKickoffText({ ...ctx, isCoreReviewer: true })).toBe(today)
+    expect(superpowersKickoffText({ ...ctx, isCoreLead: true })).toBe(today)
+  })
 })
 
 describe('SUPERPOWERS_ADAPTER', () => {
