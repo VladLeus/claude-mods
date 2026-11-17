@@ -1031,6 +1031,13 @@ describe('the env files git tracks in the runtime sandbox', () => {
     expect(sandboxOf('be', user({ root: '/my repo', trackedEnvFiles: TRACKED }))).toEqual(BE_SANDBOX)
   })
 
+  test('a role without Bash gets no allowRead for them', () => {
+    const role = { ...templateRole('be'), hasBash: false }
+    const scope = compileScope(role, context())
+
+    expect(launchPlan(role, scope, user({ trackedEnvFiles: TRACKED })).settings.sandbox).toEqual(scope.settings.sandbox)
+  })
+
   test('the Read denies of BE are the same with or without the tracked files', () => {
     const be = templateRole('be')
     const scope = compileScope(be, context())

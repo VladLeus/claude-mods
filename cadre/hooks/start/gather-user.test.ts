@@ -109,6 +109,17 @@ function trackedEnvRule(result: HostRun | null): HostRunRule {
   return { argv: TRACKED_ENV, result }
 }
 
+/** The argv that lists, NUL-ended, the tracked env files at /repo whose working-tree file differs from the index. */
+const MODIFIED_ENV = ['git', '-C', '/repo', 'ls-files', '-z', '-m', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+
+/** The run of the modified env files as the host is asked for it: no cwd, as the argv names the root. */
+const MODIFIED_ENV_CALL = { argv: MODIFIED_ENV, options: { timeoutMs: GIT_TIMEOUT_MS } }
+
+/** A fake host rule that answers the modified env files run with this run; null is a run the host rejected. */
+function modifiedEnvRule(result: HostRun | null): HostRunRule {
+  return { argv: MODIFIED_ENV, result }
+}
+
 /** A launcher start at the git root. */
 const GIT_ROOT: LaunchStart = { kind: 'git-root' }
 
@@ -845,7 +856,34 @@ describe('the env files git tracks, for a role that runs the repo checks', () =>
     const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked])
 
     expect(userOf(read).trackedEnvFiles).toEqual(['.env.test'])
-    expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }, TRACKED_ENV_CALL])
+    expect(calls).toEqual([
+      { argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } },
+      TRACKED_ENV_CALL,
+      MODIFIED_ENV_CALL,
+    ])
+  })
+
+  test('a tracked env file git lists as modified is left out', async () => {
+    const entries = `${ENV_TEST_ENTRY}100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0\tweb/.env.local\0`
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: entries, stderr: '' })
+    const modified = modifiedEnvRule({ exitCode: 0, stdout: 'web/.env.local\0', stderr: '' })
+    const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked, modified])
+
+    expect(userOf(read).trackedEnvFiles).toEqual(['.env.test'])
+    expect(calls).toEqual([
+      { argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } },
+      TRACKED_ENV_CALL,
+      MODIFIED_ENV_CALL,
+    ])
+  })
+
+  test('a modified-files run the host rejects or that exits non-zero leaves the field out', async () => {
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: ENV_TEST_ENTRY, stderr: '' })
+    for (const result of [null, { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' }]) {
+      const { read } = await gather(repoWorld(), [GIT_OK, tracked, modifiedEnvRule(result)])
+
+      expect(Object.hasOwn(userOf(read), 'trackedEnvFiles')).toBe(false)
+    }
   })
 
   test('a PM or TL launch makes no such run and has no field', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun } from '../../types'
-import { envFilesOf, TRACKED_ENV_ARGV } from './env-files'
+import { envFilesOf, MODIFIED_ENV_ARGV, TRACKED_ENV_ARGV, unchangedEnvFilesOf } from './env-files'
 
 /** The object id `ls-files -s` prints for each entry here. */
 const OBJECT = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
@@ -94,5 +94,32 @@ describe('the env files git tracks', () => {
     const dropped = ['../.env', 'web/../.env', './.env', 'web/./.env', 'web//.env', '/.env', '/web/.env']
 
     expect(dropped.map(path => envFilesOf(listed('100644', path)))).toEqual(dropped.map(() => []))
+  })
+})
+
+describe('the tracked env files git lists as modified', () => {
+  test('MODIFIED_ENV_ARGV lists, NUL-ended, the tracked .env and .env.* files that differ from the index', () => {
+    expect(MODIFIED_ENV_ARGV('/r')).toEqual([
+      'git',
+      '-C',
+      '/r',
+      'ls-files',
+      '-z',
+      '-m',
+      '--',
+      ':(glob)**/.env',
+      ':(glob)**/.env.*',
+    ])
+  })
+
+  test('the listed files less those the run names, and null for a rejected or failed run', () => {
+    const files = ['.env', '.env.test', 'web/.env.local']
+    const modified = (stdout: string): HostRun => ({ exitCode: 0, stdout, stderr: '' })
+
+    expect(unchangedEnvFilesOf(files, modified('.env.test\0web/.env.local\0'))).toEqual(['.env'])
+    expect(unchangedEnvFilesOf(files, modified(''))).toEqual(files)
+    expect(unchangedEnvFilesOf(files, modified('.env.other\0.env.test\0'))).toEqual(['.env', 'web/.env.local'])
+    expect(unchangedEnvFilesOf(files, null)).toBeNull()
+    expect(unchangedEnvFilesOf(files, { exitCode: 128, stdout: '.env.test\0', stderr: 'fatal' })).toBeNull()
   })
 })
