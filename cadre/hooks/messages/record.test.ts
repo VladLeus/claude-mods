@@ -578,17 +578,26 @@ describe('parseReadInput', () => {
 })
 
 describe('ticketPinOf', () => {
-  test('the pin of the last ticket of the key, even none; a task or a ticket of another key does not count', () => {
-    const large: InboxEntry = { ...B, ticketKey: 'PROJ-2', pin: 'large' }
-    const small: InboxEntry = { ...B, id: 'pm-3000-89abcdef', at: 3000, ticketKey: 'PROJ-2', pin: 'small' }
-    const unpinned: InboxEntry = { ...B, id: 'pm-4000-89abcdef', at: 4000, ticketKey: 'PROJ-2' }
-    const other: InboxEntry = { ...B, id: 'pm-5000-89abcdef', at: 5000, ticketKey: 'PROJ-3', pin: 'large' }
-    const task: InboxEntry = { ...A, id: 'tl-6000-0123abcd', at: 6000, kind: 'task', ticketKey: 'PROJ-2' }
+  test(
+    'the pin of the last ticket of the key that carries one; unpinned when none does; ' +
+      'no-ticket when no ticket has the key',
+    () => {
+      const large: InboxEntry = { ...B, ticketKey: 'PROJ-2', pin: 'large' }
+      const small: InboxEntry = { ...B, id: 'pm-3000-89abcdef', at: 3000, ticketKey: 'PROJ-2', pin: 'small' }
+      const unpinned: InboxEntry = { ...B, id: 'pm-4000-89abcdef', at: 4000, ticketKey: 'PROJ-2' }
+      const other: InboxEntry = { ...B, id: 'pm-5000-89abcdef', at: 5000, ticketKey: 'PROJ-3', pin: 'large' }
+      const task: InboxEntry = { ...A, id: 'tl-6000-0123abcd', at: 6000, kind: 'task', ticketKey: 'PROJ-2' }
 
-    expect(ticketPinOf([large, small, other, task], 'PROJ-2')).toBe('small')
-    expect(ticketPinOf([large, small, unpinned], 'PROJ-2')).toBeNull()
-    expect(ticketPinOf([large, task], 'PROJ-9')).toBeNull()
-  })
+      expect(ticketPinOf([large, small, other, task], 'PROJ-2')).toBe('small')
+      expect(ticketPinOf([large, small, unpinned], 'PROJ-2')).toBe('small')
+      expect(ticketPinOf([large, unpinned], 'PROJ-2')).toBe('large')
+      expect(ticketPinOf([unpinned], 'PROJ-2')).toBe('unpinned')
+      expect(ticketPinOf([large, task], 'PROJ-9')).toBe('no-ticket')
+      expect(ticketPinOf([task], 'PROJ-2')).toBe('no-ticket')
+      expect(ticketPinOf([{ ...large, ticketKey: 'proj-2' }], 'PROJ-2')).toBe('no-ticket')
+      expect(ticketPinOf([], 'PROJ-2')).toBe('no-ticket')
+    },
+  )
 })
 
 describe('foldInbox owner marks and replies', () => {

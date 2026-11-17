@@ -397,6 +397,9 @@ describe('runInboxSend of a task', () => {
     scores: { scope: 0.3, risk: 0.9 },
   }
 
+  /** The no-ticket sentence of PROJ-2, spelled out so the specs pin its words. */
+  const NO_TICKET = 'No ticket PROJ-2 is in your inbox, so no pin applies.'
+
   /** A world where pm, tl and be were started and be published its session id, with the clock at 1000. */
   function beWorld(): MemWorld {
     return memWorld({ now: 1000, dirs: STARTED, files: { [BE_SESSION]: sessionRecordText('s-be') } })
@@ -409,32 +412,36 @@ describe('runInboxSend of a task', () => {
     return memWorld({ now: 1000, dirs: STARTED, files })
   }
 
-  test('tl sends be a task: the entry carries its vector with the size stamp; the result names the picks', async () => {
-    const { outcome, host } = await sendFrom(beWorld(), TASK, { ctx: TL })
-    const entry = parseInboxLine(firstStdin(host))
-    const id = entry?.id ?? ''
+  test(
+    'tl sends be a task whose ticket has no pin: the entry carries its vector with the size stamp; ' +
+      'the result names the picks and no pin sentence',
+    async () => {
+      const { outcome, host } = await sendFrom(tlInboxWorld([PM_TICKET]), TASK, { ctx: TL })
+      const entry = parseInboxLine(firstStdin(host))
+      const id = entry?.id ?? ''
 
-    expect(entry).toMatchObject({
-      kind: 'task',
-      from: 'tl',
-      to: 'be',
-      ticketKey: 'PROJ-2',
-      vector: VECTOR,
-      use: { framework: 'gsd', gsdPath: 'phase' },
-      size: 0.6,
-      large: true,
-    })
-    expect(teeRuns(host)).toEqual([BE_TEE])
-    expect(outcome).toEqual({
-      kind: 'result',
-      text: [
-        fill(PROMPTS.inboxSent, { id, to: 'be' }),
-        fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'large', threshold: 0.5 }),
-        fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'phase' }),
-        fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'phase' }),
-      ].join(' '),
-    })
-  })
+      expect(entry).toMatchObject({
+        kind: 'task',
+        from: 'tl',
+        to: 'be',
+        ticketKey: 'PROJ-2',
+        vector: VECTOR,
+        use: { framework: 'gsd', gsdPath: 'phase' },
+        size: 0.6,
+        large: true,
+      })
+      expect(teeRuns(host)).toEqual([BE_TEE])
+      expect(outcome).toEqual({
+        kind: 'result',
+        text: [
+          fill(PROMPTS.inboxSent, { id, to: 'be' }),
+          fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'large', threshold: 0.5 }),
+          fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'phase' }),
+          fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'phase' }),
+        ].join(' '),
+      })
+    },
+  )
 
   test('the size is stamped from the threshold of the team view, and a small task maps to the small pick', async () => {
     const team: TeamView = { ...TEAM, sizing: { ...TEAM.sizing, threshold: 0.7 } }
@@ -471,26 +478,66 @@ describe('runInboxSend of a task', () => {
     expect(reads).toContain(TL_INBOX)
   })
 
-  test('the latest PM ticket of the key wins, an unpinned one too; a ticket of another key is ignored', async () => {
+  test('the latest pinned PM ticket of the key wins over a later one without a pin', async () => {
     const team: TeamView = { ...TEAM, sizing: { ...TEAM.sizing, threshold: 0.7 } }
     const later: InboxEntry = { ...PM_TICKET, id: 'pm-950-0123abcd', at: 950 }
-    const other: InboxEntry = { ...PM_TICKET, id: 'pm-980-0123abcd', at: 980, ticketKey: 'PROJ-3', pin: 'large' }
-    const worlds = [tlInboxWorld([{ ...PM_TICKET, pin: 'large' }, later]), tlInboxWorld([other])]
-    for (const world of worlds) {
-      const { outcome, host, reads } = await sendFrom(world, TASK, { ctx: TL, team })
-      const stdin = firstStdin(host)
-      const id = entryLine(stdin)?.id ?? ''
+    const world = tlInboxWorld([{ ...PM_TICKET, pin: 'large' }, later])
+    const { outcome, host, reads } = await sendFrom(world, TASK, { ctx: TL, team })
+    const entry = entryLine(firstStdin(host))
+    const id = entry?.id ?? ''
 
-      expect(entryLine(stdin)).toMatchObject({ size: 0.6, large: false })
-      expect(stdin).not.toContain('"pinned":')
-      expect(outcome).toEqual({
-        kind: 'result',
-        text:
-          `${fill(PROMPTS.inboxSent, { id, to: 'be' })} Size 0.6, so small (the threshold is 0.7). ` +
-          'In gsd-epic mode: gsd, GSD path quick. In ticket mode: superpowers.',
-      })
-      expect(reads).toContain(TL_INBOX)
-    }
+    expect(entry).toMatchObject({ size: 0.6, large: true, pinned: 'large' })
+    expect(outcome).toEqual({
+      kind: 'result',
+      text: [
+        fill(PROMPTS.inboxSent, { id, to: 'be' }),
+        'Size large (pinned; computed 0.6).',
+        fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'phase' }),
+        fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'phase' }),
+      ].join(' '),
+    })
+    expect(reads).toContain(TL_INBOX)
+  })
+
+  test(
+    "with no ticket of its key in tl's inbox the result says so and the task is sized from its vector: " +
+      'no inbox, another key only, a key spelled differently',
+    async () => {
+      const team: TeamView = { ...TEAM, sizing: { ...TEAM.sizing, threshold: 0.7 } }
+      const other: InboxEntry = { ...PM_TICKET, id: 'pm-980-0123abcd', at: 980, ticketKey: 'PROJ-3', pin: 'large' }
+      const worlds = [
+        beWorld(),
+        tlInboxWorld([other]),
+        tlInboxWorld([{ ...PM_TICKET, ticketKey: 'proj-2', pin: 'small' }]),
+      ]
+      for (const world of worlds) {
+        const { outcome, host, reads } = await sendFrom(world, TASK, { ctx: TL, team })
+        const stdin = firstStdin(host)
+        const id = entryLine(stdin)?.id ?? ''
+
+        expect(entryLine(stdin)).toMatchObject({ size: 0.6, large: false })
+        expect(stdin).not.toContain('"pinned":')
+        expect(outcome).toEqual({
+          kind: 'result',
+          text: [
+            fill(PROMPTS.inboxSent, { id, to: 'be' }),
+            NO_TICKET,
+            fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'small', threshold: 0.7 }),
+            fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'quick' }),
+            fill(PROMPTS.inboxSizePick, { mode: 'ticket', framework: 'superpowers' }),
+          ].join(' '),
+        })
+        expect(reads).toContain(TL_INBOX)
+      }
+    },
+  )
+
+  test('an undelivered task with no ticket of its key still says so', async () => {
+    const { outcome, host } = await sendFrom(beWorld(), TASK, { ctx: TL, isDelivered: false })
+    const id = entryLine(firstStdin(host))?.id ?? ''
+    const head = `${fill(PROMPTS.inboxSentUndelivered, { id, to: 'be' })} ${NO_TICKET} `
+
+    expect(outcome.text.slice(0, head.length)).toBe(head)
   })
 })
 
