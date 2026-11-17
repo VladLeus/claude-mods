@@ -403,12 +403,21 @@ export const ARTIFACT = Object.freeze({
   builtinGateQuestion:
     `Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ${
     ''}Security); do not ask the human directly.`,
+  builtinGateQuestionAsk:
+    `Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ${
+    ''}Security); ask the person only as your Hierarchy section says.`,
   builtinSpec: 'Spec: {cleaned}',
   builtinDoneLine:
     `Write .cadre/{folder}/.runtime/DONE.md with what you did and how you verified it, then answer with ${
     ''}a line that starts with AUTOPILOT_DONE.`,
   builtinKickoffIntro:
     'You are the {title} role. This repo has no dev framework: work in plan, execute, verify steps.',
+  builtinKickoffIntroLead:
+    `You are the {title} role. This repo has no dev framework: work each ticket PM feeds as your Hierarchy ${
+    ''}section says.`,
+  builtinKickoffIntroReviewer:
+    `You are the {title} role. This repo has no dev framework: review each ticket TL sends you as your Hierarchy ${
+    ''}section says.`,
   builtinKickoffPlan: 'Write your plan to .cadre/{folder}/.runtime/plan.md, then execute it with subagents.',
   builtinKickoffVerify: "Verify with the project's own test and lint commands and a reviewer subagent.",
   builtinHumanGates: 'Human gates:',

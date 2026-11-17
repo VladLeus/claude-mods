@@ -60,13 +60,21 @@ const CORE_PM_WORK: readonly string[] = [
 
 /**
  * The How you work text of ROLE.md: the core PM's own steps, else the kickoff text of the role's framework, worded
- * for the core lead when the role is a core team's TL.
+ * for a core team's TL or Security and for a role that asks the person in an epic.
  */
 function howYouWork(role: RoleSpec, adapter: FrameworkAdapter, team: RoleMdTeam): string {
   if (team.isCore && standsFor(role, 'pm')) return CORE_PM_WORK.join('\n')
   const isCoreLead = team.isCore && standsFor(role, 'tl')
+  const isCoreReviewer = team.isCore && standsFor(role, 'security') && !standsFor(role, 'tl')
 
-  return adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null, isCoreLead })
+  return adapter.kickoffText({
+    title: role.title,
+    roleId: role.id,
+    specPath: null,
+    isCoreLead,
+    isCoreReviewer,
+    asksInEpic: asksInEpic(role, team.isCore),
+  })
 }
 
 /**

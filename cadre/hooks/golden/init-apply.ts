@@ -252,7 +252,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/security/ROLE.md",
-        "sha256": "50a85b25e8adcc3345fb40bc8e9b32f0bc1922c61312d50ac64b45afab088a13",
+        "sha256": "41fc799591aab290bd1e0b4e7f3a74c90508cae3ce587aa88646b0f1a45d0b77",
         "isWritten": true
       },
       {
@@ -287,7 +287,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/tl/ROLE.md",
-        "sha256": "482587a02ee733274848efdcf898ebdf006a263185995ff1c04a9c690d423451",
+        "sha256": "709fd696f85ea87e311be353a83b1623dc6d502e761e40151be65c7f3e292f75",
         "isWritten": true
       },
       {
@@ -317,7 +317,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "5ac08f5abffc0ef6a94fb2f2c6ab2ede6853589a1c1172d7891f46e003625276",
+        "sha256": "a81b4fff47277fa7edd1affd1fe0e4f33b80c3f8adc8ef7b3fb62506935b8b42",
         "isWritten": true
       }
     ],
@@ -394,7 +394,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/security/ROLE.md\",",
-      "      \"sha256\": \"50a85b25e8adcc3345fb40bc8e9b32f0bc1922c61312d50ac64b45afab088a13\"",
+      "      \"sha256\": \"41fc799591aab290bd1e0b4e7f3a74c90508cae3ce587aa88646b0f1a45d0b77\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -429,7 +429,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/tl/ROLE.md\",",
-      "      \"sha256\": \"482587a02ee733274848efdcf898ebdf006a263185995ff1c04a9c690d423451\"",
+      "      \"sha256\": \"709fd696f85ea87e311be353a83b1623dc6d502e761e40151be65c7f3e292f75\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",

@@ -450,20 +450,20 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/pm/role.json 1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68 true",
     "write /repo/.cadre/pm/settings.json d7b4731f3ed8b9a775cc9a1142db81a387d9775dc514c48949ed681f1dc3d595 true",
     "write /repo/.cadre/security/CLAUDE.md 803d386590d1d71564306fc3c3de7758fd656f8b306f95bcc6fe25d892f62332 true",
-    "write /repo/.cadre/security/ROLE.md 50a85b25e8adcc3345fb40bc8e9b32f0bc1922c61312d50ac64b45afab088a13 true",
+    "write /repo/.cadre/security/ROLE.md 41fc799591aab290bd1e0b4e7f3a74c90508cae3ce587aa88646b0f1a45d0b77 true",
     "write /repo/.cadre/security/kickoff.txt 283fccb025b661c02e802be2bb43b67f9d33e9e061ad31b79c52ba9474b4ce8f true",
     "write /repo/.cadre/security/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/security/role.json ef8efa2fc4ef98dc07e9e64145a6bf71192d299146a8e2c8078a965d9c1825ae true",
     "write /repo/.cadre/security/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.cadre/sizing.md 9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3 true",
     "write /repo/.cadre/tl/CLAUDE.md a77e9dd5552ffce1e5b1c4402fa884759db6cf017af7d98bfb88c8ba6fd554e8 true",
-    "write /repo/.cadre/tl/ROLE.md 482587a02ee733274848efdcf898ebdf006a263185995ff1c04a9c690d423451 true",
+    "write /repo/.cadre/tl/ROLE.md 709fd696f85ea87e311be353a83b1623dc6d502e761e40151be65c7f3e292f75 true",
     "write /repo/.cadre/tl/kickoff.txt 937c1de1033196923d0f0f1dca9e033b03d30945cda03a62eff175924023c94c true",
     "write /repo/.cadre/tl/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/tl/role.json 0b3b5ee6a4f7152de6c5afe5e4f201a252bf66609999ebcd4c2de1025a69b2b6 true",
     "write /repo/.cadre/tl/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json 5ac08f5abffc0ef6a94fb2f2c6ab2ede6853589a1c1172d7891f46e003625276 true"
+    "write /repo/.cadre/manifest.json a81b4fff47277fa7edd1affd1fe0e4f33b80c3f8adc8ef7b3fb62506935b8b42 true"
   ],
   "applyGsd": [
     "ask Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.",

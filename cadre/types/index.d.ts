@@ -315,6 +315,10 @@ export type KickoffContext = {
   readonly specPath: string | null
   /** True only for the TL of a core team, which plans no implementation. */
   readonly isCoreLead?: boolean
+  /** True only for a core team's Security, which reviews and runs no repo checks. */
+  readonly isCoreReviewer?: boolean
+  /** True for a role that asks the person in an epic; its question gate then defers to its Hierarchy section. */
+  readonly asksInEpic?: boolean
 }
 
 /**
