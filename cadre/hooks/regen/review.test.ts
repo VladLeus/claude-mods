@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InstructionPart } from '../../types'
 import { REDACTED } from '../core/redact'
 import { memory } from '../testkit'
-import { regenMemoryContextLine, regenPartContext, regenPartQuestion } from './review'
+import { partDroppedLine, regenMemoryContextLine, regenPartContext, regenPartQuestion } from './review'
 import type { RegenAsk } from './review'
 
 /** A part of the repo's CLAUDE.md: the Git section. */
@@ -38,10 +38,26 @@ describe('regen question context (D-236)', () => {
     const top = { ...GIT_PART, heading: '' }
     const added = { kind: 'part', part: top, change: 'new' } satisfies RegenAsk
     expect(regenPartContext(added, false, { position: 2, count: 2 }).lines).toEqual([
-      'CLAUDE.md > (top of file)',
+      'CLAUDE.md',
       'New since init.',
       'Recommended: no',
     ])
+  })
+
+  test('a whole repo file is named by its file alone; a global part keeps its (top of file) form', () => {
+    const whole: InstructionPart = { ...GIT_PART, heading: '' }
+    const globalTop: InstructionPart = { ...whole, file: '~/.claude/CLAUDE.md', source: 'global' }
+    const contextOf = (part: InstructionPart) =>
+      regenPartContext({ kind: 'part', part, change: 'new' }, false, { position: 1, count: 1 })
+
+    expect(regenPartQuestion('be', whole)).toBe('Should be get CLAUDE.md?')
+    expect(regenPartQuestion('be', globalTop)).toBe('Should be get "(top of file)" from ~/.claude/CLAUDE.md?')
+    expect([contextOf(whole).lines[0], contextOf(whole).rows?.[0]?.rows[0]?.text]).toEqual(['CLAUDE.md', 'CLAUDE.md'])
+    expect(contextOf(globalTop).lines[0]).toBe('~/.claude/CLAUDE.md > (top of file)')
+    expect(partDroppedLine('be', { file: 'CLAUDE.md', heading: '' }, 'repo')).toBe('dropped from be: CLAUDE.md (gone)')
+    expect(partDroppedLine('be', { file: '~/.claude/CLAUDE.md', heading: '' }, 'global')).toBe(
+      'dropped from be: ~/.claude/CLAUDE.md > (top of file) (gone from its file)',
+    )
   })
 
   test('a memory names its file and its summary, never its folder or text; a cleaned file name (T-02.1-71)', () => {

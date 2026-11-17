@@ -1621,7 +1621,7 @@ describe('instruction parts (G-02-1f)', () => {
     const instructionReads = run.reads.filter(path => path.endsWith('CLAUDE.md') && !path.includes('/.cadre/'))
     expect(instructionReads).toEqual([GLOBAL_CLAUDE_MD, '/repo/CLAUDE.md'])
     expect(run.prompts[0]).toContain('P2 | CLAUDE.md | (top of file) | # Rules')
-    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: CLAUDE.md > (top of file)')
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: CLAUDE.md')
   })
 
   test('the content consent counts the global file and the chain files the scan found', async () => {
@@ -1729,7 +1729,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual([
       READ_HEADING_ROW,
       '  Secrets: How secrets are kept.',
-      '    from: .claude/rules/security.md > (top of file)',
+      '    from: .claude/rules/security.md',
       '    recommended: security',
     ])
   })
@@ -3446,7 +3446,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.conflict, ROLE_QUESTION, 'Conflict'],
       [runs.improver, IMPROVER_INSTALL_PREFIX, 'Improver'],
       [runs.improver, IMPROVER_PREFIX, 'Improver'],
-      [runs.regen, 'Should be get "(top of file)" from CLAUDE.md?', 'Regen 1/1'],
+      [runs.regen, 'Should be get CLAUDE.md?', 'Regen 1/1'],
     ]
     for (const [run, start, chip] of cases) expect([start, specOf(run, start).header]).toEqual([start, chip])
   })

@@ -821,9 +821,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     expect(regenCancelledReply(REGEN_DISMISSED_REASON)).toBe(
       'regen cancelled, nothing written: A regen question on instruction parts was dismissed or not answered.',
     )
-    expect(regenPartQuestion('be', { file: 'CLAUDE.md', heading: '' })).toBe(
-      'Should be get "(top of file)" from CLAUDE.md?',
-    )
+    expect(regenPartQuestion('be', { file: 'CLAUDE.md', heading: '', source: 'repo' })).toBe('Should be get CLAUDE.md?')
     expect([regenPartContextLine('new', false), regenPartContextLine('changed', true)]).toEqual([
       'New since init. Recommended: no.',
       'Changed since init. Recommended: yes.',
@@ -836,7 +834,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       'No summary in MEMORY.md. Changed since init. Recommended: yes.',
     )
     expect(regenHeader(1, 1)).toBe('Regen 1/1')
-    expect(partDroppedLine('be', { file: 'CLAUDE.md', heading: 'Git' })).toBe(
+    expect(partDroppedLine('be', { file: 'CLAUDE.md', heading: 'Git' }, 'repo')).toBe(
       'dropped from be: CLAUDE.md > Git (gone from its file)',
     )
     expect(memoryDroppedLine('be', { file: 'squad.md' })).toBe('dropped from be: memory squad.md (gone)')
@@ -891,7 +889,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
     const { reply, run, host } = await regenPlainBe(await wholeWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
     const edited = await wholeRoot(`${RULES_SECTION}${GIT_EDITED}`)
-    const question = 'Should be get "(top of file)" from CLAUDE.md?'
+    const question = 'Should be get CLAUDE.md?'
     const item = '\nI1 | CLAUDE.md | (top of file) | # Rules Run the tests. ## Git Use signed commits, always.'
     expect(run.prompts).toHaveLength(1)
     expect(run.prompts[0]?.startsWith(`${REGEN_RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
@@ -904,7 +902,7 @@ describe('regen by part hashes (G-02-1f)', () => {
         header: 'Regen 1/1',
         context: {
           title: 'Regen 1 of 1',
-          lines: ['CLAUDE.md > (top of file)', 'Changed since init.', 'Recommended: yes'],
+          lines: ['CLAUDE.md', 'Changed since init.', 'Recommended: yes'],
           kind: 'regen-part',
           // Its summary, which a pane surface asks under the question, is whether the model recommends it.
           summary: 'Recommended: yes',
@@ -916,7 +914,7 @@ describe('regen by part hashes (G-02-1f)', () => {
             {
               title: null,
               rows: [
-                { role: 'plain', text: 'CLAUDE.md > (top of file)', indent: 0 },
+                { role: 'plain', text: 'CLAUDE.md', indent: 0 },
                 { role: 'plain', text: 'Changed since init.', indent: 0 },
                 { role: 'field', label: 'Recommended', text: 'yes', indent: 0 },
               ],
@@ -939,7 +937,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const world = await wholeWorld({ claudeMd, over: { replies: ['{"items":{"I1":false}}'] } })
     const first = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'No' })
     expect(first.run.asked).toEqual([
-      withContext('Should be get "(top of file)" from CLAUDE.md?', 'Changed since init. Recommended: no.'),
+      withContext('Should be get CLAUDE.md?', 'Changed since init. Recommended: no.'),
     ])
     const kinds = opKinds(first.reply)
     expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual(['leave', 'change'])
@@ -964,7 +962,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const { reply, run, host } = await regenPlainBe(await wholeWorld({ claudeMd: null }), {})
     const lines = reply.split('\n')
     const at = lines.findIndex(line => line.startsWith('Summary: '))
-    expect(lines[at + 1]).toBe('dropped from be: CLAUDE.md > (top of file) (gone from its file)')
+    expect(lines[at + 1]).toBe('dropped from be: CLAUDE.md (gone)')
     expect([run.asked, run.prompts]).toEqual([[], []])
     expect(host.writes.slice(0, 1)).toEqual([
       { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([], [])), isWritten: true },
@@ -1021,7 +1019,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const reply = await runRegen(run.io, { id: 'be', dryRun: true })
     const kinds = opKinds(reply)
     expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual(['leave', 'change'])
-    expect(firstLines(run.asked)).toEqual(['Should be get "(top of file)" from CLAUDE.md?'])
+    expect(firstLines(run.asked)).toEqual(['Should be get CLAUDE.md?'])
     expect(warningLines(reply)).toEqual([`warning: ${dryRunPrivateWarning('be')}`])
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(run.reads.filter(path => path.startsWith('/home/u/.claude/cadre'))).toEqual([])
@@ -1202,7 +1200,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       '- unknown item "I9"',
     ])
     expect(run.asked).toEqual([
-      withContext('Should be get "(top of file)" from CLAUDE.md?', 'Changed since init. Recommended: no.'),
+      withContext('Should be get CLAUDE.md?', 'Changed since init. Recommended: no.'),
     ])
   })
 

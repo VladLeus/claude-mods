@@ -5,7 +5,7 @@ import { REDACTED } from '../../core/redact'
 import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { fallbackTopics } from '../../suggest/topics'
 import { MEMORIES, MEMORY, memory, RECOMMENDED, ROLES, TOPICS } from '../../testkit'
-import { instructionLines, instructionReviewLines } from './instructions'
+import { instructionLines, instructionReviewLines, sourceText } from './instructions'
 
 /**
  * A part of the global CLAUDE.md with this id, heading and text, and a stand-in hash; `file` changes the file it comes
@@ -26,6 +26,22 @@ const SCAN: InstructionScan = { parts: PARTS, files: ['~/.claude/CLAUDE.md'], me
 
 /** The read of GLOBAL_TEXT with the two MEMORIES. */
 const MEMORY_SCAN: InstructionScan = { ...SCAN, memories: MEMORIES }
+
+describe('sourceText', () => {
+  test('a whole repo file is its file alone; a global part keeps (top of file); a heading follows its file', () => {
+    const repoPart = (heading: string): InstructionPart => ({
+      ...part('P1', heading, 'Intro.\n', 'CLAUDE.md'),
+      source: 'repo',
+    })
+
+    expect(sourceText(repoPart(''))).toBe('CLAUDE.md')
+    expect(sourceText(part('P1', '', 'Intro.\n'))).toBe('~/.claude/CLAUDE.md > (top of file)')
+    expect([sourceText(repoPart('Git')), sourceText(part('P2', 'Git', '## Git\n'))]).toEqual([
+      'CLAUDE.md > Git',
+      '~/.claude/CLAUDE.md > Git',
+    ])
+  })
+})
 
 describe('instructionLines', () => {
   test('the heading, then each topic with its summary, its sources and the roles it is recommended for', () => {
