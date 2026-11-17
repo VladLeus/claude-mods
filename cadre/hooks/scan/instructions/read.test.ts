@@ -160,6 +160,21 @@ describe('readInstructionFiles', () => {
     expect(run.reads.filter(path => path.startsWith('/repo/'))).toEqual(['/repo/CLAUDE.md'])
   })
 
+  test('at most 20 imported files are read for the chain files above the repo', async () => {
+    const names = Array.from({ length: 25 }, (_, at) => `i${String(at + 1).padStart(2, '0')}.md`)
+    const imported = Object.fromEntries(names.map(name => [`${CONFIG}/${name}`, `# ${name}\n`]))
+    const imports = names.map(name => `@~/.claude/${name}`).join('\n')
+    const files = { ...imported, '/home/u/work/CLAUDE.md': `# Work\n${imports}\n` }
+    const run = memIo(filesWorld(files), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf(['~/work/CLAUDE.md']))
+    expect(scan.parts.filter(found => found.source === 'global').map(found => found.file)).toEqual([
+      '~/work/CLAUDE.md',
+      ...names.slice(0, 20).map(name => `~/.claude/${name}`),
+    ])
+    expect(run.reads).toContain(`${CONFIG}/i20.md`)
+    expect(run.reads).not.toContain(`${CONFIG}/i21.md`)
+  })
+
   test('each file is read once: a file imported twice, an import cycle, a chain file already read', async () => {
     const run = memIo(
       filesWorld({
@@ -444,7 +459,7 @@ function repoSources(
   return { ...sourcesOf(chain), rules, hasAgentsMd }
 }
 
-describe('rules, AGENTS.md and referenced docs', () => {
+describe('rules and AGENTS.md', () => {
   test('after the chain: each rule file in name order, then AGENTS.md, each whole; no doc they link to', async () => {
     const run = memIo(
       filesWorld({

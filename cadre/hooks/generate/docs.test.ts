@@ -189,6 +189,14 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     expect(files.filter(file => file.content.includes(GLOBAL_ONLY_SENTENCE))).toEqual([])
   })
 
+  test('a global part named AGENTS.md gives no @ line: only repo parts reach the built file (T-02-69)', () => {
+    const be = templateRole('be')
+    const repoParts = new Map([['be', [{ ...GLOBAL_PART, file: 'AGENTS.md' }]]])
+    const files = desiredFiles(inputOf([be], 'gsd', { repoParts }))
+
+    expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(`${builtHeader('be')}\n`)
+  })
+
   test('without repoParts the files are those of the whole-files flow; with no part, those and the header file', () => {
     const be = templateRole('be')
     const without = desiredFiles(inputOf([be], 'gsd'))

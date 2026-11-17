@@ -86,6 +86,7 @@ import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { improverNotOfferedWarning } from './plan'
 import {
+  loadsAsNowWarning,
   memoryDroppedLine,
   notHandedOutWarning,
   partDroppedLine,
@@ -844,6 +845,12 @@ describe('regen by part hashes (G-02-1f)', () => {
         'run /cadre regen be in a session to answer it',
       '2 new or changed instruction parts or memories for be were not handed out: ' +
         'run /cadre regen be in a session to answer them',
+    ])
+    expect([loadsAsNowWarning('be', 1), loadsAsNowWarning('be', 2)]).toEqual([
+      '1 repo instruction file given to be changed since init and loads as it is now: ' +
+        'run /cadre regen be in a session to review it',
+      '2 repo instruction files given to be changed since init and load as they are now: ' +
+        'run /cadre regen be in a session to review them',
     ])
     expect(improverNotOfferedWarning('be')).toBe(
       'the improver was not offered for be: claude -p cannot ask Accept or Keep original; ' +

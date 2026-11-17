@@ -190,18 +190,23 @@ describe('readMemories', () => {
     expect(read.warnings).toEqual([memoryOverSizeWarning('MEMORY.md')])
   })
 
-  test('readInstructionFiles reads the memories last, after the docs, and its scan holds them', async () => {
-    const run = memIo(
-      filesWorld(
-        { '/repo/CLAUDE.md': '# R\n', [`${MEMORY}/MEMORY.md`]: MEMORY_INDEX_TEXT, [`${MEMORY}/a.md`]: 'text of a' },
-        { dirs: { [MEMORY]: [entry('MEMORY.md'), entry('a.md')] } },
-      ),
-      [],
-    )
-    const sources = { ...sourcesOf(['<repo>/CLAUDE.md']), memoryFolders: [MEMORY] }
-    const scan = await readInstructionFiles(run.io, sources)
-    expect(run.reads.slice(-3)).toEqual(['/repo/CLAUDE.md', `${MEMORY}/MEMORY.md`, `${MEMORY}/a.md`])
-    expect(scan.memories.map(found => [found.id, found.file, found.summary])).toEqual([['M1', 'a.md', 'the a memory']])
-    expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md'])
-  })
+  test(
+    'readInstructionFiles reads the memories last, after the instruction files, and its scan holds them',
+    async () => {
+      const run = memIo(
+        filesWorld(
+          { '/repo/CLAUDE.md': '# R\n', [`${MEMORY}/MEMORY.md`]: MEMORY_INDEX_TEXT, [`${MEMORY}/a.md`]: 'text of a' },
+          { dirs: { [MEMORY]: [entry('MEMORY.md'), entry('a.md')] } },
+        ),
+        [],
+      )
+      const sources = { ...sourcesOf(['<repo>/CLAUDE.md']), memoryFolders: [MEMORY] }
+      const scan = await readInstructionFiles(run.io, sources)
+      expect(run.reads.slice(-3)).toEqual(['/repo/CLAUDE.md', `${MEMORY}/MEMORY.md`, `${MEMORY}/a.md`])
+      expect(scan.memories.map(found => [found.id, found.file, found.summary])).toEqual([
+        ['M1', 'a.md', 'the a memory'],
+      ])
+      expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md'])
+    },
+  )
 })
