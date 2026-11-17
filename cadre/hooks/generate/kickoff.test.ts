@@ -190,6 +190,7 @@ describe('kickoff', () => {
   test('the core PM starts with its How you work steps', () => {
     const start = 'then start with the How you work steps of your ROLE.md.'
     const product = templateRole('pm', { id: 'product', title: 'Product' })
+    const ownStartFrameworks: readonly FrameworkId[] = ['gsd', 'superpowers']
 
     expect(kickoffText(templateRole('pm'), 'gsd', true)).toBe(
       '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md, ' +
@@ -199,10 +200,31 @@ describe('kickoff', () => {
       expect(kickoffText(product, framework, true)).toContain(
         `Read .cadre/product/ROLE.md, read your inbox with inbox_read, ${start}`,
       )
-      expect(kickoffText(templateRole('tl'), framework, true)).not.toContain(start)
       expect(kickoffText(templateRole('pm'), framework)).not.toContain(start)
     }
+    for (const framework of ownStartFrameworks) {
+      expect(kickoffText(templateRole('tl'), framework, true)).not.toContain(start)
+    }
     expect(kickoffText(templateRole('pm'), 'none')).toContain('then start with the plan in .cadre/pm/.runtime/plan.md.')
+  })
+
+  test('a core TL on the built-in framework starts with its How you work steps; other starts stay', () => {
+    const start = 'then start with the How you work steps of your ROLE.md.'
+    const planOf = (id: string): string => `then start with the plan in .cadre/${id}/.runtime/plan.md.`
+    const gsd = 'then start with /gsd-autonomous.'
+    const superpowers = 'then start with superpowers:brainstorming.'
+    const tl = templateRole('tl')
+    const security = templateRole('security')
+
+    expect(kickoffText(tl, 'none', true)).toContain(start)
+    expect(kickoffText(templateRole('tl', { id: 'lead', title: 'Lead' }), 'none', true)).toContain(start)
+    expect(kickoffText(tl, 'gsd', true)).toContain(gsd)
+    expect(kickoffText(tl, 'superpowers', true)).toContain(superpowers)
+    expect(kickoffText(tl, 'none')).toContain(planOf('tl'))
+    expect(kickoffText(security, 'gsd', true)).toContain(gsd)
+    expect(kickoffText(security, 'superpowers', true)).toContain(superpowers)
+    expect(kickoffText(security, 'none', true)).toContain(planOf('security'))
+    expect(kickoffText(templateRole('be'), 'none', true)).toContain(planOf('be'))
   })
 
   test('the kickoff of the BE has no --ask-user', () => {

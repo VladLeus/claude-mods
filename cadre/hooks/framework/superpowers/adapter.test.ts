@@ -557,6 +557,10 @@ describe('SUPERPOWERS_ADAPTER', () => {
     const lists = [SUPERPOWERS_ADAPTER.startSkills, SUPERPOWERS_ADAPTER.pluginsToEnable]
     expect(lists.every(list => Object.isFrozen(list))).toBe(true)
   })
+
+  test('a core TL starts with superpowers:brainstorming like every role', () => {
+    expect(SUPERPOWERS_ADAPTER.roleStart('tl', true)).toBe('superpowers:brainstorming')
+  })
 })
 
 describe('the superpowers start steps of a role', () => {

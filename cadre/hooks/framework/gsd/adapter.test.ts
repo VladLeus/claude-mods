@@ -723,6 +723,10 @@ describe('GSD_ADAPTER', () => {
     expect(GSD_ADAPTER.factsHeading).toBe('GSD hooks registered (activation depends on GSD config)')
     expect([GSD_ADAPTER.startSkills, GSD_ADAPTER.pluginsToEnable].every(list => Object.isFrozen(list))).toBe(true)
   })
+
+  test('a core TL starts with /gsd-autonomous like every role', () => {
+    expect(GSD_ADAPTER.roleStart('tl', true)).toBe('/gsd-autonomous')
+  })
 })
 
 /** Whether every step is one line of printable ASCII. */

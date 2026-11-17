@@ -409,4 +409,10 @@ describe('BUILTIN_ADAPTER', () => {
     const lists = [BUILTIN_ADAPTER.startSkills, BUILTIN_ADAPTER.pluginsToEnable]
     expect(lists.every(list => Object.isFrozen(list))).toBe(true)
   })
+
+  test('a core TL starts with its How you work steps, every other role with its plan file', () => {
+    expect(BUILTIN_ADAPTER.roleStart('tl', true)).toBe('the How you work steps of your ROLE.md')
+    expect(BUILTIN_ADAPTER.roleStart('be')).toBe('the plan in .cadre/be/.runtime/plan.md')
+    expect(BUILTIN_ADAPTER.roleStart('be', false)).toBe('the plan in .cadre/be/.runtime/plan.md')
+  })
 })
