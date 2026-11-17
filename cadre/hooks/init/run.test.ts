@@ -2848,30 +2848,20 @@ describe('an unchanged re-init (02-GAPS-B3 S1)', () => {
     ])
   })
 
-  test('an accepted improver text is kept with its manifest entry while the records are unchanged', async () => {
+  test('a re-init rewrites a built file that hashes to its manifest entry but differs from the render', async () => {
     const files = builtFilesRecord()
-    const first = improvingHost(files)
     const answers = { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }
-    await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: first.io })
-    // BE's built file as an accepted improver run left it, its manifest entry holding the hash of that text.
-    const accepted = `${BUILT_BE}Keep commits small.\n`
+    await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: improvingHost(files).io })
+    const stale = `${BUILT_BE}Keep commits small.\n`
     const written = files['/repo/.cadre/manifest.json'] ?? ''
-    const manifest = written.replace(await sha256Hex(BUILT_BE), await sha256Hex(accepted))
-    files[BE_CLAUDE_MD] = accepted
-    files['/repo/.cadre/manifest.json'] = manifest
-    expect(manifest).toContain(await sha256Hex(accepted))
-    const again = improvingHost(files)
-    const run = memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers)
-    const reply = await runInit(pagedIo(run), { dryRun: false, host: again.io })
-    expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
-    expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
-    expect(opKinds(reply).get('.cadre/be/role.json')).toBe('leave')
-    expect([improverCalls(again.host), again.host.writes]).toEqual([[], []])
-    expect(files[BE_CLAUDE_MD]).toBe(accepted)
-    expect(files['/repo/.cadre/manifest.json']).toBe(manifest)
-    expect(lastReview(run).filter(line => line.endsWith(BE_CLAUDE_MD_PATH))).toEqual([])
+    files[BE_CLAUDE_MD] = stale
+    files['/repo/.cadre/manifest.json'] = written.replace(await sha256Hex(BUILT_BE), await sha256Hex(stale))
     const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
-    expect(opKinds(dry).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
+    expect([opKinds(dry).get(BE_CLAUDE_MD_PATH), opKinds(dry).get('.cadre/be/role.json')]).toEqual(['change', 'leave'])
+    const again = improvingHost(files)
+    await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: false, host: again.io })
+    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE)
+    expect(files['/repo/.cadre/manifest.json']).toContain(await sha256Hex(BUILT_BE))
   })
 
   test('a role whose records changed plans a change of its role.json and leaves its built file', async () => {
@@ -3735,10 +3725,9 @@ describe('init plan', () => {
     const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: true })
     const kinds = opKinds(reply)
-    // Each built CLAUDE.md as the last apply left it gets no op: its manifest entry is kept (02-GAPS-B3 S1). Nor does
-    // the sizing rubric, which a re-run never plans over.
+    // The sizing rubric gets no op: a re-run never plans over it.
     const built = files.filter(file => file.path.endsWith('/CLAUDE.md')).length
-    const left = files.length + 2 - built - 1
+    const left = files.length + 2 - 1
     expect([built, kinds.size]).toEqual([3, left])
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
     expect(reply.split('\n')).toContain(`Summary: 0 create, 0 change, ${left} leave, 0 conflict, 0 hunks`)
