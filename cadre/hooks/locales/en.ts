@@ -643,7 +643,6 @@ export const EN = Object.freeze({
   'apply.conflict.takeNewCounts.one': 'Take new: {count} line added, {removed} removed',
   'apply.conflict.takeNewCounts.other': 'Take new: {count} lines added, {removed} removed',
 
-  'apply.improver.unguardedRunReason': 'its folder has a path a permission rule cannot hold',
   'apply.improver.accept': 'Accept',
   'apply.improver.keepOriginal': 'Keep original',
   'apply.improver.diffCounts.one': '{count} line added, {removed} removed',

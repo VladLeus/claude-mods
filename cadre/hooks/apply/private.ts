@@ -75,12 +75,6 @@ export type ApplyInput = {
   readonly choices: ReadonlyMap<string, ConflictChoice>
   /** What each role was given that is private, in the order its files are written; absent writes none (regen). */
   readonly privates?: readonly PrivateRole[]
-  /**
-   * The text each built role file ends with after the improver pass, by repo-relative path, for each one whose improved
-   * text the person accepted (G-02-1f, D-141): the manifest records its hash, as it records a file taken new. Absent
-   * before the pass and for regen.
-   */
-  readonly improved?: ReadonlyMap<string, string>
 }
 
 /** The file name of the private text file in PRIVATE_INSTRUCTIONS_FOLDER: a CLAUDE.md, so the engine loads it. */

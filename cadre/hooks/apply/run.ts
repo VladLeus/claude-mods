@@ -360,12 +360,10 @@ async function runSteps(
 }
 
 /**
- * Runs the steps of a confirmed apply with the improver pass between the file writes and the manifest (G-02-1f,
- * D-141). writeSteps runs every step but the manifest; the improver pass runs on each offered built file whose write
- * landed (improveBuiltFiles); then writeSteps runs, with checks made after the improver ran, the write-back of each
- * file the pass gives back as built (restoreSteps) and the manifest applySteps gives with the accepted texts, so the
- * manifest hashes each built file as it ends up. As in one writeSteps run, the manifest is skipped when a write of a
- * repo file before it, the first ones or a write-back, failed or was refused. A file written twice counts once.
+ * Runs the steps of a confirmed apply with the improver pass on each offered private text file whose write landed,
+ * then the write-back of each file it gives back as built (restoreSteps) and the manifest, checked after the pass. As
+ * in one writeSteps run, the manifest is skipped when a repo write before it failed or was refused; a file written
+ * twice counts once.
  */
 export async function writeImproved(
   io: InitIo,
@@ -382,11 +380,10 @@ export async function writeImproved(
   const fileSteps = apply.steps.filter(step => step.kind !== 'manifest')
   const first = await runSteps(io, host, locations, fileSteps, allowed)
   const landed = new Set(first.files.map(writtenKey))
-  const isLanded = (file: BuiltFile): boolean =>
-    landed.has(writtenKey({ kind: file.repoPath === null ? 'private' : 'repo', path: file.path }))
+  const isLanded = (file: BuiltFile): boolean => landed.has(writtenKey({ kind: 'private', path: file.path }))
   const files = apply.offered.filter(isLanded)
   const pass = await improveBuiltFiles(io, host, files, locations)
-  const manifest = (await applySteps({ ...input, improved: pass.accepted })).filter(step => step.kind === 'manifest')
+  const manifest = (await applySteps(input)).filter(step => step.kind === 'manifest')
   const isSkipped = first.outcome.failed.length > 0 || first.outcome.refused.length > 0
   const later = [...restoreSteps(pass.restores), ...(isSkipped ? [] : manifest)]
   const none: StepsRun = { outcome: NOTHING_APPLIED, files: [] }
@@ -566,8 +563,6 @@ export type PrivatePlan = {
   readonly privates: readonly PrivateRole[]
   readonly allowed: ReadonlySet<string>
   readonly problems: readonly string[]
-  /** Every role id of the team to its role memory folder; empty when unknown (02-GAPS-B3 M1). */
-  readonly folders: ReadonlyMap<string, string>
 }
 
 /**
@@ -602,15 +597,10 @@ export function privatePaths(folders: readonly string[]): ReadonlySet<string> {
 }
 
 /**
- * Where the private files go (G-02-1f Storage split, D-140 q2-a, T-02-72). On every plain init the role memory folder
- * of each role is named from the user folder and the git common dir, as /cadre start names it (roleFoldersOf: git runs
- * once, 02-GAPS-B3 C1), `folders` maps every role of the team to it (02-GAPS-B3 M1), and `allowed` holds the private
- * text file and the hand-out record of every role of the team: the only paths outside the repo apply may write
- * (privatePaths). Each role owed private files (privatesOf) gets them, unless the instructions.json on disk is exactly
- * the record it would get: an unchanged record leaves both private files as they are, an accepted improver text
- * included, and their paths stay allowed (02-GAPS-B3 S1). The repo's folder name heads each private text file
- * (repoNameOf). With no user folder, or no absolute common dir from git, nothing private is written and
- * privateFoldersUnknownWarning names the roles owed private files.
+ * Where the private files go: each role owed them (privatesOf) gets them in its role memory folder unless its
+ * instructions.json already holds the record it would get, and `allowed` holds the private files of every role of the
+ * team, the only paths outside the repo apply may write. With no user folder or no absolute common dir from git,
+ * nothing private is written and privateFoldersUnknownWarning names the roles owed private files.
  */
 export async function privatePlanOf(
   io: InitIo,
@@ -618,7 +608,7 @@ export async function privatePlanOf(
   locations: InitLocations,
   input: { readonly roles: readonly RoleSpec[]; readonly owed: readonly OwedPrivate[] },
 ): Promise<PrivatePlan> {
-  const none: PrivatePlan = { privates: [], allowed: new Set(), problems: [], folders: new Map() }
+  const none: PrivatePlan = { privates: [], allowed: new Set(), problems: [] }
   const folderOf = await roleFoldersOf(io, host, locations)
   if (folderOf === null) return { ...none, problems: [privateFoldersUnknownWarning(input.owed.map(role => role.id))] }
   const repo = repoNameOf(locations)
@@ -631,10 +621,5 @@ export async function privatePlanOf(
     privates.push({ ...role, folder, repo })
   }
 
-  return {
-    privates,
-    allowed: privatePaths(input.roles.map(role => folderOf(role.id))),
-    problems: [],
-    folders: new Map(input.roles.map((role): [string, string] => [role.id, folderOf(role.id)])),
-  }
+  return { privates, allowed: privatePaths(input.roles.map(role => folderOf(role.id))), problems: [] }
 }

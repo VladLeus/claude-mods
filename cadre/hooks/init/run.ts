@@ -15,7 +15,6 @@ import type {
   InitFacts,
   InitIo,
   InitLocations,
-  InstructionPartRecord,
   InstructionScan,
   InstructionTopic,
   LaunchStart,
@@ -64,7 +63,6 @@ import { adapterOf } from '../framework/registry'
 import { roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { trackedParts } from '../generate/gittrack'
-import { builtClaudeMdPath } from '../generate/launcher'
 import { epicWorktreeMain } from '../git/checkout'
 import { initGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
@@ -230,59 +228,10 @@ export function modelSummary(call: ModelCall): string {
 }
 
 /**
- * The manifest entries of the built files a re-init keeps as they are (02-GAPS-B3 S1): for each role whose built
- * `.cadre/<id>/CLAUDE.md` is desired, when its role.json as the disk holds it is text parseRoleJson takes, with the
- * same repo part records as the role, given and not given (compared by file, heading and hash), and the built file as
- * the disk holds it hashes to its entry in the last manifest, that entry; so an accepted improver text is neither
- * written over nor offered again while the role's parts are unchanged.
- */
-async function keptBuiltEntries(
-  roles: readonly RoleSpec[],
-  desired: readonly DesiredFile[],
-  disk: ReadonlyMap<string, PortRead>,
-  manifest: Manifest | null,
-): Promise<ManifestEntry[]> {
-  const desiredPaths = new Set(desired.map(file => file.path))
-  const recordsText = (records: readonly InstructionPartRecord[] | undefined): string =>
-    JSON.stringify((records ?? []).map(({ file, heading, hash }) => ({ file, heading, hash })))
-  const kept: ManifestEntry[] = []
-  for (const role of roles) {
-    const path = builtClaudeMdPath(role.id)
-    const entry = manifest?.files.find(file => file.path === path)
-    if (!desiredPaths.has(path) || entry === undefined) continue
-    const roleRead = disk.get(roleJsonPath(role.id))
-    const onDisk = roleRead?.state === 'text' ? parseRoleJson(roleRead.text) : null
-    if (onDisk === null) continue
-    if (recordsText(onDisk.instructionParts) !== recordsText(role.instructionParts)) continue
-    if (recordsText(onDisk.instructionPartsNotGiven) !== recordsText(role.instructionPartsNotGiven)) continue
-    const built = disk.get(path)
-    if (built?.state !== 'text' || (await sha256Hex(built.text)) !== entry.sha256) continue
-    kept.push(entry)
-  }
-
-  return kept
-}
-
-/**
- * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
- * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
- * desiredFiles gives every file from it, with the built `.cadre/<id>/CLAUDE.md` of each role from the repo parts
- * `repoParts` gives it (G-02-1f): whenever init passes repoParts every role gets its built file, the header alone with
- * no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). A role whose repo records and built
- * file are as the last apply left them keeps its built file and manifest entry, as regenPlan does, so an accepted
- * improver text is not overwritten or asked again (keptBuiltEntries, 02-GAPS-B3 S1): its path is dropped from the
- * desired files and its entry carried. The repo state also records the consent answer, so regen knows whether it may
- * read ~/.claude.json (A1), and the sizing block when the input has one. A sizing rubric already on disk, in any state
- * but absent, is dropped from the desired files and its last manifest entry carried, so it is never planned over.
- * Exactly the paths planReadPaths names (each file, the copy beside it and the manifest) and the root `.gitignore` are
- * read, through readRepoFile, so a link out of the repo is unknown and never read.
- * planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the ignore
- * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
- * stands for Security, ends with the line for claude-security's report folders, decision #39) and the hunks.
- * The result also holds what apply writes the plan from: the desired files less the kept ones, the manifest the plan
- * records and the merged `.gitignore` text, which is null when the `.gitignore` cannot be read or its block cannot be
- * merged, since the plan then has no op for it. It writes nothing itself: apply writes the plan after Confirm
- * (applyConfirmed).
+ * The truthful file plan of init: the files desiredFiles gives from the repo state, every role's built CLAUDE.md
+ * included when init passes repoParts, classified by planWithManifest against the disk, the last manifest and the
+ * `.gitignore` block, and a sizing rubric already on disk never planned over (its entry carried). It reads only the
+ * paths planReadPaths names and the root `.gitignore`, through readRepoFile, and writes nothing.
  */
 export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanResult> {
   const { roles, policy, scopes, hunks, repo, locations, repoParts } = input
@@ -293,10 +242,8 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
   const disk = await readPaths(io, locations.root, planReadPaths(generated))
   const isRubricThere = disk.get(SIZING_RUBRIC_PATH)?.state !== 'absent'
   const rubricEntry = repo.cadre.manifest?.files.find(file => file.path === SIZING_RUBRIC_PATH)
-  const keptRubric = isRubricThere && rubricEntry !== undefined ? [rubricEntry] : []
-  const carried = [...(await keptBuiltEntries(roles, generated, disk, repo.cadre.manifest)), ...keptRubric]
-  const keptPaths = new Set([...carried.map(entry => entry.path), ...(isRubricThere ? [SIZING_RUBRIC_PATH] : [])])
-  const desired = generated.filter(file => !keptPaths.has(file.path))
+  const carried = isRubricThere && rubricEntry !== undefined ? [rubricEntry] : []
+  const desired = isRubricThere ? generated.filter(file => file.path !== SIZING_RUBRIC_PATH) : generated
   const ignoreRead = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
   const existing = ignoreRead.state === 'text' ? ignoreRead.text : null
   const lines = gitignoreLines(policy, existing, roles.some(role => standsFor(role, 'security')))
@@ -580,75 +527,11 @@ async function compiledAfter(
 }
 
 /**
- * Writes the plan the person confirmed (D-105, LNCH-01), in this order:
- * 1. The Keep mine or Take new questions, the only questions after Confirm (D-105, D-67): one for each conflicted file
- *    of the confirmed plan (conflictPaths), in plan order, before any host call (conflictQuestion with
- *    CONFLICT_OPTIONS, parseConflictAnswer), each with the file's diff from the version on disk, read again through
- *    readRepoFile, to the new one as its own context (conflictContext, D-236), whose first line, how many lines Take
- *    new adds and removes, a pane surface asks in place of the context line (D-255); an answer that is neither is
- *    asked again with why on top (D-136). A dismissal cancels with CONFLICT_DISMISSED_REASON and MAX_ASKS answers that
- *    are neither with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
- * 1a. The frameworks the person answered Install for (draft.frameworkInstalls), each installed at project scope from
- *    the repo root (installProject) under FRAMEWORK_INSTALL_PROGRESS; when any ran, the facts are read again, and
- *    only they tell whether an install worked, never its exit code. A consented framework plugin install that landed
- *    joins the setup as step 4's plugins do (consentedPluginKeys). An install whose framework is still not installed
- *    when the facts are read again failed: a role or repo default on it falls back (withoutFailedInstalls), cadre.json
- *    records the frameworks and sizing without it (initFrameworks), and the reply names who fell back to what and the
- *    command to run (fallbackProblems). The plugins the person consented to install at project scope
- *    (draft.projectPluginInstalls) run in the same call, after the frameworks; one that installProject does not report
- *    installed prints its command (projectInstallFailureText), and when it is mattpocock-skills every PM loses the
- *    grill skills (withoutFailedGrill); the ones installed join the setup.
- * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
- *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
- *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
- *    exits non-zero is a failure, and apply goes on (D-106). Before the first run their one label is set
- *    (APPLY_HUNKS_PROGRESS, D-284).
- * 3. The hunks after their runs (hunksAfterRuns): a failed hunk is no longer runnable.
- * 4. The plugins the person answered Install for (draft.pluginInstalls: the security plugins, decision #39, and
- *    claude-md-management, D-141), installed in order from the home folder, never the repo (installPlugins,
- *    T-03-46): claude-security only after its Python check, and a failed install tried once more after the
- *    marketplace add. An install that fails or is skipped is a problem the
- *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
- *    a problem (noHomeInstallText). Before the installs their one label is set (INSTALL_PROGRESS, D-284).
- * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
- *    again from the disk (planStep, with the repo parts 5a keeps, which each parts-flow role's role.json records with
- *    the other parts of their files as not given: withRepoRecords, G-02-1f Regen), all from the setup with the
- *    plugins just installed (setupAfterInstalls), so ROLE.md is rendered and hashed after the hunks ran (D-120) and a
- *    Security role's settings enable claude-security once it is installed. The hunk runs above keep the setup of the
- *    scan.
- * 5a. Right before planStep, the repo parts of the draft (repoPartsOf) are checked against git (trackedParts,
- *    02-GAPS-B2 M3): `git ls-files` runs once at the repo root through the host, under every git policy, and only the
- *    parts of files git tracks are kept; a run that fails keeps none. Each left-out source file is a warning
- *    (untrackedParts). The dry run holds no host, so its plan may still list a built file whose untracked parts apply
- *    then leaves out.
- * 5b. Then the role memory folder of every role is named from the git common dir as /cadre start names it
- *    (privatePlanOf: `git rev-parse` runs once at the repo root, on every plain init), with the private files of every
- *    role of the team as the only paths outside the repo apply may write (T-02-72); each role gets both private files
- *    (privatesOf, 02-GAPS-B3 C1) unless its instructions.json already holds the record it would get (02-GAPS-B3 S1);
- *    with no folder known, nothing private is written and the reply names the roles (privateProblems).
- * 6. The steps of that fresh plan with the answers and the private files (applySteps), run through the host port by
- *    writeSteps: each write checked for links first, a launcher made executable only after its own write landed, then
- *    each role's private text file and hand-out record in its role memory folder, once the folder is made and made
- *    private (G-02-1f, D-140 q2-a, N13), and the manifest last. Take new overwrites the person's file and the manifest
- *    records its new hash; Keep mine keeps the file and writes its `.cadre-new` copy, as it does for a file that
- *    became a conflict after the questions. A fresh plan whose create or change ops and desired files disagree
- *    (planMismatchProblem) runs no step at all, not 6a either: the outcome is NOTHING_APPLIED with that refusal and
- *    the manifest skipped (D-272 edge #33, D-293).
- * 6a. When claude-md-management is installed, before init or by step 4 with no install problem (the setup made
- *    again from the installs), and a built role file holds a part (builtRoleFiles: the `.cadre/<id>/CLAUDE.md` of a
- *    role with a repo part 5a kept, watching the role's private files and guarded from its `.runtime` folder, and
- *    each private text file with a global part, never one of the header alone; 02-GAPS-B3 M1, C1), the improver pass
- *    runs between the file writes and the manifest (writeImproved, G-02-1f, D-141): one `claude -p` run per written
- *    built file, in its own folder, then its diff and the Accept or Keep original question; a kept file is written
- *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
- *    offered, its label is set before the writes and again before each improver run (IMPROVER_PROGRESS, D-284, S-02).
- * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
- *    framework installs that landed by install id and then the plugins installed in 1a and 4 (installed), the fallback
- *    line of each framework install that did not land and then the plugin install problems of 1a and 4
- *    (installProblems), the untracked-parts warnings of 5a (untrackedParts), the private problems of 5b and 6
- *    (privateProblems) and the improver warnings and tally of 6a (improverWarnings, improved), which the reply prints,
- *    each failure with the command to run.
- * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
+ * Writes the plan the person confirmed: the conflict questions first, then the framework and plugin installs and the
+ * hunk runs, the plan made again from the disk with the repo parts git tracks and each role's private files, and its
+ * steps through writeWithImprover, the improver on each private text file with a global part when claude-md-management
+ * is installed and the manifest last. Failed installs, hunk runs, untracked parts and private-file problems become
+ * reply lines; a dismissed conflict question cancels with nothing written or run.
  */
 async function applyConfirmed(
   io: InitIo,
@@ -701,8 +584,7 @@ async function applyConfirmed(
   const steps = problem === null ? await applySteps(input) : []
   const isImproverReady = setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
   const privateFolders = new Set(privatePlan.privates.flatMap(role => (role.parts.length > 0 ? [role.folder] : [])))
-  const filter = { privateFolders, roleFolders: privatePlan.folders }
-  const offered = problem === null && isImproverReady ? builtRoleFiles(steps, filter) : []
+  const offered = problem === null && isImproverReady ? builtRoleFiles(steps, { privateFolders }) : []
   const allowed = privatePlan.allowed
   if (offered.length > 0) await io.progress(IMPROVER_PROGRESS, countsText([['files', offered.length]]))
   const written =

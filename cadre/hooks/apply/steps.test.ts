@@ -423,46 +423,6 @@ describe('apply conflicts (D-67)', () => {
   })
 })
 
-describe('improved keys as the plan keys files (D-241)', () => {
-  /** A built role file the plan accepts, and the text the improver gave it. */
-  const BUILT = '.cadre/be/CLAUDE.md'
-  const IMPROVED_TEXT = '# be\nimproved\n'
-
-  test('an improved key in another case maps to the file the plan accepted', async () => {
-    const desired = [file(BUILT, '# be\n')]
-    const planned = await planWithManifest(input({ desired }))
-    const improved = new Map([['.CADRE/be/CLAUDE.md', IMPROVED_TEXT]])
-    const steps = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES, improved })
-
-    const entry = { path: BUILT, sha256: await sha256Hex(IMPROVED_TEXT), mode: 'file' }
-    expect(writtenManifest(steps)?.files).toEqual([entry])
-  })
-
-  test('an improved key the plan did not accept in any case gives no manifest entry and no write', async () => {
-    const desired = [file(BUILT, '# be\n'), file('CLAUDE.md', 'x\n')]
-    const planned = await planWithManifest(input({ desired }))
-    const improved = new Map([['CLAUDE.md', IMPROVED_TEXT]])
-    const steps = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES, improved })
-
-    expect(writtenManifest(steps)?.files.map(entry => entry.path)).toEqual([BUILT])
-    expect(steps.filter(step => step.path === 'CLAUDE.md')).toEqual([])
-  })
-
-  test('#38: paths that differ only in case are one file, as on a case-insensitive file system (D-272)', async () => {
-    const other = '.cadre/be/claude.md'
-    const desired = [file(BUILT, '# be\n'), file(other, '# other\n')]
-    const planned = await planWithManifest(input({ desired }))
-    const improved = new Map([[other, IMPROVED_TEXT]])
-    const steps = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES, improved })
-
-    const entry = { path: BUILT, sha256: await sha256Hex(IMPROVED_TEXT), mode: 'file' }
-    expect(summary(planned.plan)).toEqual([`create ${BUILT}`, `create ${MANIFEST_PATH}`])
-    expect(planned.plan.warnings).toEqual([t('plan.plan.twiceWarning', { path: other })])
-    expect(steps.map(stepLine)).toEqual([`write ${BUILT}`, `manifest ${MANIFEST_PATH}`])
-    expect(writtenManifest(steps)?.files).toEqual([entry])
-  })
-})
-
 describe('a plan and desired files that disagree (D-272, edge #33)', () => {
   /** The files of the consistent plan: a launcher and a plain file. */
   const DESIRED = [file(LAUNCHER, '#!/bin/sh\n', 'exec'), file(A, 'a\n')]

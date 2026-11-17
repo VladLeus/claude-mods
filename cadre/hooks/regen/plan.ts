@@ -147,16 +147,10 @@ export function regenReplyText(planned: RegenPlanned, id: string, applied: Apply
 }
 
 /**
- * Writes the plan of a plain regen (D-68, D-105) with no question: applySteps with the role's private files when the
- * hand-out rebuilds them, whose paths are the only ones outside the repo it may write (privatePaths, T-02-72), run by
- * writeSteps, so a conflicted file is kept and its `.cadre-new` copy written. When claude-md-management is installed
- * and the apply rebuilds a built file with a part in it (builtRoleFiles: the role's built CLAUDE.md with a repo part,
- * watching its private files when its role memory folder is known and guarded from its `.runtime` folder, and its
- * private text file with a global part; 02-GAPS-B3 M1, C1), the improver pass runs on them in a session
- * (writeImproved, D-141, D-142); where no one can be asked it does not start, and the outcome carries
- * improverNotOfferedWarning. The warnings of the hand-out's git check are its untrackedParts. A plan whose create or
- * change ops and desired files disagree (planMismatchProblem) writes nothing: the outcome is NOTHING_APPLIED with that
- * refusal and the manifest skipped (D-272 edge #33, D-293).
+ * Writes the plan of a plain regen with no question, the role's private files included when the hand-out rebuilds
+ * them, and in a session runs the improver pass on a rebuilt private text file with a global part when
+ * claude-md-management is installed (else improverNotOfferedWarning). A plan whose ops and desired files disagree
+ * writes nothing (planMismatchProblem).
  */
 export async function regenApply(
   io: InitIo,
@@ -180,9 +174,7 @@ export async function regenApply(
   const allowed = privatePaths(privates.map(owed => owed.folder))
   const isImproverReady = input.setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
   const privateFolders = new Set(privateRole !== null && privateRole.parts.length > 0 ? [privateRole.folder] : [])
-  const roleFolders = handed.folder === null ? new Map<string, string>() : new Map([[role.id, handed.folder]])
-  const filter = { privateFolders, roleFolders }
-  const built = isImproverReady ? builtRoleFiles(steps, filter) : []
+  const built = isImproverReady ? builtRoleFiles(steps, { privateFolders }) : []
   const isOffered = built.length > 0 && handed.isSession
   const written = await writeWithImprover(io, host, {
     locations,

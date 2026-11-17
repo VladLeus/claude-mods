@@ -1,27 +1,24 @@
 /**
- * The improver pass, a layer 9 module: between the file writes and the manifest, one `claude -p` run per built role
+ * The improver pass, a layer 9 module: between the file writes and the manifest, one `claude -p` run per private text
  * file in its own folder, then its diff and the Accept or Keep original question, the files written back as built and
- * the reply lines of the pass (G-02-1f, D-141, 02-GAPS-B3 M1). Each run goes through HostIo.run, while its reads and
- * questions go through InitIo, which can neither write nor run. It imports core, generate/launcher, the launch rules,
- * paths, scan, ui/ask, ui/diff, the private role files, the write safety checks and the types, so the apply runner and
- * init read it here.
+ * the reply lines of the pass. Each run goes through HostIo.run, while its reads and questions go through InitIo, which
+ * can neither write nor run. It imports core, paths, scan, ui/ask, ui/diff, the private role files, the write safety
+ * checks and the types, so the apply runner and init read it here.
  */
 import type { AskContext, ContextRow, HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { labelled } from '../core/labelled'
 import type { Labelled } from '../core/labelled'
 import { compareText, reportText, sortedUnique } from '../core/text'
-import { builtClaudeMdPath } from '../generate/launcher'
-import { editRules } from '../launch/deny'
 import { PROMPTS } from '../locales/prompts'
 import { fill, t, tn } from '../locales/t'
-import { displayPath, isFileInsideRoot, parentOf, trimSlash } from '../paths'
+import { displayPath, parentOf, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { missingState } from '../scan/port-read'
 import { ASK_HEADERS, askChoice, noteLine, paneQuestionOf, quotedLabels } from '../ui/ask'
 import { diffLines, lineDiff } from '../ui/diff'
 import type { LineDiff } from '../ui/diff'
-import { instructionsRecordPath, privateClaudeMdPath } from './private'
+import { privateClaudeMdPath } from './private'
 import type { ApplyStep } from './private'
 import { privateFolderOf } from './safety'
 
@@ -32,91 +29,53 @@ export const IMPROVER_TIMEOUT_MS = 300_000
 export const IMPROVER_PROGRESS = t('init.status.improver')
 
 /**
- * The argv of one improver run (D-141 imp-b): `claude -p` in acceptEdits, so the run edits the file in place and asks
- * nothing, then `flags`, a repo file's guard (improverGuardFlags, 02-GAPS-B3 M1) and none for a private text file, then
- * `--` and a prompt that names the claude-md-management:claude-md-improver skill and the file's absolute path. Init
- * runs it only after Confirm, through the host port, with the folder that holds the file as cwd.
+ * The argv of one improver run: `claude -p` in acceptEdits, so the run edits the file in place and asks nothing, then
+ * `--` and a prompt that names the claude-md-management:claude-md-improver skill and the file's absolute path.
  */
-export function improverArgv(path: string, flags: readonly string[] = []): readonly string[] {
+export function improverArgv(path: string): readonly string[] {
   return [
     'claude',
     '-p',
     '--permission-mode',
     'acceptEdits',
-    ...flags,
     '--',
     fill(PROMPTS.improverPrompt, { path }),
   ]
 }
 
-/**
- * Why a repo file's improver run is not started (02-GAPS-B3 M1 c): its .runtime folder has a path no exact deny rule
- * can hold.
- */
-export const UNGUARDED_RUN_REASON = t('apply.improver.unguardedRunReason')
-
-/**
- * The flags of a repo file's improver run: settings that deny Edit on `//<root>/.cadre/<id>/.runtime/**`, so the run
- * cannot edit through the links there, and no Bash; null when editRules cannot hold that path.
- */
-export function improverGuardFlags(root: string, id: string): readonly string[] | null {
-  const rules = editRules(`${trimSlash(root)}/.cadre/${id}/.runtime`, '/**')
-  if (rules === null) return null
-
-  return ['--settings', JSON.stringify({ permissions: { deny: rules } }), '--disallowedTools', 'Bash']
-}
-
-/**
- * One built role file the improver pass offers (G-02-1f, D-141): its absolute path, its repo-relative path when it is
- * a repo file (`.cadre/<id>/CLAUDE.md`; null for a private text file), and the text cadre built and wrote there.
- */
+/** One private text file the improver pass offers: its absolute path and the text cadre built and wrote there. */
 export type BuiltFile = {
   readonly path: string
-  readonly repoPath: string | null
   readonly text: string
-  /**
-   * Absolute paths marked before and after the run besides its folder (02-GAPS-B3 M1): for a repo file, the role's
-   * private text file and instructions.json.
-   */
-  readonly watched: readonly string[]
-  /**
-   * The flags of its run (improverGuardFlags): [] for a private text file; null for a repo file whose run is not
-   * started.
-   */
-  readonly runFlags: readonly string[] | null
 }
 
 /**
- * What builtRoleFiles offers: the role memory folders whose private text holds a global part (a header alone has
- * nothing to improve), beside each role's memory folder by id.
+ * What builtRoleFiles offers: the role memory folders whose private text holds a global part, since a header alone has
+ * nothing to improve.
  */
 export type BuiltFilter = {
   readonly privateFolders: ReadonlySet<string>
-  readonly roleFolders: ReadonlyMap<string, string>
 }
 
 /**
  * The private text files of an apply the improver pass offers, in step order: the text file of each private step whose
- * folder is in `filter.privateFolders`, watching nothing, with no flags; every other file is left out.
+ * folder is in `filter.privateFolders`; every other file is left out.
  */
 export function builtRoleFiles(steps: readonly ApplyStep[], filter: BuiltFilter): BuiltFile[] {
   return steps.flatMap((step): BuiltFile[] => {
     if (step.kind !== 'private' || !filter.privateFolders.has(step.path)) return []
     const textPath = privateClaudeMdPath(step.path)
-    const files = step.files.filter(file => file.path === textPath)
 
-    return files.map(file => ({ ...file, repoPath: null, watched: [], runFlags: [] }))
+    return step.files.filter(file => file.path === textPath)
   })
 }
 
 /**
- * The steps that write built role files back as cadre built them, after the improver pass (G-02-1f, D-141, T-02-76): a
- * repo file as a write of its repo path and a private text file as the private step of its role memory folder, so
- * each write gets the same checks as the first one. A path that is neither gives none.
+ * The steps that write private text files back as cadre built them after the improver pass: each as the private step
+ * of its role memory folder, so the write gets the same checks as the first one; a path outside one gives none.
  */
 export function restoreSteps(files: readonly BuiltFile[]): ApplyStep[] {
   return files.flatMap((file): ApplyStep[] => {
-    if (file.repoPath !== null) return [{ kind: 'write', path: file.repoPath, text: file.text }]
     const folder = privateFolderOf(file.path)
 
     return folder === null ? [] : [{ kind: 'private', path: folder, files: [{ path: file.path, text: file.text }] }]
@@ -275,13 +234,11 @@ export function improverLine(tally: ImproverTally): string {
   return t('apply.improver.improverLine', { changed: tally.changed, total: tally.total })
 }
 
-/** What the improver pass did (G-02-1f, D-141), with its tally. */
+/** What the improver pass did, with its tally. */
 export type ImproverOutcome = ImproverTally & {
-  /** The text of each repo file whose change the person accepted, by repo-relative path: the manifest records it. */
-  readonly accepted: ReadonlyMap<string, string>
   /**
    * The built files to write back as cadre built them: each kept, not answered, left unreadable, changed by a run that
-   * failed, or changed before its own run (02-GAPS-B3 M1).
+   * failed, or changed before its own run.
    */
   readonly restores: readonly BuiltFile[]
   /**
@@ -302,15 +259,13 @@ type ImprovedFile = {
 }
 
 /**
- * A built file as the improver pass reads it, before and after its run (D-141, T-02-76): only a regular file that is
- * not a link, and for a repo file one whose real path lies inside the repo, is read, up to MAX_READ_BYTES; any other
- * path is `unknown`, and a missing one `absent`. So a link the improver left is never read or shown.
+ * A built file as the improver pass reads it, before and after its run: only a regular file that is not a link is
+ * read, up to MAX_READ_BYTES; any other path is `unknown` and a missing one `absent`, so a link is never read or shown.
  */
-async function builtRead(io: InitIo, file: BuiltFile, root: string): Promise<PortRead> {
+async function builtRead(io: InitIo, file: BuiltFile): Promise<PortRead> {
   const stat = await io.stat(file.path)
   if (stat === null) return { state: await missingState(io, file.path) }
   if (stat.isLink || stat.kind !== 'file') return { state: 'unknown' }
-  if (file.repoPath !== null && !isFileInsideRoot(stat, root)) return { state: 'unknown' }
 
   return io.read(file.path, MAX_READ_BYTES)
 }
@@ -378,22 +333,12 @@ async function folderMark(io: InitIo, path: string): Promise<string> {
 }
 
 /**
- * A look at the folder an improver run starts in (folderSnapshot, D-141, T-02-75; 02-GAPS-B3 M1): the folder and its
- * real sub-folders SNAPSHOT_LEVELS levels down are listed, and each real folder found at the last level is kept as a
- * folder entry. A link the stat finds to be a folder is listed once, one level into its target: each file there is
- * kept as a file entry, read through, and each folder as a folder entry. Every other entry, a file link included, is
- * a file entry, so it is read through. A folder that cannot be listed adds nothing, `watched` adds each path it names
- * as a file entry, and `except`, the built file itself, is left out. The first MAX_SNAPSHOT_FILES entries in path
- * order are marked, a file up to MAX_READ_BYTES (fileMark) and a folder by its entry names (folderMark); the rest are
- * kept UNCHECKED.
+ * A look at the folder an improver run starts in, `except` (the built file) left out: real sub-folders are listed
+ * SNAPSHOT_LEVELS levels down and a folder link one level into its target, each file is marked by fileMark and each
+ * last-level folder by folderMark, and past MAX_SNAPSHOT_FILES entries in path order the rest are kept UNCHECKED.
  */
-async function folderSnapshot(
-  io: InitIo,
-  folder: string,
-  except: string,
-  watched: readonly string[],
-): Promise<Snapshot> {
-  const files: string[] = [...watched]
+async function folderSnapshot(io: InitIo, folder: string, except: string): Promise<Snapshot> {
+  const files: string[] = []
   const folders: string[] = []
   let level: readonly string[] = [folder]
   for (let depth = 0; depth <= SNAPSHOT_LEVELS && level.length > 0; depth += 1) {
@@ -485,37 +430,25 @@ function stateNote(state: Exclude<BuiltState, { readonly kind: 'changed' }>, pat
 }
 
 /**
- * One file of the improver pass (G-02-1f, D-141; 02-GAPS-B3 M1). It reads the file (builtRead) first: one that is not
- * its built text, changed or removed by an earlier run, gets no run and no look and goes back as built, with
- * changedBeforeRunWarning; a repo file whose run has no guard (runFlags null) gets no run either, only the note of
- * UNGUARDED_RUN_REASON, and stays as built. Else it looks at the file's folder and the paths `watched` names
- * (folderSnapshot), runs improverArgv with the file's flags in that folder with IMPROVER_TIMEOUT_MS, the clock read
- * around the run, then reads and looks again. Other files the run changed, and files it could not check, are reply
- * warnings, notes and rows of the per-file question's context; they are never undone. A file whose run failed, that
- * did not change, or that changed into something cadre cannot read gets its note and no question; a failed run's
- * change and an unreadable file go back as built. A changed file's per-file question is asked with its diff from the
- * built text as its own context (improverContext; no block of its own, D-302): Accept keeps the new text, Keep
- * original gives the file back, and a question with no usable answer gives it back with a warning.
+ * One file of the improver pass: a file that is no longer its built text gets no run and goes back as built with
+ * changedBeforeRunWarning; else improverArgv runs in its folder between two looks at that folder, whose other changes
+ * are reported and never undone. A changed file is asked about with its diff as the question's context (Accept keeps
+ * it, else it goes back); any other outcome gets its note, and a failed run's change or an unreadable file goes back.
  */
 async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: ShownFrom): Promise<ImprovedFile> {
   const folder = parentOf(file.path)
   const shownPath = shownPathOf(file.path, from)
   const shownFolder = shownPathOf(folder, from)
-  const before = await builtRead(io, file, from.root)
+  const before = await builtRead(io, file)
   if (before.state !== 'text' || before.text !== file.text) {
     return { accepted: null, isRestored: true, warnings: [changedBeforeRunWarning(shownPath)] }
   }
-  if (file.runFlags === null) {
-    await noteLine(io, improverFailedNote(shownPath, UNGUARDED_RUN_REASON))
-
-    return { accepted: null, isRestored: false, warnings: [] }
-  }
-  const beforeFolder = await folderSnapshot(io, folder, file.path, file.watched)
+  const beforeFolder = await folderSnapshot(io, folder, file.path)
   const started = await io.now()
-  const run = await host.run(improverArgv(file.path, file.runFlags), { cwd: folder, timeoutMs: IMPROVER_TIMEOUT_MS })
+  const run = await host.run(improverArgv(file.path), { cwd: folder, timeoutMs: IMPROVER_TIMEOUT_MS })
   const ended = await io.now()
-  const after = await builtRead(io, file, from.root)
-  const others = folderChanges(beforeFolder, await folderSnapshot(io, folder, file.path, file.watched))
+  const after = await builtRead(io, file)
+  const others = folderChanges(beforeFolder, await folderSnapshot(io, folder, file.path))
   const otherPaths = others.paths.map(path => shownPathOf(path, from))
   const otherLines = otherFilesLines(shownFolder, otherPaths)
   const warnings = [
@@ -555,14 +488,9 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
 }
 
 /**
- * The improver pass (G-02-1f, D-141 imp-b): after Confirm, once the built files are written and before the manifest,
- * each file in `files` gets one improver run in turn, in place (improveOne), and the person reviews each change. A file
- * an earlier run changed is written back as built with no run of its own, and a repo file whose run has no guard gets
- * no run (02-GAPS-B3 M1). It gives the accepted text of each repo file for the manifest, the files to write back as
- * built (restoreSteps), the reply warnings, and how many files were changed and accepted of how many it was given. The
- * loader (IMPROVER_PROGRESS, with the count of files) is set again before each file's run, because a per-file question
- * clears it (D-257, D-285, S-02). It writes nothing itself; a dry run never reaches it, since it holds no HostIo
- * (T-03-16).
+ * The improver pass after Confirm, between the file writes and the manifest: one run per file in turn (improveOne), the
+ * loader set again before each since a per-file question clears it. It gives the files to write back as built
+ * (restoreSteps), the reply warnings and the tally, and writes nothing itself.
  */
 export async function improveBuiltFiles(
   io: InitIo,
@@ -570,7 +498,6 @@ export async function improveBuiltFiles(
   files: readonly BuiltFile[],
   from: ShownFrom,
 ): Promise<ImproverOutcome> {
-  const accepted = new Map<string, string>()
   const restores: BuiltFile[] = []
   const warnings: string[] = []
   const summary = tn('init.status.count.files', files.length, { count: files.length })
@@ -580,10 +507,8 @@ export async function improveBuiltFiles(
     const result = await improveOne(io, host, file, from)
     warnings.push(...result.warnings)
     if (result.isRestored) restores.push(file)
-    if (result.accepted === null) continue
-    changed += 1
-    if (file.repoPath !== null) accepted.set(file.repoPath, result.accepted)
+    if (result.accepted !== null) changed += 1
   }
 
-  return { accepted, restores, warnings, changed, total: files.length }
+  return { restores, warnings, changed, total: files.length }
 }

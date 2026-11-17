@@ -23,8 +23,8 @@ import type { ApplyInput, ApplyStep } from './private'
  * file is accepted when the plan has a file op for its exact path; a refused one (outside `.cadre/`, or a second path
  * that differs only in case) has none, so it is not here at all. The folding assumes a case-insensitive file system,
  * where two paths that differ only in case name one file (D-272 edge #38): on a case-sensitive one they name two, and
- * a path or an improved key in another case would be mapped onto an accepted file it does not name. No run reaches
- * that today, since every op path and improved key is a path cadre built itself.
+ * a path in another case would be mapped onto an accepted file it does not name. No run reaches that today, since
+ * every op path is a path cadre built itself.
  */
 function desiredByPath(desired: readonly DesiredFile[], plan: Plan): ReadonlyMap<string, DesiredFile> {
   const planned = new Set(plan.ops.flatMap(op => (op.kind === 'hunk' ? [] : [op.path])))
@@ -136,29 +136,14 @@ function takenNew(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): D
   return taken
 }
 
-/**
- * The files whose text the manifest records anew (D-67, D-141): each file taken new with its desired text, and each
- * built role file whose improved text the person accepted (`improved`) with that text, which wins over the desired
- * text of the same file; each with the path and the mode of the desired file the plan accepted. An improved key is
- * looked up in lower case like every desired path (D-241), so a key in another case counts for the accepted file, of
- * two keys of one file the first counts, and a key the plan accepted in no case gives nothing.
- */
+/** The files whose text the manifest records anew: each file taken new, with its desired text. */
 function changedFiles(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): DesiredFile[] {
-  const accepted = new Map<string, DesiredFile>()
-  for (const [path, content] of input.improved ?? new Map<string, string>()) {
-    const desired = files.get(path.toLowerCase())
-    if (desired === undefined || accepted.has(desired.path)) continue
-    accepted.set(desired.path, { path: desired.path, content, mode: desired.mode })
-  }
-  const taken = takenNew(input, files).filter(file => !accepted.has(file.path))
-
-  return [...taken, ...accepted.values()]
+  return takenNew(input, files)
 }
 
 /**
- * The manifest apply writes: the one the plan records, with the entry of each file taken new or improved replaced by
- * one with the hash of its new text, or added when the plan had none for it (an untracked file), sorted by path (D-67,
- * D-141).
+ * The manifest apply writes: the one the plan records, with the entry of each file taken new replaced by one with the
+ * hash of its new text, or added when the plan had none for it (an untracked file), sorted by path (D-67).
  */
 async function manifestAfter(manifest: Manifest, taken: readonly DesiredFile[]): Promise<Manifest> {
   const paths = new Set(taken.map(file => file.path))
@@ -177,10 +162,9 @@ async function manifestAfter(manifest: Manifest, taken: readonly DesiredFile[]):
  * the merged block text; a leave writes nothing, and so does a hunk. After the repo files come the private files of
  * each role in `privates`, one step per role that has one (G-02-1f, D-140 q2-a). The manifest comes last, once every
  * file is written, so an apply that stops early never leaves a manifest that claims a file it did not write; it
- * records the new hash of each file taken new and of each built role file whose improved text the person accepted
- * (`improved`, D-141), keeps the old entry of each file kept, and never names a private file. There is none when the
- * plan keeps the manifest as a conflict (it could not be read, A6), and none when the plan leaves it and no file was
- * taken new or improved. No step deletes anything.
+ * records the new hash of each file taken new, keeps the old entry of each file kept, and never names a private file.
+ * There is none when the plan keeps the manifest as a conflict (it could not be read, A6), and none when the plan
+ * leaves it and no file was taken new. No step deletes anything.
  */
 export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
   const files = desiredByPath(input.desired, input.plan)

@@ -414,9 +414,8 @@ function recordedRole(role: RoleSpec, side: SideResult): RoleSpec {
  * What regen hands out for its role (G-02-1f Regen, D-142): the role role.json is planned from, with new records when
  * they change (AUTO-PICK #19 Q2), and whether they do; the repo parts its built CLAUDE.md is rebuilt from, null to
  * keep that file as it is (Q4); its private files to rebuild, null for none; the reply lines of what was dropped; the
- * warnings printed with the scan warnings; the warnings of the git check, printed with what the apply did; whether a
- * dialog could be shown, so the improver may run after a plain regen; and the role memory folder, whose private files
- * the improver run of the built CLAUDE.md watches (02-GAPS-B3 M1).
+ * warnings printed with the scan warnings; the warnings of the git check, printed with what the apply did; and whether
+ * a dialog could be shown, so the improver may run after a plain regen.
  */
 export type RegenHanded = {
   readonly role: RoleSpec
@@ -427,8 +426,6 @@ export type RegenHanded = {
   readonly warnings: readonly string[]
   readonly untracked: readonly string[]
   readonly isSession: boolean
-  /** The role memory folder, null when it is not known (02-GAPS-B3 M1). */
-  readonly folder: string | null
 }
 
 /**
@@ -464,7 +461,6 @@ export async function regenHandout(
     warnings: [],
     untracked: [],
     isSession: false,
-    folder: null,
   }
   if (role.instructionParts === undefined && role.instructionPartsNotGiven === undefined) return accepted(handed)
   const repoRead = await repoSideRead(io, locations.root, role)
@@ -504,6 +500,5 @@ export async function regenHandout(
     warnings,
     untracked: tracked?.warnings ?? [],
     isSession,
-    folder: found.kind === 'found' || found.kind === 'none' ? found.folder : null,
   })
 }

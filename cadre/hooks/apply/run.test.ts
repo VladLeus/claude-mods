@@ -42,23 +42,23 @@ import { applySteps } from './steps'
 /** BE's built CLAUDE.md, repo-relative, as the plan and the reply name it. */
 const BE_CLAUDE_MD = '.cadre/be/CLAUDE.md'
 
-/** BE's built CLAUDE.md as an absolute path under the fixture repo /repo. */
-const BE_CLAUDE_MD_PATH = `/repo/${BE_CLAUDE_MD}`
-
-/** The text apply writes to BE's built CLAUDE.md: its header line, then one repo part. */
+/** The text of BE's built CLAUDE.md in the fixture apply. */
 const BE_BUILT = '<!-- cadre: instructions for role be -->\n\n# Rules\nRun the tests before a commit.\n'
 
 /** The one desired file of the fixture apply: BE's built CLAUDE.md. */
 const DESIRED: readonly DesiredFile[] = [{ path: BE_CLAUDE_MD, content: BE_BUILT, mode: 'file' }]
 
-/** BE's built CLAUDE.md as the improver pass gets it, watching nothing else and with no flags. */
-const BE_BUILT_FILE: BuiltFile = {
-  path: BE_CLAUDE_MD_PATH,
-  repoPath: BE_CLAUDE_MD,
-  text: BE_BUILT,
-  watched: [],
-  runFlags: [],
-}
+/** BE's role memory folder in the fixture repo (D-140 q2-a): `<userDir>/cadre/<repo>-<hash8>/be`. */
+const BE_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d/be'
+
+/** BE's private text file, at its absolute path in its role memory folder. */
+const BE_TEXT_FILE = `${BE_DIR}/instructions/CLAUDE.md`
+
+/** BE's private text file as the improver pass gets it. */
+const BE_PRIVATE_FILE: BuiltFile = { path: BE_TEXT_FILE, text: 'private\n' }
+
+/** The private step that writes BE's private text file in its role memory folder. */
+const BE_PRIVATE_STEP: ApplyStep = { kind: 'private', path: BE_DIR, files: [BE_PRIVATE_FILE] }
 
 /** The apply input of DESIRED planned over an empty repo with no manifest: no conflict and no private file. */
 async function fixtureInput(): Promise<ApplyInput> {
@@ -93,50 +93,27 @@ describe('writeWithImprover', () => {
 
   test('with a built file offered it runs the improver pass as writeImproved does', async () => {
     const input = await fixtureInput()
-    const steps = await applySteps(input)
-    const world = memWorld({ files: { [BE_CLAUDE_MD_PATH]: BE_BUILT } })
+    const steps = [...(await applySteps(input)), BE_PRIVATE_STEP]
+    const world = memWorld({ files: { [BE_TEXT_FILE]: BE_PRIVATE_FILE.text }, dirs: USER_DIR_LISTED })
     const helper = memHost(hostWorld({}))
     const direct = memHost(hostWorld({}))
-    const args = { locations: DEFAULT_LOCATIONS, input, steps, offered: [BE_BUILT_FILE], allowed: new Set<string>() }
+    const allowed = new Set([BE_TEXT_FILE])
+    const args = { locations: DEFAULT_LOCATIONS, input, steps, offered: [BE_PRIVATE_FILE], allowed }
     const outcome = await writeWithImprover(memIo(world, {}).io, helper.io, args)
 
     expect(outcome).toEqual(await writeImproved(memIo(world, {}).io, direct.io, args))
     expect(helper.writes).toEqual(direct.writes)
     expect(helper.calls.filter(call => call.argv[0] === 'claude').map(call => call.argv)).toEqual([
-      improverArgv(BE_CLAUDE_MD_PATH),
+      improverArgv(BE_TEXT_FILE),
     ])
   })
 })
 
-/** BE's role memory folder in the fixture repo (D-140 q2-a): `<userDir>/cadre/<repo>-<hash8>/be`. */
-const BE_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d/be'
-
-/** BE's private text file, at its absolute path in its role memory folder. */
-const BE_TEXT_FILE = `${BE_DIR}/instructions/CLAUDE.md`
-
 /** BE's private text file as a reply shows it, from the home folder. */
 const BE_TEXT_SHOWN = '~/.claude/cadre/repo-1a2b3c4d/be/instructions/CLAUDE.md'
 
-/** A repo file whose repo-relative path is the very text a reply shows for BE's private text file (D-242). */
-const LOOKALIKE_PATH = `/repo/${BE_TEXT_SHOWN}`
-
-/** The writes of the D-242 specs: the lookalike repo file, then BE's private text file in its own private step. */
-const COLLIDING_STEPS: readonly ApplyStep[] = [
-  { kind: 'write', path: BE_TEXT_SHOWN, text: 'repo\n' },
-  { kind: 'private', path: BE_DIR, files: [{ path: BE_TEXT_FILE, text: 'private\n' }] },
-]
-
-/** The lookalike repo file as the improver pass would get it. */
-const LOOKALIKE_FILE: BuiltFile = {
-  path: LOOKALIKE_PATH,
-  repoPath: BE_TEXT_SHOWN,
-  text: 'repo\n',
-  watched: [],
-  runFlags: [],
-}
-
-/** BE's private text file as the improver pass would get it: outside the repo, so not repo-relative. */
-const BE_PRIVATE_FILE: BuiltFile = { path: BE_TEXT_FILE, repoPath: null, text: 'private\n', watched: [], runFlags: [] }
+/** The writes of the D-242 specs: a repo file at the very path a reply shows for BE's private text file, then it. */
+const COLLIDING_STEPS: readonly ApplyStep[] = [{ kind: 'write', path: BE_TEXT_SHOWN, text: 'repo\n' }, BE_PRIVATE_STEP]
 
 /** Runs writeImproved over COLLIDING_STEPS, offering `offered`, with the host failing the writes of `writeFails`. */
 async function collidingRun(
@@ -156,12 +133,6 @@ describe('written set by absolute path and kind (D-242)', () => {
 
     expect(outcome.improved).toEqual({ changed: 0, total: 1 })
     expect(outcome.written.filter(path => path === BE_TEXT_SHOWN)).toEqual([BE_TEXT_SHOWN, BE_TEXT_SHOWN])
-  })
-
-  test('a repo file whose write failed is not offered when a private file shown the same was written', async () => {
-    const outcome = await collidingRun([LOOKALIKE_FILE], [LOOKALIKE_PATH])
-
-    expect(outcome.improved).toBeNull()
   })
 
   test('a private file whose write failed is not offered when a repo file shown the same was written', async () => {

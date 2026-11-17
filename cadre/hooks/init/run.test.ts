@@ -6502,18 +6502,18 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     expect(reply.split('\n')).toContain(`warning: ${privateFoldersUnknownWarning(['pm', 'tl'])}`)
   })
 
-  test('keptBuiltEntries: a built CLAUDE.md whose records and disk hash match is kept with no op', async () => {
+  test('a re-init over the built files as written leaves each one, and one edited on disk is a conflict', async () => {
     const first = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     await runInit(memIo(builtWorld(), PARTS_ANSWERS).io, { dryRun: false, host: first.io })
     const kept = withWrites(builtWorld({ dirs: builtAfterDirs() }), first.writes)
     const again = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     const reply = await runInit(memIo(kept, PARTS_ANSWERS).io, { dryRun: false, host: again.io })
     const kinds = opKinds(reply)
-    expect(BUILT_TEAM.map(id => kinds.get(`.cadre/${id}/CLAUDE.md`) ?? 'no op')).toEqual(BUILT_TEAM.map(() => 'no op'))
+    expect(BUILT_TEAM.map(id => kinds.get(`.cadre/${id}/CLAUDE.md`))).toEqual(BUILT_TEAM.map(() => 'leave'))
     expect(kinds.get('.cadre/be/role.json')).toBe('leave')
     expect(again.writes).toEqual([])
     expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
-    // Edited on disk, the file no longer hashes to its manifest entry: it is planned as a conflict again.
+    // Edited on disk, the file no longer hashes to its manifest entry: it is planned as a conflict.
     const edited = withWrites(kept, [{ path: BE_CLAUDE_MD, text: `${BUILT_BE}mine\n`, isWritten: true }])
     expect(opKinds(await runInit(memIo(edited, PARTS_ANSWERS).io, { dryRun: true })).get(BE_CLAUDE_MD_PATH)).toBe(
       'conflict',
