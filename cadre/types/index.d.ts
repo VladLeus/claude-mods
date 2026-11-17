@@ -106,6 +106,8 @@ export type EpicRecord = {
   readonly copies: readonly string[]
   /** The repo-relative folders the mirror made real above a path .worktreeinclude names. */
   readonly walked?: readonly string[]
+  /** When each recorded copy was placed, in epoch ms, by its repo-relative path; written only when it holds one. */
+  readonly copiedAt?: Readonly<Record<string, number>>
 }
 
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */

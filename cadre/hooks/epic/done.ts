@@ -421,21 +421,21 @@ async function copiedListings(
  * EPIC_UNKNOWN_CHECKOUT); a worktree list git cannot give (EPIC_DONE_NO_LIST); no registered worktree on an epic
  * branch of the key (epicNotFoundReply), or more than one (epicManyWorktreesReply). The epic record is read from the
  * git dir git names for the worktree, and the copy-back of its recorded copies and walked folders is planned: with
- * either, the paths main's .worktreeinclude names now (includedNow), then copiedListings and copyBackPlan since the
- * record's creation time (no record, nothing to move). Then all three checks run before any change: clean
- * (cleanStateOf of STATUS_ARGV), merged into the recorded base (MERGED_ARGV, `no-record` with no record or no base) and
- * no role of the team, read from the main checkout, reading `running` there (roleRunState). Without `--force`, any
- * reason of epicDoneProblems keeps the worktree with epicDoneRefusal, which lists them all, a check that cannot tell
- * included. With `--force` one consent question always comes, reasons or not, listing them (forcedRefusal): only its
- * yes goes on, and no dialog, a dismissal or the keeping answer removes nothing. Then the stale-lock rule
- * (lockRefusal): a lock is cleared only when the process it names has ended, and any other lock refuses, with or
- * without `--force`. Then the copy-back: a path it cannot move back safely, a recorded copied or walked folder
- * .worktreeinclude does not name now included, refuses with epicCopyBackFailedReply before any step, and else each
- * step runs with its epicStepArgv and epicStepTimeoutMs (a move is `mv -f`), the first that fails refusing the same
- * way, so nothing is removed. The worktree's folders are then listed, and each recorded link epicLinkRemovals keeps
- * (listed as a link, below real folders only) is removed with linkRemoveArgv, in sorted order, never with `-r`; any
- * other recorded path is left to git, and then the worktree with REMOVE_ARGV, with `--force` only on the forced path;
- * a remove that fails or cannot run gives epicRemoveFailedReply. The branch is never deleted, and the reply is
+ * either, the paths main's .worktreeinclude names now (includedNow), then copiedListings and copyBackPlan since each
+ * copy's recorded time, else the record's creation time (no record, nothing to move). Then all three checks run before
+ * any change: clean (cleanStateOf of STATUS_ARGV), merged into the recorded base (MERGED_ARGV, `no-record` with no
+ * record or no base) and no role of the team, read from the main checkout, reading `running` there (roleRunState).
+ * Without `--force`, any reason of epicDoneProblems keeps the worktree with epicDoneRefusal, which lists them all, a
+ * check that cannot tell included. With `--force` one consent question always comes, reasons or not, listing them
+ * (forcedRefusal): only its yes goes on, and no dialog, a dismissal or the keeping answer removes nothing. Then the
+ * stale-lock rule (lockRefusal): a lock is cleared only when the process it names has ended, and any other lock
+ * refuses, with or without `--force`. Then the copy-back: a path it cannot move back safely, a recorded copied or
+ * walked folder .worktreeinclude does not name now included, refuses with epicCopyBackFailedReply before any step, and
+ * else each step runs with its epicStepArgv and epicStepTimeoutMs (a move is `mv -f`), the first that fails refusing
+ * the same way, so nothing is removed. The worktree's folders are then listed, and each recorded link epicLinkRemovals
+ * keeps (listed as a link, below real folders only) is removed with linkRemoveArgv, in sorted order, never with `-r`;
+ * any other recorded path is left to git, and then the worktree with REMOVE_ARGV, with `--force` only on the forced
+ * path; a remove that fails or cannot run gives epicRemoveFailedReply. The branch is never deleted, and the reply is
  * epicRemovedText.
  */
 export async function runEpicDone(
@@ -472,7 +472,16 @@ export async function runEpicDone(
   const included = isCopied ? await includedNow(io, host, main.root) : []
   const listings = await copiedListings(io, main.root, path, { copies, walked }, included)
   const since = record?.createdAt ?? 0
-  const copyBack = copyBackPlan({ root: main.root, worktree: path, copies, walked, included, since, ...listings })
+  const copyBack = copyBackPlan({
+    root: main.root,
+    worktree: path,
+    copies,
+    walked,
+    included,
+    since,
+    copiedAt: new Map(Object.entries(record?.copiedAt ?? {})),
+    ...listings,
+  })
 
   const clean = cleanStateOf(await host.run(STATUS_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS }))
   const merged = await mergedOf(host, main.root, branch, base)

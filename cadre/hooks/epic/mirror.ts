@@ -52,9 +52,11 @@ export function epicStepArgv(step: EpicStep): readonly string[] {
   return ['/bin/cp', '-pR', '--', step.source, step.path]
 }
 
+export const COPY_TEMP_SUFFIX = '.cadre-copy'
+
 /** Where a mirror copy is made before it is moved into place, so a copy that did not finish never sits at `path`. */
 export function copyTempPath(path: string): string {
-  return `${path}.cadre-copy`
+  return `${path}${COPY_TEMP_SUFFIX}`
 }
 
 /** The folder of cadre's own files, which the worktree gets as a real folder and never as one link (D-156). */

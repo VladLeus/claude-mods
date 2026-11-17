@@ -6,7 +6,7 @@
 import type { PortEntry } from '../../types'
 import { compareText, sortedUnique } from '../core/text'
 import { foldersAbove } from '../paths'
-import { listedEntry, parentOf } from './mirror'
+import { COPY_TEMP_SUFFIX, listedEntry, parentOf } from './mirror'
 import type { EpicStep } from './mirror'
 
 /** The steps of a copy-back, in order, and the repo-relative paths it cannot move back safely, sorted, once each. */
@@ -22,12 +22,13 @@ export function isRealDir(entry: PortEntry | undefined): boolean {
 /**
  * The copy-back of the recorded `copies` and `walked` folders. One the worktree lists as a file, a link or not at all
  * is skipped; one whose folder the worktree cannot list is unsafe, as is a copy `included` (the paths main's
- * .worktreeinclude names now) lacks and a walked folder no included path lies below. In each other copied folder, each
- * regular file written after `since` that main lacks or holds in another size or time is moved over main's; directly
- * in each other walked folder, each regular file main's listing lacks is moved. A folder main lacks is made just
- * before the first move below it. A link or another kind in main at any depth, a folder a listing lacks, or
- * `since <= 0` is unsafe. A move is `mv -f`: the rename replaces a link in main instead of writing through it, keeps
- * mode and time, and never prompts; `-T` and `-h` are not portable between GNU and BSD mv.
+ * .worktreeinclude names now) lacks and a walked folder no included path lies below. Each other copied folder's files
+ * are compared against its own copy time in `copiedAt`, else `since`: each regular file written after it that main
+ * lacks or holds in another size or time is moved over main's; directly in each other walked folder, each regular file
+ * main's listing lacks is moved, but never a copy temp file. A folder main lacks is made just before the first move
+ * below it. A link or another kind in main at any depth, a folder a listing lacks, `since <= 0` or a copy time
+ * `<= 0` is unsafe. A move is `mv -f`: the rename replaces a link in main instead of writing through it, keeps mode and
+ * time, and never prompts; `-T` and `-h` are not portable between GNU and BSD mv.
  */
 export function copyBackPlan(input: {
   readonly root: string
@@ -36,10 +37,12 @@ export function copyBackPlan(input: {
   readonly walked: readonly string[]
   readonly included: readonly string[]
   readonly since: number
+  readonly copiedAt?: ReadonlyMap<string, number>
   readonly main: ReadonlyMap<string, readonly PortEntry[]>
   readonly tree: ReadonlyMap<string, readonly PortEntry[]>
 }): CopyBack {
   const { root, worktree, included, since, main, tree } = input
+  const copiedAt = input.copiedAt ?? new Map<string, number>()
   const sortOut = (paths: readonly string[], isNamed: (path: string) => boolean) => {
     const listed = sortedUnique(paths)
     const real = listed.filter(path => isRealDir(listedEntry(tree, path)))
@@ -71,21 +74,28 @@ export function copyBackPlan(input: {
 
     return { listing: [...listing].sort((a, b) => compareText(a.name, b.name)), shownIn }
   }
-  const walk = (folder: string, missing: readonly string[]): void => {
+  const walk = (folder: string, missing: readonly string[], since: number): void => {
     const listings = bothListings(folder, missing)
     if (listings === null) return
     for (const child of listings.listing) {
-      visit(child, `${folder}/${child.name}`, listings.shownIn.find(entry => entry.name === child.name), missing)
+      const shown = listings.shownIn.find(entry => entry.name === child.name)
+      visit(child, `${folder}/${child.name}`, shown, missing, since)
     }
   }
-  const visit = (child: PortEntry, path: string, shown: PortEntry | undefined, missing: readonly string[]): void => {
+  const visit = (
+    child: PortEntry,
+    path: string,
+    shown: PortEntry | undefined,
+    missing: readonly string[],
+    since: number,
+  ): void => {
     if (child.isLink || (child.kind !== 'file' && child.kind !== 'dir')) return
     if (shown !== undefined && (shown.isLink || shown.kind !== child.kind)) {
       unsafe.push(path)
       return
     }
     if (child.kind === 'dir') {
-      walk(path, shown === undefined ? [...missing, path] : missing)
+      walk(path, shown === undefined ? [...missing, path] : missing, since)
       return
     }
     if (child.mtimeMs <= since) return
@@ -96,7 +106,9 @@ export function copyBackPlan(input: {
     const listings = bothListings(folder, missing)
     if (listings === null) return
     const isNew = (child: PortEntry) => !listings.shownIn.some(entry => entry.name === child.name)
-    for (const child of listings.listing.filter(child => child.kind === 'file' && !child.isLink && isNew(child))) {
+    const isMoved = (child: PortEntry) =>
+      child.kind === 'file' && !child.isLink && !child.name.endsWith(COPY_TEMP_SUFFIX) && isNew(child)
+    for (const child of listings.listing.filter(isMoved)) {
       move(`${folder}/${child.name}`, missing)
     }
   }
@@ -119,8 +131,13 @@ export function copyBackPlan(input: {
     return []
   }
   for (const folder of copied.kept) {
+    const own = copiedAt.get(folder) ?? since
+    if (own <= 0) {
+      unsafe.push(folder)
+      continue
+    }
     const missing = missingOf(folder)
-    if (missing !== null) walk(folder, missing)
+    if (missing !== null) walk(folder, missing, own)
   }
   for (const folder of walked.kept) {
     const missing = missingOf(folder)

@@ -298,18 +298,18 @@ async function renderedLines(
 }
 
 /**
- * The mirror and render stages of runEpic and their reply (D-147, D-157, D-163, D-164): a worktree whose git dir git
- * did not name absolutely gets epicExcludesFailedReply, as its links could not be hidden. Otherwise main's sizing
- * rubric is written first, only where it is absent with no link on its way (isNewRepoFileWritable), and a refused or
- * failed write says nothing; the worktree gets the rubric from the mirror, as a link or a hidden, recorded copy, and
- * never as a write of its own. Then mirrorSteps runs with the record's links and copies, and the record is written to
- * the git dir with its links, copies and walked folders joined, once each, with those this run made, also when the
- * mirror stopped, so the next run and the epic's removal find them; walked is written only when it holds a folder. A
- * stopped mirror replies with its failure, then one `warning: ` line per mirror warning as epicCreatedText prints
- * them (D-240) and the epicNoRecordWarning line when the record write failed (D-272, #37), and renders nothing; else
- * the reply is epicCreatedText with what this run linked and copied, the mirror's warnings and the epicNoRecordWarning
- * line when the record write failed, then the lines of the render stage (renderedLines), which renders each picked
- * role into the worktree and opens it there.
+ * The mirror and render stages of runEpic and their reply: a worktree whose git dir git did not name absolutely gets
+ * epicExcludesFailedReply, as its links could not be hidden. Otherwise main's sizing rubric is written first, only
+ * where it is absent with no link on its way (isNewRepoFileWritable), and a refused or failed write says nothing; the
+ * worktree gets the rubric from the mirror, as a link or a hidden, recorded copy, and never as a write of its own. Then
+ * mirrorSteps runs with the record's links and copies, and the record is written to the git dir with its links, copies
+ * and walked folders joined, once each, with those this run made, and its copiedAt joined with this run's copies at
+ * the time the mirror started (none without a clock), also when the mirror stopped, so the next run and the epic's
+ * removal find them; walked and copiedAt are written only when they hold an entry. A stopped mirror replies with its
+ * failure, then one `warning: ` line per mirror warning as epicCreatedText prints them and the epicNoRecordWarning
+ * line when the record write failed, and renders nothing; else the reply is epicCreatedText with what this run linked
+ * and copied, the mirror's warnings and the epicNoRecordWarning line when the record write failed, then the lines of
+ * the render stage (renderedLines), which renders each picked role into the worktree and opens it there.
  */
 async function mirroredReply(
   io: InitIo,
@@ -340,6 +340,7 @@ async function mirroredReply(
   if (await isNewRepoFileWritable(io, epic.root, SIZING_RUBRIC_PATH)) {
     await host.write(`${epic.root}/${SIZING_RUBRIC_PATH}`, rubricText())
   }
+  const copiedTime = await io.now()
   const mirrored = await mirrorSteps(io, host, {
     ...epic,
     worktree: path,
@@ -349,9 +350,17 @@ async function mirroredReply(
   })
   const links = sortedUnique([...record.links, ...mirrored.links])
   const copies = sortedUnique([...record.copies, ...mirrored.copies])
-  const { walked: recordedWalked = [], ...kept } = record
+  const { walked: recordedWalked = [], copiedAt: recordedCopiedAt = {}, ...kept } = record
   const walked = sortedUnique([...recordedWalked, ...mirrored.walked])
-  const text = epicRecordText({ ...kept, links, copies, ...(walked.length > 0 ? { walked } : {}) })
+  const timed = copiedTime === null ? [] : mirrored.copies.map((copy): [string, number] => [copy, copiedTime])
+  const copiedAt = { ...recordedCopiedAt, ...Object.fromEntries(timed) }
+  const text = epicRecordText({
+    ...kept,
+    links,
+    copies,
+    ...(walked.length > 0 ? { walked } : {}),
+    ...(Object.keys(copiedAt).length > 0 ? { copiedAt } : {}),
+  })
   const isRecorded = await host.write(epicRecordPath(gitDir), text)
   if (mirrored.failure !== null) {
     const warningLines = mirrored.warnings.map(warning => t('epic.create.epicCreatedText4', { warning }))

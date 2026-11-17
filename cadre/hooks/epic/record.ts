@@ -39,15 +39,32 @@ export function epicRecordText(record: EpicRecord): string {
 }
 
 /**
- * An epic record read back (D-164, T-03.1-03), as epicRecordText writes it: JSON with schema 1, a key, slug, title and
- * branch that are strings, the branch `epic/<slug>`, a base that is a string or null, a number createdAt, links and
- * copies that are lists of paths isSafeRelPath accepts, and walked, when the record names it, a list of such paths too.
- * Anything else gives null (fail closed); a field the record does not name is dropped.
+ * The copy times of a record: none when it names none; null when they are not an object, or a path isSafeRelPath
+ * refuses or a time that is not a finite number is among them.
+ */
+function copiedAtOf(value: unknown): Readonly<Record<string, number>> | null {
+  if (value === undefined) return {}
+  if (!isObject(value)) return null
+  const times = new Map<string, number>()
+  for (const [path, time] of Object.entries(value)) {
+    if (!isSafeRelPath(path) || typeof time !== 'number' || !Number.isFinite(time)) return null
+    times.set(path, time)
+  }
+
+  return Object.fromEntries(times)
+}
+
+/**
+ * An epic record read back, as epicRecordText writes it: JSON with schema 1, a key, slug, title and branch that are
+ * strings, the branch `epic/<slug>`, a base that is a string or null, a number createdAt, links and copies that are
+ * lists of paths isSafeRelPath accepts, walked, when the record names it, a list of such paths too, and copiedAt, kept
+ * when it holds a time, from such paths to finite numbers. Anything else gives null (fail closed); a field the record
+ * does not name is dropped.
  */
 export function parseEpicRecord(text: string): EpicRecord | null {
   const value = parseJsonValue(text)?.value
   if (!isObject(value) || value.schema !== 1) return null
-  const { key, slug, title, branch, base, createdAt, links, copies, walked } = value
+  const { key, slug, title, branch, base, createdAt, links, copies, walked, copiedAt } = value
   if (typeof key !== 'string' || typeof slug !== 'string' || typeof title !== 'string') return null
   if (typeof branch !== 'string' || branch !== `${EPIC_BRANCH_PREFIX}${slug}`) return null
   if (base !== null && typeof base !== 'string') return null
@@ -55,14 +72,16 @@ export function parseEpicRecord(text: string): EpicRecord | null {
   const safePath = (path: unknown): string | null => (typeof path === 'string' && isSafeRelPath(path) ? path : null)
   const linked = allOrNull(links, safePath)
   const copied = allOrNull(copies, safePath)
-  if (linked === null || copied === null) return null
+  const times = copiedAtOf(copiedAt)
+  if (linked === null || copied === null || times === null) return null
   const record: EpicRecord = { schema: 1, key, slug, title, branch, base, createdAt, links: linked, copies: copied }
-  if (walked === undefined) return record
+  const timed = Object.keys(times).length > 0 ? { ...record, copiedAt: times } : record
+  if (walked === undefined) return timed
   if (!Array.isArray(walked)) return null
   const made = allOrNull(walked, safePath)
   if (made === null) return null
 
-  return { ...record, walked: made }
+  return { ...timed, walked: made }
 }
 
 /**
