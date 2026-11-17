@@ -267,13 +267,17 @@ function approvedSpecLines(specPath: string | null): string[] {
 /**
  * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work (the
  * new project of a checkout with no `.planning/` too), one line per human gate, and the done answer, joined with
- * newlines. A core lead plans no implementation, so it gets no start or verify line. The title and the spec path come
- * from outside the adapter, so they are cleaned before they can add a line.
+ * newlines. A core lead plans no implementation, so it gets no start or verify line; a core reviewer runs no repo
+ * checks, so it gets no verify line. The title and the spec path come from outside the adapter, so they are cleaned
+ * before they can add a line.
  */
 export function gsdKickoffText(ctx: KickoffContext): string {
   const title = kickoffTitle(ctx)
-  const leftOut: readonly string[] =
-    ctx.isCoreLead === true ? [ARTIFACT.gsdKickoffStart, ARTIFACT.gsdKickoffVerify] : []
+  const isCoreLead = ctx.isCoreLead === true
+  const leftOut: readonly string[] = [
+    ...(isCoreLead ? [ARTIFACT.gsdKickoffStart] : []),
+    ...(isCoreLead || ctx.isCoreReviewer === true ? [ARTIFACT.gsdKickoffVerify] : []),
+  ]
 
   return [
     fill(ARTIFACT.gsdKickoffIntro, { title }),

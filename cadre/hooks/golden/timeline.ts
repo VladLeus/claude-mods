@@ -497,7 +497,7 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/pm/role.json 1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68 true",
     "write /repo/.cadre/pm/settings.json d7b4731f3ed8b9a775cc9a1142db81a387d9775dc514c48949ed681f1dc3d595 true",
     "write /repo/.cadre/security/CLAUDE.md 803d386590d1d71564306fc3c3de7758fd656f8b306f95bcc6fe25d892f62332 true",
-    "write /repo/.cadre/security/ROLE.md 1cef205cb09b3716aa0fcd4e0a1ffc0f09dd772f04f1513fd5679751e55de705 true",
+    "write /repo/.cadre/security/ROLE.md dc7b84c1875ba80d1d9cc17c9d6d83489523b9b52e606d826e825ab67327e3ee true",
     "write /repo/.cadre/security/kickoff.txt 6aca202354afd43e3013834f29f83bdd60d25c8a386fa6b81e11309896b30a6a true",
     "write /repo/.cadre/security/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/security/role.json ef8efa2fc4ef98dc07e9e64145a6bf71192d299146a8e2c8078a965d9c1825ae true",
@@ -510,6 +510,6 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/tl/role.json 0b3b5ee6a4f7152de6c5afe5e4f201a252bf66609999ebcd4c2de1025a69b2b6 true",
     "write /repo/.cadre/tl/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json 19574c77b8623ae7b029239d6070c782480fb30a799579d762f98682e7b4f2de true"
+    "write /repo/.cadre/manifest.json da5955b28b5cf41a0512d1e9dab10eb046170982d81a1c25b2e221e8f92611a2 true"
   ]
 }
