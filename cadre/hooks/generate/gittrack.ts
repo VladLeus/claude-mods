@@ -1,8 +1,7 @@
 /**
  * The git tracking check, a layer 6 module: which instruction files git tracks, asked once with `git ls-files -z`
- * through the host at the repo root, so only the parts of tracked files reach a built role file, and a run git cannot
- * answer keeps no repo part (02-GAPS-B2 M3). It imports core and the types, so init and regen check the repo parts
- * here.
+ * through the host at the repo root, so a role is given only files git tracks, and a run git cannot answer gives no
+ * repo file. It imports core and the types, so init and regen check the repo parts here.
  */
 import type { HostIo, InstructionPart } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
@@ -24,9 +23,8 @@ export function repoPartFiles(repoParts: ReadonlyMap<string, readonly Instructio
 }
 
 /**
- * The repo parts a built role file may hold (02-GAPS-B2 M3): the same keys, each keeping only the repo parts whose
- * source file is in `tracked`; null, when git could not be asked, keeps none, so a file git does not track never
- * reaches a committed file.
+ * The repo parts a role may be given: the same keys, each keeping only the repo parts whose source file is in
+ * `tracked`; null, when git could not be asked, keeps none.
  */
 export function trackedRepoParts(
   repoParts: ReadonlyMap<string, readonly InstructionPart[]>,
@@ -37,17 +35,14 @@ export function trackedRepoParts(
   return new Map(Array.from(repoParts, ([id, parts]): [string, InstructionPart[]] => [id, parts.filter(isTracked)]))
 }
 
-/**
- * The warning for a source file whose repo parts were left out of the built role files because git does not track it
- * (02-GAPS-B2 M3).
- */
+/** The warning for a source file no role is given because git does not track it. */
 export function untrackedPartsWarning(file: string): string {
   return t('generate.gittrack.untrackedPartsWarning', { file: reportText(file) })
 }
 
 /**
- * The warning when git could not be asked which instruction files it tracks (02-GAPS-B2 M3): no repo part is written,
- * so the check fails closed.
+ * The warning when git could not be asked which instruction files it tracks: no role is given a repo file, so the
+ * check fails closed.
  */
 export const GIT_TRACKING_UNKNOWN_WARNING = t('generate.gittrack.gitTrackingUnknownWarning')
 

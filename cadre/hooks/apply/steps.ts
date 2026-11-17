@@ -136,14 +136,9 @@ function takenNew(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): D
   return taken
 }
 
-/** The files whose text the manifest records anew: each file taken new, with its desired text. */
-function changedFiles(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): DesiredFile[] {
-  return takenNew(input, files)
-}
-
 /**
  * The manifest apply writes: the one the plan records, with the entry of each file taken new replaced by one with the
- * hash of its new text, or added when the plan had none for it (an untracked file), sorted by path (D-67).
+ * hash of its new text, or added when the plan had none for it (an untracked file), sorted by path.
  */
 async function manifestAfter(manifest: Manifest, taken: readonly DesiredFile[]): Promise<Manifest> {
   const paths = new Set(taken.map(file => file.path))
@@ -175,10 +170,10 @@ export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
   }
   steps.push(...privateSteps(input.privates ?? []))
   const manifestOp = manifestOpOf(input.plan)
-  const changed = changedFiles(input, files)
+  const taken = takenNew(input, files)
   if (manifestOp === null || manifestOp.kind === 'conflict') return steps
-  if (manifestOp.kind === 'leave' && changed.length === 0) return steps
-  const manifest = await manifestAfter(input.manifest, changed)
+  if (manifestOp.kind === 'leave' && taken.length === 0) return steps
+  const manifest = await manifestAfter(input.manifest, taken)
 
   return [...steps, { kind: 'manifest', path: MANIFEST_PATH, text: stableJson(manifest) }]
 }

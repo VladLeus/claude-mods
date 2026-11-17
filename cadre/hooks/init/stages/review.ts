@@ -311,7 +311,7 @@ export function improverRunLine(count: number): string {
 }
 
 /** How many files the improver may run on after Confirm: the private text file of each role given a global part. */
-export function improverRunCount(draft: Draft, plan: Plan): number {
+export function improverRunCount(draft: Draft): number {
   return privatesOf(draft.instructions, draft.roles).filter(role => role.parts.length > 0).length
 }
 
@@ -372,7 +372,7 @@ function reviewLines(
   })
   const rows = draft.roles.map(role => privateFilesRow(role.id))
   const privateRows = draft.instructions.kind === 'parts' ? [] : [PRIVATE_FILES_HEADING, ...rows]
-  const count = improverRunCount(draft, plan)
+  const count = improverRunCount(draft)
   const installed = setupAfterInstalls(draft.gathered.setup, draft.pluginInstalls).installedPlugins
   const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
   const frameworks = draft.roles.map(role => resolvedFramework(role, draft.repoDefault))
@@ -543,7 +543,7 @@ function afterPlan(state: InitState, planned: PlanResult): InitState {
 function dryRunReply(reviewed: Reviewed): string {
   const { plan, state } = reviewed.planned
   const confirmed = reviewed.draft
-  const count = improverRunCount(confirmed, plan)
+  const count = improverRunCount(confirmed)
   const installed = setupAfterInstalls(confirmed.gathered.setup, confirmed.pluginInstalls).installedPlugins
   const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
   const rows = confirmed.roles.map(role => privateFilesRow(role.id))

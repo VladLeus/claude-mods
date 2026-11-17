@@ -79,7 +79,7 @@ export async function repoInstructionNames(
 /** The most import levels followed below a file the read starts from (G-02-1f Sources). */
 const MAX_IMPORT_LEVELS = 3
 
-/** The most imported files read for the global file, and again for the repo chain (G-02-1f Sources). */
+/** The most imported files read for the global file, and again for the chain files above the repo. */
 const MAX_IMPORTED_FILES = 20
 
 /**
@@ -372,8 +372,7 @@ function hasRootClaudeMd(state: ReadState): boolean {
 }
 
 /**
- * The root AGENTS.md, when it was a file before the consent; it is read only when the repo has no root CLAUDE.md, as a
- * plain session loads it only then.
+ * The root AGENTS.md, when it was a file before the consent; it is read only when the repo has no CLAUDE.md of its own.
  */
 async function readAgentsMd(state: ReadState): Promise<void> {
   if (!state.sources.hasAgentsMd) return
