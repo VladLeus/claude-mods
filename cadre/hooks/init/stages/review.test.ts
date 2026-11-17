@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, InstructionHandout, Plan, RoleChange } from '../../../types'
+import type { FrameworkId, InstructionHandout, InstructionPart, Plan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { clean } from '../../core/text'
 import { PANE_LIST_WORDS } from '../../locales/t'
@@ -17,6 +17,7 @@ import {
   EMPTY_FACTS,
   emptySetupScan,
   gitWorld,
+  HASH,
   memIo,
   repoScan,
   SECURITY_KEY,
@@ -441,9 +442,17 @@ describe('the review stage (D-230)', () => {
     expect([chosen.returnTo, chosen.returnAfter, chosen.rounds]).toEqual(['review', 'improver-install', 0])
     const folds = chosen.outputs.flatMap(output => (output.kind === 'fold' ? [output.title] : []))
     expect(folds).toEqual(['Recommendations'])
+    const rules: InstructionPart = {
+      id: 'P1',
+      file: '~/.claude/CLAUDE.md',
+      heading: 'Rules',
+      source: 'global',
+      text: '# Rules\n',
+      hash: HASH,
+    }
     const built: InstructionHandout = {
       kind: 'parts',
-      scan: { parts: [], files: [], memories: [], warnings: [] },
+      scan: { parts: [rules], files: [], memories: [], warnings: [] },
       topics: [{ id: 'T1', title: 'Rules', summary: 'The team rules.', partIds: ['P1'] }],
       recommended: new Map(),
       given: new Map([['T1', ['pm']]]),

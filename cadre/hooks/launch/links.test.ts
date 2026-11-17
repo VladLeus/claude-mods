@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { InstructionPartRecord, RoleSpec } from '../../types'
 import { sortedUnique } from '../core/text'
 import { compileScope } from '../scope/compile'
 import { BIDI_OVERRIDE, CHAIN, context, GSD_SKILLS, HASH, templateRole, USER_HOOKS } from '../testkit'
@@ -60,11 +61,20 @@ function linkDir(group: 'global' | 'memory'): string {
   return `/repo/.cadre/pm/.runtime/instructions/${group}`
 }
 
+/** The chain of the fixture user with the AGENTS.md files of the root, sorted: what a role given nothing excludes. */
+const CHAIN_AND_AGENTS = [
+  '/home/u/work/CLAUDE.md',
+  '/repo/.claude/AGENTS.md',
+  '/repo/.claude/CLAUDE.md',
+  '/repo/AGENTS.md',
+  '/repo/CLAUDE.md',
+]
+
 describe('instructionPlan', () => {
-  test('without the project CLAUDE.md group every CLAUDE.md of the loaded chain is excluded, sorted (P11)', () => {
+  test('without the project CLAUDE.md group every chain CLAUDE.md and AGENTS.md are excluded, sorted (P11)', () => {
     const plan = instructionPlan(templateRole('pm'), user({ claudeMd: CHAIN }))
 
-    expect(plan.claudeMdExcludes).toEqual(['/home/u/work/CLAUDE.md', '/repo/.claude/CLAUDE.md', '/repo/CLAUDE.md'])
+    expect(plan.claudeMdExcludes).toEqual(CHAIN_AND_AGENTS)
     expect(plan.links).toEqual([])
     expect(plan.warnings).toEqual([])
   })
@@ -79,7 +89,7 @@ describe('instructionPlan', () => {
     const claudeMd = [...[...CHAIN].reverse(), ...CHAIN]
     const plan = instructionPlan(templateRole('pm'), user({ claudeMd }))
 
-    expect(plan.claudeMdExcludes).toEqual(['/home/u/work/CLAUDE.md', '/repo/.claude/CLAUDE.md', '/repo/CLAUDE.md'])
+    expect(plan.claudeMdExcludes).toEqual(CHAIN_AND_AGENTS)
   })
 
   test('the global CLAUDE.md group links the file and its imports, numbered in the order given', () => {
@@ -359,8 +369,27 @@ const RULES = [
 /** The built role files of the fixture repo: BE's own, PM's and QA's (G-02-1f). */
 const ROLE_FILES = ['/repo/.cadre/be/CLAUDE.md', '/repo/.cadre/pm/CLAUDE.md', '/repo/.cadre/qa/CLAUDE.md']
 
-/** Everything a parts-flow BE excludes in the fixture repo: the chain, the rules and the other roles' files, sorted. */
-const BE_PARTS_EXCLUDES = sortedUnique([...CHAIN, ...RULES, '/repo/.cadre/pm/CLAUDE.md', '/repo/.cadre/qa/CLAUDE.md'])
+/** The AGENTS.md files of the fixture repo root: the root one and the one in .claude/. */
+const AGENTS = ['/repo/AGENTS.md', '/repo/.claude/AGENTS.md']
+
+/** Everything a parts-flow BE given nothing excludes: the chain, the rules, AGENTS.md and the other roles' files. */
+const BE_PARTS_EXCLUDES = sortedUnique([
+  ...CHAIN,
+  ...RULES,
+  ...AGENTS,
+  '/repo/.cadre/pm/CLAUDE.md',
+  '/repo/.cadre/qa/CLAUDE.md',
+])
+
+/** The part records of a role.json that name these repo files, one top-of-file record each. */
+function records(...files: string[]): InstructionPartRecord[] {
+  return files.map(file => ({ file, heading: '', hash: HASH }))
+}
+
+/** BE given these part records, as its role.json holds them. */
+function givenBe(given: readonly InstructionPartRecord[]): RoleSpec {
+  return templateRole('be', { instructionParts: given })
+}
 
 describe('parts-flow excludes (G-02-1f)', () => {
   test("a role with no instruction group excludes the chain, each rule file and the other roles' built files", () => {
@@ -369,6 +398,82 @@ describe('parts-flow excludes (G-02-1f)', () => {
     expect(plan.claudeMdExcludes).toEqual(BE_PARTS_EXCLUDES)
     expect(plan.claudeMdExcludes).toContain('/repo/.claude/rules/frontend/react.md')
     expect(plan.claudeMdExcludes).not.toContain('/repo/.cadre/be/CLAUDE.md')
+  })
+
+  test('a role loads the repo files its records name from the originals and excludes the rest, AGENTS.md too', () => {
+    const launcher = user({
+      claudeMd: ['/repo/CLAUDE.md', '/work/CLAUDE.md'],
+      rules: ['/repo/.claude/rules/a.md', '/repo/.claude/rules/b.md'],
+      roleClaudeMds: ROLE_FILES,
+    })
+    const plan = instructionPlan(givenBe(records('CLAUDE.md', '.claude/rules/a.md')), launcher)
+
+    expect(plan.claudeMdExcludes).toEqual([
+      '/repo/.cadre/pm/CLAUDE.md',
+      '/repo/.cadre/qa/CLAUDE.md',
+      '/repo/.claude/AGENTS.md',
+      '/repo/.claude/rules/b.md',
+      '/repo/AGENTS.md',
+      '/work/CLAUDE.md',
+    ])
+  })
+
+  test('two section records of one file give that file once', () => {
+    const sections = [
+      { file: 'CLAUDE.md', heading: 'A', hash: HASH },
+      { file: 'CLAUDE.md', heading: 'B', hash: HASH },
+    ]
+    const plan = instructionPlan(givenBe(sections), user({ claudeMd: CHAIN }))
+
+    expect(plan.claudeMdExcludes).toEqual([
+      '/home/u/work/CLAUDE.md',
+      '/repo/.claude/AGENTS.md',
+      '/repo/.claude/CLAUDE.md',
+      '/repo/AGENTS.md',
+    ])
+  })
+
+  test('a role given AGENTS.md loads it and still excludes .claude/AGENTS.md; another role excludes both', () => {
+    const given = instructionPlan(givenBe(records('AGENTS.md')), user())
+    const other = instructionPlan(templateRole('qa', { instructionParts: records('CLAUDE.md') }), user())
+
+    expect(given.claudeMdExcludes).toEqual(['/repo/.claude/AGENTS.md'])
+    expect(other.claudeMdExcludes).toEqual(['/repo/.claude/AGENTS.md', '/repo/AGENTS.md'])
+  })
+
+  test('a rule no record names is excluded, such as a rule added after init', () => {
+    const rules = ['/repo/.claude/rules/a.md', '/repo/.claude/rules/new.md']
+    const plan = instructionPlan(givenBe(records('.claude/rules/a.md')), user({ rules }))
+
+    expect(plan.claudeMdExcludes).toEqual([
+      '/repo/.claude/AGENTS.md',
+      '/repo/.claude/rules/new.md',
+      '/repo/AGENTS.md',
+    ])
+  })
+
+  test('a given file is loaded under the root and the given root; AGENTS.md under both is excluded', () => {
+    const launcher = user({ givenRoot: '/link/repo', claudeMd: ['/link/repo/CLAUDE.md', '/repo/CLAUDE.md'] })
+    const plan = instructionPlan(givenBe(records('CLAUDE.md')), launcher)
+
+    expect(plan.claudeMdExcludes).toEqual([
+      '/link/repo/.claude/AGENTS.md',
+      '/link/repo/AGENTS.md',
+      '/repo/.claude/AGENTS.md',
+      '/repo/AGENTS.md',
+    ])
+  })
+
+  test("in an epic worktree the main checkout's CLAUDE.md and AGENTS.md stay excluded, given or not", () => {
+    const launcher = user({ mainRoot: '/main', claudeMd: ['/repo/CLAUDE.md', '/main/CLAUDE.md'] })
+    const plan = instructionPlan(givenBe(records('CLAUDE.md', 'AGENTS.md')), launcher)
+
+    expect(plan.claudeMdExcludes).toEqual([
+      '/main/.claude/AGENTS.md',
+      '/main/AGENTS.md',
+      '/main/CLAUDE.md',
+      '/repo/.claude/AGENTS.md',
+    ])
   })
 
   test('a role with groups keeps the whole-files rule: the chain, or nothing with the project group', () => {
@@ -390,12 +495,20 @@ describe('parts-flow excludes (G-02-1f)', () => {
 
   test("only <root>/.cadre/<id>/CLAUDE.md is the role's own: a role with a longer id is another", () => {
     const files = ['/w/repo/.cadre/be/CLAUDE.md', '/w/repo/.cadre/bee/CLAUDE.md', '/other/.cadre/be/CLAUDE.md']
-    const plan = instructionPlan(templateRole('be'), user({ root: '/w/repo', roleClaudeMds: files }))
+    const launcher = user({ root: '/w/repo', givenRoot: '/w/repo', roleClaudeMds: files })
+    const plan = instructionPlan(templateRole('be'), launcher)
 
-    expect(plan.claudeMdExcludes).toEqual(['/other/.cadre/be/CLAUDE.md', '/w/repo/.cadre/bee/CLAUDE.md'])
+    expect(plan.claudeMdExcludes).toEqual([
+      '/other/.cadre/be/CLAUDE.md',
+      '/w/repo/.cadre/bee/CLAUDE.md',
+      '/w/repo/.claude/AGENTS.md',
+      '/w/repo/AGENTS.md',
+    ])
   })
 
-  test('with no rule file and no built file a parts-flow role excludes the chain alone, as before', () => {
-    expect(instructionPlan(templateRole('be'), user({ claudeMd: CHAIN })).claudeMdExcludes).toEqual(sortedUnique(CHAIN))
+  test('with no rule file and no built file a parts-flow role excludes the chain and AGENTS.md', () => {
+    const plan = instructionPlan(templateRole('be'), user({ claudeMd: CHAIN }))
+
+    expect(plan.claudeMdExcludes).toEqual(sortedUnique([...CHAIN, ...AGENTS]))
   })
 })

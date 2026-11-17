@@ -589,7 +589,7 @@ describe('improver pass (G-02-1f)', () => {
     expect(restoreSteps([])).toEqual([])
   })
 
-  test('the built files are each written CLAUDE.md of a role with a repo part, then each private text file', () => {
+  test('the built files are the private text files with a global part', () => {
     const header = '<!-- header -->\n'
     const steps: ApplyStep[] = [
       { kind: 'write', path: '.cadre/be/CLAUDE.md', text: BE_BUILT },
@@ -608,17 +608,11 @@ describe('improver pass (G-02-1f)', () => {
       { kind: 'manifest', path: MANIFEST_PATH, text: '{}\n' },
     ]
     const filter: BuiltFilter = {
-      repoIds: new Set(['be']),
+      repoIds: new Set(['be', 'fe']),
       privateFolders: new Set([SECURITY_DIR]),
       roleFolders: new Map([['be', BE_DIR]]),
     }
-    expect(builtRoleFiles(steps, '/repo/', filter)).toEqual([BE_GUARDED_FILE, SECURITY_BUILT_FILE])
-    const both = { ...filter, repoIds: new Set(['be', 'fe']), roleFolders: new Map<string, string>() }
-    expect(builtRoleFiles(steps, '/repo', both).map(built => [built.path, built.watched, built.runFlags])).toEqual([
-      [BE_BUILT_PATH, [], BE_GUARD],
-      ['/repo/.cadre/fe/CLAUDE.md', [], improverGuardFlags(ROOT, 'fe')],
-      [SECURITY_TEXT_FILE, [], []],
-    ])
+    expect(builtRoleFiles(steps, '/repo/', filter)).toEqual([SECURITY_BUILT_FILE])
   })
 
   test('a private text file is offered only when its folder is named: a header alone is not (02-GAPS-B3 C1)', () => {

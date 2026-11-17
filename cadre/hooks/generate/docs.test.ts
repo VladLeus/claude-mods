@@ -101,13 +101,16 @@ function pathsOfRole(files: readonly DesiredFile[], id: string): string[] {
   return files.map(file => file.path).filter(path => path.startsWith(`.cadre/${id}/`) || path === `.cadre/bin/${id}`)
 }
 
-/** The first line of the built CLAUDE.md of role `id`, as the plan writes it (G-02-1f, D-140). */
+/** The first line of the built CLAUDE.md of role `id`, as the plan writes it. */
 function builtHeader(id: string): string {
   return (
-    `<!-- cadre: instructions for role ${id}, built from this repo's CLAUDE.md files, rules and docs. ` +
-    `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
+    `<!-- cadre: instructions for role ${id}. The repo's CLAUDE.md files and rules given to this role load from ` +
+    `their originals; after you change them, run /cadre regen ${id}. -->`
   )
 }
+
+/** The root AGENTS.md of the repo as one part, read with no heading. */
+const AGENTS_PART = part('P4', 'AGENTS.md', '', 'Work in small steps.\n')
 
 describe('rubricText', () => {
   const lines = rubricText().split('\n')
@@ -138,59 +141,19 @@ describe('rubricText', () => {
 })
 
 describe('roleClaudeMdText (G-02-1f)', () => {
-  test('the header line, a blank line, then each part under its marker, a blank line apart, one final newline', () => {
-    expect(roleClaudeMdText('be', [RULES_PART, SECRETS_PART])).toBe(
-      [
-        builtHeader('be'),
-        '',
-        '<!-- from CLAUDE.md > Rules -->',
-        '# Rules',
-        'Run the tests before a commit.',
-        '',
-        '<!-- from .claude/rules/security.md > Secrets -->',
-        '## Secrets',
-        'Keep keys out of the repo.',
-        '',
-      ].join('\n'),
-    )
-  })
-
-  test('the parts come in the order given, read order, and a part with no heading is marked (top of file)', () => {
-    const top = part('P1', 'AGENTS.md', '', 'Work in small steps.\nAsk before a large change.')
-    const lines = roleClaudeMdText('qa', [top, SECRETS_PART]).split('\n')
-
-    expect(lines.filter(line => line.startsWith('<!-- from '))).toEqual([
-      '<!-- from AGENTS.md > (top of file) -->',
-      '<!-- from .claude/rules/security.md > Secrets -->',
-    ])
-    expect(lines.slice(0, 6)).toEqual([
-      builtHeader('qa'),
-      '',
-      '<!-- from AGENTS.md > (top of file) -->',
-      'Work in small steps.',
-      'Ask before a large change.',
-      '',
-    ])
-  })
-
-  test('a part read with CRLF line ends is written with LF, and the text ends with exactly one newline', () => {
-    const crlf = part('P2', 'CLAUDE.md', 'Rules', '# Rules\r\nRun the tests.\r\n\r\n')
-    const text = roleClaudeMdText('be', [crlf])
-
-    expect(text.includes('\r')).toBe(false)
-    expect(text.endsWith('<!-- from CLAUDE.md > Rules -->\n# Rules\nRun the tests.\n')).toBe(true)
-  })
-
-  test("a '--' in a marker's file or heading is written '- -', so only the marker's end closes it (N2)", () => {
-    const dashed = part('P2', 'x--y.md', 'a --> b', 'Text.\n')
-    const marker = roleClaudeMdText('be', [dashed]).split('\n')[2] ?? ''
-
-    expect(marker).toBe('<!-- from x- -y.md > a - -> b -->')
-    expect(marker.split('-->')).toEqual(['<!-- from x- -y.md > a - -> b ', ''])
-  })
-
   test('with no part the text is the header line alone, with its newline', () => {
     expect(roleClaudeMdText('be', [])).toBe(`${builtHeader('be')}\n`)
+  })
+
+  test('a role given AGENTS.md gets the header, a blank line and its import line; no marker and no part text', () => {
+    const text = roleClaudeMdText('be', [RULES_PART, AGENTS_PART])
+
+    expect(text).toBe(`${builtHeader('be')}\n\n@../../AGENTS.md\n`)
+    expect([text.includes('<!-- from '), text.includes('Run the tests'), text.includes('small steps')]).toEqual([
+      false,
+      false,
+      false,
+    ])
   })
 
   test('builtClaudeMdPath is the one home of a role built CLAUDE.md path, the one desiredFiles writes (S6)', () => {
@@ -198,45 +161,14 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     expect(builtClaudeMdPath('security')).toBe('.cadre/security/CLAUDE.md')
   })
 
-  test('partsBody is the text after the header: a blank line before each part, one final newline (N5)', () => {
-    expect(partsBody([])).toBe('\n')
-    expect(partsBody([RULES_PART, SECRETS_PART])).toBe(
-      [
-        '',
-        '',
-        '<!-- from CLAUDE.md > Rules -->',
-        '# Rules',
-        'Run the tests before a commit.',
-        '',
-        '<!-- from .claude/rules/security.md > Secrets -->',
-        '## Secrets',
-        'Keep keys out of the repo.',
-        '',
-      ].join('\n'),
-    )
-    expect(roleClaudeMdText('be', [RULES_PART])).toBe(`${builtHeader('be')}${partsBody([RULES_PART])}`)
-  })
-
-  test('a file name or heading with a line break or a bidi character adds no line to the file', () => {
-    const hostile = part('P2', `docs/a\nb${BIDI_OVERRIDE}.md`, `Ru\rles${BIDI_OVERRIDE}`, '# Rules\nRun the tests.\n')
-
-    expect(roleClaudeMdText('be', [hostile]).split('\n').slice(2)).toEqual([
-      '<!-- from docs/ab.md > Rules -->',
-      '# Rules',
-      'Run the tests.',
-      '',
-    ])
-  })
-
-  test('desiredFiles adds .cadre/<id>/CLAUDE.md, a plain file: the repo parts given, else the header alone', () => {
+  test('desiredFiles adds .cadre/<id>/CLAUDE.md, a plain file: the header alone whatever repo parts it got', () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
     const repoParts = new Map([['be', [RULES_PART, SECRETS_PART]]])
     const files = desiredFiles(inputOf([pm, be], 'gsd', { repoParts }))
-    const content = roleClaudeMdText('be', [RULES_PART, SECRETS_PART])
 
     expect(files.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([
-      { path: '.cadre/be/CLAUDE.md', content, mode: 'file' },
+      { path: '.cadre/be/CLAUDE.md', content: `${builtHeader('be')}\n`, mode: 'file' },
       { path: '.cadre/pm/CLAUDE.md', content: `${builtHeader('pm')}\n`, mode: 'file' },
     ])
     expect(pathsOfRole(files, 'be')).toEqual(['.cadre/be/CLAUDE.md', ...BE_PATHS.filter(path => path.includes('/be'))])
@@ -252,7 +184,7 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     ])
     const files = desiredFiles(inputOf([pm, be], 'gsd', { repoParts }))
 
-    expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(roleClaudeMdText('be', [RULES_PART]))
+    expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(`${builtHeader('be')}\n`)
     expect(contentOf(files, '.cadre/pm/CLAUDE.md')).toBe(`${builtHeader('pm')}\n`)
     expect(files.filter(file => file.content.includes(GLOBAL_ONLY_SENTENCE))).toEqual([])
   })
@@ -265,6 +197,71 @@ describe('roleClaudeMdText (G-02-1f)', () => {
 
     expect(without.map(file => file.path)).toEqual(BE_PATHS)
     expect(empty).toEqual([...without, header].sort((a, b) => compareText(a.path, b.path)))
+  })
+})
+
+describe('partsBody, the parts of the private role file (N5)', () => {
+  test('a blank line before each part under its marker, one final newline; a newline alone with no part', () => {
+    expect(partsBody([])).toBe('\n')
+    expect(partsBody([RULES_PART, SECRETS_PART])).toBe(
+      [
+        '',
+        '',
+        '<!-- from CLAUDE.md > Rules -->',
+        '# Rules',
+        'Run the tests before a commit.',
+        '',
+        '<!-- from .claude/rules/security.md > Secrets -->',
+        '## Secrets',
+        'Keep keys out of the repo.',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  test('the parts come in the order given, read order, and a part with no heading is marked (top of file)', () => {
+    const top = part('P1', 'AGENTS.md', '', 'Work in small steps.\nAsk before a large change.')
+    const lines = partsBody([top, SECRETS_PART]).split('\n')
+
+    expect(lines.filter(line => line.startsWith('<!-- from '))).toEqual([
+      '<!-- from AGENTS.md > (top of file) -->',
+      '<!-- from .claude/rules/security.md > Secrets -->',
+    ])
+    expect(lines.slice(0, 6)).toEqual([
+      '',
+      '',
+      '<!-- from AGENTS.md > (top of file) -->',
+      'Work in small steps.',
+      'Ask before a large change.',
+      '',
+    ])
+  })
+
+  test('a part read with CRLF line ends is written with LF, and the text ends with exactly one newline', () => {
+    const crlf = part('P2', 'CLAUDE.md', 'Rules', '# Rules\r\nRun the tests.\r\n\r\n')
+    const text = partsBody([crlf])
+
+    expect(text.includes('\r')).toBe(false)
+    expect(text.endsWith('<!-- from CLAUDE.md > Rules -->\n# Rules\nRun the tests.\n')).toBe(true)
+  })
+
+  test("a '--' in a marker's file or heading is written '- -', so only the marker's end closes it (N2)", () => {
+    const dashed = part('P2', 'x--y.md', 'a --> b', 'Text.\n')
+    const marker = partsBody([dashed]).split('\n')[2] ?? ''
+
+    expect(marker).toBe('<!-- from x- -y.md > a - -> b -->')
+    expect(marker.split('-->')).toEqual(['<!-- from x- -y.md > a - -> b ', ''])
+  })
+
+  test('a file name or heading with a line break or a bidi character adds no line to the file', () => {
+    const hostile = part('P2', `docs/a\nb${BIDI_OVERRIDE}.md`, `Ru\rles${BIDI_OVERRIDE}`, '# Rules\nRun the tests.\n')
+
+    expect(partsBody([hostile]).split('\n').slice(2)).toEqual([
+      '<!-- from docs/ab.md > Rules -->',
+      '# Rules',
+      'Run the tests.',
+      '',
+    ])
   })
 })
 

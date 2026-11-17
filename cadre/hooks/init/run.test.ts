@@ -33,14 +33,7 @@ import type {
   TemplateRoleId,
 } from '../../types'
 import { CONFLICT_OPTIONS, conflictQuestion } from '../apply/conflict'
-import {
-  IMPROVER_PROGRESS,
-  improverArgv,
-  improverGuardFlags,
-  improverLine,
-  improverNoChangeNote,
-  otherChangesWarning,
-} from '../apply/improver'
+import { IMPROVER_PROGRESS, improverArgv, improverLine, otherChangesWarning } from '../apply/improver'
 import {
   installedLine,
   installFailureText,
@@ -2033,16 +2026,10 @@ describe('the read order over every instruction source (T-02-60, 02-GAPS-B2 N5)'
   })
 })
 
-/** BE's built CLAUDE.md in builtWorld: the header line, then the Rules part of the root CLAUDE.md (D-140). */
-const BUILT_BE = [
-  "<!-- cadre: instructions for role be, built from this repo's CLAUDE.md files, rules and docs. " +
-    'Edit the originals and run /cadre regen be; this file is rebuilt. -->',
-  '',
-  '<!-- from CLAUDE.md > Rules -->',
-  '# Rules',
-  BUILT_RULE,
-  '',
-].join('\n')
+/** BE's built CLAUDE.md in builtWorld: the header line alone, since its repo files load from their originals. */
+const BUILT_BE =
+  "<!-- cadre: instructions for role be. The repo's CLAUDE.md files and rules given to this role load from " +
+  'their originals; after you change them, run /cadre regen be. -->\n'
 
 /** The file plan row of BE's built CLAUDE.md on a disk that does not have it. */
 const BUILT_BE_ROW = '  create    .cadre/be/CLAUDE.md'
@@ -2189,7 +2176,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const reply = await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
     expect(built.map(write => write.path)).toEqual(builtPaths(['pm', 'security', 'tl']))
-    expect(built.find(write => write.path === '/repo/.cadre/tl/CLAUDE.md')?.text).toContain(BUILT_RULE)
+    expect(built.find(write => write.path === '/repo/.cadre/tl/CLAUDE.md')?.text).toBe(roleClaudeMdText('tl', []))
     const shown = [reply, ...repoWrites(host).map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
     // Every role gets both private files (02-GAPS-B3 C1); only tl's hold the global text and the memory.
@@ -2203,7 +2190,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const reply = await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
     expect(built.map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
-    expect(built[0]?.text).toContain(BUILT_RULE)
+    expect(built[0]?.text).toBe(BUILT_BE)
     expect(host.writes.filter(write => write.text.includes(LOCAL_NOTE))).toEqual([])
     const untracked = 'warning: notes/local.md is not tracked by git: its parts are not written to .cadre/'
     expect(reply.split('\n').filter(line => line.includes('not tracked by git'))).toEqual([untracked])
@@ -2269,7 +2256,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(run.reads).toContain('/home/u/work/CLAUDE.md')
     expect(run.prompts[0]).toContain('P2 | ~/work/CLAUDE.md | Team | # Team')
     expect(repoWrites(host).filter(write => write.text.includes(TEAM_SENTENCE))).toEqual([])
-    expect(builtWrites(host).find(write => write.path === '/repo/.cadre/be/CLAUDE.md')?.text).toContain(BUILT_RULE)
+    expect(builtWrites(host).find(write => write.path === '/repo/.cadre/be/CLAUDE.md')?.text).toBe(BUILT_BE)
     const holding = host.writes.filter(write => write.text.includes(TEAM_SENTENCE)).map(write => write.path)
     expect(holding).toEqual([privateClaudeMdPath(await memoryFolder('be'))])
   })
@@ -2477,14 +2464,18 @@ describe('private role files (G-02-1f)', () => {
   })
 })
 
-/** BE's built CLAUDE.md in builtWorld as the improver leaves it: its rule reworded and one line added (D-141). */
-const BUILT_BE_IMPROVED = BUILT_BE.replace(BUILT_RULE, `${BUILT_RULE} Keep them green.\nKeep commits small.`)
-
 /** The absolute path of BE's built CLAUDE.md in the fixture repo. */
 const BE_CLAUDE_MD = '/repo/.cadre/be/CLAUDE.md'
 
-/** The improver run of BE's built CLAUDE.md: guarded from its .runtime folder and from Bash (02-GAPS-B3 M1). */
-const BE_IMPROVER_ARGV: readonly string[] = improverArgv(BE_CLAUDE_MD, improverGuardFlags('/repo', 'be') ?? [])
+/** The line an improver run adds to the private text file it runs on (D-141). */
+const IMPROVED_LINE = 'Keep keys in the vault.\n'
+
+/** Security's private text file in builtWorld as init writes it: its header, then the global Security part. */
+async function builtSecurityText(): Promise<string> {
+  const part = await partsGlobalPart('P1', 'Security', `# Security\n${GLOBAL_SENTENCE}.\n`)
+
+  return privateClaudeMdText('security', 'repo', [part])
+}
 
 /** BE's built CLAUDE.md, repo-relative, as a file plan names it. */
 const BE_CLAUDE_MD_PATH = '.cadre/be/CLAUDE.md'
@@ -2512,10 +2503,9 @@ function builtFilesRecord(isInstalled = true): Record<string, string> {
 
 /**
  * The host of a plain init over builtWorld with `files` as its files, recording its writes and runs in one list: each
- * write that lands is put in `files`, as a disk holds it, so the improver finds each built file as apply wrote it
- * (02-GAPS-B3 M1); the rules `runs` first, then git tracks the root CLAUDE.md and names the common dir, and once the
- * improver ran for BE's built CLAUDE.md, `files` holds BUILT_BE_IMPROVED there, as that run would leave it (G-02-1f,
- * D-141).
+ * write that lands is put in `files`, as a disk holds it, so the improver finds each built file as apply wrote it; the
+ * rules `runs` first, then git tracks the root CLAUDE.md and names the common dir, and the improver run of security's
+ * private text file adds IMPROVED_LINE to it, as that run would leave it.
  */
 function improvingHost(
   files: Record<string, string>,
@@ -2537,7 +2527,8 @@ function improvingHost(
     },
     run: async (argv, options) => {
       const result = await logged.io.run(argv, options)
-      if (argv.join(' ') === BE_IMPROVER_ARGV.join(' ')) files[BE_CLAUDE_MD] = BUILT_BE_IMPROVED
+      const text = privateClaudeMdPath(await memoryFolder('security'))
+      if (argv.join(' ') === improverArgv(text).join(' ')) files[text] = `${files[text] ?? ''}${IMPROVED_LINE}`
 
       return result
     },
@@ -2557,7 +2548,7 @@ function writtenManifestText(host: MemHost): string {
 }
 
 describe('improver in init (G-02-1f)', () => {
-  test('after Confirm each built file with a part gets one run, after the writes and before the manifest', async () => {
+  test('a private text file with a global part gets one run after the writes and before the manifest', async () => {
     const files = builtFilesRecord()
     const { io, host, events } = improvingHost(files)
     const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
@@ -2565,37 +2556,36 @@ describe('improver in init (G-02-1f)', () => {
     const security = await memoryFolder('security')
     const text = privateClaudeMdPath(security)
     expect(improverCalls(host)).toEqual([
-      { argv: BE_IMPROVER_ARGV, options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
       { argv: improverArgv(text), options: { cwd: `${security}/instructions`, timeoutMs: 300_000 } },
     ])
     const firstRun = events.findIndex(event => event.startsWith('run claude -p'))
     const lastRun = events.findLastIndex(event => event.startsWith('run claude -p'))
     expect(events[firstRun - 1]).toBe(`write ${instructionsRecordPath(await memoryFolder('tl'))}`)
     expect(events.slice(lastRun + 1)).toEqual(['write /repo/.cadre/manifest.json'])
-    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE_IMPROVED))
-    expect(writtenManifestText(host)).not.toContain(await sha256Hex(BUILT_BE))
-    expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 2 }), NEXT_STEP_NOTE])
+    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE))
+    expect(files[text]).toBe(`${await builtSecurityText()}${IMPROVED_LINE}`)
+    expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 1 }), NEXT_STEP_NOTE])
     expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([])
     const shownText = `~/.claude/cadre/${security.split('/').at(-2) ?? ''}/security/instructions/CLAUDE.md`
-    expect(run.logged).toContain(improverNoChangeNote(shownText))
     const improved = run.specs.filter(spec => spec.context?.kind === 'improver')
-    expect(improved.map(spec => spec.context?.lines[0])).toEqual(['.cadre/be/CLAUDE.md: 2 lines added, 1 removed'])
+    expect(improved.map(spec => spec.context?.lines[0])).toEqual([`${shownText}: 1 line added, 0 removed`])
   })
 
-  test('Keep original writes the built text back after the runs; the manifest records the built text', async () => {
+  test('Keep original writes the private text back as built after the run; the manifest comes last', async () => {
     const files = builtFilesRecord()
     const { io, host } = improvingHost(files)
     const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Keep original' })
     const reply = await runInit(run.io, { dryRun: false, host: io })
-    const beWrites = host.writes.filter(write => write.path === BE_CLAUDE_MD)
-    expect(beWrites.map(write => [write.text, write.isWritten])).toEqual([
-      [BUILT_BE, true],
-      [BUILT_BE, true],
+    const text = privateClaudeMdPath(await memoryFolder('security'))
+    const built = await builtSecurityText()
+    const textWrites = host.writes.filter(write => write.path === text)
+    expect(textWrites.map(write => [write.text, write.isWritten])).toEqual([
+      [built, true],
+      [built, true],
     ])
-    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE))
-    expect(writtenManifestText(host)).not.toContain(await sha256Hex(BUILT_BE_IMPROVED))
+    expect(files[text]).toBe(built)
     expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
-    expect(reply.split('\n').at(-2)).toBe('Improver: 0 of 2 built files changed and accepted.')
+    expect(reply.split('\n').at(-2)).toBe('Improver: 0 of 1 built files changed and accepted.')
   })
 
   test('a header-only built file gets no run, and a plain init with no built part runs none at all', async () => {
@@ -2605,32 +2595,34 @@ describe('improver in init (G-02-1f)', () => {
     expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
   })
 
-  test('another file the improver changed is named in the reply, neither undone nor recorded (D-141)', async () => {
+  test('another file the improver changed in its folder is named in the reply and never undone (D-141)', async () => {
     const files = builtFilesRecord()
     const dirs: Record<string, readonly PortEntry[]> = { '/repo/.git': [], ...USER_DIR_LISTED, ...FULL_DIRS }
-    const edited = '{"id":"be","edited":true}\n'
+    const security = await memoryFolder('security')
+    const folder = `${security}/instructions`
+    const privateRun = improverArgv(privateClaudeMdPath(security))
     const { io: improving, host } = improvingHost(files)
     const io: HostIo = {
       ...improving,
       run: async (argv, options) => {
         const result = await improving.run(argv, options)
-        if (argv.join(' ') !== BE_IMPROVER_ARGV.join(' ')) return result
-        files['/repo/.cadre/be/role.json'] = edited
-        dirs['/repo/.cadre/be'] = [entry('CLAUDE.md'), entry('role.json')]
+        if (argv.join(' ') !== privateRun.join(' ')) return result
+        files[`${folder}/notes.md`] = 'Notes.\n'
+        dirs[folder] = [entry('CLAUDE.md'), entry('notes.md')]
 
         return result
       },
     }
     const run = memIo(builtWorld({ files, dirs }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
     const reply = await runInit(run.io, { dryRun: false, host: io })
-    const warning = otherChangesWarning('.cadre/be', ['.cadre/be/role.json'])
+    expect(improverCalls(host).map(call => call.argv)).toEqual([privateRun])
+    const shownFolder = `~/.claude/cadre/${security.split('/').at(-2) ?? ''}/security/instructions`
+    const warning = otherChangesWarning(shownFolder, [`${shownFolder}/notes.md`])
     expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([`warning: ${warning}`])
-    const roleWrites = host.writes.filter(write => write.path === '/repo/.cadre/be/role.json')
-    expect(roleWrites).toHaveLength(1)
-    expect(writtenManifestText(host)).toContain(await sha256Hex(roleWrites[0]?.text ?? ''))
-    expect(writtenManifestText(host)).not.toContain(await sha256Hex(edited))
+    expect(files[`${folder}/notes.md`]).toBe('Notes.\n')
+    expect(writtenManifestText(host)).not.toContain('notes.md')
     const improved = run.specs.filter(spec => spec.context?.kind === 'improver')
-    expect(improved.at(-1)?.context?.lines).toContain('  .cadre/be/role.json')
+    expect(improved.at(-1)?.context?.lines).toContain(`  ${shownFolder}/notes.md`)
   })
 
   test('a dry run holds no host: it runs no improver and asks, shows and replies nothing of it', async () => {
@@ -2694,15 +2686,15 @@ describe('improver install offer (G-02-1f)', () => {
     const { io, host } = improvingHost(files)
     const run = memIo(builtWorld({ files }), improverOffer('Install'))
     const reply = await runInit(pagedIo(run), { dryRun: false, host: io })
-    expect(lastReview(run).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
+    expect(lastReview(run).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(1)])
     const install = host.calls.findIndex(call => call.argv.join(' ') === `claude plugin install ${CLAUDE_MD_PLUGIN}`)
     expect(install).toBeGreaterThanOrEqual(0)
     expect(host.calls[install]?.options).toEqual({ cwd: '/home/u', timeoutMs: 180_000 })
     expect(host.calls.findIndex(call => call.argv[1] === '-p')).toBeGreaterThan(install)
-    expect(improverCalls(host)).toHaveLength(2)
+    expect(improverCalls(host)).toHaveLength(1)
     expect(reply.split('\n').slice(-3)).toEqual([
       installedLine([CLAUDE_MD_PLUGIN]),
-      improverLine({ changed: 1, total: 2 }),
+      improverLine({ changed: 1, total: 1 }),
       NEXT_STEP_NOTE,
     ])
   })
@@ -2738,7 +2730,7 @@ describe('improver install offer (G-02-1f)', () => {
     await runInit(pagedIo(run), { dryRun: false, host: io })
     expect(firstLines(run.asked)).not.toContain(IMPROVER_INSTALL_QUESTION)
     expect(host.calls.filter(call => call.argv[1] === 'plugin')).toEqual([])
-    expect(improverCalls(host)).toHaveLength(2)
+    expect(improverCalls(host)).toHaveLength(1)
     expect(lastReview(run).filter(line => line.startsWith('Plugins to install'))).toEqual([])
   })
 
@@ -2750,7 +2742,7 @@ describe('improver install offer (G-02-1f)', () => {
     expect([host.writes, host.calls]).toEqual([[], []])
     const dry = memIo(builtWorld(), improverOffer('Install'))
     const dryReply = await runInit(pagedIo(dry), { dryRun: true })
-    expect(lastReview(dry).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
+    expect(lastReview(dry).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(1)])
     expect(dryReply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
   })
 })
@@ -2861,9 +2853,13 @@ describe('an unchanged re-init (02-GAPS-B3 S1)', () => {
     const first = improvingHost(files)
     const answers = { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }
     await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: first.io })
-    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE_IMPROVED)
-    const manifest = files['/repo/.cadre/manifest.json'] ?? ''
-    expect(manifest).toContain(await sha256Hex(BUILT_BE_IMPROVED))
+    // BE's built file as an accepted improver run left it, its manifest entry holding the hash of that text.
+    const accepted = `${BUILT_BE}Keep commits small.\n`
+    const written = files['/repo/.cadre/manifest.json'] ?? ''
+    const manifest = written.replace(await sha256Hex(BUILT_BE), await sha256Hex(accepted))
+    files[BE_CLAUDE_MD] = accepted
+    files['/repo/.cadre/manifest.json'] = manifest
+    expect(manifest).toContain(await sha256Hex(accepted))
     const again = improvingHost(files)
     const run = memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers)
     const reply = await runInit(pagedIo(run), { dryRun: false, host: again.io })
@@ -2871,21 +2867,21 @@ describe('an unchanged re-init (02-GAPS-B3 S1)', () => {
     expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
     expect(opKinds(reply).get('.cadre/be/role.json')).toBe('leave')
     expect([improverCalls(again.host), again.host.writes]).toEqual([[], []])
-    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE_IMPROVED)
+    expect(files[BE_CLAUDE_MD]).toBe(accepted)
     expect(files['/repo/.cadre/manifest.json']).toBe(manifest)
     expect(lastReview(run).filter(line => line.endsWith(BE_CLAUDE_MD_PATH))).toEqual([])
     const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
     expect(opKinds(dry).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
   })
 
-  test('a role whose records changed plans a change of its built file', async () => {
+  test('a role whose records changed plans a change of its role.json and leaves its built file', async () => {
     const files = builtFilesRecord()
     const answers = { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }
     await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: improvingHost(files).io })
     files['/repo/CLAUDE.md'] = `# Rules\n${BUILT_RULE} Always.\n`
     const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
     expect([opKinds(dry).get(BE_CLAUDE_MD_PATH), opKinds(dry).get('.cadre/be/role.json')]).toEqual([
-      'change',
+      'leave',
       'change',
     ])
   })
@@ -2907,7 +2903,7 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
   test('with claude-md-management in, the review ends with the improver line; without it, it has none', async () => {
     const installed = memIo(builtWorld({ files: builtFilesRecord() }), PARTS_ANSWERS)
     await runInit(pagedIo(installed), { dryRun: true })
-    expect(lastReview(installed).at(-1)).toBe(improverRunLine(2))
+    expect(lastReview(installed).at(-1)).toBe(improverRunLine(1))
     const notNow = memIo(builtWorld({ files: builtFilesRecord(false) }), improverOffer('Not now'))
     await runInit(pagedIo(notNow), { dryRun: true })
     expect(lastReview(notNow).filter(line => line.startsWith('After Confirm, claude-md-improver'))).toEqual([])
@@ -2923,7 +2919,7 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
     expect(dry.slice(at + 1)).toEqual([
       PRIVATE_FILES_HEADING,
       ...ids.map(privateFilesRow),
-      improverRunLine(2),
+      improverRunLine(1),
       DRY_RUN_NOTE,
     ])
     const files = builtFilesRecord()
@@ -6290,7 +6286,7 @@ describe('apply step labels (D-284, edge #13)', () => {
     const summaryOf = (run: MemRun, label: string): string | null | undefined =>
       run.progressSummaries[run.progress.indexOf(label)]
     const summaries = [summaryOf(hunks, LABELS.hunks), summaryOf(installs, LABELS.installs)]
-    expect([...summaries, summaryOf(improver, LABELS.improver)]).toEqual(['1 hunk', '2 plugins', '2 files'])
+    expect([...summaries, summaryOf(improver, LABELS.improver)]).toEqual(['1 hunk', '2 plugins', '1 file'])
   })
 
   test('a plain init with no hunk, install or improver run sets none of the three labels', async () => {
@@ -6408,37 +6404,44 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     }
     expect(events.filter(event => event.startsWith('run /bin/chmod 755 '))).toHaveLength(BUILT_TEAM.length)
     const lastRun = events.findLastIndex(event => event.startsWith('run claude -p'))
+    const [slug, security] = [await slugFolder(), await memoryFolder('security')]
+    const text = privateClaudeMdPath(security)
     expect(events.slice(lastRun + 1)).toEqual([
       'stat /repo/.cadre',
-      'stat /repo/.cadre/be',
-      'stat /repo/.cadre/be/CLAUDE.md',
       'stat /repo/.cadre/manifest.json',
-      'write /repo/.cadre/be/CLAUDE.md',
+      'stat /home/u/.claude/cadre',
+      `stat ${slug}`,
+      `stat ${security}`,
+      `stat ${security}/instructions`,
+      `stat ${text}`,
+      `run /bin/mkdir -p -- ${security}/instructions`,
+      'run /bin/chmod 700 /home/u/.claude/cadre',
+      `run /bin/chmod 700 ${slug}`,
+      `run /bin/chmod 700 ${security}`,
+      `run /bin/chmod 700 ${security}/instructions`,
+      `write ${text}`,
       'write /repo/.cadre/manifest.json',
     ])
   })
 
-  test('writeImproved: the improved text stays only on Accept; the private text file gets its own run', async () => {
+  test('writeImproved: the improved private text stays only on Accept; the built repo file gets no run', async () => {
     const security = await memoryFolder('security')
-    const beRun = { argv: BE_IMPROVER_ARGV, options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } }
-    const privateRun = {
-      argv: improverArgv(privateClaudeMdPath(security)),
-      options: { cwd: `${security}/instructions`, timeoutMs: 300_000 },
-    }
+    const text = privateClaudeMdPath(security)
+    const privateRun = { argv: improverArgv(text), options: { cwd: `${security}/instructions`, timeoutMs: 300_000 } }
+    const built = await builtSecurityText()
     const seen: unknown[] = []
     for (const answer of ['Accept', 'Keep original']) {
       const files = builtFilesRecord()
       const { io, host } = improvingHost(files)
       const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: answer })
       await runInit(run.io, { dryRun: false, host: io })
-      expect(improverCalls(host)).toEqual([beRun, privateRun])
-      const beTexts = host.writes.filter(write => write.path === BE_CLAUDE_MD).map(write => write.text)
-      const isImprovedRecorded = writtenManifestText(host).includes(await sha256Hex(BUILT_BE_IMPROVED))
-      seen.push([answer, beTexts, files[BE_CLAUDE_MD], isImprovedRecorded])
+      expect(improverCalls(host)).toEqual([privateRun])
+      const texts = host.writes.filter(write => write.path === text).map(write => write.text)
+      seen.push([answer, texts, files[text]])
     }
     expect(seen).toEqual([
-      ['Accept', [BUILT_BE], BUILT_BE_IMPROVED, true],
-      ['Keep original', [BUILT_BE, BUILT_BE], BUILT_BE, false],
+      ['Accept', [built], `${built}${IMPROVED_LINE}`],
+      ['Keep original', [built, built], built],
     ])
   })
 
@@ -6475,8 +6478,9 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     expect(events[0]).toBe(`run ${LOCAL_GIT_ARGV.join(' ')}`)
     const untracked = reply.filter(line => line.includes('not tracked by git'))
     expect(untracked).toEqual([`warning: ${untrackedPartsWarning('notes/local.md')}`])
-    const be = host.writes.find(write => write.path === BE_CLAUDE_MD)?.text ?? ''
-    expect([be.includes(BUILT_RULE), be.includes(LOCAL_NOTE)]).toEqual([true, false])
+    const roleJson = host.writes.find(write => write.path === '/repo/.cadre/be/role.json')?.text ?? ''
+    const files = parseRoleJson(roleJson)?.instructionParts?.map(record => record.file)
+    expect([files, host.writes.filter(write => write.text.includes(LOCAL_NOTE))]).toEqual([['CLAUDE.md'], []])
   })
 
   test('privatePlanOf: a two-role team gets a private step per role, skips an unchanged record, or warns', async () => {

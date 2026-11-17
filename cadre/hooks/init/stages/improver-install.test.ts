@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionHandout } from '../../../types'
+import type { InstructionHandout, InstructionPart } from '../../../types'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
-import { driven, emptySetupScan, GUIDANCE_KEY, stateAt, wholeDraft } from '../../testkit'
+import { driven, emptySetupScan, GUIDANCE_KEY, HASH, stateAt, wholeDraft } from '../../testkit'
 import { withContext } from '../../ui/ask'
 import type { InitState } from '../state'
 import {
@@ -27,13 +27,39 @@ describe('improver install offer (G-02-1f)', () => {
 })
 
 describe('the improver install stage (D-230)', () => {
-  /** A hand-out that gives the PM role a built file with one part. */
+  /** A section of the global CLAUDE.md, which goes into a role's private text file. */
+  const GLOBAL_PART: InstructionPart = {
+    id: 'P1',
+    file: '~/.claude/CLAUDE.md',
+    heading: 'Rules',
+    source: 'global',
+    text: '# Rules\n',
+    hash: HASH,
+  }
+
+  /** A section of the repo's CLAUDE.md, which a role loads from the original. */
+  const REPO_PART: InstructionPart = {
+    id: 'P2',
+    file: 'CLAUDE.md',
+    heading: 'Style',
+    source: 'repo',
+    text: '# Style\n',
+    hash: HASH,
+  }
+
+  /** A hand-out that gives the PM role a topic holding a global part. */
   const BUILT: InstructionHandout = {
     kind: 'parts',
-    scan: { parts: [], files: [], memories: [], warnings: [] },
+    scan: { parts: [GLOBAL_PART, REPO_PART], files: [], memories: [], warnings: [] },
     topics: [{ id: 'T1', title: 'Rules', summary: 'The team rules.', partIds: ['P1'] }],
     recommended: new Map(),
     given: new Map([['T1', ['pm']]]),
+  }
+
+  /** A hand-out that gives the PM role a topic of repo parts only, which leaves the improver nothing to run on. */
+  const REPO_ONLY: InstructionHandout = {
+    ...BUILT,
+    topics: [{ id: 'T1', title: 'Style', summary: 'The repo style.', partIds: ['P2'] }],
   }
 
   /** The improver install stage entered with `instructions`, the plugins in `installed`, and the security answer. */
@@ -44,7 +70,7 @@ describe('the improver install stage (D-230)', () => {
     return improverInstallStage.enter(stateAt('improver-install', draft))
   }
 
-  test('improverInstallStage asks when a role got a built file and the plugin is missing; the open question', () => {
+  test('improverInstallStage asks when a role got a global part and the plugin is missing; the open question', () => {
     const state = improverAt(BUILT)
     const question = withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT)
     const lines = ['Built CLAUDE.md files it would tidy:', '  pm: .cadre/pm/CLAUDE.md']
@@ -66,14 +92,16 @@ describe('the improver install stage (D-230)', () => {
     expect(state.openQuestion).toEqual(ask)
   })
 
-  test('the improver install question carries each role given a built file, in role order (D-236)', () => {
+  test('the improver install question carries each role given a global part, in role order (D-236)', () => {
     const topics = [
       { id: 'T1', title: 'Rules', summary: 'The team rules.', partIds: ['P1'] },
       { id: 'T2', title: 'Empty', summary: 'No part.', partIds: [] },
+      { id: 'T3', title: 'Style', summary: 'The repo style.', partIds: ['P2'] },
     ]
     const given = new Map([
       ['T1', ['security', 'pm']],
       ['T2', ['tl']],
+      ['T3', ['tl']],
     ])
     const state = improverAt({ ...BUILT, topics, given })
     expect(state.openQuestion?.spec.context?.lines).toEqual([
@@ -88,8 +116,13 @@ describe('the improver install stage (D-230)', () => {
     expect(driven(improverAt(BUILT), ['Not now']).state.draft.pluginInstalls).toEqual([GUIDANCE_KEY])
   })
 
-  test('with no built file, or the plugin installed, it asks nothing and adds nothing', () => {
-    const quiet = [improverAt({ kind: 'none' }), improverAt({ kind: 'whole' }), improverAt(BUILT, [CLAUDE_MD_PLUGIN])]
+  test('with no global part given, or the plugin installed, it asks nothing and adds nothing', () => {
+    const quiet = [
+      improverAt({ kind: 'none' }),
+      improverAt({ kind: 'whole' }),
+      improverAt(REPO_ONLY),
+      improverAt(BUILT, [CLAUDE_MD_PLUGIN]),
+    ]
     for (const state of quiet) {
       expect([state.sub, state.openQuestion]).toEqual([{ kind: 'done' }, null])
       expect(state.draft.pluginInstalls).toEqual([GUIDANCE_KEY])

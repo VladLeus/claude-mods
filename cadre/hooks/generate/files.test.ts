@@ -35,7 +35,6 @@ import {
   cadreJsonText,
   indexMdText,
   mcpText,
-  roleClaudeMdText,
   roleJsonText,
   roleMdText,
   rubricText,
@@ -93,11 +92,11 @@ function pathsOfRole(files: readonly DesiredFile[], id: string): string[] {
   return files.map(file => file.path).filter(path => path.startsWith(`.cadre/${id}/`) || path === `.cadre/bin/${id}`)
 }
 
-/** The first line of the built CLAUDE.md of role `id`, as the plan writes it (G-02-1f, D-140). */
+/** The first line of the built CLAUDE.md of role `id`, as the plan writes it. */
 function builtHeader(id: string): string {
   return (
-    `<!-- cadre: instructions for role ${id}, built from this repo's CLAUDE.md files, rules and docs. ` +
-    `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
+    `<!-- cadre: instructions for role ${id}. The repo's CLAUDE.md files and rules given to this role load from ` +
+    `their originals; after you change them, run /cadre regen ${id}. -->`
   )
 }
 
@@ -294,7 +293,7 @@ describe('desiredFiles', () => {
 })
 
 describe('a built file for every role (02-GAPS-B2 S1)', () => {
-  test('with repoParts set every role gets .cadre/<id>/CLAUDE.md, the header alone with no repo part', () => {
+  test('with repoParts set every role gets .cadre/<id>/CLAUDE.md, the header alone, a repo part or not', () => {
     const roles = [templateRole('pm'), templateRole('be'), templateRole('qa')]
     const repoParts = new Map([
       ['be', [RULES_PART]],
@@ -303,7 +302,7 @@ describe('a built file for every role (02-GAPS-B2 S1)', () => {
     const files = desiredFiles(inputOf(roles, 'gsd', { repoParts }))
 
     expect(files.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([
-      { path: '.cadre/be/CLAUDE.md', content: roleClaudeMdText('be', [RULES_PART]), mode: 'file' },
+      { path: '.cadre/be/CLAUDE.md', content: `${builtHeader('be')}\n`, mode: 'file' },
       { path: '.cadre/pm/CLAUDE.md', content: `${builtHeader('pm')}\n`, mode: 'file' },
       { path: '.cadre/qa/CLAUDE.md', content: `${builtHeader('qa')}\n`, mode: 'file' },
     ])

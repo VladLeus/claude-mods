@@ -888,7 +888,7 @@ describe('runStart warnings and links (D-102)', () => {
     expect(lines.indexOf(RUN_LINE)).toBeGreaterThan(notRead)
   })
 
-  test("a parts-flow role's rendered settings exclude rules and other roles' built files (T-02-70)", async () => {
+  test("a parts-flow role's settings exclude rules, AGENTS.md and other roles' built files (T-02-70)", async () => {
     const base = await appliedWorld()
     const dirs = {
       ...base.dirs,
@@ -902,7 +902,9 @@ describe('runStart warnings and links (D-102)', () => {
 
     expect(JSON.parse(settings).claudeMdExcludes).toEqual([
       '/repo/.cadre/pm/CLAUDE.md',
+      '/repo/.claude/AGENTS.md',
       '/repo/.claude/rules/security.md',
+      '/repo/AGENTS.md',
     ])
   })
 

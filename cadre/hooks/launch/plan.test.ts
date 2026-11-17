@@ -211,7 +211,7 @@ describe('launch render', () => {
     expect(plan.settings).toEqual({
       autoCompactWindow: 800000,
       autoMemoryDirectory: '/home/u/.claude/cadre/repo-1a2b3c4d/pm',
-      claudeMdExcludes: [],
+      claudeMdExcludes: ['/repo/.claude/AGENTS.md', '/repo/AGENTS.md'],
       deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
       env: { JIRA_URL: 'https://j', GSD_WORKSTREAM: 'cadre-pm', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' },
@@ -388,7 +388,7 @@ describe('launch render', () => {
 
     expect(plan.settings).toEqual({
       autoMemoryDirectory: '/home/u/.claude/cadre/repo-1a2b3c4d/be',
-      claudeMdExcludes: [],
+      claudeMdExcludes: ['/repo/.claude/AGENTS.md', '/repo/AGENTS.md'],
       deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
       env: { GSD_WORKSTREAM: 'cadre-be', CADRE_ROLE: 'be', CADRE_ROOT: '/repo' },
