@@ -21,6 +21,7 @@ import { parseInbox, parseInboxLine, recordLine, sessionRecordText } from './rec
 import {
   BODY_MAX_CHARS,
   CHANGES_MAX_CHARS,
+  INBOX_READ_MAX_BYTES,
   LIST_ITEM_MAX_CHARS,
   LIST_MAX_ITEMS,
   REASON_MAX_CHARS,
@@ -539,6 +540,33 @@ describe('runInboxSend of a task', () => {
 
     expect(outcome.text.slice(0, head.length)).toBe(head)
   })
+
+  test(
+    'a task over an own inbox that cannot be read inherits no pin and adds no sentence: it is sized from its vector',
+    async () => {
+      const files = {
+        [BE_SESSION]: sessionRecordText('s-be'),
+        [TL_INBOX]: recordLine({ ...PM_TICKET, pin: 'small' }) + '\n'.repeat(INBOX_READ_MAX_BYTES),
+      }
+      const world = memWorld({ now: 1000, dirs: STARTED, files })
+      const { outcome, host, reads } = await sendFrom(world, TASK, { ctx: TL })
+      const stdin = firstStdin(host)
+      const id = entryLine(stdin)?.id ?? ''
+
+      expect(entryLine(stdin)).toMatchObject({ kind: 'task', size: 0.6, large: true })
+      expect(stdin).not.toContain('"pinned":')
+      expect(reads).toContain(TL_INBOX)
+      expect(outcome).toEqual({
+        kind: 'result',
+        text: [
+          fill(PROMPTS.inboxSent, { id, to: 'be' }),
+          fill(PROMPTS.inboxSize, { size: 0.6, sizeClass: 'large', threshold: 0.5 }),
+          fill(PROMPTS.inboxSizePickGsd, { mode: 'gsd-epic', gsdPath: 'phase' }),
+          fill(PROMPTS.inboxSizePickGsd, { mode: 'ticket', gsdPath: 'phase' }),
+        ].join(' '),
+      })
+    },
+  )
 })
 
 describe('runInboxSend of the ticket loop', () => {
