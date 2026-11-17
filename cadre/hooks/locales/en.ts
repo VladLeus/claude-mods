@@ -1448,9 +1448,9 @@ export const EN = Object.freeze({
   'scope.lint.infraViolations2': 'handoff skill {name} is not in the overlay',
   'scope.lint.infraViolations3': 'flag {flag} would turn off the handoff skills',
 
-  'generate.gittrack.untrackedPartsWarning': '{file} is not tracked by git: its parts are not written to .cadre/',
+  'generate.gittrack.untrackedPartsWarning': '{file} is not tracked by git: no role is given it',
   'generate.gittrack.gitTrackingUnknownWarning':
-    'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+    'could not ask git which instruction files it tracks: no role is given them',
 
   'suggest.propose.fallbackNote': 'Using the template proposal; you can still adjust it.',
   'suggest.propose.fallbackMessage': 'Could not use the described structure: {reason}. {fallbackNote}',

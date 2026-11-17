@@ -8,14 +8,14 @@ import { reportText, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
 
 /**
- * The argv that asks git which of these repo-relative files it tracks (02-GAPS-B2 M3): `git ls-files -z`, with
+ * The argv that asks git which of these repo-relative files it tracks: `git ls-files -z`, with
  * `--literal-pathspecs` so a name is never a pattern and `--` before the names; it runs at the repo root.
  */
 export function gitTrackedArgv(files: readonly string[]): readonly string[] {
   return ['git', '--literal-pathspecs', 'ls-files', '-z', '--', ...files]
 }
 
-/** The source file of every repo part the roles were given, sorted, once each (02-GAPS-B2 M3): what git is asked. */
+/** The source file of every repo part the roles were given, sorted, once each: what git is asked. */
 export function repoPartFiles(repoParts: ReadonlyMap<string, readonly InstructionPart[]>): string[] {
   const parts = Array.from(repoParts.values()).flat()
 
@@ -49,7 +49,7 @@ export const GIT_TRACKING_UNKNOWN_WARNING = t('generate.gittrack.gitTrackingUnkn
 /** The character `git ls-files -z` ends each name with, built at run time. */
 const NUL = String.fromCharCode(0)
 
-/** The files `git ls-files -z` named (02-GAPS-B2 M3): its NUL-separated names, an empty name skipped. */
+/** The files `git ls-files -z` named: its NUL-separated names, an empty name skipped. */
 export function trackedFilesOf(stdout: string): ReadonlySet<string> {
   return new Set(stdout.split(NUL).filter(name => name !== ''))
 }
