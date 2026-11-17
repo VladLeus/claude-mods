@@ -144,13 +144,13 @@ function enabledPluginsFor(role: RoleSpec, scope: CompiledScope, user: LaunchUse
 }
 
 /**
- * The sandbox of a role session: the template's, and for a role that runs the repo's checks at a safe root, the env
- * files git tracks there made readable to its commands. Sandbox paths are plain absolute paths, not `//` patterns.
+ * The sandbox of a role session: the template's, and for a Bash role that runs the repo's checks at a safe root, the
+ * env files git tracks there made readable to its commands. Sandbox paths are plain absolute paths, not `//` patterns.
  */
 function sandboxFor(role: RoleSpec, scope: CompiledScope, user: LaunchUser): SettingsTemplate['sandbox'] {
   const { sandbox } = scope.settings
   const tracked = user.trackedEnvFiles ?? []
-  if (!runsRepoChecks(role) || !isSafeRoot(user.root) || tracked.length === 0) return sandbox
+  if (!role.hasBash || !runsRepoChecks(role) || !isSafeRoot(user.root) || tracked.length === 0) return sandbox
   const allowRead = tracked.map(file => `${user.root}/${file}`)
 
   return { ...sandbox, filesystem: { ...sandbox.filesystem, allowRead } }

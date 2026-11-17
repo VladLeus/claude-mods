@@ -1,14 +1,21 @@
 /**
- * The env files git tracks, a layer 1 module: the git run that lists them at a root with their modes, and the regular
- * files among them whose paths an exact sandbox path may hold. It imports only core and the types, so /cadre start
- * lists them here at launch.
+ * The env files git tracks, a layer 1 module: the git run that lists them at a root with their modes, the regular
+ * files among them whose paths an exact sandbox path may hold, and the git run that lists those modified in the
+ * working tree, which are left out. It imports only core and the types, so /cadre start lists them here at launch.
  */
 import type { HostRun } from '../../types'
 import { sortedUnique } from '../core/text'
 
+const ENV_PATHSPECS: readonly string[] = [':(glob)**/.env', ':(glob)**/.env.*']
+
 /** The argv that lists, NUL-ended with mode, object and stage, the `.env` and `.env.*` files git tracks in `root`. */
 export function TRACKED_ENV_ARGV(root: string): readonly string[] {
-  return ['git', '-C', root, 'ls-files', '-z', '-s', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+  return ['git', '-C', root, 'ls-files', '-z', '-s', '--', ...ENV_PATHSPECS]
+}
+
+/** The argv that lists, NUL-ended, the env files whose working-tree file differs from the index entry in `root`. */
+export function MODIFIED_ENV_ARGV(root: string): readonly string[] {
+  return ['git', '-C', root, 'ls-files', '-z', '-m', '--', ...ENV_PATHSPECS]
 }
 
 /** An `ls-files -s` entry of a regular file (mode 100644 or 100755): mode, object, stage, a tab, then the path. */
@@ -43,4 +50,16 @@ export function envFilesOf(run: HostRun | null): readonly string[] | null {
   })
 
   return sortedUnique(paths.filter(isEnvFile))
+}
+
+/**
+ * The listed env files less every NUL-separated name a MODIFIED_ENV_ARGV run gives; null when the host rejected the
+ * run or it failed. An index entry the role added or changed without the file shows as modified, so only files whose
+ * content git stores stay readable.
+ */
+export function unchangedEnvFilesOf(listed: readonly string[], run: HostRun | null): readonly string[] | null {
+  if (run === null || run.exitCode !== 0) return null
+  const modified = new Set(run.stdout.split('\0'))
+
+  return listed.filter(path => !modified.has(path))
 }

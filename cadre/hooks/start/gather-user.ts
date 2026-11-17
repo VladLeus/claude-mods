@@ -22,7 +22,7 @@ import { allOrNull, isObject, parseJsonValue } from '../core/json'
 import { sortedUnique } from '../core/text'
 import { GIT_TIMEOUT_MS } from '../git/argv'
 import { gitCommonDirOf, mainCheckoutOf } from '../git/common-dir'
-import { envFilesOf, TRACKED_ENV_ARGV } from '../git/env-files'
+import { envFilesOf, MODIFIED_ENV_ARGV, TRACKED_ENV_ARGV, unchangedEnvFilesOf } from '../git/env-files'
 import { isPartsFlowRole } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
 import { t } from '../locales/t'
@@ -398,8 +398,10 @@ async function trackedEnvFilesOf(
   root: string,
 ): Promise<readonly string[] | null> {
   if (!runsRepoChecks(role)) return null
+  const listed = envFilesOf(await host.run(TRACKED_ENV_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS }))
+  if (listed === null || listed.length === 0) return listed
 
-  return envFilesOf(await host.run(TRACKED_ENV_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS }))
+  return unchangedEnvFilesOf(listed, await host.run(MODIFIED_ENV_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS }))
 }
 
 /**
@@ -422,8 +424,8 @@ async function trackedEnvFilesOf(
  * - the skill list of the installed mattpocock-skills (pluginSkillsOf), whose install entry is looked up over the same
  *   roots as the user folder, and the plugins the settings files of the repo and of a dir start folder turn on
  *   (projectPluginsOf), each set only when there is one;
- * - for a role that runs the repo's checks (runsRepoChecks), the env files git tracks at the root from one
- *   TRACKED_ENV_ARGV run (envFilesOf), left out when the run fails;
+ * - for a role that runs the repo's checks (runsRepoChecks), the env files git tracks at the root (TRACKED_ENV_ARGV)
+ *   less those it lists as modified (MODIFIED_ENV_ARGV), left out when either run fails;
  * - for a parts-flow role (isPartsFlowRole), the memories its hand-out record names, linked into its role memory
  *   folder with cadre's MEMORY.md block (linkedMemoriesOf): their link paths are the user's linkedMemories, and the
  *   links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A whole-files role gets
