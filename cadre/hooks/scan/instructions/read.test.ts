@@ -544,6 +544,30 @@ describe('rules, AGENTS.md and referenced docs', () => {
     expect([scan.parts, run.reads.includes('/repo/AGENTS.md')]).toEqual([[], false])
   })
 
+  test('with the root CLAUDE.md in the chain AGENTS.md is not read, and no part names it', async () => {
+    const run = memIo(filesWorld({ '/repo/CLAUDE.md': '# R\n', '/repo/AGENTS.md': '# Agents\n' }), [])
+    const scan = await readInstructionFiles(run.io, repoSources(['<repo>/CLAUDE.md'], [], true))
+    expect(run.reads).not.toContain('/repo/AGENTS.md')
+    expect(scan.files).toEqual(['CLAUDE.md'])
+  })
+
+  test('with .claude/CLAUDE.md the only repo chain file AGENTS.md is not read, and no part names it', async () => {
+    const run = memIo(filesWorld({ '/repo/.claude/CLAUDE.md': '# Local\n', '/repo/AGENTS.md': '# Agents\n' }), [])
+    const scan = await readInstructionFiles(run.io, repoSources(['<repo>/.claude/CLAUDE.md'], [], true))
+    expect(run.reads).not.toContain('/repo/AGENTS.md')
+    expect(scan.files).toEqual(['.claude/CLAUDE.md'])
+  })
+
+  test('with only a CLAUDE.md above the repo in the chain AGENTS.md is read as one repo part', async () => {
+    const files = { '/home/u/work/CLAUDE.md': '# Team\n', '/repo/AGENTS.md': '# Agents\n## Steps\n' }
+    const run = memIo(filesWorld(files), [])
+    const scan = await readInstructionFiles(run.io, repoSources(['~/work/CLAUDE.md'], [], true))
+    expect(placesOf(scan)).toEqual([
+      ['~/work/CLAUDE.md', 'Team', 'global'],
+      ['AGENTS.md', '', 'repo'],
+    ])
+  })
+
   test('a rule file that links out of the repo is refused and never read (readRepoFile)', async () => {
     const world = filesWorld({ [`${RULES}/a.md`]: '# A\n' }, { realPaths: { [`${RULES}/a.md`]: '/home/u/secret.md' } })
     const run = memIo(world, [])

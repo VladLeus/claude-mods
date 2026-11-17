@@ -1776,6 +1776,21 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     expect(run.prompts[0]).toContain('P1 | AGENTS.md | (top of file) | # Agents')
   })
 
+  test('a repo with a root CLAUDE.md does not offer AGENTS.md', async () => {
+    const world = chainWorld({
+      files: {
+        [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+        '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\n`,
+        '/repo/AGENTS.md': '# Agents\nWork in small steps.\n',
+      },
+    })
+    const run = memIo(world, PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.reads).not.toContain('/repo/AGENTS.md')
+    expect(run.prompts[0]).not.toContain(' | AGENTS.md | ')
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION).filter(line => line.includes('AGENTS.md'))).toEqual([])
+  })
+
   test('a rules folder that cannot be listed counts 0, and its warning shows in the block after a yes', async () => {
     const run = memIo(partsWorld({ unknownPaths: [RULES_DIR] }), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
@@ -1971,8 +1986,9 @@ describe('memories one by one (G-02-1f)', () => {
 
 /**
  * A git repo with every instruction source: the global CLAUDE.md, the repo CLAUDE.md of the chain, which links
- * docs/guide.md (never read), a top-level and a nested rule file, AGENTS.md, and the memory folder with MEMORY.md and
- * one memory. The model gives no usable reply, so each file is one topic and nothing is recommended.
+ * docs/guide.md (never read), a top-level and a nested rule file, and the memory folder with MEMORY.md and one memory;
+ * its AGENTS.md is not read beside the root CLAUDE.md. The model gives no usable reply, so each file is one topic and
+ * nothing is recommended.
  */
 function everySourceWorld(): MemWorld {
   return gitWorld({
@@ -2003,7 +2019,6 @@ const EVERY_SOURCE: readonly string[] = [
   '/repo/CLAUDE.md',
   `${RULES_DIR}/a.md`,
   `${RULES_DIR}/frontend/react.md`,
-  '/repo/AGENTS.md',
   `${MEMORY_DIR}/MEMORY.md`,
   `${MEMORY_DIR}/squad.md`,
 ]
@@ -2018,7 +2033,7 @@ describe('the read order over every instruction source (T-02-60, 02-GAPS-B2 N5)'
       const readAt = events.indexOf(`read ${path}`)
       expect([path, consentAt > 0, readAt > consentAt]).toEqual([path, true, true])
     }
-    expect(events).not.toContain('read /repo/docs/guide.md')
+    expect(events.filter(event => event === 'read /repo/docs/guide.md' || event === 'read /repo/AGENTS.md')).toEqual([])
   })
 })
 
