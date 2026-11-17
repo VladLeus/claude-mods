@@ -100,12 +100,9 @@ export function instructionsRecordPath(folder: string): string {
 }
 
 /**
- * The text of a role's private file (G-02-1f Storage split, D-140 q2-a; 02-GAPS-B3 C4, N5): a first line that names
- * the role and the repo (its folder name, cleaned and capped as a report cell is), says the instructions are built from
- * the global CLAUDE.md, its imports and the CLAUDE.md files above the repo, are private and how they are rebuilt; then
- * the parts given, in that order, as the built `.cadre/<id>/CLAUDE.md` holds them after its header (partsBody): a
- * blank line, then each part under its marker, a blank line between two parts, one final newline. So the two files
- * always mark their parts the same way.
+ * The text of a role's private file: a first line that names the role and the repo (its folder name, cleaned and
+ * capped as a report cell is) and says how the file is built and rebuilt, then the parts given under their markers
+ * (partsBody).
  */
 export function privateClaudeMdText(id: string, repo: string, parts: readonly InstructionPart[]): string {
   const header = fill(ARTIFACT.privateClaudeMdHeader, { id, repo: reportText(repo) })

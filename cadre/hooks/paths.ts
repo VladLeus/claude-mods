@@ -194,6 +194,8 @@ export function userFolderOf(env: ReadEnv, warnings: string[]): string | null {
 export const MAX_FILE_NAME_CHARS = 255
 /** The extension of an agent file, a rule file and a memory file (02-GAPS-B2 S7: one home). */
 export const MARKDOWN_EXTENSION = '.md'
+/** The root file of agent instructions other tools read. */
+export const AGENTS_MD_FILE = 'AGENTS.md'
 
 /**
  * The folder name Claude Code gives a project's data under `projects/`: every character of the path that is not an

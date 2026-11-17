@@ -87,37 +87,20 @@ export type BuiltFile = {
 }
 
 /**
- * What builtRoleFiles offers (G-02-1f, D-141; 02-GAPS-B3 M1, C1): the role ids whose built CLAUDE.md holds a repo part,
- * the role memory folders whose private text holds a global part (a header alone has nothing to improve), and each
- * role's memory folder by id, for the watched paths.
+ * What builtRoleFiles offers: the role memory folders whose private text holds a global part (a header alone has
+ * nothing to improve), beside each role's memory folder by id.
  */
 export type BuiltFilter = {
-  readonly repoIds: ReadonlySet<string>
   readonly privateFolders: ReadonlySet<string>
   readonly roleFolders: ReadonlyMap<string, string>
 }
 
 /**
- * The built role files of an apply the improver pass offers, in step order (G-02-1f, D-141; 02-GAPS-B3 M1, C1): the
- * written `.cadre/<id>/CLAUDE.md` of each role in `filter.repoIds`, watching the role's private text file and
- * instructions.json when its role memory folder is known, with the guard flags of its run (improverGuardFlags); and
- * the private text file of each private step whose folder is in `filter.privateFolders`, watching nothing, with no
- * flags. A record, a `.cadre-new` copy, a header-only private text file and every other file are left out. `root` is
- * the repo root the repo paths lie under.
+ * The private text files of an apply the improver pass offers, in step order: the text file of each private step whose
+ * folder is in `filter.privateFolders`, watching nothing, with no flags; every other file is left out.
  */
-export function builtRoleFiles(steps: readonly ApplyStep[], root: string, filter: BuiltFilter): BuiltFile[] {
-  const base = trimSlash(root)
-  const idOf = new Map(Array.from(filter.repoIds, (id): [string, string] => [builtClaudeMdPath(id), id]))
-
+export function builtRoleFiles(steps: readonly ApplyStep[], filter: BuiltFilter): BuiltFile[] {
   return steps.flatMap((step): BuiltFile[] => {
-    const id = step.kind === 'write' ? idOf.get(step.path) : undefined
-    if (step.kind === 'write' && id !== undefined) {
-      const folder = filter.roleFolders.get(id)
-      const watched = folder === undefined ? [] : [privateClaudeMdPath(folder), instructionsRecordPath(folder)]
-      const runFlags = improverGuardFlags(root, id)
-
-      return [{ path: `${base}/${step.path}`, repoPath: step.path, text: step.text, watched, runFlags }]
-    }
     if (step.kind !== 'private' || !filter.privateFolders.has(step.path)) return []
     const textPath = privateClaudeMdPath(step.path)
     const files = step.files.filter(file => file.path === textPath)

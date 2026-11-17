@@ -35,11 +35,9 @@ export type GenerateInput = {
   /** The id of the one role regen re-renders; null for init, which generates every role and the repo state. */
   readonly only: string | null
   /**
-   * The instruction parts each role was given, by role id, in read order (G-02-1f Storage split): only those read from
-   * the repo go into the role's `.cadre/<id>/CLAUDE.md`. Whenever repoParts is passed every role gets its built
-   * file, the header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). Init
-   * always passes it and regen when the role's repo parts changed; absent (/cadre start, a regen that keeps the
-   * parts), no such file is built.
+   * The instruction parts each role was given, by role id, in read order. Whenever it is passed every role gets its
+   * built `.cadre/<id>/CLAUDE.md` (builtFiles), so a later hand-out always replaces stale content; init always passes
+   * it and regen when the role's repo parts changed, and absent no such file is built.
    */
   readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
 }
@@ -48,11 +46,9 @@ export type GenerateInput = {
 const INDEX_PATH = '.cadre/INDEX.md'
 
 /**
- * The built instructions of one role (G-02-1f Storage split): `.cadre/<id>/CLAUDE.md` from the parts it was given that
- * were read from the repo (roleClaudeMdText). Whenever repoParts is passed every role gets its built file, the
- * header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1); null parts, as
- * /cadre start and a regen that keeps the parts pass, give none. A part of the global CLAUDE.md is dropped here, so
- * it never reaches a file in the repo (T-02-69).
+ * The built `.cadre/<id>/CLAUDE.md` of one role: the header plus the AGENTS.md pointer when the role was given
+ * AGENTS.md (roleClaudeMdText), no part text; null parts give none. Only repo parts are passed on, so no global part
+ * reaches it.
  */
 function builtFiles(id: string, parts: readonly InstructionPart[] | null): DesiredFile[] {
   if (parts === null) return []

@@ -6,7 +6,7 @@
  * it gives states and never performs an effect, imports core, roles, ui/ask, init/state and init/stages/security, and
  * never imports init/machine or init/run.
  */
-import type { AskSpec, InstructionHandout } from '../../../types'
+import type { AskSpec, InstructionHandout, InstructionScan, InstructionTopic } from '../../../types'
 import { labelled } from '../../core/labelled'
 import { t } from '../../locales/t'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
@@ -31,15 +31,19 @@ export const IMPROVER_INSTALL_CONTEXT = t('init.improverInstall.improverInstallC
 /** Why init cancels when the improver install question is dismissed or not answered (D-141, A1, D-45). */
 export const IMPROVER_INSTALL_DISMISSED_REASON = t('init.improverInstall.improverInstallDismissedReason')
 
-/**
- * Whether a hand-out gives some role a built file with a part (G-02-1f, D-141): a parts hand-out with a topic that
- * holds a part and is given to a role. Memories alone build no file, and the whole-file questions or none build none.
- */
+/** The topics that hold a part of the global CLAUDE.md, which only a role's private text file holds. */
+function globalTopics(scan: InstructionScan, topics: readonly InstructionTopic[]): InstructionTopic[] {
+  const globals = new Set(scan.parts.flatMap(part => (part.source === 'global' ? [part.id] : [])))
+
+  return topics.filter(topic => topic.partIds.some(id => globals.has(id)))
+}
+
+/** Whether a parts hand-out gives some role a topic that holds a global part, the improver's only input. */
 function hasBuiltPart(handout: InstructionHandout): boolean {
   if (handout.kind !== 'parts') return false
-  const { topics, given } = handout
+  const { scan, topics, given } = handout
 
-  return topics.some(topic => topic.partIds.length > 0 && (given.get(topic.id) ?? []).length > 0)
+  return globalTopics(scan, topics).some(topic => (given.get(topic.id) ?? []).length > 0)
 }
 
 /**
@@ -56,14 +60,11 @@ const IMPROVER_ASK = Object.freeze({
   dismissedReason: IMPROVER_INSTALL_DISMISSED_REASON,
 })
 
-/**
- * The ids of the roles a hand-out gives a built file with a part (hasBuiltPart), in the order of `roleIds`: each role
- * given a topic that holds a part.
- */
+/** The ids of the roles a hand-out gives a topic that holds a global part, in the order of `roleIds`. */
 function builtRoleIds(handout: InstructionHandout, roleIds: readonly string[]): string[] {
   if (handout.kind !== 'parts') return []
-  const { topics, given } = handout
-  const built = topics.filter(topic => topic.partIds.length > 0).flatMap(topic => given.get(topic.id) ?? [])
+  const { scan, topics, given } = handout
+  const built = globalTopics(scan, topics).flatMap(topic => given.get(topic.id) ?? [])
 
   return roleIds.filter(id => built.includes(id))
 }

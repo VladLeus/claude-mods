@@ -178,12 +178,11 @@ export async function regenApply(
   if (problem !== null) return { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
   const steps = await applySteps(applyInput)
   const allowed = privatePaths(privates.map(owed => owed.folder))
-  const withParts = new Set(handed.repoParts !== null && handed.repoParts.length > 0 ? [role.id] : [])
   const isImproverReady = input.setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
   const privateFolders = new Set(privateRole !== null && privateRole.parts.length > 0 ? [privateRole.folder] : [])
   const roleFolders = handed.folder === null ? new Map<string, string>() : new Map([[role.id, handed.folder]])
-  const filter = { repoIds: withParts, privateFolders, roleFolders }
-  const built = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
+  const filter = { privateFolders, roleFolders }
+  const built = isImproverReady ? builtRoleFiles(steps, filter) : []
   const isOffered = built.length > 0 && handed.isSession
   const written = await writeWithImprover(io, host, {
     locations,

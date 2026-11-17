@@ -11,7 +11,7 @@ import { cardList, clean, reportText } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { fill } from '../locales/t'
-import { cadreStatePath, handoffFolderOf, launcherPath, SIZING_RUBRIC_PATH } from '../paths'
+import { AGENTS_MD_FILE, cadreStatePath, handoffFolderOf, launcherPath, SIZING_RUBRIC_PATH } from '../paths'
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
 import { asksInEpic, standIn, standsFor } from '../roles/template'
@@ -310,9 +310,9 @@ function markerCell(text: string): string {
 }
 
 /**
- * The marker line above a part in a built role file (G-02-1f): `<!-- from <file> > <heading or (top of file)> -->`.
- * The file and the heading are marker cells (markerCell), so no character of either can add a line, hide text or end
- * the comment early (02-GAPS-B2 N2).
+ * The marker line above a part in the private role file: `<!-- from <file> > <heading or (top of file)> -->`. The
+ * file and the heading are marker cells (markerCell), so no character of either can add a line, hide text or end the
+ * comment early.
  */
 function partMarker(part: InstructionPart): string {
   const heading = part.heading === '' ? TOP_OF_FILE : markerCell(part.heading)
@@ -320,14 +320,14 @@ function partMarker(part: InstructionPart): string {
   return fill(ARTIFACT.partMarker, { file: markerCell(part.file), heading })
 }
 
-/** A part's text as a built role file holds it: as read, each `\r\n` written `\n`, its line ends at the end dropped. */
+/** A part's text in the private role file: as read, each `\r\n` written `\n`, its line ends at the end dropped. */
 function partBody(text: string): string {
   return text.replaceAll('\r\n', '\n').replace(/\n+$/, '')
 }
 
 /**
- * The text of a built role file after its header line (02-GAPS-B3 N5): each part under its marker, a blank line before
- * each, and one final newline; '\n' with no part.
+ * The parts of the private role file after its header line: each part under its marker, a blank line before each, and
+ * one final newline; '\n' with no part.
  */
 export function partsBody(parts: readonly InstructionPart[]): string {
   if (parts.length === 0) return '\n'
@@ -336,17 +336,19 @@ export function partsBody(parts: readonly InstructionPart[]): string {
   return `\n\n${blocks.join('\n\n')}\n`
 }
 
+/** The import of the root AGENTS.md from `.cadre/<id>/CLAUDE.md`. */
+const AGENTS_IMPORT = `@../../${AGENTS_MD_FILE}`
+
 /**
- * The text of `.cadre/<id>/CLAUDE.md`, the instructions built for a role from the parts it was given (G-02-1f Storage
- * split, D-140). The first line says the file is built and how to change it, then partsBody: a blank line, then each
- * part in the order given, which is read order, its marker (partMarker) and its text as read (partBody), a blank line
- * between two parts. Every line ends in `\n`, and the text ends with exactly one. It holds whatever parts it is given:
- * desiredFiles gives it a role's repo parts only, so no part of the global CLAUDE.md reaches a repo file (T-02-69).
+ * The text of `.cadre/<id>/CLAUDE.md`: the header line, then a blank line and the AGENTS.md import line when a part
+ * given is from AGENTS.md, then one newline. The repo files a role is given load from their originals, so it holds no
+ * part text.
  */
 export function roleClaudeMdText(id: string, parts: readonly InstructionPart[]): string {
   const header = fill(ARTIFACT.roleClaudeMdHeader, { id })
+  const agents = parts.some(part => part.file === AGENTS_MD_FILE) ? `\n\n${AGENTS_IMPORT}` : ''
 
-  return `${header}${partsBody(parts)}`
+  return `${header}${agents}\n`
 }
 
 /** The most characters of one server name the index shows; a name a role.json holds is at most 100. */

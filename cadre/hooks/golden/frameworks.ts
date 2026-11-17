@@ -174,7 +174,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       },
       {
         "path": "/repo/.cadre/manifest.json",
-        "sha256": "1b3ed2757d7c6148c4f1f0d028d5bf298863327591cd8d0baf31237b374a328e",
+        "sha256": "7db32656fbde52766b6a69aa1b191459ec6cfc59c896ad91dc58d8167cb815b7",
         "isWritten": true
       }
     ],
@@ -194,7 +194,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/be/CLAUDE.md\",",
-      "      \"sha256\": \"b35fad006af4307713a1620f01831317be89f04b4ce428f54cb7c6638c88f7d7\"",
+      "      \"sha256\": \"51c9e18ea33026c44e6fd7b79794ac90662c370bad12428e1db122fd2220e5e0\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",
@@ -239,7 +239,7 @@ export const GOLDEN_FRAMEWORKS: Readonly<Record<string, GoldenRun | GoldenApply>
       "    {",
       "      \"mode\": \"file\",",
       "      \"path\": \".cadre/pm/CLAUDE.md\",",
-      "      \"sha256\": \"bec0e6bed7a85311cef17b5d42b464877dcd0d730c48eb038e0f8f00ad6389b3\"",
+      "      \"sha256\": \"fb5f48eb55127ba61a2595ccc4415599fbe14f83f01811ffaf82fae11229879e\"",
       "    },",
       "    {",
       "      \"mode\": \"file\",",

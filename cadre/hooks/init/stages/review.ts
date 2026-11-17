@@ -5,7 +5,7 @@
  * it (reviewLines: the roles, each scope card, the plan, the policy and start, the instructions per role, the private
  * files and the improver line); and reviewStage, the pure stage that has the draft planned, shows it, asks, goes back
  * to one item's stage until Confirm, and then replies with the plan on a --dry-run or has it applied. Pure: it gives
- * states and never performs an effect, imports apply, core, generate, plan, roles, scan, scope, team, ui, init/draft,
+ * states and never performs an effect, imports apply, core, plan, roles, scan, scope, team, ui, init/draft,
  * init/initapply, init/initplan, init/replies, init/state and the launch and policy stages, and never imports
  * init/machine or init/run.
  */
@@ -16,7 +16,6 @@ import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { clean, reportText } from '../../core/text'
 import type { ListWords } from '../../core/text'
-import { builtClaudeMdPath } from '../../generate/launcher'
 import { t, tn } from '../../locales/t'
 import { planSummary, renderPlan } from '../../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
@@ -311,18 +310,9 @@ export function improverRunLine(count: number): string {
   return tn('init.review.improverRun', count, { count })
 }
 
-/**
- * How many built files the improver may run on after Confirm (02-GAPS-B3 S4): each `.cadre/<id>/CLAUDE.md` the plan
- * creates or changes for a role given a repo part (repoPartsOf), and each role given a global part (privatesOf), whose
- * private text file holds it.
- */
+/** How many files the improver may run on after Confirm: the private text file of each role given a global part. */
 export function improverRunCount(draft: Draft, plan: Plan): number {
-  const withParts = Array.from(repoPartsOf(draft.instructions)).filter(([, parts]) => parts.length > 0)
-  const built = new Set(withParts.map(([id]) => builtClaudeMdPath(id)))
-  const repoFiles = plan.ops.filter(op => (op.kind === 'create' || op.kind === 'change') && built.has(op.path))
-  const privateFiles = privatesOf(draft.instructions, draft.roles).filter(role => role.parts.length > 0)
-
-  return repoFiles.length + privateFiles.length
+  return privatesOf(draft.instructions, draft.roles).filter(role => role.parts.length > 0).length
 }
 
 /**

@@ -154,11 +154,11 @@ export const ARTIFACT = Object.freeze({
   roleMdSizeRubric: 'Score each dimension against the anchors in {rubric}.',
   roleMdSizePin: 'A size the user pins on a ticket overrides the computed class.',
   roleMdScope: '## Scope',
-  // The marker above a part in a built role file (generate/docs partMarker), and the first line of the built and of
-  // the private role CLAUDE.md (generate/docs roleClaudeMdText, apply/private privateClaudeMdText).
+  // The marker above a part in the private role file (generate/docs partMarker), and the first line of the built and
+  // of the private role CLAUDE.md (generate/docs roleClaudeMdText, apply/private privateClaudeMdText).
   partMarker: '<!-- from {file} > {heading} -->',
-  roleClaudeMdHeader: `<!-- cadre: instructions for role {id}, built from this repo's CLAUDE.md files, ${
-    ''}rules and docs. Edit the originals and run /cadre regen {id}; this file is rebuilt. -->`,
+  roleClaudeMdHeader: `<!-- cadre: instructions for role {id}. The repo's CLAUDE.md files and rules given to this ${
+    ''}role load from their originals; after you change them, run /cadre regen {id}. -->`,
   privateClaudeMdHeader: `<!-- cadre: your global instructions for role {id} in {repo}, ${
     ''}built from your global CLAUDE.md, its imports and the CLAUDE.md files above the repo. ${
     ''}Private to you, never committed; rebuilt by /cadre init and /cadre regen. -->`,

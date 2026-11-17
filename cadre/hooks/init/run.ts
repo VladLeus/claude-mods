@@ -699,11 +699,10 @@ async function applyConfirmed(
   // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).
   const problem = planMismatchProblem(input.plan, input.desired)
   const steps = problem === null ? await applySteps(input) : []
-  const withParts = new Set(Array.from(tracked.repoParts).flatMap(([id, parts]) => (parts.length > 0 ? [id] : [])))
   const isImproverReady = setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
   const privateFolders = new Set(privatePlan.privates.flatMap(role => (role.parts.length > 0 ? [role.folder] : [])))
-  const filter = { repoIds: withParts, privateFolders, roleFolders: privatePlan.folders }
-  const offered = problem === null && isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
+  const filter = { privateFolders, roleFolders: privatePlan.folders }
+  const offered = problem === null && isImproverReady ? builtRoleFiles(steps, filter) : []
   const allowed = privatePlan.allowed
   if (offered.length > 0) await io.progress(IMPROVER_PROGRESS, countsText([['files', offered.length]]))
   const written =

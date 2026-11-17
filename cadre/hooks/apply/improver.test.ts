@@ -607,12 +607,8 @@ describe('improver pass (G-02-1f)', () => {
       { kind: 'private', path: TL_DIR, files: [{ path: `${TL_DIR}/instructions.json`, text: '{}\n' }] },
       { kind: 'manifest', path: MANIFEST_PATH, text: '{}\n' },
     ]
-    const filter: BuiltFilter = {
-      repoIds: new Set(['be', 'fe']),
-      privateFolders: new Set([SECURITY_DIR]),
-      roleFolders: new Map([['be', BE_DIR]]),
-    }
-    expect(builtRoleFiles(steps, '/repo/', filter)).toEqual([SECURITY_BUILT_FILE])
+    const filter: BuiltFilter = { privateFolders: new Set([SECURITY_DIR]), roleFolders: new Map([['be', BE_DIR]]) }
+    expect(builtRoleFiles(steps, filter)).toEqual([SECURITY_BUILT_FILE])
   })
 
   test('a private text file is offered only when its folder is named: a header alone is not (02-GAPS-B3 C1)', () => {
@@ -621,9 +617,9 @@ describe('improver pass (G-02-1f)', () => {
     const steps: ApplyStep[] = [
       { kind: 'private', path: pmDir, files: [headerOnly, { path: `${pmDir}/instructions.json`, text: '{}\n' }] },
     ]
-    const none: BuiltFilter = { repoIds: new Set(), privateFolders: new Set(), roleFolders: new Map() }
-    expect(builtRoleFiles(steps, ROOT, none)).toEqual([])
-    expect(builtRoleFiles(steps, ROOT, { ...none, privateFolders: new Set([pmDir]) })).toEqual([
+    const none: BuiltFilter = { privateFolders: new Set(), roleFolders: new Map() }
+    expect(builtRoleFiles(steps, none)).toEqual([])
+    expect(builtRoleFiles(steps, { ...none, privateFolders: new Set([pmDir]) })).toEqual([
       { ...headerOnly, repoPath: null, watched: [], runFlags: [] },
     ])
   })
