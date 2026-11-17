@@ -12,6 +12,7 @@ import { sha256Hex } from '../../core/hash'
 import { clean, sortedUnique, utf8Bytes } from '../../core/text'
 import { t, tn } from '../../locales/t'
 import {
+  AGENTS_MD_FILE,
   displayPath,
   isDirInsideRoot,
   joinedPath,
@@ -52,9 +53,6 @@ export type InstructionSources = {
   readonly memoryFolders: readonly string[]
 }
 
-/** The repo file of the agent instructions other tools read (G-02-1f Sources), at the root. */
-const AGENTS_FILE = 'AGENTS.md'
-
 /**
  * The rule files of the repo (G-02-1f Sources), by name only: the `.md` files of `.claude/rules` and its sub-folders,
  * repo-relative below `.claude/rules`, in name order (ruleFiles, 02-GAPS-B2 M4). Each folder is listed only when its
@@ -75,7 +73,7 @@ export async function repoInstructionNames(
   root: string,
 ): Promise<Pick<InstructionSources, 'rules' | 'hasAgentsMd'>> {
   const rules = await ruleNames(io, root)
-  const agents = await io.stat(joinedPath(root, AGENTS_FILE))
+  const agents = await io.stat(joinedPath(root, AGENTS_MD_FILE))
 
   return { rules, hasAgentsMd: agents?.kind === 'file' }
 }
@@ -454,10 +452,19 @@ async function readRules(state: ReadState): Promise<void> {
   for (const name of sortedUnique(rules)) await readOne(state, joinedPath(root, `${RULES_FOLDER}/${name}`), 'own')
 }
 
-/** The root AGENTS.md, only when it was a file before the consent (G-02-1f Sources). */
+/** Whether the repo chain holds a CLAUDE.md inside the repo, which a plain session loads in place of AGENTS.md. */
+function hasRootClaudeMd(state: ReadState): boolean {
+  return state.sources.chain.some(shown => placeOf(pathFromDisplay(shown, state.sources), state).kind === 'repo')
+}
+
+/**
+ * The root AGENTS.md, when it was a file before the consent; it is read only when the repo has no root CLAUDE.md, as a
+ * plain session loads it only then.
+ */
 async function readAgentsMd(state: ReadState): Promise<void> {
   if (!state.sources.hasAgentsMd) return
-  await readOne(state, joinedPath(state.sources.root, AGENTS_FILE), 'own')
+  if (hasRootClaudeMd(state)) return
+  await readOne(state, joinedPath(state.sources.root, AGENTS_MD_FILE), 'own')
 }
 
 /**
