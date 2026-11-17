@@ -304,6 +304,17 @@ describe('epic done copies back what the roles wrote in the copied folders', () 
     expect(removals(run).at(-1)).toEqual(REMOVE_ARGV('/repo', WORKTREE, false))
   })
 
+  test("a file at its folder's recorded copy time is not moved over main's change", async () => {
+    const changed = await copyBackWorld([{ ...entryAt('new.md', 'file', 3000), size: 9 }])
+    const links = ['node_modules', '.cadre/bin/pm']
+    const record = { ...RECORD, createdAt: 1000, links, copies: ['thoughts'], copiedAt: { thoughts: 2000 } }
+    const world = withFile(changed, `${GIT_DIR}/${EPIC_RECORD_FILE}`, epicRecordText(record))
+    const run = await epicDone(world, [...INCLUDE_RULES, ...DONE_RULES])
+
+    expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+    expect(copyRuns(run)).toEqual([])
+  })
+
   test('a file main holds as a link stops done naming it, with no copy, no rm and no worktree remove', async () => {
     const run = await epicDone(await copyBackWorld([link('new.md')]), [...INCLUDE_RULES, ...DONE_RULES])
 

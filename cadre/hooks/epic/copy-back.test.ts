@@ -183,6 +183,63 @@ describe('copying back what the roles wrote in a copied folder at epic done', ()
   })
 })
 
+describe('each copied folder compared against its own copy time', () => {
+  /** docs/local copied at 2000, after the record was made at 1000. */
+  const COPIED_AT: ReadonlyMap<string, number> = new Map([['docs/local', 2000]])
+
+  /** Main's real folders docs, docs/local and thoughts; a.md in docs/local was changed at 3000 to 2 bytes. */
+  const MAIN: Listings = new Map<string, readonly PortEntry[]>([
+    ['', [entry('docs', 'dir'), entry('thoughts', 'dir')]],
+    ['docs', [entry('local', 'dir')]],
+    ['docs/local', [fileAt('a.md', 3000, 2)]],
+    ['thoughts', []],
+  ])
+
+  /** The worktree's real folders docs, docs/local holding `files`, and thoughts holding x.md written at 2000. */
+  function treeWith(...files: PortEntry[]): Listings {
+    return new Map<string, readonly PortEntry[]>([
+      ['', [entry('docs', 'dir'), entry('thoughts', 'dir')]],
+      ['docs', [entry('local', 'dir')]],
+      ['docs/local', files],
+      ['thoughts', [fileAt('x.md', 2000)]],
+    ])
+  }
+
+  /** copyBackPlan of the recorded and included `copies` from BARE_WORKTREE into MAIN, the record made at 1000. */
+  function ownOf(copies: readonly string[], tree: Listings, copiedAt: ReadonlyMap<string, number>): CopyBack {
+    const input = { copies, walked: [], included: copies, since: 1000, copiedAt, main: MAIN, tree }
+
+    return copyBackPlan({ root: '/repo', worktree: BARE_WORKTREE, ...input })
+  }
+
+  test("a file at its copy's own time is not moved over main's change; without a copy time it is", () => {
+    const tree = treeWith(fileAt('a.md', 2000))
+
+    expect(ownOf(['docs/local'], tree, COPIED_AT)).toEqual({ steps: [], unsafe: [] })
+    expect(backOf(['docs/local'], ['docs/local'], MAIN, tree)).toEqual({
+      steps: [moveOf('docs/local/a.md')],
+      unsafe: [],
+    })
+  })
+
+  test('a file written after its copy time is moved', () => {
+    const tree = treeWith(fileAt('a.md', 2000), fileAt('b.md', 2500))
+
+    expect(ownOf(['docs/local'], tree, COPIED_AT)).toEqual({ steps: [moveOf('docs/local/b.md')], unsafe: [] })
+  })
+
+  test('a copy time at or below 0 makes that folder unsafe; another copied folder is still copied back', () => {
+    const tree = treeWith(fileAt('a.md', 2500))
+
+    for (const time of [0, -1]) {
+      expect(ownOf(['docs/local', 'thoughts'], tree, new Map([['docs/local', time]]))).toEqual({
+        steps: [moveOf('thoughts/x.md')],
+        unsafe: ['docs/local'],
+      })
+    }
+  })
+})
+
 describe('what epic done may copy back', () => {
   test('a recorded copy whose folder the worktree cannot list is unsafe, named, and not walked', () => {
     const main = mainOf([['thoughts', [entry('shared', 'dir')]]])
@@ -314,6 +371,15 @@ describe('moving the new files of a walked folder into main at epic done', () =>
     for (const main of [linked, file, new Map()]) {
       expect(walkedOf(['thoughts'], ['thoughts/shared'], main, TREE)).toEqual({ steps: [], unsafe: ['thoughts'] })
     }
+  })
+
+  test('a copy temp file in a walked folder is never moved', () => {
+    const tree = treeOf([['thoughts', [fileAt('x.md', 2000), fileAt('y.cadre-copy', 2000)]]])
+
+    expect(walkedOf(['thoughts'], ['thoughts/shared'], mainOf([['thoughts', []]]), tree)).toEqual({
+      steps: [moveOf('thoughts/x.md')],
+      unsafe: [],
+    })
   })
 
   test('a walked folder main lacks is made before the first move into it', () => {

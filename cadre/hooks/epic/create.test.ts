@@ -612,6 +612,7 @@ describe('copying what .worktreeinclude names into the epic worktree', () => {
       120_000,
     ])
     expect([record?.copies, record?.links]).toEqual([['thoughts'], ['node_modules']])
+    expect(record).toMatchObject({ copiedAt: { thoughts: 1_000_000 } })
   })
 
   test('a failed or rejected copy stops naming the path and its sibling, no move run, no copy recorded', async () => {
@@ -791,6 +792,29 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
       links: ['dist', 'node_modules'],
       copies: ['.env'],
     })
+  })
+
+  test('a reuse records the copy time of what it copies beside the recorded ones; no copy, no copiedAt', async () => {
+    const plain = { ...RECORD, slug: 'proj-1-x', branch: 'epic/proj-1-x' }
+    const recorded = { ...plain, copiedAt: { old: 500 } }
+    const kept = await keptWorld(epicRecordText(recorded))
+    const world = {
+      ...kept,
+      files: { ...kept.files, '/repo/.worktreeinclude': 'docs/local/\n' },
+      dirs: { ...kept.dirs, '/repo': [entry('docs', 'dir')], '/repo/docs': [entry('local', 'dir')] },
+    }
+    const named = [rule(LS_IGNORED_ARGV('/repo'), 0, 'docs/\0'), rule(INCLUDED_ARGV('/repo'), 0, 'docs/local/\0')]
+    const run = await epic(world, [...named, ...KEPT_RULES])
+    const uncopied = await epic(await keptWorld(epicRecordText(plain)), KEPT_RULES)
+    const recordPath = `${KEPT_GIT_DIR}/${EPIC_RECORD_FILE}`
+
+    expect(parseEpicRecord(lastWrite(run, recordPath) ?? '')).toEqual({
+      ...recorded,
+      copies: ['docs/local'],
+      walked: ['docs'],
+      copiedAt: { 'docs/local': 1_000_000, old: 500 },
+    })
+    expect(lastWrite(uncopied, recordPath)).not.toContain('copiedAt')
   })
 
   test('a reuse with an unreadable record still mirrors, and records only what this run made', async () => {
