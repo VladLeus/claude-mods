@@ -754,6 +754,12 @@ export const EN = Object.freeze({
   'regen.review.notHandedOut.other':
     `{count} new or changed instruction parts or memories for {id} were not handed out: ${
     ''}run /cadre regen {id} in a session to answer them`,
+  'regen.review.loadsAsNow.one':
+    `1 repo instruction file given to {id} changed since init and loads as it is now: ${
+    ''}run /cadre regen {id} in a session to review it`,
+  'regen.review.loadsAsNow.other':
+    `{count} repo instruction files given to {id} changed since init and load as they are now: ${
+    ''}run /cadre regen {id} in a session to review them`,
 
   'regen.plan.improverNotOfferedWarning':
     `the improver was not offered for {id}: claude -p cannot ask Accept or Keep original; run /cadre ${

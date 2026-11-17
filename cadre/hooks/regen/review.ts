@@ -124,11 +124,19 @@ export function memoryDroppedLine(id: string, memory: Pick<MemoryItem, 'file'>):
 }
 
 /**
- * The warning of a regen where no one can be asked, such as `claude -p` (D-142 rg1-a): how many new or changed parts
- * and memories were left out of the role, and the command that asks about them.
+ * The warning of a regen where no one can be asked, such as `claude -p`: how many new or changed parts and memories
+ * were left out of the role, and the command that asks about them.
  */
 export function notHandedOutWarning(id: string, count: number): string {
   return tn('regen.review.notHandedOut', count, { count, id })
+}
+
+/**
+ * The warning of a regen where no one can be asked: how many repo files the role is given changed since init and load
+ * as they are now, and the command that reviews them.
+ */
+export function loadsAsNowWarning(id: string, count: number): string {
+  return tn('regen.review.loadsAsNow', count, { count, id })
 }
 
 /** One new or changed item a regen asks about (G-02-1f Regen, D-142), as its side found it. */
@@ -235,12 +243,21 @@ type SideResult = {
 }
 
 /**
- * One side after the questions (G-02-1f Regen, D-142 rg1-a; AUTO-PICK #19 Q1, Q3): the role holds each kept part and
- * memory and, in a session, each asked one answered Yes (`yes`); every other part of the files read is not given, and
- * a memory answered No leaves its record. Its built text changes when a given part changed or is gone, or a new part
- * was taken; its records change only in a session, when an item was asked or one is gone, so where no one can be asked
- * no record is written and a removed item is reported again until a session regen drops it. Each removed part and
- * memory gives its reply line.
+ * The repo items held where no one can be asked: each part of a file a given record names, since the launch gives that
+ * file as it is now.
+ */
+function heldWithoutAsking(found: SideChanges): ReadonlySet<RegenAsk> {
+  const files = new Set(found.side.given.map(record => record.file))
+
+  return new Set(found.asked.filter(item => item.kind === 'part' && files.has(item.part.file)))
+}
+
+/**
+ * One side after the questions: the role holds each kept part and memory and each asked one in `yes` (the answers Yes
+ * in a session, the repo items heldWithoutAsking gives where no one can be asked); every other part of the files read
+ * is not given, and a memory answered No leaves its record. Its built text changes when a given part changed or is
+ * gone, or a new part was taken; its records change only in a session, when an item was asked or one is gone. Each
+ * removed part and memory gives its reply line, and an item not held where no one can be asked is left out.
  */
 function sideResult(id: string, found: SideChanges, yes: ReadonlySet<RegenAsk>, isSession: boolean): SideResult {
   const { side, changes, asked } = found
@@ -263,7 +280,7 @@ function sideResult(id: string, found: SideChanges, yes: ReadonlySet<RegenAsk>, 
       ...removed.parts.map(record => partDroppedLine(id, record)),
       ...removed.memories.map(memory => memoryDroppedLine(id, memory)),
     ],
-    leftOut: isSession ? 0 : asked.length,
+    leftOut: isSession ? 0 : asked.length - taken.length,
   }
 }
 
@@ -429,17 +446,18 @@ export type RegenHanded = {
 }
 
 /**
- * The hand-out of a regen (G-02-1f Regen, D-142). A role.json with no part records, written before them, hands out
- * nothing, so regen runs as before. Else regen reads again only the files and memories the records name (rg2-a): the
- * repo side from role.json (repoSideRead) and, in a plain regen, the private side from the role's hand-out record
- * (privateRecordOf, privateSideRead); a --dry-run compares the repo side only (AUTO-PICK #19 Q5). Each side gives what
- * changed and what to ask (sideChanges): the repo side's parts, then the global parts, then the memories. In a session
- * that can show a dialog, with an item to ask, one recommendation call and one question per item follow (regenAnswers,
- * rg1-a), in a --dry-run too (Q6), and a cancel gives its reason (Q7); where no one can be asked nothing is, and the
- * items left out give notHandedOutWarning. Then each side's result (sideResult): the repo side is checked against git
- * in a plain regen (trackedSide), sets its records on the role when they change (withPartRecords) and rebuilds the
- * built file from its parts when its text changes; the private side gives the files of the role memory folder to
- * rebuild (privateRoleOf), with the repo's folder name (repoNameOf).
+ * The hand-out of a regen. A role.json with no part records, written before them, hands out nothing, so regen runs as
+ * before. Else regen reads again only the files and memories the records name: the repo side from role.json
+ * (repoSideRead) and, in a plain regen, the private side from the role's hand-out record (privateRecordOf,
+ * privateSideRead); a --dry-run compares the repo side only. Each side gives what changed and what to ask
+ * (sideChanges): the repo side's parts, then the global parts, then the memories. In a session that can show a dialog,
+ * with an item to ask, one recommendation call and one question per item follow (regenAnswers), in a --dry-run too,
+ * and a cancel gives its reason; where no one can be asked nothing is: a repo item whose file a given record names
+ * stays held, as the launch gives that file as it is now (loadsAsNowWarning), and every other item is left out
+ * (notHandedOutWarning). Then each side's result (sideResult): the repo side is checked against git in a plain regen
+ * (trackedSide), sets its records on the role when they change (withPartRecords) and rebuilds the built file from its
+ * parts when its text changes; the private side gives the files of the role memory folder to rebuild (privateRoleOf),
+ * with the repo's folder name (repoNameOf).
  */
 export async function regenHandout(
   io: InitIo,
@@ -474,15 +492,18 @@ export async function regenHandout(
   const none: ReadonlySet<RegenAsk> = new Set()
   const answers = isSession && asked.length > 0 ? await regenAnswers(io, role, asked) : accepted(none)
   if (answers.kind === 'cancelled') return answers
-  const repoResult = repoChanges === null ? null : sideResult(id, repoChanges, answers.value, isSession)
+  const repoYes = repoChanges === null || isSession ? answers.value : heldWithoutAsking(repoChanges)
+  const repoResult = repoChanges === null ? null : sideResult(id, repoChanges, repoYes, isSession)
   const privateResult = privateChanges === null ? null : sideResult(id, privateChanges, answers.value, isSession)
   const tracked = repoResult === null ? null : await trackedSide(host, locations.root, id, repoResult)
   const repoSide = tracked?.result ?? null
   const leftOut = (repoResult?.leftOut ?? 0) + (privateResult?.leftOut ?? 0)
+  const loadsAsNow = isSession ? 0 : repoYes.size
   const warnings = [
     ...(repoRead.kind === 'kept' ? repoRead.warnings : []),
     ...(found.kind === 'kept' ? found.warnings : []),
     ...(privateRead?.kind === 'kept' ? privateRead.warnings : []),
+    ...(loadsAsNow > 0 ? [loadsAsNowWarning(id, loadsAsNow)] : []),
     ...(leftOut > 0 ? [notHandedOutWarning(id, leftOut)] : []),
   ]
   const isRoleWritten = repoSide !== null && repoSide.isRecordsChanged
