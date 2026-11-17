@@ -2204,7 +2204,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(built.map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
     expect(built[0]?.text).toBe(BUILT_BE)
     expect(host.writes.filter(write => write.text.includes(LOCAL_NOTE))).toEqual([])
-    const untracked = 'warning: .claude/rules/local.md is not tracked by git: its parts are not written to .cadre/'
+    const untracked = 'warning: .claude/rules/local.md is not tracked by git: no role is given it'
     expect(reply.split('\n').filter(line => line.includes('not tracked by git'))).toEqual([untracked])
     expect(untracked).toBe(`warning: ${untrackedPartsWarning('.claude/rules/local.md')}`)
     expect(gitCalls(host)).toEqual([{ argv: LOCAL_GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
@@ -2220,7 +2220,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
       expect(reply.split('\n').filter(line => line === `warning: ${GIT_TRACKING_UNKNOWN_WARNING}`)).toHaveLength(1)
     }
     expect(GIT_TRACKING_UNKNOWN_WARNING).toBe(
-      'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+      'could not ask git which instruction files it tracks: no role is given them',
     )
   })
 
