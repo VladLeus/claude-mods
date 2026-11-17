@@ -856,7 +856,7 @@ export type TaskUse = {
 
 /**
  * The fields of an inbox entry beside its subject and body that inbox_send checks per kind, and the stamps cadre adds:
- * `size` and `large` on an entry with a vector, `planPath` and `method` on a superpowers task.
+ * `size`, `large` and, when a pin set the class, `pinned` on a task; `planPath` and `method` on a superpowers task.
  */
 export type InboxEntryFields = {
   readonly ticketKey?: string
