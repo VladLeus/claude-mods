@@ -385,19 +385,22 @@ describe('question contexts (D-203, D-236)', () => {
     })
   })
 
-  test('improverInstallContext names the built CLAUDE.md of each role given one', () => {
+  test('improverInstallContext names the private CLAUDE.md of each role given one, in the config folder', () => {
+    const heading = 'Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:'
+    const pathOf = (id: string) => `<config dir>/cadre/<repo>-<hash8>/${id}/instructions/CLAUDE.md`
+
     expect(improverInstallContext(['be', 'qa'])).toEqual({
       title: 'Improver install',
-      lines: ['Built CLAUDE.md files it would tidy:', '  be: .cadre/be/CLAUDE.md', '  qa: .cadre/qa/CLAUDE.md'],
+      lines: [heading, `  be: ${pathOf('be')}`, `  qa: ${pathOf('qa')}`],
       kind: 'improver-install',
       summary: '2 roles: be, qa',
       rows: [
         {
           title: null,
           rows: [
-            { role: 'heading', text: 'Built CLAUDE.md files it would tidy:', indent: 0 },
-            { role: 'field', label: 'be', text: '.cadre/be/CLAUDE.md', indent: 2 },
-            { role: 'field', label: 'qa', text: '.cadre/qa/CLAUDE.md', indent: 2 },
+            { role: 'heading', text: heading, indent: 0 },
+            { role: 'field', label: 'be', text: pathOf('be'), indent: 2 },
+            { role: 'field', label: 'qa', text: pathOf('qa'), indent: 2 },
           ],
         },
       ],

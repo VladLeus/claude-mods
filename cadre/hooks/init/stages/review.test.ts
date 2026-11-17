@@ -78,10 +78,10 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
     )
     expect(PRIVATE_FILES_HEADING).toBe('Private files per role (written after Confirm):')
     expect([improverRunLine(1), improverRunLine(2)]).toEqual([
-      'After Confirm, claude-md-improver runs on up to 1 built file (claude -p, acceptEdits, up to 5 minutes each); ' +
-        'you accept or keep each change.',
-      'After Confirm, claude-md-improver runs on up to 2 built files (claude -p, acceptEdits, up to 5 minutes each); ' +
-        'you accept or keep each change.',
+      'After Confirm, claude-md-improver runs on up to 1 private CLAUDE.md, built from your global CLAUDE.md ' +
+        '(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.',
+      'After Confirm, claude-md-improver runs on up to 2 private CLAUDE.md files, built from your global CLAUDE.md ' +
+        '(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.',
     ])
   })
 })

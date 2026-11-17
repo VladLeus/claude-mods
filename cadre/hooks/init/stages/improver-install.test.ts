@@ -16,10 +16,10 @@ describe('improver install offer (G-02-1f)', () => {
   test('the question, its context, its cancel reason and the plugin key are fixed', () => {
     expect(IMPROVER_INSTALL_QUESTION).toBe(
       'Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver ' +
-        "tidies each role's built CLAUDE.md, and you accept or keep each change.",
+        "tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.",
     )
     expect(IMPROVER_INSTALL_CONTEXT).toBe(
-      'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
+      'Without it the private CLAUDE.md files stay as cadre wrote them; a --dry-run installs nothing.',
     )
     expect(IMPROVER_INSTALL_DISMISSED_REASON).toBe('The claude-md-management question was dismissed or not answered.')
     expect(CLAUDE_MD_PLUGIN).toBe('claude-md-management@claude-plugins-official')
@@ -73,7 +73,9 @@ describe('the improver install stage (D-230)', () => {
   test('improverInstallStage asks when a role got a global part and the plugin is missing; the open question', () => {
     const state = improverAt(BUILT)
     const question = withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT)
-    const lines = ['Built CLAUDE.md files it would tidy:', '  pm: .cadre/pm/CLAUDE.md']
+    const heading = 'Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:'
+    const path = '<config dir>/cadre/<repo>-<hash8>/pm/instructions/CLAUDE.md'
+    const lines = [heading, `  pm: ${path}`]
     // A pane surface asks the question with the summary of its context (D-310).
     const summary = '1 role: pm'
     const pane = { asked: question, text: withContext(IMPROVER_INSTALL_QUESTION, summary) }
@@ -81,8 +83,8 @@ describe('the improver install stage (D-230)', () => {
       {
         title: null,
         rows: [
-          { role: 'heading', text: 'Built CLAUDE.md files it would tidy:', indent: 0 },
-          { role: 'field', label: 'pm', text: '.cadre/pm/CLAUDE.md', indent: 2 },
+          { role: 'heading', text: heading, indent: 0 },
+          { role: 'field', label: 'pm', text: path, indent: 2 },
         ],
       },
     ]
@@ -105,9 +107,9 @@ describe('the improver install stage (D-230)', () => {
     ])
     const state = improverAt({ ...BUILT, topics, given })
     expect(state.openQuestion?.spec.context?.lines).toEqual([
-      'Built CLAUDE.md files it would tidy:',
-      '  pm: .cadre/pm/CLAUDE.md',
-      '  security: .cadre/security/CLAUDE.md',
+      'Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:',
+      '  pm: <config dir>/cadre/<repo>-<hash8>/pm/instructions/CLAUDE.md',
+      '  security: <config dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md',
     ])
   })
 
