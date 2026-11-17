@@ -311,9 +311,9 @@ function leftUnread(state: ReadState, file: string): null {
 }
 
 /**
- * The parts of one file's text (G-02-1f Part unit): its sections (splitSections), each with the file and source it
- * comes from and the SHA-256 of its text (sha256Hex), for regen (G-02-1f Regen); `P<n>` in file order after the
- * `before` parts already read. The read of init and the read of regen both split a file through it.
+ * The parts of one file's text, each with its file, source and the SHA-256 of its text, `P<n>` after the `before`
+ * parts already read: a repo file is one whole part, a global file one part per section (splitSections). The read of
+ * init and the read of regen both cut a file through it.
  */
 export async function partsOfText(
   file: string,
@@ -321,6 +321,7 @@ export async function partsOfText(
   text: string,
   before: number,
 ): Promise<InstructionPart[]> {
+  if (source === 'repo') return [{ id: `P${before + 1}`, file, heading: '', source, text, hash: await sha256Hex(text) }]
   const parts: InstructionPart[] = []
   for (const section of splitSections(text)) {
     const { heading, text: partText } = section
@@ -406,13 +407,13 @@ async function readOne(state: ReadState, path: string, reach: Reach): Promise<Re
  * resolves from `/`, so it lands outside and is not read.
  */
 async function readImports(state: ReadState, from: ReadFile, level: number, handled: string[]): Promise<void> {
+  if (from.source === 'repo') return
   if (level >= MAX_IMPORT_LEVELS) return
-  const reach: Reach = from.source === 'repo' ? 'repo-link' : 'own'
   for (const path of claudeMdImports(from.text, from.dir, state.sources.home ?? '')) {
     if (handled.length >= MAX_IMPORTED_FILES) return
     if (state.seen.has(path)) continue
     handled.push(path)
-    const read = await readOne(state, path, reach)
+    const read = await readOne(state, path, 'own')
     if (read !== null) await readImports(state, read, level + 1, handled)
   }
 }
@@ -527,7 +528,6 @@ export async function readInstructionFiles(io: InitIo, sources: InstructionSourc
   await readChain(state)
   await readRules(state)
   await readAgentsMd(state)
-  await readDocs(state)
   const read = await readMemories(io, sources.memoryFolders)
   state.warnings.push(...read.warnings)
 

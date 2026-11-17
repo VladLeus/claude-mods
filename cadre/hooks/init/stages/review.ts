@@ -415,7 +415,7 @@ function reviewPlanOf(draft: Draft): {
   ])
   const repoParts = repoPartsOf(draft.instructions)
   const input = {
-    roles: withRepoRecords(draft.roles, draft.instructions, repoParts),
+    roles: withRepoRecords(draft.roles, repoParts),
     repoDefault: draft.repoDefault,
     policy: draft.policy,
     launchStart: draft.launchStart,

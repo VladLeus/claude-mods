@@ -144,11 +144,10 @@ export type SideRead =
   | { readonly kind: 'kept'; readonly warnings: readonly string[] }
 
 /**
- * A role's repo side read again (G-02-1f Regen, D-142 rg2-a): each file its role.json records name, once, in record
- * order, through readRepoFile (a link out of the repo is never read), split into hashed parts (partsOfText). A missing
- * file has no part, so its records are removed; a file that cannot be read (unreadableWarning) or is over the read cap
- * (overSizeWarning) leaves the whole side as it is (AUTO-PICK #19 Q8), since its parts could not be rebuilt; so does a
- * text that would take the side past MAX_TOTAL_BYTES in all, which stops the read (regenTotalWarning, 02-GAPS-B3 C8).
+ * A role's repo side read again: each file its role.json records name, once, in record order, through readRepoFile (a
+ * link out of the repo is never read), as one whole-file part (partsOfText). A missing file has no part, so its records
+ * are removed; a file that cannot be read or is over the read cap leaves the whole side as it is, and so does a text
+ * that would take the side past MAX_TOTAL_BYTES in all.
  */
 export async function repoSideRead(io: InitIo, root: string, role: RoleSpec): Promise<SideRead> {
   const given = role.instructionParts ?? []

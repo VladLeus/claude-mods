@@ -54,25 +54,18 @@ export function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, re
 }
 
 /**
- * The roles with the records regen compares against (G-02-1f Regen, AUTO-PICK #19 Q1): each parts-flow role
- * (isPartsFlowRole) records the repo parts `repoParts` gives it, and as not given every other repo part the read found
- * in the same files, both in read order, so its role.json names no global part and no memory (T-02-79); a role given
- * no repo part records none, and a whole-files role is left as it is.
+ * The roles with the records regen compares against: a parts-flow role records the whole repo files it was given, in
+ * read order, so its role.json names no global part and no memory; a whole-files role is left as it is.
  */
 export function withRepoRecords(
   roles: readonly RoleSpec[],
-  handout: InstructionHandout,
   repoParts: ReadonlyMap<string, readonly InstructionPart[]>,
 ): RoleSpec[] {
-  const read = handout.kind === 'parts' ? handout.scan.parts.filter(part => part.source === 'repo') : []
-
   return roles.map(role => {
     if (!isPartsFlowRole(role)) return role
     const given = repoParts.get(role.id) ?? []
-    const files = new Set(given.map(part => part.file))
-    const notGiven = read.filter(part => files.has(part.file) && !given.includes(part))
 
-    return withPartRecords(role, given.map(partRecord), notGiven.map(partRecord))
+    return withPartRecords(role, given.map(partRecord), [])
   })
 }
 

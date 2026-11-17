@@ -565,7 +565,7 @@ async function applyConfirmed(
   const owed = privatesOf(draft.instructions, roles)
   const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })
   const planned = await planStep(io, {
-    roles: withRepoRecords(roles, draft.instructions, tracked.repoParts),
+    roles: withRepoRecords(roles, tracked.repoParts),
     repoDefault,
     policy: draft.policy,
     launchStart,

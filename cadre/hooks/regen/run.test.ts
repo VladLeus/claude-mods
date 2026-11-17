@@ -918,7 +918,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       withContext('Should be get "(top of file)" from CLAUDE.md?', 'Changed since init. Recommended: no.'),
     ])
     const kinds = opKinds(first.reply)
-    expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual([undefined, 'change'])
+    expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual(['leave', 'change'])
     const again = await regenPlainBe(withWrites(world, first.host.writes), {})
     expect([again.run.asked, again.run.prompts, again.host.writes]).toEqual([[], [], []])
   })
