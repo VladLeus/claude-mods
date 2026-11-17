@@ -4226,9 +4226,9 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Improver install",
         "lines": [
-          "Built CLAUDE.md files it would tidy:",
-          "  tl: .cadre/tl/CLAUDE.md",
-          "  security: .cadre/security/CLAUDE.md"
+          "Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:",
+          "  tl: <config dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md",
+          "  security: <config dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md"
         ],
         "kind": "improver-install",
         "summary": "2 roles: tl, security",
@@ -4238,27 +4238,27 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "rows": [
               {
                 "role": "heading",
-                "text": "Built CLAUDE.md files it would tidy:",
+                "text": "Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:",
                 "indent": 0
               },
               {
                 "role": "field",
                 "label": "tl",
-                "text": ".cadre/tl/CLAUDE.md",
+                "text": "<config dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md",
                 "indent": 2
               },
               {
                 "role": "field",
                 "label": "security",
-                "text": ".cadre/security/CLAUDE.md",
+                "text": "<config dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md",
                 "indent": 2
               }
             ]
           }
         ],
         "pane": {
-          "asked": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\nWithout it the built files stay as cadre wrote them; a --dry-run installs nothing.",
-          "text": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\n2 roles: tl, security"
+          "asked": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.\nWithout it the private CLAUDE.md files stay as cadre wrote them; a --dry-run installs nothing.",
+          "text": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.\n2 roles: tl, security"
         }
       },
       "acceptsTyped": false

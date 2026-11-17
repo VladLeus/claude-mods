@@ -107,7 +107,7 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "prompt a89364612765f874c3ebf9fc7baa79ff4797b916d202f79f24ebe06c5084b5ef",
     "prompt 1541d9bc5ed1169f6a23675f227e7893a9274c8b824d40c5f015afe3611cd0bd",
     "ask How do you want to hand out the instruction parts and memories?",
-    "ask Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.",
+    "ask Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.",
     "ask Git policy for .cadre/?",
     "ask Where should the role launchers start their sessions? (asked once for this repo)",
     "ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one item."

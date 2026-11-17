@@ -193,9 +193,10 @@ export const EN = Object.freeze({
 
   'init.improverInstall.improverInstallQuestion':
     `Install claude-md-management from claude-plugins-official after you confirm the plan? Its ${
-    ''}claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.`,
+    ''}claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept ${
+    ''}or keep each change.`,
   'init.improverInstall.improverInstallContext':
-    'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
+    'Without it the private CLAUDE.md files stay as cadre wrote them; a --dry-run installs nothing.',
   'init.improverInstall.improverInstallDismissedReason':
     'The claude-md-management question was dismissed or not answered.',
 
@@ -353,11 +354,11 @@ export const EN = Object.freeze({
   'init.review.title': 'Review',
   'init.review.pagedTitle': 'Review (page {number} of {count})',
   'init.review.improverRun.one':
-    `After Confirm, claude-md-improver runs on up to {count} built file ${
+    `After Confirm, claude-md-improver runs on up to {count} private CLAUDE.md, built from your global CLAUDE.md ${
     ''}(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
   'init.review.improverRun.other':
-    `After Confirm, claude-md-improver runs on up to {count} built files ${
-    ''}(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
+    `After Confirm, claude-md-improver runs on up to {count} private CLAUDE.md files, built from your global ${
+    ''}CLAUDE.md (claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
 
   'init.reply.dryRunHead': 'cadre init --dry-run',
   'init.reply.head': 'cadre init',
@@ -561,8 +562,9 @@ export const EN = Object.freeze({
   'ui.context.memoryGroupTitlesProjectClaudeMd': 'Project CLAUDE.md',
   'ui.context.globalGroupLine': '{globalClaudeMdText} and the files it imports',
   'ui.context.envContext': 'Env variables',
-  'ui.context.improverInstallContext': '  {id}: {builtClaudeMdPath}',
-  'ui.context.improverInstallContext2': 'Built CLAUDE.md files it would tidy:',
+  'ui.context.improverInstallContext': '  {id}: {privateClaudeMdPath}',
+  'ui.context.improverInstallContext2': 'Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:',
+  'ui.context.privateClaudeMdPath': '<config dir>/cadre/<repo>-<hash8>/{id}/instructions/CLAUDE.md',
   'ui.context.improverInstallContext3': 'Improver install',
   'ui.context.launchContext': 'Git root: the top of this repo, the same for every launcher.',
   'ui.context.launchContext2': 'Run folder: wherever you run a launcher from.',

@@ -1164,8 +1164,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.",
-          "Without it the built files stay as cadre wrote them; a --dry-run installs nothing."
+          "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.",
+          "Without it the private CLAUDE.md files stay as cadre wrote them; a --dry-run installs nothing."
         ],
         "header": "Improver",
         "options": [
