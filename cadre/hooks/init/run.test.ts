@@ -114,6 +114,7 @@ import {
   FRAMEWORKS,
   FULL_DIRS,
   FULL_FILES,
+  GIT_SECTION,
   gitWorld,
   GLOBAL_CLAUDE_MD,
   GLOBAL_SENTENCE,
@@ -146,6 +147,7 @@ import {
   regenPartsWorld,
   REPO_SENTENCE,
   repoScan,
+  rootPart,
   RULES_SECTION,
   scansOf,
   SECRET_FIXTURES,
@@ -1618,8 +1620,8 @@ describe('instruction parts (G-02-1f)', () => {
     // The plan also reads the path of each built role file, to classify it against the disk (G-02-1f, PLAN-04).
     const instructionReads = run.reads.filter(path => path.endsWith('CLAUDE.md') && !path.includes('/.cadre/'))
     expect(instructionReads).toEqual([GLOBAL_CLAUDE_MD, '/repo/CLAUDE.md'])
-    expect(run.prompts[0]).toContain('P2 | CLAUDE.md | Rules | # Rules')
-    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: CLAUDE.md > Rules')
+    expect(run.prompts[0]).toContain('P2 | CLAUDE.md | (top of file) | # Rules')
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: CLAUDE.md > (top of file)')
   })
 
   test('the content consent counts the global file and the chain files the scan found', async () => {
@@ -1723,11 +1725,11 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
   test('after a yes the rule file is a part offered to the grouping call and shown by its location', async () => {
     const run = memIo(rulesWorld(), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.prompts[0]).toContain('P1 | .claude/rules/security.md | Secrets | # Secrets')
+    expect(run.prompts[0]).toContain('P1 | .claude/rules/security.md | (top of file) | # Secrets')
     expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual([
       READ_HEADING_ROW,
       '  Secrets: How secrets are kept.',
-      '    from: .claude/rules/security.md > Secrets',
+      '    from: .claude/rules/security.md > (top of file)',
       '    recommended: security',
     ])
   })
@@ -1771,7 +1773,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
       'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md yes, 0 memories. ' +
       'No keeps the whole-file questions.'
     expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
-    expect(run.prompts[0]).toContain('P1 | AGENTS.md | Agents | # Agents')
+    expect(run.prompts[0]).toContain('P1 | AGENTS.md | (top of file) | # Agents')
   })
 
   test('a rules folder that cannot be listed counts 0, and its warning shows in the block after a yes', async () => {
@@ -1782,35 +1784,28 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain(warning)
   })
 
-  test('a doc the repo CLAUDE.md links to is read as a repo part after the chain', async () => {
-    const topics = [
-      { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
-      { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2', 'P3'] },
-    ]
+  test('a doc the repo CLAUDE.md links to is never read or offered', async () => {
     const world = chainWorld({
       files: {
         [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
         '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\nSee [the guide](docs/guide.md).\n`,
         '/repo/docs/guide.md': `# Guide\n${DOC_SENTENCE}.\n`,
       },
-      replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'],
     })
     const run = memIo(world, PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.prompts[0]).toContain('P3 | docs/guide.md | Guide | # Guide')
-    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: docs/guide.md > Guide')
+    expect(run.reads).not.toContain('/repo/docs/guide.md')
+    expect(run.prompts[0]).not.toContain(' | docs/guide.md | ')
+    expect(leaks(run.prompts.join('\n'), [DOC_SENTENCE])).toEqual([])
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION).filter(line => line.includes('docs/guide.md'))).toEqual([])
   })
 
-  test('rule and doc text never reaches a question, a log line, the pane or the reply (T-02-61)', async () => {
+  test('rule text never reaches a question, a log line, the pane or the reply; a linked doc is not read', async () => {
     const world = rulesWorld({
       files: {
         [`${RULES_DIR}/security.md`]: `# Secrets\n${RULE_SENTENCE}.\nSee [the guide](../../docs/guide.md).\n`,
         '/repo/docs/guide.md': `# Guide\n${DOC_SENTENCE}.\n`,
       },
-      replies: [
-        '{"topics":[{"title":"Secrets","summary":"How secrets are kept.","parts":["P1","P2"]}]}',
-        '{"topics":{"T1":["security"]},"memories":{}}',
-      ],
     })
     const run = memIo(world, { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part' })
     const reply = await runInit(run.io, { dryRun: true })
@@ -1824,7 +1819,8 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
       reply,
     ].join('\n')
     expect(leaks(shown, [RULE_SENTENCE, DOC_SENTENCE])).toEqual([])
-    expect(leaks(run.prompts[0] ?? '', [RULE_SENTENCE, DOC_SENTENCE])).toEqual([RULE_SENTENCE, DOC_SENTENCE])
+    expect(leaks(run.prompts[0] ?? '', [RULE_SENTENCE, DOC_SENTENCE])).toEqual([RULE_SENTENCE])
+    expect(run.reads).not.toContain('/repo/docs/guide.md')
   })
 
   test('a plain init on a repo with only rule files lists them before the consent and asks it', async () => {
@@ -1974,8 +1970,8 @@ describe('memories one by one (G-02-1f)', () => {
 })
 
 /**
- * A git repo with every instruction source (02-GAPS-B2 N5): the global CLAUDE.md, the repo CLAUDE.md of the chain,
- * which links docs/guide.md, a top-level and a nested rule file, AGENTS.md, and the memory folder with MEMORY.md and
+ * A git repo with every instruction source: the global CLAUDE.md, the repo CLAUDE.md of the chain, which links
+ * docs/guide.md (never read), a top-level and a nested rule file, AGENTS.md, and the memory folder with MEMORY.md and
  * one memory. The model gives no usable reply, so each file is one topic and nothing is recommended.
  */
 function everySourceWorld(): MemWorld {
@@ -2001,14 +1997,13 @@ function everySourceWorld(): MemWorld {
   })
 }
 
-/** Each instruction source file of everySourceWorld, as the port reads it. */
+/** Each instruction source file of everySourceWorld that the read takes, as the port reads it. */
 const EVERY_SOURCE: readonly string[] = [
   GLOBAL_CLAUDE_MD,
   '/repo/CLAUDE.md',
   `${RULES_DIR}/a.md`,
   `${RULES_DIR}/frontend/react.md`,
   '/repo/AGENTS.md',
-  '/repo/docs/guide.md',
   `${MEMORY_DIR}/MEMORY.md`,
   `${MEMORY_DIR}/squad.md`,
 ]
@@ -2023,6 +2018,7 @@ describe('the read order over every instruction source (T-02-60, 02-GAPS-B2 N5)'
       const readAt = events.indexOf(`read ${path}`)
       expect([path, consentAt > 0, readAt > consentAt]).toEqual([path, true, true])
     }
+    expect(events).not.toContain('read /repo/docs/guide.md')
   })
 })
 
@@ -2052,18 +2048,18 @@ function repoWrites(host: MemHost): HostWrite[] {
   return host.writes.filter(write => write.path.startsWith('/repo/'))
 }
 
-/** A sentence of a local note the root CLAUDE.md imports, which git does not track in the M3 cases. */
+/** A sentence of the local rule file .claude/rules/local.md, which git does not track in the M3 cases. */
 const LOCAL_NOTE = 'LOCAL-NOTE-SENTENCE stays out of the repo'
 
-/** The git run of the M3 cases: which of CLAUDE.md and notes/local.md git tracks (02-GAPS-B2 M3). */
+/** The git run of the M3 cases: which of the local rule file and CLAUDE.md git tracks. */
 const LOCAL_GIT_ARGV: readonly string[] = [
   'git',
   '--literal-pathspecs',
   'ls-files',
   '-z',
   '--',
+  '.claude/rules/local.md',
   'CLAUDE.md',
-  'notes/local.md',
 ]
 
 /** A git ls-files run that exits 0 and names these files, each ended by NUL. */
@@ -2096,8 +2092,8 @@ function launcherIds(host: MemHost): string[] {
 const TEAM_SENTENCE = 'TEAM-WIDE-SENTENCE stays private'
 
 /**
- * builtWorld whose root CLAUDE.md also imports notes/local.md, which holds `local`; the model groups the global
- * Security section into T1, for security, and the two repo parts into T2 'Repo rules', for be (02-GAPS-B2 M3).
+ * builtWorld with the rule file .claude/rules/local.md, which holds `local`; the model groups the global Security
+ * section into T1, for security, and the root CLAUDE.md and the rule file into T2 'Repo rules', for be.
  */
 function localNoteWorld(local = `# Local\n${LOCAL_NOTE}.\n`): MemWorld {
   const topics = [
@@ -2106,11 +2102,12 @@ function localNoteWorld(local = `# Local\n${LOCAL_NOTE}.\n`): MemWorld {
   ]
 
   return builtWorld({
+    dirs: { '/repo/.git': [], ...USER_DIR_LISTED, ...FULL_DIRS, [RULES_DIR]: [entry('local.md')] },
     files: {
       ...FULL_FILES,
       [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
-      '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n@notes/local.md\n`,
-      '/repo/notes/local.md': local,
+      '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n`,
+      [`${RULES_DIR}/local.md`]: local,
     },
     replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["be"]},"memories":{}}'],
   })
@@ -2185,16 +2182,16 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(homeWrites(host).map(write => write.path)).toEqual(both)
   })
 
-  test('only the parts of files git tracks are written: untracked notes/local.md stays out (M3)', async () => {
+  test('only the parts of files git tracks are written: an untracked rule file stays out (M3)', async () => {
     const host = memHost(hostWorld({ runs: [{ argv: LOCAL_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }] }))
     const reply = await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
     expect(built.map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
     expect(built[0]?.text).toBe(BUILT_BE)
     expect(host.writes.filter(write => write.text.includes(LOCAL_NOTE))).toEqual([])
-    const untracked = 'warning: notes/local.md is not tracked by git: its parts are not written to .cadre/'
+    const untracked = 'warning: .claude/rules/local.md is not tracked by git: its parts are not written to .cadre/'
     expect(reply.split('\n').filter(line => line.includes('not tracked by git'))).toEqual([untracked])
-    expect(untracked).toBe(`warning: ${untrackedPartsWarning('notes/local.md')}`)
+    expect(untracked).toBe(`warning: ${untrackedPartsWarning('.claude/rules/local.md')}`)
     expect(gitCalls(host)).toEqual([{ argv: LOCAL_GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
   })
 
@@ -3366,7 +3363,8 @@ async function questionRuns(): Promise<QuestionRuns> {
   const improver = memIo(builtWorld({ files: improverFiles }), improverOffer('Install'))
   await runInit(improver.io, { dryRun: false, host: improvingHost(improverFiles).io })
   const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
-  const regen = memIo(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+  const given = [await rootPart('P1', '', `${RULES_SECTION}${GIT_SECTION}`)]
+  const regen = memIo(await regenPartsWorld({ ...changed, given, notGiven: [] }), { [REGEN_PART_PREFIX]: 'Yes' })
   await runRegen(regen.io, { id: 'be', dryRun: true })
 
   return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills, improver, regen }
@@ -3433,7 +3431,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.conflict, ROLE_QUESTION, 'Conflict'],
       [runs.improver, IMPROVER_INSTALL_PREFIX, 'Improver'],
       [runs.improver, IMPROVER_PREFIX, 'Improver'],
-      [runs.regen, 'Should be get "Git" from CLAUDE.md?', 'Regen 1/1'],
+      [runs.regen, 'Should be get "(top of file)" from CLAUDE.md?', 'Regen 1/1'],
     ]
     for (const [run, start, chip] of cases) expect([start, specOf(run, start).header]).toEqual([start, chip])
   })
@@ -6462,11 +6460,11 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     const { io, events } = withHostEvents(host)
     const reply = (await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: io })).split('\n')
     expect(reply).toContain('Git policy: commit definitions (.cadre/*/.runtime/ ignored)')
-    expect(LOCAL_GIT_ARGV.slice(LOCAL_GIT_ARGV.indexOf('--') + 1)).toEqual(['CLAUDE.md', 'notes/local.md'])
+    expect(LOCAL_GIT_ARGV.slice(LOCAL_GIT_ARGV.indexOf('--') + 1)).toEqual(['.claude/rules/local.md', 'CLAUDE.md'])
     expect(gitCalls(host)).toEqual([{ argv: LOCAL_GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
     expect(events[0]).toBe(`run ${LOCAL_GIT_ARGV.join(' ')}`)
     const untracked = reply.filter(line => line.includes('not tracked by git'))
-    expect(untracked).toEqual([`warning: ${untrackedPartsWarning('notes/local.md')}`])
+    expect(untracked).toEqual([`warning: ${untrackedPartsWarning('.claude/rules/local.md')}`])
     const roleJson = host.writes.find(write => write.path === '/repo/.cadre/be/role.json')?.text ?? ''
     const files = parseRoleJson(roleJson)?.instructionParts?.map(record => record.file)
     expect([files, host.writes.filter(write => write.text.includes(LOCAL_NOTE))]).toEqual([['CLAUDE.md'], []])

@@ -81,7 +81,7 @@ import {
   withFramework,
   withWrites,
 } from '../testkit'
-import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
+import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld, RegenFixture } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { improverNotOfferedWarning } from './plan'
@@ -783,6 +783,19 @@ async function beRecordPath(): Promise<string> {
   return instructionsRecordPath(await memoryFolder('be'))
 }
 
+/** The root CLAUDE.md of the regen cases as init gave it to BE. */
+const ROOT_TEXT = `${RULES_SECTION}${GIT_SECTION}`
+
+/** The root CLAUDE.md with this text as the read gives it: one whole-file repo part. */
+async function wholeRoot(text: string = ROOT_TEXT): Promise<InstructionPart> {
+  return rootPart('P1', '', text)
+}
+
+/** regenPartsWorld with BE's records as init writes them: the whole root CLAUDE.md given, nothing not given. */
+async function wholeWorld(fixture: RegenFixture = {}): Promise<MemWorld> {
+  return regenPartsWorld({ given: [await wholeRoot()], notGiven: [], ...fixture })
+}
+
 describe('regen by part hashes (G-02-1f)', () => {
   test('the regen texts are fixed', () => {
     expect(REGEN_ITEM_OPTIONS).toEqual(['Yes', 'No'])
@@ -830,7 +843,7 @@ describe('regen by part hashes (G-02-1f)', () => {
   })
 
   test('with nothing new, changed or removed regen asks nothing, calls no model and rebuilds nothing', async () => {
-    const { reply, run, host } = await regenPlainBe(await regenPartsWorld(), {})
+    const { reply, run, host } = await regenPlainBe(await wholeWorld(), {})
     const kinds = opKinds(reply)
     expect([run.asked, run.prompts, host.writes, gitCalls(host)]).toEqual([[], [], [], []])
     expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual([undefined, undefined])
@@ -843,44 +856,43 @@ describe('regen by part hashes (G-02-1f)', () => {
   test('a regen run takes its surface and a page width reader, and asks as before (D-285, D-292)', async () => {
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
     const answers = { [REGEN_PART_PREFIX]: 'Yes' }
-    const plain = memIo(await regenPartsWorld(changed), answers)
+    const plain = memIo(await wholeWorld(changed), answers)
     const plainReply = await runRegen(plain.io, { id: 'be', dryRun: true })
-    const given = memIo(await regenPartsWorld(changed), answers)
+    const given = memIo(await wholeWorld(changed), answers)
     const reply = await runRegen(given.io, { id: 'be', dryRun: true, surface: PANE_DESKTOP, pageColumns: () => 60 })
     expect([reply, given.asked, given.specs]).toEqual([plainReply, plain.asked, plain.specs])
   })
 
   test('in a session a changed part is asked after one recommendation call; Yes records it in role.json', async () => {
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
-    const { reply, run, host } = await regenPlainBe(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
-    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
-    const edited = await rootPart('P2', 'Git', GIT_EDITED)
+    const { reply, run, host } = await regenPlainBe(await wholeWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+    const edited = await wholeRoot(`${RULES_SECTION}${GIT_EDITED}`)
+    const question = 'Should be get "(top of file)" from CLAUDE.md?'
+    const item = '\nI1 | CLAUDE.md | (top of file) | # Rules Run the tests. ## Git Use signed commits, always.'
     expect(run.prompts).toHaveLength(1)
     expect(run.prompts[0]?.startsWith(`${REGEN_RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
     expect(run.prompts[0]).toContain('\nbe | BE | Implements the backend and core code.\n')
-    expect(run.prompts[0]).toContain('\nI1 | CLAUDE.md | Git | ## Git Use signed commits, always.')
-    expect(run.asked).toEqual([
-      withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: yes.'),
-    ])
+    expect(run.prompts[0]).toContain(item)
+    expect(run.asked).toEqual([withContext(question, 'Changed since init. Recommended: yes.')])
     expect(run.specs).toEqual([
       {
         options: ['Yes', 'No'],
         header: 'Regen 1/1',
         context: {
           title: 'Regen 1 of 1',
-          lines: ['CLAUDE.md > Git', 'Changed since init.', 'Recommended: yes'],
+          lines: ['CLAUDE.md > (top of file)', 'Changed since init.', 'Recommended: yes'],
           kind: 'regen-part',
-          // Its summary, which a pane surface asks under the question, is whether the model recommends it (D-310).
+          // Its summary, which a pane surface asks under the question, is whether the model recommends it.
           summary: 'Recommended: yes',
           pane: {
-            asked: withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: yes.'),
-            text: withContext('Should be get "Git" from CLAUDE.md?', 'Recommended: yes'),
+            asked: withContext(question, 'Changed since init. Recommended: yes.'),
+            text: withContext(question, 'Recommended: yes'),
           },
           rows: [
             {
               title: null,
               rows: [
-                { role: 'plain', text: 'CLAUDE.md > Git', indent: 0 },
+                { role: 'plain', text: 'CLAUDE.md > (top of file)', indent: 0 },
                 { role: 'plain', text: 'Changed since init.', indent: 0 },
                 { role: 'field', label: 'Recommended', text: 'yes', indent: 0 },
               ],
@@ -890,7 +902,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       },
     ])
     expect(host.writes.slice(0, 1)).toEqual([
-      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([edited], [rules])), isWritten: true },
+      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([edited], [])), isWritten: true },
     ])
     expect(host.writes.slice(1).map(write => write.path)).toEqual(['/repo/.cadre/manifest.json'])
     const kinds = opKinds(reply)
@@ -898,12 +910,12 @@ describe('regen by part hashes (G-02-1f)', () => {
     expect(gitCalls(host).map(call => call.argv)).toEqual([BUILT_GIT_ARGV])
   })
 
-  test('a section new in a named file is asked, one not given is not; after No neither is asked again', async () => {
-    const claudeMd = `# Rules\nRun the tests first.\n${GIT_SECTION}${DEPLOY_SECTION}`
-    const world = await regenPartsWorld({ claudeMd, over: { replies: ['{"items":{"I1":false}}'] } })
+  test('a file changed anywhere is asked once as a changed part', async () => {
+    const claudeMd = `${ROOT_TEXT}${DEPLOY_SECTION}`
+    const world = await wholeWorld({ claudeMd, over: { replies: ['{"items":{"I1":false}}'] } })
     const first = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'No' })
     expect(first.run.asked).toEqual([
-      withContext('Should be get "Deploy" from CLAUDE.md?', 'New since init. Recommended: no.'),
+      withContext('Should be get "(top of file)" from CLAUDE.md?', 'Changed since init. Recommended: no.'),
     ])
     const kinds = opKinds(first.reply)
     expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual([undefined, 'change'])
@@ -913,36 +925,34 @@ describe('regen by part hashes (G-02-1f)', () => {
 
   test('No to a changed part records it not given in role.json, never asked again', async () => {
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":false}}'] } }
-    const world = await regenPartsWorld(changed)
+    const world = await wholeWorld(changed)
     const first = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'No' })
-    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
-    const edited = await rootPart('P2', 'Git', GIT_EDITED)
+    const edited = await wholeRoot(`${RULES_SECTION}${GIT_EDITED}`)
     expect(first.host.writes.slice(0, 1)).toEqual([
-      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([], [rules, edited])), isWritten: true },
+      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([], [edited])), isWritten: true },
     ])
     expect(first.host.writes.slice(1).map(write => write.path)).toEqual(['/repo/.cadre/manifest.json'])
     const again = await regenPlainBe(withWrites(world, first.host.writes), {})
     expect([again.run.asked, again.host.writes]).toEqual([[], []])
   })
 
-  test('a removed section is dropped with its reply line right after the plan; role.json is rewritten', async () => {
-    const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ claudeMd: RULES_SECTION }), {})
+  test('a recorded file that is gone is dropped with its reply line', async () => {
+    const { reply, run, host } = await regenPlainBe(await wholeWorld({ claudeMd: null }), {})
     const lines = reply.split('\n')
     const at = lines.findIndex(line => line.startsWith('Summary: '))
-    expect(lines[at + 1]).toBe('dropped from be: CLAUDE.md > Git (gone from its file)')
+    expect(lines[at + 1]).toBe('dropped from be: CLAUDE.md > (top of file) (gone from its file)')
     expect([run.asked, run.prompts]).toEqual([[], []])
-    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
     expect(host.writes.slice(0, 1)).toEqual([
-      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([], [rules])), isWritten: true },
+      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([], [])), isWritten: true },
     ])
   })
 
-  test('in claude -p nothing is asked: new and changed parts are left out with a warning, records kept', async () => {
+  test('in claude -p nothing is asked: a changed file is left out with a warning, records kept', async () => {
     for (const interactive of [false, null]) {
       const claudeMd = `${RULES_SECTION}${GIT_EDITED}${DEPLOY_SECTION}`
-      const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ claudeMd, over: { interactive } }), {})
+      const { reply, run, host } = await regenPlainBe(await wholeWorld({ claudeMd, over: { interactive } }), {})
       expect([interactive, run.asked, run.prompts]).toEqual([interactive, [], []])
-      expect([interactive, warningLines(reply)]).toEqual([interactive, [`warning: ${notHandedOutWarning('be', 2)}`]])
+      expect([interactive, warningLines(reply)]).toEqual([interactive, [`warning: ${notHandedOutWarning('be', 1)}`]])
       expect([interactive, host.writes]).toEqual([interactive, []])
       expect(opKinds(reply).get('.cadre/be/role.json')).toBe(undefined)
     }
@@ -950,11 +960,11 @@ describe('regen by part hashes (G-02-1f)', () => {
 
   test('a --dry-run in a session asks, plans the rebuild, writes and runs nothing, names what it skipped', async () => {
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
-    const run = memIo(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+    const run = memIo(await wholeWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
     const reply = await runRegen(run.io, { id: 'be', dryRun: true })
     const kinds = opKinds(reply)
     expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual(['leave', 'change'])
-    expect(firstLines(run.asked)).toEqual(['Should be get "Git" from CLAUDE.md?'])
+    expect(firstLines(run.asked)).toEqual(['Should be get "(top of file)" from CLAUDE.md?'])
     expect(warningLines(reply)).toEqual([`warning: ${dryRunPrivateWarning('be')}`])
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(run.reads.filter(path => path.startsWith('/home/u/.claude/cadre'))).toEqual([])
@@ -962,7 +972,7 @@ describe('regen by part hashes (G-02-1f)', () => {
 
   test('a plain session regen of changed repo parts runs no improver: the built file is never offered', async () => {
     const over = { files: { [INSTALLED_PLUGINS_PATH]: claudeMdInstalled() }, replies: ['{"items":{"I1":true}}'] }
-    const world = await regenPartsWorld({ claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over })
+    const world = await wholeWorld({ claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over })
     const { reply, host } = await regenOnDisk(world, { [REGEN_PART_PREFIX]: 'Yes' })
     expect(improverCalls(host)).toEqual([])
     expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
@@ -971,20 +981,18 @@ describe('regen by part hashes (G-02-1f)', () => {
 
   test('a plain session regen of changed repo parts sets no improver loader (D-285, S-02)', async () => {
     const over = { files: { [INSTALLED_PLUGINS_PATH]: claudeMdInstalled() }, replies: ['{"items":{"I1":true}}'] }
-    const world = await regenPartsWorld({ claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over })
+    const world = await wholeWorld({ claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over })
     const { run, host } = await regenOnDisk(world, { [REGEN_PART_PREFIX]: 'Yes' })
     expect(improverCalls(host)).toEqual([])
     expect(run.progress).not.toContain('Running the improver…')
   })
 
   test('in claude -p a regen of changed repo parts gets no improver warning and no run', async () => {
-    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
-    const git = await rootPart('P2', 'Git', GIT_SECTION)
     const over = { files: { [INSTALLED_PLUGINS_PATH]: claudeMdInstalled() }, interactive: false }
-    const world = await regenPartsWorld({ claudeMd: RULES_SECTION, over, given: [rules, git], notGiven: [] })
+    const world = await wholeWorld({ claudeMd: RULES_SECTION, over })
     const { reply, host } = await regenPlainBe(world, {})
     expect(improverCalls(host)).toEqual([])
-    expect(warningLines(reply)).toEqual([])
+    expect(warningLines(reply)).toEqual([`warning: ${notHandedOutWarning('be', 1)}`])
     expect(host.writes).toEqual([])
   })
 
@@ -1000,7 +1008,7 @@ describe('regen by part hashes (G-02-1f)', () => {
         [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
       },
     }
-    const run = memIo(await regenPartsWorld({ over }), {})
+    const run = memIo(await wholeWorld({ over }), {})
     await runRegen(run.io, { id: 'be', dryRun: true })
     const rules = '/repo/.claude/rules/style.md'
     const unnamed = ['/repo/AGENTS.md', rules, `${MEMORY_DIR}/MEMORY.md`, squad, GLOBAL_CLAUDE_MD]
@@ -1018,7 +1026,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       [GLOBAL_CLAUDE_MD]: '# Security\nNever commit secrets, ever.\n## Git\nUse signed commits.\n',
       [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
     }
-    const world = await regenPartsWorld({ over: { files, replies: ['{"items":{"I1":true}}'] } })
+    const world = await wholeWorld({ over: { files, replies: ['{"items":{"I1":true}}'] } })
     const { reply, run, host } = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'Yes' })
     expect(run.asked).toEqual([
       withContext('Should be get "Security" from ~/.claude/CLAUDE.md?', 'Changed since init. Recommended: yes.'),
@@ -1034,7 +1042,7 @@ describe('regen by part hashes (G-02-1f)', () => {
   test('a removed memory is dropped with its reply line; a role left with nothing gets both files empty', async () => {
     const squad = await squadMemory()
     const files = { [await beRecordPath()]: instructionsRecordText([], [squad]) }
-    const { reply, host } = await regenPlainBe(await regenPartsWorld({ over: { files } }), {})
+    const { reply, host } = await regenPlainBe(await wholeWorld({ over: { files } }), {})
     const folder = await memoryFolder('be')
     expect(reply.split('\n')).toContain('dropped from be: memory squad.md (gone)')
     // A role that had a private record and lost everything gets a header-only text file and an empty record (Q11).
@@ -1065,7 +1073,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     for (const [index, record] of records.entries()) {
       const secrets = Object.fromEntries(hostilePaths.map(path => [path, 'secret']))
       const files = { [await beRecordPath()]: record, '/etc/notes.md': 'secret', '/tmp/x.md': 'secret', ...secrets }
-      const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ over: { files } }), {})
+      const { reply, run, host } = await regenPlainBe(await wholeWorld({ over: { files } }), {})
       expect([index, warningLines(reply)]).toEqual([index, [`warning: ${unusableRecordWarning('be')}`]])
       const outside = run.reads.filter(path => /^\/(etc|tmp)\//.test(path) || hostilePaths.includes(path))
       expect([index, outside]).toEqual([index, []])
@@ -1075,7 +1083,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const [part] = await partsOfText('~/.claude/notes/style.md', 'global', style, 0)
     const used = JSON.stringify({ schema: 1, parts: [part === undefined ? {} : recorded(part)], memories: [] })
     const files = { [await beRecordPath()]: used, '/home/u/.claude/notes/style.md': style }
-    const { reply, run } = await regenPlainBe(await regenPartsWorld({ over: { files } }), {})
+    const { reply, run } = await regenPlainBe(await wholeWorld({ over: { files } }), {})
     expect([warningLines(reply), run.reads.includes('/home/u/.claude/notes/style.md')]).toEqual([[], true])
   })
 
@@ -1085,7 +1093,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const docs = [...(await big('docs/a.md')), ...(await big('docs/b.md')), ...(await big('docs/c.md'))]
     const onDiskDocs = Object.fromEntries(docs.map(part => [`/repo/${part.file}`, part.text]))
     const over = { files: onDiskDocs }
-    const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ over, notGiven: docs }), {})
+    const { reply, run, host } = await regenPlainBe(await wholeWorld({ over, notGiven: docs }), {})
     expect(warningLines(reply)).toEqual([`warning: ${regenTotalWarning('be')}`])
     expect([run.asked, host.writes, opKinds(reply).get(BE_CLAUDE_MD_PATH)]).toEqual([[], [], undefined])
     expect(reply).not.toContain('dropped from be')
@@ -1096,7 +1104,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const global = await partsOfText('~/.claude/notes/big.md', 'global', bigText, 0)
     const record = instructionsRecordText(global, [])
     const files = { ...onDiskDocs, [await beRecordPath()]: record, '/home/u/.claude/notes/big.md': bigText }
-    const both = await regenPlainBe(await regenPartsWorld({ over: { files }, notGiven: docs.slice(0, 2) }), {})
+    const both = await regenPlainBe(await wholeWorld({ over: { files }, notGiven: docs.slice(0, 2) }), {})
     const isPrivateRead = both.run.reads.includes('/home/u/.claude/notes/big.md')
     expect([warningLines(both.reply), isPrivateRead]).toEqual([[], true])
   })
@@ -1108,7 +1116,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       [{ [REGEN_PART_PREFIX]: 'maybe', "'maybe' isn't one of": 'maybe' }, NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of cases) {
-      const { reply, run, host } = await regenPlainBe(await regenPartsWorld(changed), answers)
+      const { reply, run, host } = await regenPlainBe(await wholeWorld(changed), answers)
       expect([reply, host.writes]).toEqual([regenCancelledReply(reason), []])
       expect(run.logged).toEqual([])
     }
@@ -1117,8 +1125,8 @@ describe('regen by part hashes (G-02-1f)', () => {
   test('a named file that cannot be read or is over the read cap leaves the role as it is (Q8)', async () => {
     const big = 'x'.repeat(MAX_READ_BYTES + 1)
     const worlds: readonly (readonly [MemWorld, string])[] = [
-      [await regenPartsWorld({ over: { unknownPaths: ['/repo/CLAUDE.md'] } }), unreadableWarning('CLAUDE.md')],
-      [await regenPartsWorld({ claudeMd: big }), overSizeWarning('CLAUDE.md')],
+      [await wholeWorld({ over: { unknownPaths: ['/repo/CLAUDE.md'] } }), unreadableWarning('CLAUDE.md')],
+      [await wholeWorld({ claudeMd: big }), overSizeWarning('CLAUDE.md')],
     ]
     for (const [world, warning] of worlds) {
       const { reply, run, host } = await regenPlainBe(world, {})
@@ -1130,14 +1138,14 @@ describe('regen by part hashes (G-02-1f)', () => {
   test('an unusable recommendation is sent back with its errors; after three, no item is recommended', async () => {
     const replies = ['not json', '{"items":{"I9":true}}', '{"items":{"I1":"yes"}}']
     const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies } }
-    const { run } = await regenPlainBe(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+    const { run } = await regenPlainBe(await wholeWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
     expect(run.prompts).toHaveLength(3)
     expect(run.prompts.map(prompt => prompt.split('\n').at(-1)).slice(1)).toEqual([
       '- the reply is not JSON',
       '- unknown item "I9"',
     ])
     expect(run.asked).toEqual([
-      withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: no.'),
+      withContext('Should be get "(top of file)" from CLAUDE.md?', 'Changed since init. Recommended: no.'),
     ])
   })
 
@@ -1148,7 +1156,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad, edited)`,
       [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
     }
-    const world = await regenPartsWorld({ over: { files, replies: ['{"items":{"I1":false}}'] } })
+    const world = await wholeWorld({ over: { files, replies: ['{"items":{"I1":false}}'] } })
     const { run, host } = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'No' })
     const context = 'Unsigned commits on per-phase branches. Changed since init. Recommended: no.'
     expect(run.asked).toEqual([withContext('Should be get the memory "squad.md"?', context)])
@@ -1162,7 +1170,7 @@ describe('regen by part hashes (G-02-1f)', () => {
   })
 
   test('a role.json written before the records regens as before and keeps the built CLAUDE.md with no op', async () => {
-    const world = await regenPartsWorld({ claudeMd: RULES_SECTION })
+    const world = await wholeWorld({ claudeMd: RULES_SECTION })
     const unrecorded = roleJsonText(templateRole('be'))
     const before = { ...world, files: { ...world.files, '/repo/.cadre/be/role.json': unrecorded } }
     const run = memIo(before, {})
@@ -1174,11 +1182,10 @@ describe('regen by part hashes (G-02-1f)', () => {
     expect([run.asked, warningLines(reply)]).toEqual([[], []])
   })
 
-  test('init records the repo parts of each parts-flow role and the other parts of their files only', async () => {
+  test('init records each given repo file once', async () => {
     const topics = [
       { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
       { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2'] },
-      { title: 'Git', summary: 'How commits are made.', parts: ['P3'] },
     ]
     const world = builtWorld({
       dirs: { '/repo/.git': [], ...FULL_DIRS, [MEMORY_DIR]: [entry('squad.md')] },
@@ -1190,18 +1197,17 @@ describe('regen by part hashes (G-02-1f)', () => {
       },
       replies: [
         JSON.stringify({ topics }),
-        '{"topics":{"T1":["security"],"T2":["be"],"T3":["tl"]},"memories":{"M1":["security"]}}',
+        '{"topics":{"T1":["security"],"T2":["be","tl"]},"memories":{"M1":["security"]}}',
       ],
     })
     const host = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const written = (id: string): string =>
       host.writes.find(write => write.path === `/repo/.cadre/${id}/role.json`)?.text ?? ''
-    const rules = await rootPart('P2', 'Rules', `# Rules\n${BUILT_RULE}\n`)
-    const git = await rootPart('P3', 'Git', GIT_SECTION)
-    expect(written('be')).toBe(roleJsonText(recordedBe([rules], [git])))
-    expect(parseRoleJson(written('tl'))?.instructionParts).toEqual([recorded(git)])
-    expect(parseRoleJson(written('tl'))?.instructionPartsNotGiven).toEqual([recorded(rules)])
+    const whole = await rootPart('P2', '', `# Rules\n${BUILT_RULE}\n${GIT_SECTION}`)
+    expect(written('be')).toBe(roleJsonText(recordedBe([whole], [])))
+    const tl = parseRoleJson(written('tl'))
+    expect([tl?.instructionParts, tl?.instructionPartsNotGiven]).toEqual([[recorded(whole)], undefined])
     const security = parseRoleJson(written('security'))
     expect([security?.instructionParts, security?.instructionPartsNotGiven]).toEqual([[], undefined])
     const secrets = [
