@@ -292,10 +292,7 @@ function shownPathOf(path: string, from: ShownFrom): string {
 /** The most files one look at an improver run's folder reads (D-141, T-02-75); more are counted as not checked. */
 const MAX_SNAPSHOT_FILES = 200
 
-/**
- * How many levels of sub-folders below an improver run's folder a look lists (D-141): deep enough for
- * `.runtime/overlay/.claude/skills/<name>` and `.runtime/instructions/memory/<name>` (02-GAPS-B3 M1).
- */
+/** How many levels of sub-folders below an improver run's folder a look lists. */
 const SNAPSHOT_LEVELS = 4
 
 /** What a look keeps for a file it found past MAX_SNAPSHOT_FILES: it was not read. */

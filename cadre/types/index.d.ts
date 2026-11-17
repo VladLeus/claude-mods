@@ -1089,13 +1089,13 @@ export type InstructionScan = {
 }
 
 /**
- * How init handed out the instruction files (G-02-1f): `none` when there was nothing to hand out, `whole` for the D-63
- * whole-file questions, and `parts` for the topics and memories: the read, the topics, the roles the model recommended
- * for each topic and memory (keyed by topic id and memory id; a usable recommendation names every one, and the map is
- * empty when the model gave none) and the roles the person gave each (keyed the same way; a topic or memory no role
- * was given stays with the root session only). The text is held in memory for this run; it is never logged, shown,
- * asked or put in a reply; a repo part a role is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm
- * (generate.ts); originals are never edited.
+ * How init handed out the instruction files: `none` when there was nothing to hand out, `whole` for the whole-file
+ * questions, and `parts` for the topics and memories: the read, the topics, the roles the model recommended for each
+ * topic and memory (keyed by topic id and memory id; a usable recommendation names every one, and the map is empty
+ * when the model gave none) and the roles the person gave each (keyed the same way; a topic or memory no role was
+ * given stays with the root session only). The text is held in memory for this run; it is never logged, shown, asked
+ * or put in a reply; a repo file a role is given loads from its original at launch, and a global part goes into the
+ * role's private CLAUDE.md after Confirm; originals are never edited.
  */
 export type InstructionHandout =
   | { readonly kind: 'none' }
@@ -1142,10 +1142,10 @@ export type RoleSpec = {
   readonly skills: readonly string[]
   readonly instructions: readonly InstructionGroup[]
   /**
-   * The repo parts the role was given (G-02-1f Regen), each by its repo-relative file, its heading ('' for the text
-   * before the first heading) and the SHA-256 of its text, so regen can compare them with the files as they are now
-   * (partChanges). It is committed with role.json, so it never holds a global part or a memory: those are recorded only
-   * in the role's private instructions.json (D-140 q2-a). Absent in a role.json written before it, which still parses.
+   * The repo parts the role was given, each by its repo-relative file, its heading ('' for the whole file, else a
+   * section heading) and the SHA-256 of its text, so regen can compare them with the files as they are now
+   * (partChanges). It is committed with role.json, so it never holds a global part or a memory: those are in the
+   * role's private instructions.json. Absent in an older role.json, which still parses.
    */
   readonly instructionParts?: readonly InstructionPartRecord[]
   /**

@@ -1,10 +1,10 @@
 /**
- * The improver install stage of init (G-02-1f, D-141, D-136, D-230), a layer 10 module: the claude-md-management
- * question, worded like the security plugins question, with its context line of what Not now leaves; hasBuiltPart,
- * whether a hand-out gives some role a built file with a part; and improverInstallStage, the pure stage that asks it
- * only then and only when the plugin is missing, with the Install and Not now answers of init/stages/security. Pure:
- * it gives states and never performs an effect, imports core, roles, ui/ask, init/state and init/stages/security, and
- * never imports init/machine or init/run.
+ * The improver install stage of init, a layer 10 module: the claude-md-management question, worded like the security
+ * plugins question, with its context line of what Not now leaves; hasPrivatePart, whether a hand-out gives some role a
+ * private CLAUDE.md built from the global CLAUDE.md; and improverInstallStage, the pure stage that asks it only then
+ * and only when the plugin is missing, with the Install and Not now answers of init/stages/security. Pure: it gives
+ * states and never performs an effect, imports core, roles, ui/ask, init/state and init/stages/security, and never
+ * imports init/machine or init/run.
  */
 import type { AskSpec, InstructionHandout, InstructionScan, InstructionTopic } from '../../../types'
 import { labelled } from '../../core/labelled'
@@ -17,8 +17,9 @@ import type { Answer, InitState, StageDef } from '../state'
 import { INSTALL_CHOICES, INSTALL_OPTIONS } from './security'
 
 /**
- * The improver install question (G-02-1f, D-141), worded like the security plugins question: init asks it after that
- * question, when a role got a built file and claude-md-management is missing (improverInstallStage).
+ * The improver install question, worded like the security plugins question: init asks it after that question, when a
+ * role is given a private CLAUDE.md built from the global CLAUDE.md and claude-md-management is missing
+ * (improverInstallStage).
  */
 export const IMPROVER_INSTALL_QUESTION = t('init.improverInstall.improverInstallQuestion')
 
@@ -39,7 +40,7 @@ function globalTopics(scan: InstructionScan, topics: readonly InstructionTopic[]
 }
 
 /** Whether a parts hand-out gives some role a topic that holds a global part, the improver's only input. */
-function hasBuiltPart(handout: InstructionHandout): boolean {
+function hasPrivatePart(handout: InstructionHandout): boolean {
   if (handout.kind !== 'parts') return false
   const { scan, topics, given } = handout
 
@@ -61,24 +62,24 @@ const IMPROVER_ASK = Object.freeze({
 })
 
 /** The ids of the roles a hand-out gives a topic that holds a global part, in the order of `roleIds`. */
-function builtRoleIds(handout: InstructionHandout, roleIds: readonly string[]): string[] {
+function privateRoleIds(handout: InstructionHandout, roleIds: readonly string[]): string[] {
   if (handout.kind !== 'parts') return []
   const { scan, topics, given } = handout
-  const built = globalTopics(scan, topics).flatMap(topic => given.get(topic.id) ?? [])
+  const givenIds = globalTopics(scan, topics).flatMap(topic => given.get(topic.id) ?? [])
 
-  return roleIds.filter(id => built.includes(id))
+  return roleIds.filter(id => givenIds.includes(id))
 }
 
 /**
- * The dialog spec of the improver install question: IMPROVER_ASK's, with the roles the hand-out gives a built file as
- * its own context (improverInstallContext, D-236), whose summary a pane surface asks in place of
- * IMPROVER_INSTALL_CONTEXT (D-310).
+ * The dialog spec of the improver install question: IMPROVER_ASK's, with the roles the hand-out gives a private
+ * CLAUDE.md built from the global CLAUDE.md as its own context (improverInstallContext), whose summary a pane surface
+ * asks in place of IMPROVER_INSTALL_CONTEXT.
  */
 function improverSpec(state: InitState): AskSpec {
   const { instructions, roles } = state.draft
   const roleIds = (roles ?? []).map(role => role.id)
-  const built = instructions === undefined ? [] : builtRoleIds(instructions, roleIds)
-  const context = improverInstallContext(built)
+  const given = instructions === undefined ? [] : privateRoleIds(instructions, roleIds)
+  const context = improverInstallContext(given)
   const pane = paneQuestionOf(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT, context.summary)
 
   return { ...IMPROVER_ASK.spec, context: { ...context, pane } }
@@ -103,20 +104,20 @@ function improverAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The improver install stage (G-02-1f, D-141, D-230). When the hand-out gives no role a built file with a part
- * (hasBuiltPart), or claude-md-management is installed (CLAUDE_MD_PLUGIN among the setup's installed plugins), it asks
- * nothing and adds no key. Else it asks IMPROVER_ASK: Install adds CLAUDE_MD_PLUGIN after the plugins answered
+ * The improver install stage. When the hand-out gives no role a private CLAUDE.md built from the global CLAUDE.md
+ * (hasPrivatePart), or claude-md-management is installed (CLAUDE_MD_PLUGIN among the setup's installed plugins), it
+ * asks nothing and adds no key. Else it asks IMPROVER_ASK: Install adds CLAUDE_MD_PLUGIN after the plugins answered
  * Install before it, and Not now adds none, so no improver runs; any other answer is asked again with why on top. A
  * dismissal is cancelled with IMPROVER_INSTALL_DISMISSED_REASON and MAX_ASKS answers that are neither with
- * NO_USABLE_ANSWER_REASON (A1, D-45). It installs nothing itself: the key is installed only after Confirm, with the
- * other keys answered Install, never in --dry-run (applyConfirmed).
+ * NO_USABLE_ANSWER_REASON. It installs nothing itself: the key is installed only after Confirm, with the other keys
+ * answered Install, never in --dry-run (applyConfirmed).
  */
 export const improverInstallStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
     const { instructions, gathered } = state.draft
     if (instructions === undefined || gathered === undefined) return stageFailed(state)
     const isMissing = !gathered.setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
-    if (!hasBuiltPart(instructions) || !isMissing) return improverDone(state, [])
+    if (!hasPrivatePart(instructions) || !isMissing) return improverDone(state, [])
 
     return asking(state, IMPROVER_ASK.question, improverSpec(state), 1)
   },

@@ -103,8 +103,8 @@ export type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories' | 'parts
  *   claude-md-management, whose install ran after Confirm and exited 0;
  * - `installProblems`: the fallback line of each framework install that did not land, then the text of each such
  *   plugin that was not installed, with the command to run by hand; never fatal to the apply;
- * - `untrackedParts`: the warning of each source file whose repo parts were left out of the built files because git
- *   does not track it, or GIT_TRACKING_UNKNOWN_WARNING when git could not be asked (02-GAPS-B2 M3);
+ * - `untrackedParts`: the warning of each source file no role is given because git does not track it, or
+ *   GIT_TRACKING_UNKNOWN_WARNING when git could not be asked;
  * - `privateProblems`: the warning of each private file that was not written (G-02-1f): the privateWriteProblem text
  *   of one refused, `could not write <path>` for one whose folder could not be made private or whose write failed, and
  *   privateFoldersUnknownWarning when the role memory folders could not be named; never a reason to skip the manifest,
