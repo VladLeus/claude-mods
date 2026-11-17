@@ -110,8 +110,12 @@ export const ARTIFACT = Object.freeze({
     ''}when that answer does not hold.`,
   roleMdCoreTlQa: `Once the implementer reports, send QA a verify task (inbox_send kind task): QA runs the specs and ${
     ''}checks and reports.`,
-  roleMdCoreTlSecurity: `When the ticket's risk is at or over sizing.threshold, or it touches auth, payments, secrets ${
-    ''}or migrations, send Security a review task with the diff and the vector.`,
+  roleMdCoreTlSecurity: `When the implementers and QA have reported a ticket done, send Security the ticket ${
+    ''}(inbox_send kind task); Security reviews the whole change and decides itself what is risky.`,
+  roleMdCoreTlSecurityNoQa: `When the implementers have reported a ticket done, send Security the ticket ${
+    ''}(inbox_send kind task); Security reviews the whole change and decides itself what is risky.`,
+  roleMdCoreTlFindings:
+    'Security reports every finding to you with its severity; you decide which ones to raise with the person.',
   roleMdCoreTlWait: `Wait for a report with wait_for reason session-answer and a timeout, and for your own ${
     ''}subagents with reason subagent-result and a timeout; with nothing to wait for, use reason idle-inbox and no ${
     ''}timeout.`,
@@ -137,6 +141,10 @@ export const ARTIFACT = Object.freeze({
     ''}hold it to the end of the task.`,
   roleMdCoreWorkerReport: `Report each task to TL when it is done (to PM in a team without TL), then wait for the ${
     ''}next; report a task whose checks did not run as partial, never as complete.`,
+  roleMdCoreSecurityReview:
+    'When TL sends you a ticket, review its whole change and decide yourself what in it is risky.',
+  roleMdCoreSecurityReport: `Report every finding to TL with its severity (to PM in a team without TL): a blocking ${
+    ''}one at once, the rest when the review is done; then wait for the next ticket.`,
   roleMdSizing: '## Sizing',
   roleMdSizeVector: `A ticket's size is a vector of four scores, each from 0.1 to 1.0: scope, complexity, risk and ${
     ''}effort. PM scores scope and risk; TL adds complexity and effort (in a team without TL, the role PM sends ${

@@ -165,14 +165,26 @@ const CORE_WORKER_PART: readonly string[] = [
   ARTIFACT.roleMdWorkerNoTl,
 ]
 
+/** Core Security's part: it reviews the whole change of each ticket TL sends and reports every finding to TL. */
+const CORE_SECURITY_PART: readonly string[] = [
+  ARTIFACT.roleMdCoreSecurityReview,
+  ARTIFACT.roleMdWorkerCommit,
+  ARTIFACT.roleMdCoreSecurityReport,
+  ARTIFACT.roleMdWorkerNoTl,
+  ARTIFACT.roleMdCoreSecurityAsk,
+]
+
 /**
  * A core team's TL part: the loop on the fed ticket only, a brief for each implementer instead of a plan, no dispatch
- * of what an open product question affects, what to ask the person, trust in the reports, and a QA or Security task
- * only when the team has a role standing for it.
+ * of what an open product question affects, what to ask the person, trust in the reports, a QA task when the team has
+ * QA, and with Security each finished ticket sent to it and the choice of which findings to raise with the person.
  */
 function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
-  const qaLines = standIn('qa', roles) === null ? [] : [ARTIFACT.roleMdCoreTlQa]
-  const securityLines = standIn('security', roles) === null ? [] : [ARTIFACT.roleMdCoreTlSecurity]
+  const hasQa = standIn('qa', roles) !== null
+  const hasSecurity = standIn('security', roles) !== null
+  const qaLines = hasQa ? [ARTIFACT.roleMdCoreTlQa] : []
+  const securityLine = hasQa ? ARTIFACT.roleMdCoreTlSecurity : ARTIFACT.roleMdCoreTlSecurityNoQa
+  const securityLines = hasSecurity ? [securityLine, ARTIFACT.roleMdCoreTlFindings] : []
 
   return [
     ARTIFACT.roleMdTlLoop,
@@ -190,13 +202,16 @@ function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
   ]
 }
 
-/** The role's own part of the Hierarchy section: PM's, TL's or a worker's, each with a core-team version. */
+/**
+ * The role's own part of the Hierarchy section: PM's, TL's or a worker's, each with a core-team version; a core team's
+ * Security gets its review part instead of the core worker part.
+ */
 function rolePart(role: RoleSpec, team: RoleMdTeam): readonly string[] {
   if (team.isCore && standsFor(role, 'pm')) return CORE_PM_PART
   if (team.isCore && standsFor(role, 'tl')) return coreTlPart(team.roles)
   if (standsFor(role, 'pm')) return PM_PART
   if (standsFor(role, 'tl')) return TL_PART
-  if (team.isCore && standsFor(role, 'security')) return [...CORE_WORKER_PART, ARTIFACT.roleMdCoreSecurityAsk]
+  if (team.isCore && standsFor(role, 'security')) return CORE_SECURITY_PART
   if (team.isCore) return CORE_WORKER_PART
 
   return WORKER_PART

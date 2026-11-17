@@ -450,20 +450,20 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/pm/role.json 1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68 true",
     "write /repo/.cadre/pm/settings.json d7b4731f3ed8b9a775cc9a1142db81a387d9775dc514c48949ed681f1dc3d595 true",
     "write /repo/.cadre/security/CLAUDE.md 803d386590d1d71564306fc3c3de7758fd656f8b306f95bcc6fe25d892f62332 true",
-    "write /repo/.cadre/security/ROLE.md 41fc799591aab290bd1e0b4e7f3a74c90508cae3ce587aa88646b0f1a45d0b77 true",
+    "write /repo/.cadre/security/ROLE.md 79cd60e8605e37fbee070dfe0b708e5332a0e79ac2893d5d8ad773ebb2c59339 true",
     "write /repo/.cadre/security/kickoff.txt 283fccb025b661c02e802be2bb43b67f9d33e9e061ad31b79c52ba9474b4ce8f true",
     "write /repo/.cadre/security/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/security/role.json ef8efa2fc4ef98dc07e9e64145a6bf71192d299146a8e2c8078a965d9c1825ae true",
     "write /repo/.cadre/security/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.cadre/sizing.md 9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3 true",
     "write /repo/.cadre/tl/CLAUDE.md a77e9dd5552ffce1e5b1c4402fa884759db6cf017af7d98bfb88c8ba6fd554e8 true",
-    "write /repo/.cadre/tl/ROLE.md 709fd696f85ea87e311be353a83b1623dc6d502e761e40151be65c7f3e292f75 true",
+    "write /repo/.cadre/tl/ROLE.md 9aad25345668aa326e54d69da2d381ad4987891c0c27d0dca816c6084bd16b7f true",
     "write /repo/.cadre/tl/kickoff.txt 7f7b3acb7dc35273d3874d7f05a9ade5625bed7070616fd4d4789620fde0daac true",
     "write /repo/.cadre/tl/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/tl/role.json 0b3b5ee6a4f7152de6c5afe5e4f201a252bf66609999ebcd4c2de1025a69b2b6 true",
     "write /repo/.cadre/tl/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json 16d72de5932b4f983fcb7b19f0fd17f04d085e51de5d5942e28321d3078db6a8 true"
+    "write /repo/.cadre/manifest.json baf614c5f9e200db0865d37f7b52fd494f9a02821524f19b6f4d9350400cd9c5 true"
   ],
   "applyGsd": [
     "ask Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.",
@@ -497,19 +497,19 @@ export const GOLDEN_TIMELINE: Readonly<Record<string, readonly string[]>> = {
     "write /repo/.cadre/pm/role.json 1e203918000086ef261b5026961745e82fbf3da554ab0db80a8e87ff8061ac68 true",
     "write /repo/.cadre/pm/settings.json d7b4731f3ed8b9a775cc9a1142db81a387d9775dc514c48949ed681f1dc3d595 true",
     "write /repo/.cadre/security/CLAUDE.md 803d386590d1d71564306fc3c3de7758fd656f8b306f95bcc6fe25d892f62332 true",
-    "write /repo/.cadre/security/ROLE.md dc7b84c1875ba80d1d9cc17c9d6d83489523b9b52e606d826e825ab67327e3ee true",
+    "write /repo/.cadre/security/ROLE.md b9de0e9e5c3eebf4add8755853fc411422b109e42e4ffdd54306d1c260e025ea true",
     "write /repo/.cadre/security/kickoff.txt 6aca202354afd43e3013834f29f83bdd60d25c8a386fa6b81e11309896b30a6a true",
     "write /repo/.cadre/security/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/security/role.json ef8efa2fc4ef98dc07e9e64145a6bf71192d299146a8e2c8078a965d9c1825ae true",
     "write /repo/.cadre/security/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.cadre/sizing.md 9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3 true",
     "write /repo/.cadre/tl/CLAUDE.md a77e9dd5552ffce1e5b1c4402fa884759db6cf017af7d98bfb88c8ba6fd554e8 true",
-    "write /repo/.cadre/tl/ROLE.md 2d3d027b1132e2a3f6f082ee98818b098f3724055d618f3c34bf3ff24a238b29 true",
+    "write /repo/.cadre/tl/ROLE.md 1d658fbbbd12f8511c77b7eacd4eced855f6f250e35d74003f2f0ee166d4de3d true",
     "write /repo/.cadre/tl/kickoff.txt 67931bb9e6eba557e0e2ecc34f9149e9a2b0164e4811bfa1bae077e804637787 true",
     "write /repo/.cadre/tl/mcp.json 5ce88458ea23a00e2d34b1eee44bae2e46ad9cdef7c031a2288338ffe6595cdf true",
     "write /repo/.cadre/tl/role.json 0b3b5ee6a4f7152de6c5afe5e4f201a252bf66609999ebcd4c2de1025a69b2b6 true",
     "write /repo/.cadre/tl/settings.json 03350d7f0ed0c952d6aaa622d81849256219a18b5264825de5a919e4d096ca3a true",
     "write /repo/.gitignore bbe833a41abc5c566f5dd980a031fab757796b8049d4c16ebc707316f4dae303 true",
-    "write /repo/.cadre/manifest.json da5955b28b5cf41a0512d1e9dab10eb046170982d81a1c25b2e221e8f92611a2 true"
+    "write /repo/.cadre/manifest.json a003d2baa7ced090f2e1b18a70bae369c81e1a72b7f4c8516ddcbc486f287fa2 true"
   ]
 }
