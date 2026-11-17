@@ -307,8 +307,13 @@ const CORE_TL_QA =
   'Once the implementer reports, send QA a verify task (inbox_send kind task): QA runs the specs and checks and ' +
   'reports.'
 const CORE_TL_SECURITY =
-  "When the ticket's risk is at or over sizing.threshold, or it touches auth, payments, secrets or migrations, send " +
-  'Security a review task with the diff and the vector.'
+  'When the implementers and QA have reported a ticket done, send Security the ticket (inbox_send kind task); ' +
+  'Security reviews the whole change and decides itself what is risky.'
+const CORE_TL_SECURITY_NO_QA =
+  'When the implementers have reported a ticket done, send Security the ticket (inbox_send kind task); Security ' +
+  'reviews the whole change and decides itself what is risky.'
+const CORE_TL_FINDINGS =
+  'Security reports every finding to you with its severity; you decide which ones to raise with the person.'
 const CORE_TL_WAIT =
   'Wait for a report with wait_for reason session-answer and a timeout, and for your own subagents with reason ' +
   'subagent-result and a timeout; with nothing to wait for, use reason idle-inbox and no timeout.'
@@ -327,6 +332,13 @@ const CORE_WORKER_BLOCKED =
 const CORE_WORKER_REPORT =
   'Report each task to TL when it is done (to PM in a team without TL), then wait for the next; report a task whose ' +
   'checks did not run as partial, never as complete.'
+
+/** Core Security's review and findings report lines, spelled out so the specs pin their words. */
+const CORE_SECURITY_REVIEW =
+  'When TL sends you a ticket, review its whole change and decide yourself what in it is risky.'
+const CORE_SECURITY_REPORT =
+  'Report every finding to TL with its severity (to PM in a team without TL): a blocking one at once, the rest when ' +
+  'the review is done; then wait for the next ticket.'
 
 /** The core PM's How you work lines, spelled out so the specs pin their words. */
 const CORE_PM_INTRO =
@@ -1054,6 +1066,7 @@ describe('the Hierarchy section of ROLE.md', () => {
         CORE_TL_FAILED,
         CORE_TL_QA,
         CORE_TL_SECURITY,
+        CORE_TL_FINDINGS,
         CORE_TL_WAIT,
         CORE_TL_REPORT,
       ])
@@ -1068,7 +1081,7 @@ describe('the Hierarchy section of ROLE.md', () => {
     const tl = templateRole('tl')
     const without = (...ids: readonly string[]): RoleSpec[] => TEMPLATE_ROLES.filter(role => !ids.includes(role.id))
     const cases: readonly [readonly RoleSpec[], readonly string[]][] = [
-      [without('qa'), [CORE_TL_SECURITY]],
+      [without('qa'), [CORE_TL_SECURITY_NO_QA, CORE_TL_FINDINGS]],
       [without('security'), [CORE_TL_QA]],
       [without('qa', 'security'), []],
     ]
@@ -1093,25 +1106,71 @@ describe('the Hierarchy section of ROLE.md', () => {
     }
   })
 
-  test('a core worker plans from the brief, runs the checks, raises a blocker at once and reports partial', () => {
-    const workers = TEMPLATE_ROLES.filter(role => ['be', 'fe', 'qa', 'security'].includes(role.id))
+  test(
+    'a core worker that is not Security, an added role included, plans from the brief, runs the checks, raises a ' +
+      'blocker at once and reports partial',
+    () => {
+      const ops = templateRole('be', { id: 'ops', title: 'Ops', basedOn: null })
+      const workers = [...TEMPLATE_ROLES.filter(role => ['be', 'fe', 'qa'].includes(role.id)), ops]
 
-    expect(workers.map(role => role.id)).toEqual(['be', 'fe', 'qa', 'security'])
-    for (const worker of workers) {
-      const lines = hierarchyOf(worker, 'gsd', CORE_TEAM).split('\n')
+      expect(workers.map(role => role.id)).toEqual(['be', 'fe', 'qa', 'ops'])
+      for (const worker of workers) {
+        const lines = hierarchyOf(worker, 'gsd', CORE_TEAM).split('\n')
 
-      expect(lines.slice(lines.indexOf(CORE_WORKER_PLAN), -1)).toEqual([
-        CORE_WORKER_PLAN,
-        ARTIFACT.roleMdWorkerCommit,
-        CORE_WORKER_BLOCKED,
-        CORE_WORKER_REPORT,
-        ARTIFACT.roleMdWorkerNoTl,
-        ...(worker.id === 'security' ? [CORE_SECURITY_ASK] : []),
+        expect(lines.slice(lines.indexOf(CORE_WORKER_PLAN), -1)).toEqual([
+          CORE_WORKER_PLAN,
+          ARTIFACT.roleMdWorkerCommit,
+          CORE_WORKER_BLOCKED,
+          CORE_WORKER_REPORT,
+          ARTIFACT.roleMdWorkerNoTl,
+        ])
+        expect(lines).not.toContain(ARTIFACT.roleMdWorkerTask)
+        expect(lines).not.toContain(ARTIFACT.roleMdWorkerReport)
+      }
+    },
+  )
+
+  test(
+    'core Security reviews the whole change of a finished ticket and reports every finding with its severity, on ' +
+      'every framework',
+    () => {
+      const appsec = templateRole('security', { id: 'appsec', title: 'AppSec' })
+      const workerLines = [CORE_WORKER_PLAN, CORE_WORKER_BLOCKED, CORE_WORKER_REPORT]
+
+      for (const framework of FRAMEWORKS) {
+        for (const security of [templateRole('security'), appsec]) {
+          const lines = hierarchyOf(security, framework, CORE_TEAM).split('\n')
+
+          expect(lines.slice(lines.indexOf(CORE_SECURITY_REVIEW), -1)).toEqual([
+            CORE_SECURITY_REVIEW,
+            ARTIFACT.roleMdWorkerCommit,
+            CORE_SECURITY_REPORT,
+            ARTIFACT.roleMdWorkerNoTl,
+            CORE_SECURITY_ASK,
+          ])
+          expect(workerLines.filter(line => lines.includes(line))).toEqual([])
+        }
+      }
+      const customSecurity = hierarchyOf(templateRole('security'), 'gsd').split('\n')
+      const customTl = hierarchyOf(templateRole('tl'), 'gsd').split('\n')
+      const newLines = [
+        CORE_SECURITY_REVIEW,
+        CORE_SECURITY_REPORT,
+        CORE_TL_SECURITY,
+        CORE_TL_SECURITY_NO_QA,
+        CORE_TL_FINDINGS,
+      ]
+
+      expect(customSecurity).toContain(ARTIFACT.roleMdWorkerTask)
+      expect(newLines.filter(line => customSecurity.includes(line) || customTl.includes(line))).toEqual([])
+      expect(customTl.slice(customTl.indexOf(ARTIFACT.roleMdTlLoop), -1)).toEqual([
+        ARTIFACT.roleMdTlLoop,
+        ARTIFACT.roleMdTlPlan,
+        ARTIFACT.roleMdTlTasks,
+        ARTIFACT.roleMdTlReport,
       ])
-      expect(lines).not.toContain(ARTIFACT.roleMdWorkerTask)
-      expect(lines).not.toContain(ARTIFACT.roleMdWorkerReport)
-    }
-  })
+    },
+  )
 
   test(
     'BE plans in its own docs, commits only its own files, reports to TL and sizes alone with no TL ' +
