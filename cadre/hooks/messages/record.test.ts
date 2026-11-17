@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InboxEntry, InboxEntryFields, InboxItem, InboxMark, InboxState, MessageKind } from '../../types'
+import type {
+  InboxEntry,
+  InboxEntryFields,
+  InboxEvent,
+  InboxItem,
+  InboxMark,
+  InboxState,
+  MessageKind,
+} from '../../types'
 import { utf8Bytes } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
 import { inboxHiddenOf, PROMPTS } from '../locales/prompts'
@@ -93,11 +101,12 @@ describe('recordLine, parseInboxLine and the session record', () => {
 
     expect(recordLine(entry)).toBe(
       '{"v":1,"type":"entry","id":"be-1000-0123abcd","at":1000,"from":"be","to":"tl","kind":"note",' +
-        '"subject":"Hi","body":"Hello","replyTo":"tl-900-89abcdef"}\n',
+        '"subject":"Hi","body":"Hello","replyTo":"tl-900-89abcdef","end":"be-1000-0123abcd"}\n',
     )
     expect(recordLine(shuffled)).toBe(recordLine(entry))
     expect(recordLine(mark(A.id, 3000, 'done', { note: 'merged' }))).toBe(
-      '{"v":1,"type":"mark","id":"be-1000-0123abcd","at":3000,"by":"tl","state":"done","note":"merged"}\n',
+      '{"v":1,"type":"mark","id":"be-1000-0123abcd","at":3000,"by":"tl","state":"done","note":"merged",' +
+        '"end":"be-1000-0123abcd"}\n',
     )
   })
 
@@ -116,7 +125,7 @@ describe('recordLine, parseInboxLine and the session record', () => {
       '{"v":1,"type":"entry","id":"be-1000-0123abcd","at":1000,"from":"be","to":"tl","kind":"task",' +
         '"subject":"Hi","body":"Hello","ticketKey":"PROJ-2",' +
         '"vector":{"scope":0.4,"complexity":0.6,"risk":0.30000000000000004,"effort":0.5},' +
-        '"use":{"framework":"gsd","gsdPath":"phase"},"size":0.6,"large":true}\n',
+        '"use":{"framework":"gsd","gsdPath":"phase"},"size":0.6,"large":true,"end":"be-1000-0123abcd"}\n',
     )
     expect(parseInboxLine(recordLine(task))).toEqual(task)
   })
@@ -155,6 +164,35 @@ describe('recordLine, parseInboxLine and the session record', () => {
 
     expect([first, second].every(id => /^be-1000-[0-9a-f]{8}$/.test(id))).toBe(true)
     expect(first).not.toBe(second)
+  })
+})
+
+describe('the end key of an inbox record', () => {
+  test('every line ends with an end key that echoes its id; the entry or mark read back carries no end', () => {
+    const done = mark(A.id, 3000, 'done')
+
+    expect([recordLine(A), recordLine(done)].map(line => line.endsWith(`,"end":"${A.id}"}\n`))).toEqual([true, true])
+    expect([parseInboxLine(recordLine(A)), parseInboxLine(recordLine(done))]).toEqual([A, done])
+    expect(Object.keys(parseInboxLine(recordLine(A)) ?? {})).not.toContain('end')
+    expect(Object.keys(parseInboxLine(recordLine(done)) ?? {})).not.toContain('end')
+  })
+
+  test('a line whose end differs from its id is dropped; a line without an end reads as before', () => {
+    const done = mark(A.id, 3000, 'done')
+    const torn = (event: InboxEvent) => JSON.stringify({ ...event, end: 'pm-2000-89abcdef' })
+
+    expect([parseInboxLine(torn(A)), parseInboxLine(torn(done))]).toEqual([null, null])
+    expect([parseInboxLine(JSON.stringify(A)), parseInboxLine(JSON.stringify(done))]).toEqual([A, done])
+  })
+
+  test('two records over 8 KiB whose appends interleave in 8192-character chunks never read as one entry', () => {
+    const fromFe: InboxEntry = { ...A, id: 'fe-1000-0123abcd', from: 'fe', body: 'a'.repeat(10_000) }
+    const fromBe: InboxEntry = { ...A, id: 'be-1000-89abcdef', body: 'b'.repeat(10_000) }
+    const chunks = (stdin: string): readonly [string, string] => [stdin.slice(0, 8192), stdin.slice(8192)]
+    const [a1, a2] = chunks(`\n${recordLine(fromFe)}`)
+    const [b1, b2] = chunks(`\n${recordLine(fromBe)}`)
+
+    expect(parseInbox(`${a1}${b1}${a2}${b2}`)).toEqual([])
   })
 })
 
@@ -205,7 +243,7 @@ describe('the kind fields of an entry on its line', () => {
     expect(recordLine({ ...TICKET, reportForm: 'R', pin: 'small', scores: { risk: 0.9, scope: 0.3 } })).toBe(
       '{"v":1,"type":"entry","id":"pm-2000-89abcdef","at":2000,"from":"pm","to":"tl","kind":"ticket",' +
         '"subject":"Ship it","body":"Line one\\nLine two","ticketKey":"PROJ-2","scores":{"scope":0.3,"risk":0.9},' +
-        '"pin":"small","reportForm":"R"}\n',
+        '"pin":"small","reportForm":"R","end":"pm-2000-89abcdef"}\n',
     )
     expect(Object.keys(parseInboxLine(recordLine(TASK)) ?? {}).slice(9)).toEqual([
       'ticketKey',
