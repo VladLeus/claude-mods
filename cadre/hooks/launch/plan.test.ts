@@ -104,9 +104,15 @@ function memoryAndRecordDeny(userDir: string, folder: string): string[] {
   return [`Edit(/${userDir}/projects/-repo/memory/**)`, `Edit(/${folder}/instructions.json)`]
 }
 
-/** The deny of the private instructions copy of role `id` under the root `root`, for a role given no team ids. */
+/**
+ * The deny of the private instructions copy of role `id` under the root `root` and at any depth below it, for a role
+ * given no team ids.
+ */
 function privateCopyRules(root: string, id: string): string[] {
-  return [`Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`]
+  return [
+    `Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`,
+    `Edit(/${root}/**/.cadre/${id}/.runtime/private-instructions/**)`,
+  ]
 }
 
 /**
@@ -232,6 +238,7 @@ describe('launch render', () => {
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
+          'Edit(//repo/**/.cadre/pm/.runtime/private-instructions/**)',
           'Edit(//repo/.cadre/bin/**)',
           'Edit(//repo/.cadre/manifest.json)',
           'Edit(//repo/.cadre/pm/.runtime/private-instructions/**)',
@@ -409,6 +416,7 @@ describe('launch render', () => {
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
+          'Edit(//repo/**/.cadre/be/.runtime/private-instructions/**)',
           'Edit(//repo/.cadre/be/.runtime/private-instructions/**)',
           'Edit(//repo/.cadre/bin/**)',
           'Edit(//repo/.cadre/manifest.json)',

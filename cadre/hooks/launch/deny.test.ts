@@ -99,9 +99,15 @@ function memoryAndRecordDeny(userDir: string, folder: string): string[] {
   return [`Edit(/${userDir}/projects/-repo/memory/**)`, `Edit(/${folder}/instructions.json)`]
 }
 
-/** The deny of the private instructions copy of role `id` under the root `root`, for a role given no team ids. */
+/**
+ * The deny of the private instructions copy of role `id` under the root `root` and at any depth below it, for a role
+ * given no team ids.
+ */
 function privateCopyRules(root: string, id: string): string[] {
-  return [`Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`]
+  return [
+    `Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`,
+    `Edit(/${root}/**/.cadre/${id}/.runtime/private-instructions/**)`,
+  ]
 }
 
 /**
@@ -936,6 +942,11 @@ describe('the private instructions copy deny', () => {
     return `${kind}(/${root}/.cadre/${id}/.runtime/private-instructions/**)`
   }
 
+  /** The `kind` rule of the private instructions copy of role `id` at any depth under the root `root`. */
+  function anyDepthRule(kind: 'Edit' | 'Read', root: string, id: string): string {
+    return `${kind}(/${root}/**/.cadre/${id}/.runtime/private-instructions/**)`
+  }
+
   /** The rules BE's settingsDeny holds for `launcher` that name a private instructions copy. */
   function copyDenies(launcher: LaunchUser): string[] {
     const role = templateRole('be')
@@ -945,7 +956,7 @@ describe('the private instructions copy deny', () => {
     )
   }
 
-  /** The copy rules of BE in a team of BE, PM and QA under the root `root`. */
+  /** The copy rules of BE in a team of BE, PM and QA under the root `root`, at the root and at any depth. */
   function teamRules(root: string): string[] {
     return [
       copyRule('Edit', root, 'be'),
@@ -953,20 +964,31 @@ describe('the private instructions copy deny', () => {
       copyRule('Edit', root, 'qa'),
       copyRule('Read', root, 'pm'),
       copyRule('Read', root, 'qa'),
+      anyDepthRule('Edit', root, 'be'),
+      anyDepthRule('Edit', root, 'pm'),
+      anyDepthRule('Edit', root, 'qa'),
+      anyDepthRule('Read', root, 'pm'),
+      anyDepthRule('Read', root, 'qa'),
     ]
   }
 
-  test('a role denies Edit of every team copy and Read of every other role copy, never Read of its own', () => {
+  test('a role denies Edit of every team copy and Read of every other copy, at any depth, not Read of its own', () => {
     const denies = copyDenies(user({ teamIds: ['be', 'pm', 'qa'] }))
 
     expect(denies).toEqual([
+      'Edit(//repo/**/.cadre/be/.runtime/private-instructions/**)',
+      'Edit(//repo/**/.cadre/pm/.runtime/private-instructions/**)',
+      'Edit(//repo/**/.cadre/qa/.runtime/private-instructions/**)',
       'Edit(//repo/.cadre/be/.runtime/private-instructions/**)',
       'Edit(//repo/.cadre/pm/.runtime/private-instructions/**)',
       'Edit(//repo/.cadre/qa/.runtime/private-instructions/**)',
+      'Read(//repo/**/.cadre/pm/.runtime/private-instructions/**)',
+      'Read(//repo/**/.cadre/qa/.runtime/private-instructions/**)',
       'Read(//repo/.cadre/pm/.runtime/private-instructions/**)',
       'Read(//repo/.cadre/qa/.runtime/private-instructions/**)',
     ])
     expect(denies).not.toContain('Read(//repo/.cadre/be/.runtime/private-instructions/**)')
+    expect(denies).not.toContain('Read(//repo/**/.cadre/be/.runtime/private-instructions/**)')
   })
 
   test('an epic role gets the same rules under its worktree root and under the main checkout root', () => {
@@ -974,10 +996,66 @@ describe('the private instructions copy deny', () => {
     const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: ['be', 'pm', 'qa'] })
 
     expect(copyDenies(launcher)).toEqual(sortedUnique([...teamRules('/repo'), ...teamRules(worktree)]))
+    expect(copyDenies(launcher)).toContain('Read(//repo/**/.cadre/pm/.runtime/private-instructions/**)')
   })
 
-  test('with no team ids a role denies Edit of its own copy only, and Read of no copy', () => {
-    expect(copyDenies(user())).toEqual([copyRule('Edit', '/repo', 'be')])
+  test('with no team ids a role denies Edit of its own copy only, at any depth, and Read of no copy', () => {
+    expect(copyDenies(user())).toEqual([anyDepthRule('Edit', '/repo', 'be'), copyRule('Edit', '/repo', 'be')])
+  })
+
+  test('a team id no exact rule can hold gets no copy rule, at the root or at any depth', () => {
+    const denies = copyDenies(user({ teamIds: ['be', 'p m'] }))
+
+    expect(denies).toEqual([anyDepthRule('Edit', '/repo', 'be'), copyRule('Edit', '/repo', 'be')])
+  })
+})
+
+describe('the private instructions folder deny of the other roles', () => {
+  /** BE's rules on the private instructions folders in a team of BE, PM and QA, for the fixture user. */
+  const TEAM_FOLDER_RULES: readonly string[] = [
+    'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
+    'Read(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
+    'Read(//home/u/.claude/cadre/repo-1a2b3c4d/qa/instructions/**)',
+  ]
+
+  /** The rules BE's settingsDeny holds for `launcher` that name a private instructions folder. */
+  function folderDenies(launcher: LaunchUser): string[] {
+    const role = templateRole('be')
+
+    return settingsDeny(role, compileScope(role, context()), launcher).deny.filter(entry =>
+      entry.includes('/instructions/'),
+    )
+  }
+
+  test('a role denies Read of the private instructions folder of every other team role, never of its own', () => {
+    const denies = folderDenies(user({ teamIds: ['be', 'pm', 'qa'] }))
+
+    expect(denies).toEqual(TEAM_FOLDER_RULES)
+    expect(denies).not.toContain('Read(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)')
+  })
+
+  test('an epic role denies Read of the same folders: they follow the git common dir, not the launch root', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: ['be', 'pm', 'qa'] })
+
+    expect(folderDenies(launcher)).toEqual(TEAM_FOLDER_RULES)
+  })
+
+  test('with no team ids a role denies Edit of its own private instructions folder only, and Read of none', () => {
+    expect(folderDenies(user())).toEqual(['Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)'])
+  })
+
+  test('a folder no exact rule can hold gets no rule; only the folder of the role itself warns, once', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+    const oddDir = user({ userDir: '/home/u s/.claude', teamIds: ['be', 'pm', 'qa'] })
+    const oddId = user({ teamIds: ['be', 'p m'] })
+    const warned = settingsDeny(role, scope, oddDir).warnings.filter(text => text === UNDENIED_PRIVATE_WARNING)
+
+    expect(folderDenies(oddDir)).toEqual([])
+    expect(warned).toHaveLength(1)
+    expect(folderDenies(oddId)).toEqual(['Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)'])
+    expect(settingsDeny(role, scope, oddId).warnings).not.toContain(UNDENIED_PRIVATE_WARNING)
   })
 })
 
