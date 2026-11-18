@@ -992,6 +992,227 @@ async function removeAnswered($: EngineInterface, askedId?: number): Promise<voi
   await refreshMode($)
 }
 
+const AUTOPILOT_DESCRIPTION =
+  'Run this session on autopilot with a fixed role; no args shows status, "extend|shorten [<time>] [--restarts N]" and "until 18:30|6:30pm" change the end, "0 0 stop" hands back'
+const AUTOPILOT_HINT =
+  '<time | until 18:30|6:30pm> <threshold%> [max restarts] "<role>" [--goal "…"] [--5h 95] [--week 80] [--ask-user] | extend|shorten [<time>] [--restarts N] | until 18:30|6:30pm | 0 0 stop'
+
+async function autopilotCommand($: EngineInterface, e: { args: string; origin: { kind: string } }) {
+  await syncId($)
+  let now = await $.clock.now()
+  const command = parseCommand(e.args)
+
+  if (command.kind === 'status') {
+    const finished = run ? null : await loadFinished($, now)
+    // The records first, so the status reads them fresh, not as of the last heartbeat.
+    // A failed refresh must not hide the status: show it from the cached records.
+    const mode = await refreshMode($).catch(() => null)
+    // availStatusLines carries the one ask-user line, so statusText leaves its own out.
+    const text = finished ? graceStatusText(finished, now) : statusText(now, false)
+    // Away and ask-user show with or without a run, with their source (session or global).
+    const offset = await utcOffset($)
+    // refreshMode read both records (also with no run): the cached ones are current.
+    const lines = availStatusLines(effective(run, sessionAvail, globalAvail), mode, run, now, offset)
+
+    return { text: [text, ...lines].join('\n') }
+  }
+  if (command.kind === 'error') return { text: command.message }
+  if (command.kind === 'extend' || command.kind === 'shorten' || command.kind === 'until') {
+    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') {
+      await log($, `retime refused: origin ${e.origin.kind}`)
+
+      return { text: 'Only the person can change the autopilot end time (type it in the prompt or over Remote Control).' }
+    }
+    // No run, but one that finished on time or restarts a moment ago: it is judged as a run in its final phase.
+    const finished = run ? null : await loadFinished($, now)
+    const subject = run ?? finished?.run ?? null
+    if (!subject) return { text: NOT_RUNNING_TEXT }
+    const offset = await utcOffset($)
+    // The process call took time: decide on the clock as it is now.
+    now = await $.clock.now()
+    // The token windows only matter for a revive: a weekly stop at its limit refuses, a 5-hour stop parks.
+    const usage = subject.phase === 'final' ? await $.session.usage().catch(() => null) : null
+    const target = targetChange(command, subject, now, offset)
+    if ('refuse' in target) return { text: target.refuse }
+    const action = retime(subject, target, now, usage ? limitAction(subject, usage.rateLimits, now) : null)
+    if (action.kind === 'refuse') return { text: action.message }
+
+    const limit = (maxRestarts: number | null) => maxRestarts ?? 'unlimited'
+    const restartsChange = action.maxRestarts === subject.maxRestarts ? '' : `, restart limit ${limit(subject.maxRestarts)} -> ${limit(action.maxRestarts)}`
+    const note = target.note ? ` ${target.note}` : ''
+    if (finished) {
+      // A finished record is final/time or final/restarts, so retime can only revive it.
+      if (action.kind !== 'revive') return { text: NOT_RUNNING_TEXT }
+      // Back through the restart flow: the handoff is already written, so wrapping asks for the restart;
+      // that restart is not counted. The wait is dropped: the limit checks after the resume park it again if needed.
+      run = {
+        ...finished.run,
+        until: action.until,
+        maxRestarts: action.maxRestarts,
+        phase: 'wrapping',
+        finalReason: null,
+        idleTurns: 0,
+        waitUntil: null,
+        isGraceResume: true,
+        graceSince: finished.run.finalAt,
+        graceAsks: 0,
+      }
+      try {
+        await save($)
+      } catch (error) {
+        run = null
+        await save($).catch(() => undefined)
+        await log($, `could not record the change: ${String(error)}`).catch(() => undefined)
+
+        return { text: 'Autopilot could not record the change; nothing changed.' }
+      }
+      await $.store.delete(finishedKey(sessionId)).catch(() => undefined)
+      await log($, `revived after finishing (${finished.run.finalReason}) by ${command.kind}: to ${endClock(run.until, null)}${restartsChange}`)
+      queue($, graceResumePrompt(run.until, offset))
+
+      return {
+        text: `Autopilot end: ${endClock(run.until, offset)}, ${formatLeft(run.until - now)} left, restarts ${run.restarts}/${limit(run.maxRestarts)}.${note} Bringing the run back: the session will clear and resume from its handoff.`,
+      }
+    }
+    // Stopped while the clock and usage were read.
+    if (!run) return { text: NOT_RUNNING_TEXT }
+    const wasReason = run.finalReason
+    const previous = {
+      until: run.until,
+      maxRestarts: run.maxRestarts,
+      phase: run.phase,
+      finalReason: run.finalReason,
+      idleTurns: run.idleTurns,
+      waitUntil: run.waitUntil,
+    }
+    run.until = action.until
+    run.maxRestarts = action.maxRestarts
+    if (action.kind === 'revive') {
+      run.phase = action.phase
+      run.finalReason = null
+      run.idleTurns = 0
+      run.waitUntil = action.waitUntil
+    }
+    try {
+      await save($)
+    } catch (error) {
+      // Not recorded: back to where it was, or the run would differ from what is stored.
+      Object.assign(run, previous)
+      await save($).catch(() => undefined)
+      await log($, `could not record the change: ${String(error)}`).catch(() => undefined)
+
+      return { text: 'Autopilot could not record the change; nothing changed.' }
+    }
+    const logLine = `to ${endClock(run.until, null)}${restartsChange}`
+    const pausedNote = run.phase === 'paused' ? ' (paused; start it again to resume work)' : ''
+    const reply = `Autopilot end: ${endClock(run.until, offset)}, ${formatLeft(run.until - now)} left, restarts ${run.restarts}/${limit(run.maxRestarts)}.${note}${pausedNote}`
+    if (action.kind === 'set') {
+      await log($, `end moved by the person (${command.kind}): ${logLine}`)
+
+      return { text: reply }
+    }
+
+    await log($, `revived from final (${wasReason}) by ${command.kind}: ${logLine}`)
+    // A 5-hour wait is pending (or the window is at its stop): the park's own wake brings the session back.
+    if (action.phase === 'waiting') {
+      await clearGoal($)
+      scheduleWake($, now)
+
+      return { text: `${reply} Back on the 5-hour wait: the final handoff is cancelled.` }
+    }
+    // Setting the goal starts a turn of its own, which already reads the pinned
+    // role: a revive prompt after it would land behind work that may be done by then.
+    if (run.goal) await setGoal($)
+    else {
+      const restarts = wasReason === 'restarts' ? { used: run.restarts, limit: run.maxRestarts } : undefined
+      queue($, revivePrompt(run.until, offset, restarts))
+    }
+
+    return { text: `${reply} Back to work: the final handoff is cancelled.` }
+  }
+  if (command.kind === 'stop') {
+    if (run) await log($, 'stopped by the person')
+    // A stopped run asks nothing more: its open questions go to the person in the reply.
+    const open = run ? questionsBlock(run) : ''
+    await $.store.delete(finishedKey(sessionId)).catch(() => undefined)
+    await clearGoal($)
+    run = null
+    await save($)
+    $.ui.status(undefined)
+
+    return { text: open ? `Autopilot is off. You have the wheel.\n${open}` : 'Autopilot is off. You have the wheel.' }
+  }
+
+  // A clock end is under 24 hours ahead, so the 7-day cap cannot be hit.
+  const startOffset = await utcOffset($)
+  now = await $.clock.now()
+  if (command.end.kind === 'clock' && startOffset === null) {
+    return { text: 'Cannot read the local time zone; use a duration such as 2h instead.' }
+  }
+  const until =
+    command.end.kind === 'clock'
+      ? untilFromClock(command.end.hours, command.end.minutes, now, startOffset ?? 0)
+      : now + command.end.ms
+
+  const limit = await readCeiling($)
+  const capNote =
+    command.threshold > limit
+      ? `\nNote: you asked for ${command.threshold}%, but auto-compact in this session leaves room for a handoff only up to ${limit}% (auto-compact minus 10 points), so ${limit}% is used. To get exactly ${command.threshold}% next time, raise autoCompactWindow in ~/.claude/settings.json.`
+      : ''
+
+  const [identity, commands] = await Promise.all([readIdentity($), $.command.list().catch(() => [])])
+  const skillNames = commands.filter(info => info.source !== 'builtin').map(info => info.name)
+  // A new run in this session keeps what the run it replaces still had queued (a paused run is started again this way): no question is lost.
+  const kept = run?.questions?.length ? { questions: run.questions, nextQuestionId: run.nextQuestionId, drain: run.drain, pingedFor: run.pingedFor } : {}
+  const keptNote = kept.questions ? `\nKept from the previous run: ${criticalCount(kept.questions.length)} queued for you.` : ''
+  run = {
+    role: command.role,
+    name: identity.name,
+    color: identity.color,
+    startedAt: now,
+    until,
+    threshold: command.threshold,
+    maxRestarts: command.maxRestarts,
+    restarts: 0,
+    phase: 'running',
+    handoffPath: null,
+    idleTurns: 0,
+    goal: command.goal,
+    skills: namedSkills(command.role, skillNames),
+    fiveHourStop: command.fiveHourStop,
+    weekStop: command.weekStop,
+    waitUntil: null,
+    finalReason: null,
+    awaiting: null,
+    askUser: command.askUser,
+    ...kept,
+  }
+  await save($)
+  await $.store.delete(finishedKey(sessionId)).catch(() => undefined)
+  await log(
+    $,
+    `started: ${formatLeft(until - now)} (until ${endClock(until, null)}), trigger ${command.threshold}%, restarts ${restartsText(run)}, 5h ${command.fiveHourStop}%, week ${command.weekStop}%${command.goal ? `, goal: ${command.goal}` : ''}${command.askUser ? ', asks the person: critical only' : ''}; role: ${command.role}`,
+  )
+  if (capNote) await log($, `threshold ${command.threshold}% capped to ${limit}% below auto-compact`)
+
+  // Setting a goal starts a turn of its own, which already reads the pinned
+  // role: a kickoff after it would land behind work that may be done by then.
+  const started = run
+  $.clock.after(300, () => {
+    void (async () => {
+      if (started.goal) {
+        await setGoal($)
+        return
+      }
+      await $.prompt.submit({ text: kickoffPrompt(started, now) }).catch(() => undefined)
+    })()
+  })
+
+  return { text: `${statusText(now)}\nEnd: ${endClock(until, startOffset)}, ${formatLeft(until - now)} left.${capNote}${keptNote}\nStop any time with /autopilot 0 0 stop.` }
+}
+
+const commandFailed = () => ({ text: 'Autopilot: the command failed; nothing changed. Try again.' })
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const rawHome = (await $.env.get('HOME')) ?? ''
@@ -1011,9 +1232,9 @@ export const register: Register = on => {
     void sweepFinished($).catch(() => undefined)
 
     await $.command.register({
-      name: 'autopilot',
-      description: 'Run this session on autopilot with a fixed role; no args shows status, "extend|shorten [<time>] [--restarts N]" and "until 18:30|6:30pm" change the end, "0 0 stop" hands back',
-      argumentHint: '<time | until 18:30|6:30pm> <threshold%> [max restarts] "<role>" [--goal "…"] [--5h 95] [--week 80] [--ask-user] | extend|shorten [<time>] [--restarts N] | until 18:30|6:30pm | 0 0 stop',
+      name: 'ap',
+      description: 'Short name of /autopilot: same command, same arguments',
+      argumentHint: AUTOPILOT_HINT,
     })
     // Immediate: typed mid-turn they run at once, so stepping away never waits for a long turn.
     await $.command.register({
@@ -1111,219 +1332,17 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'autopilot' }, async ($, e) => {
-    await syncId($)
-    let now = await $.clock.now()
-    const command = parseCommand(e.args)
+  // Claude Code reserves "autopilot": a refused name loses only this hook, never the state load, /ap or the tools.
+  for (const isInteractive of [true, false]) {
+    on('session.start', { isInteractive }, async ($, e, next) => {
+      await $.command.register({ name: 'autopilot', description: AUTOPILOT_DESCRIPTION, argumentHint: AUTOPILOT_HINT })
 
-    if (command.kind === 'status') {
-      const finished = run ? null : await loadFinished($, now)
-      // The records first, so the status reads them fresh, not as of the last heartbeat.
-      // A failed refresh must not hide the status: show it from the cached records.
-      const mode = await refreshMode($).catch(() => null)
-      // availStatusLines carries the one ask-user line, so statusText leaves its own out.
-      const text = finished ? graceStatusText(finished, now) : statusText(now, false)
-      // Away and ask-user show with or without a run, with their source (session or global).
-      const offset = await utcOffset($)
-      // refreshMode read both records (also with no run): the cached ones are current.
-      const lines = availStatusLines(effective(run, sessionAvail, globalAvail), mode, run, now, offset)
+      return next(e)
+    }).catch(($, e, next) => next(e))
+  }
 
-      return { text: [text, ...lines].join('\n') }
-    }
-    if (command.kind === 'error') return { text: command.message }
-    if (command.kind === 'extend' || command.kind === 'shorten' || command.kind === 'until') {
-      if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') {
-        await log($, `retime refused: origin ${e.origin.kind}`)
-
-        return { text: 'Only the person can change the autopilot end time (type it in the prompt or over Remote Control).' }
-      }
-      // No run, but one that finished on time or restarts a moment ago: it is judged as a run in its final phase.
-      const finished = run ? null : await loadFinished($, now)
-      const subject = run ?? finished?.run ?? null
-      if (!subject) return { text: NOT_RUNNING_TEXT }
-      const offset = await utcOffset($)
-      // The process call took time: decide on the clock as it is now.
-      now = await $.clock.now()
-      // The token windows only matter for a revive: a weekly stop at its limit refuses, a 5-hour stop parks.
-      const usage = subject.phase === 'final' ? await $.session.usage().catch(() => null) : null
-      const target = targetChange(command, subject, now, offset)
-      if ('refuse' in target) return { text: target.refuse }
-      const action = retime(subject, target, now, usage ? limitAction(subject, usage.rateLimits, now) : null)
-      if (action.kind === 'refuse') return { text: action.message }
-
-      const limit = (maxRestarts: number | null) => maxRestarts ?? 'unlimited'
-      const restartsChange = action.maxRestarts === subject.maxRestarts ? '' : `, restart limit ${limit(subject.maxRestarts)} -> ${limit(action.maxRestarts)}`
-      const note = target.note ? ` ${target.note}` : ''
-      if (finished) {
-        // A finished record is final/time or final/restarts, so retime can only revive it.
-        if (action.kind !== 'revive') return { text: NOT_RUNNING_TEXT }
-        // Back through the restart flow: the handoff is already written, so wrapping asks for the restart;
-        // that restart is not counted. The wait is dropped: the limit checks after the resume park it again if needed.
-        run = {
-          ...finished.run,
-          until: action.until,
-          maxRestarts: action.maxRestarts,
-          phase: 'wrapping',
-          finalReason: null,
-          idleTurns: 0,
-          waitUntil: null,
-          isGraceResume: true,
-          graceSince: finished.run.finalAt,
-          graceAsks: 0,
-        }
-        try {
-          await save($)
-        } catch (error) {
-          run = null
-          await save($).catch(() => undefined)
-          await log($, `could not record the change: ${String(error)}`).catch(() => undefined)
-
-          return { text: 'Autopilot could not record the change; nothing changed.' }
-        }
-        await $.store.delete(finishedKey(sessionId)).catch(() => undefined)
-        await log($, `revived after finishing (${finished.run.finalReason}) by ${command.kind}: to ${endClock(run.until, null)}${restartsChange}`)
-        queue($, graceResumePrompt(run.until, offset))
-
-        return {
-          text: `Autopilot end: ${endClock(run.until, offset)}, ${formatLeft(run.until - now)} left, restarts ${run.restarts}/${limit(run.maxRestarts)}.${note} Bringing the run back: the session will clear and resume from its handoff.`,
-        }
-      }
-      // Stopped while the clock and usage were read.
-      if (!run) return { text: NOT_RUNNING_TEXT }
-      const wasReason = run.finalReason
-      const previous = {
-        until: run.until,
-        maxRestarts: run.maxRestarts,
-        phase: run.phase,
-        finalReason: run.finalReason,
-        idleTurns: run.idleTurns,
-        waitUntil: run.waitUntil,
-      }
-      run.until = action.until
-      run.maxRestarts = action.maxRestarts
-      if (action.kind === 'revive') {
-        run.phase = action.phase
-        run.finalReason = null
-        run.idleTurns = 0
-        run.waitUntil = action.waitUntil
-      }
-      try {
-        await save($)
-      } catch (error) {
-        // Not recorded: back to where it was, or the run would differ from what is stored.
-        Object.assign(run, previous)
-        await save($).catch(() => undefined)
-        await log($, `could not record the change: ${String(error)}`).catch(() => undefined)
-
-        return { text: 'Autopilot could not record the change; nothing changed.' }
-      }
-      const logLine = `to ${endClock(run.until, null)}${restartsChange}`
-      const pausedNote = run.phase === 'paused' ? ' (paused; start it again to resume work)' : ''
-      const reply = `Autopilot end: ${endClock(run.until, offset)}, ${formatLeft(run.until - now)} left, restarts ${run.restarts}/${limit(run.maxRestarts)}.${note}${pausedNote}`
-      if (action.kind === 'set') {
-        await log($, `end moved by the person (${command.kind}): ${logLine}`)
-
-        return { text: reply }
-      }
-
-      await log($, `revived from final (${wasReason}) by ${command.kind}: ${logLine}`)
-      // A 5-hour wait is pending (or the window is at its stop): the park's own wake brings the session back.
-      if (action.phase === 'waiting') {
-        await clearGoal($)
-        scheduleWake($, now)
-
-        return { text: `${reply} Back on the 5-hour wait: the final handoff is cancelled.` }
-      }
-      // Setting the goal starts a turn of its own, which already reads the pinned
-      // role: a revive prompt after it would land behind work that may be done by then.
-      if (run.goal) await setGoal($)
-      else {
-        const restarts = wasReason === 'restarts' ? { used: run.restarts, limit: run.maxRestarts } : undefined
-        queue($, revivePrompt(run.until, offset, restarts))
-      }
-
-      return { text: `${reply} Back to work: the final handoff is cancelled.` }
-    }
-    if (command.kind === 'stop') {
-      if (run) await log($, 'stopped by the person')
-      // A stopped run asks nothing more: its open questions go to the person in the reply.
-      const open = run ? questionsBlock(run) : ''
-      await $.store.delete(finishedKey(sessionId)).catch(() => undefined)
-      await clearGoal($)
-      run = null
-      await save($)
-      $.ui.status(undefined)
-
-      return { text: open ? `Autopilot is off. You have the wheel.\n${open}` : 'Autopilot is off. You have the wheel.' }
-    }
-
-    // A clock end is under 24 hours ahead, so the 7-day cap cannot be hit.
-    const startOffset = await utcOffset($)
-    now = await $.clock.now()
-    if (command.end.kind === 'clock' && startOffset === null) {
-      return { text: 'Cannot read the local time zone; use a duration such as 2h instead.' }
-    }
-    const until =
-      command.end.kind === 'clock'
-        ? untilFromClock(command.end.hours, command.end.minutes, now, startOffset ?? 0)
-        : now + command.end.ms
-
-    const limit = await readCeiling($)
-    const capNote =
-      command.threshold > limit
-        ? `\nNote: you asked for ${command.threshold}%, but auto-compact in this session leaves room for a handoff only up to ${limit}% (auto-compact minus 10 points), so ${limit}% is used. To get exactly ${command.threshold}% next time, raise autoCompactWindow in ~/.claude/settings.json.`
-        : ''
-
-    const [identity, commands] = await Promise.all([readIdentity($), $.command.list().catch(() => [])])
-    const skillNames = commands.filter(info => info.source !== 'builtin').map(info => info.name)
-    // A new run in this session keeps what the run it replaces still had queued (a paused run is started again this way): no question is lost.
-    const kept = run?.questions?.length ? { questions: run.questions, nextQuestionId: run.nextQuestionId, drain: run.drain, pingedFor: run.pingedFor } : {}
-    const keptNote = kept.questions ? `\nKept from the previous run: ${criticalCount(kept.questions.length)} queued for you.` : ''
-    run = {
-      role: command.role,
-      name: identity.name,
-      color: identity.color,
-      startedAt: now,
-      until,
-      threshold: command.threshold,
-      maxRestarts: command.maxRestarts,
-      restarts: 0,
-      phase: 'running',
-      handoffPath: null,
-      idleTurns: 0,
-      goal: command.goal,
-      skills: namedSkills(command.role, skillNames),
-      fiveHourStop: command.fiveHourStop,
-      weekStop: command.weekStop,
-      waitUntil: null,
-      finalReason: null,
-      awaiting: null,
-      askUser: command.askUser,
-      ...kept,
-    }
-    await save($)
-    await $.store.delete(finishedKey(sessionId)).catch(() => undefined)
-    await log(
-      $,
-      `started: ${formatLeft(until - now)} (until ${endClock(until, null)}), trigger ${command.threshold}%, restarts ${restartsText(run)}, 5h ${command.fiveHourStop}%, week ${command.weekStop}%${command.goal ? `, goal: ${command.goal}` : ''}${command.askUser ? ', asks the person: critical only' : ''}; role: ${command.role}`,
-    )
-    if (capNote) await log($, `threshold ${command.threshold}% capped to ${limit}% below auto-compact`)
-
-    // Setting a goal starts a turn of its own, which already reads the pinned
-    // role: a kickoff after it would land behind work that may be done by then.
-    const started = run
-    $.clock.after(300, () => {
-      void (async () => {
-        if (started.goal) {
-          await setGoal($)
-          return
-        }
-        await $.prompt.submit({ text: kickoffPrompt(started, now) }).catch(() => undefined)
-      })()
-    })
-
-    return { text: `${statusText(now)}\nEnd: ${endClock(until, startOffset)}, ${formatLeft(until - now)} left.${capNote}${keptNote}\nStop any time with /autopilot 0 0 stop.` }
-  }).catch(() => ({ text: 'Autopilot: the command failed; nothing changed. Try again.' }))
+  on('command.run', { command: 'autopilot' }, autopilotCommand).catch(commandFailed)
+  on('command.run', { command: 'ap' }, autopilotCommand).catch(commandFailed)
 
   // Human-only: another plugin, a peer or the SDK may not say the person is away or back.
   const isPerson = (kind: string) => kind === 'composer' || kind === 'bridge'
