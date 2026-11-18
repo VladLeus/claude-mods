@@ -13,12 +13,13 @@ import { inboxDirOf, inboxFolderLevels, inboxHomeOf, RUNTIME_KICKOFF_FILE } from
 import { ignoreLines } from '../plan/gitignore'
 import { compileScope } from '../scope/compile'
 import { BIDI_OVERRIDE, emptySetupScan, entry, hostWorld, link, memHost, ROOT, templateRole } from '../testkit'
+import { renderFailedReply } from './launcher-check'
 import {
   inboxClearSteps,
   NO_MEMORY_LINKS,
   notReplacedText,
   notReplacedWarning,
-  privateLinkRefusal,
+  privateSkippedWarning,
   renderPaths,
   renderSteps,
   runtimeFolder,
@@ -68,6 +69,20 @@ const MEMORY_LINK: OverlayLink = {
   path: '/repo/.cadre/be/.runtime/instructions/memory/MEMORY.md',
   target: '/home/u/.claude/projects/-repo/memory/MEMORY.md',
 }
+
+/** BE's private instructions folder for the fixture user: `<role memory folder>/instructions`. */
+const PRIVATE_FOLDER = '/home/u/.claude/cadre/repo-1a2b3c4d/be/instructions'
+
+/** The levels of BE's role memory folder a render makes mode 700, from the top. */
+const PRIVATE_LEVELS: readonly string[] = [
+  '/home/u/.claude/cadre',
+  '/home/u/.claude/cadre/repo-1a2b3c4d',
+  '/home/u/.claude/cadre/repo-1a2b3c4d/be',
+  PRIVATE_FOLDER,
+]
+
+/** The copy of BE's private instructions in its .runtime, which its launcher adds. */
+const PRIVATE_COPY = `${RUNTIME}/private-instructions`
 
 /** The launching user of the fixtures: repo /repo, home /home/u, nothing to carry or link; `over` changes fields. */
 function user(over: Partial<LaunchUser> = {}): LaunchUser {
@@ -143,9 +158,13 @@ function input(over: Partial<RenderInput> = {}): RenderInput {
     listings: new Map<string, readonly PortEntry[]>(),
     memories: NO_MEMORY_LINKS,
     inboxDir: INBOX_DIR,
+    privateSource: PRIVATE_FOLDER,
     ...over,
   }
 }
+
+/** What /cadre start gives renderPaths for BE: its inbox folder and its private instructions folder. */
+const PATHS_OPTIONS = { inboxDir: INBOX_DIR, privateSource: PRIVATE_FOLDER }
 
 /** The writes of the settings, the MCP config and the probe expectations of a plan, in render order (D-102). */
 function fileWritesOf(plan: LaunchPlan): RenderStep[] {
@@ -189,7 +208,7 @@ describe('runtime render (D-102)', () => {
       'and the inbox in its folder, and lists .runtime, the stale-link folders and the inbox folder (#72 A2)',
     () => {
       expect(BE_PLAN.links).toEqual([])
-      expect(renderPaths(ROOT, 'be', BE_PLAN, { inboxDir: INBOX_DIR })).toEqual({
+      expect(renderPaths(ROOT, 'be', BE_PLAN, PATHS_OPTIONS)).toEqual({
         stats: [
           INBOX,
           ROLE_DIR,
@@ -222,7 +241,7 @@ describe('runtime render (D-102)', () => {
   test('renderPaths also stats each folder from .runtime down to a link and each link path, sorted, once each', () => {
     const plan = { ...BE_PLAN, links: [MEMORY_LINK, SKILL_LINK, RESUME_LINK] }
 
-    expect(renderPaths(ROOT, 'be', plan, { inboxDir: INBOX_DIR }).stats).toEqual([
+    expect(renderPaths(ROOT, 'be', plan, PATHS_OPTIONS).stats).toEqual([
       INBOX,
       ROLE_DIR,
       RUNTIME,
@@ -687,7 +706,7 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
       const folderFile = renderSteps(input({ kickoff: 'X\n', stats: rendered({ [kickoff]: folder(kickoff) }) }))
       const start = renderSteps(input({ stats: rendered({ [kickoff]: LINK_OUT }) }))
 
-      expect(renderPaths(ROOT, 'be', BE_PLAN, { inboxDir: INBOX_DIR, kickoff: true }).stats).toContain(kickoff)
+      expect(renderPaths(ROOT, 'be', BE_PLAN, { ...PATHS_OPTIONS, kickoff: true }).stats).toContain(kickoff)
       expect(linkedFile.steps[0]).toEqual({ kind: 'remove', path: kickoff })
       expect(linkedFile.steps.filter(step => step.path === kickoff).map(step => step.kind)).toEqual(['remove', 'write'])
       expect(folderFile).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
@@ -768,23 +787,6 @@ describe('inboxClearSteps', () => {
   })
 })
 
-/** BE's private instructions folder for the fixture user: `<role memory folder>/instructions` (D-140 q1-b). */
-const PRIVATE_FOLDER = '/home/u/.claude/cadre/repo-1a2b3c4d/be/instructions'
-
-/** The levels of BE's role memory folder a render makes mode 700, from the top (02-GAPS-B3 S7). */
-const PRIVATE_LEVELS: readonly string[] = [
-  '/home/u/.claude/cadre',
-  '/home/u/.claude/cadre/repo-1a2b3c4d',
-  '/home/u/.claude/cadre/repo-1a2b3c4d/be',
-  PRIVATE_FOLDER,
-]
-
-/** The link in BE's .runtime to its private instructions folder, which its launcher adds (D-140 q1-b). */
-const PRIVATE_LINK: OverlayLink = { path: `${RUNTIME}/private-instructions`, target: PRIVATE_FOLDER }
-
-/** BE's plan with the private instructions link and no other link, as /cadre start renders it (D-140 q1-b). */
-const PRIVATE_PLAN: LaunchPlan = { ...BE_PLAN, links: [PRIVATE_LINK] }
-
 /**
  * A render step's path below BE's .runtime, as an ignore line names it: a folder a step makes ends in `/`, as the
  * folders of RUNTIME_RENDERED do, so a folder line can cover it.
@@ -796,8 +798,8 @@ function runtimeRelative(step: RenderStep): string {
 }
 
 /**
- * Whether a line of ignoreLines('all') covers a path below .runtime (02-GAPS-B2 M2): the line of `<name>` covers the
- * path equal to `<name>`, and, when `<name>` ends in `/`, every path that starts with it.
+ * Whether a line of ignoreLines('all') covers a path below .runtime as git matches it: a line `<name>/` covers every
+ * path that starts with it, and a line `<name>` covers that path and every path below it.
  */
 function isIgnoredUnderAll(path: string): boolean {
   const prefix = '.cadre/*/.runtime/'
@@ -806,48 +808,150 @@ function isIgnoredUnderAll(path: string): boolean {
     if (!line.startsWith(prefix)) return false
     const name = line.slice(prefix.length)
 
-    return name.endsWith('/') ? path.startsWith(name) : path === name
+    return name.endsWith('/') ? path.startsWith(name) : path === name || path.startsWith(`${name}/`)
   })
 }
 
 describe('built files reach the session (G-02-1f)', () => {
-  test('a render makes the private link folder, chmods its levels, makes the inbox folder, then links (S7)', () => {
-    expect(renderSteps(input({ plan: PRIVATE_PLAN })).steps).toEqual([
-      { kind: 'mkdir', path: RUNTIME },
-      { kind: 'mkdir', path: `${RUNTIME}/overlay` },
-      { kind: 'mkdir', path: PRIVATE_FOLDER },
-      ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
-      ...INBOX_FOLDER_STEPS,
-      { kind: 'link', path: PRIVATE_LINK.path, target: PRIVATE_FOLDER },
-      ...fileWritesOf(PRIVATE_PLAN),
-      INBOX_CREATE,
-      STAMP_WRITE,
-    ])
-  })
+  test('a render makes the copy folder, then after the links chmods it and copies each regular source file', () => {
+    const listings = listed({ [PRIVATE_FOLDER]: [entry('notes.md'), entry('sub', 'dir'), entry('CLAUDE.md')] })
+    const result = renderSteps(linked({ listings }))
 
-  test('an earlier link at .runtime/private-instructions is removed first; a real file or folder there refuses', () => {
-    const stale = renderSteps(input({ plan: PRIVATE_PLAN, stats: rendered({ [PRIVATE_LINK.path]: LINK_OUT }) }))
-    const atLink = stale.steps.filter(step => step.path === PRIVATE_LINK.path)
-
-    expect(atLink.map(step => step.kind)).toEqual(['remove', 'link'])
-    for (const stat of [folder(PRIVATE_LINK.path), regular(PRIVATE_LINK.path)]) {
-      const real = renderSteps(input({ plan: PRIVATE_PLAN, stats: rendered({ [PRIVATE_LINK.path]: stat }) }))
-
-      expect(real).toEqual({ steps: [], warnings: [], refusal: privateLinkRefusal('be') })
-    }
-    expect(privateLinkRefusal('be')).toBe(
-      '.cadre/be/.runtime/private-instructions is a real file or folder, not a link: ' +
-        'remove it and run /cadre start be again',
+    expect(result).toEqual({
+      steps: [
+        { kind: 'mkdir', path: RUNTIME },
+        { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+        { kind: 'mkdir', path: SKILLS },
+        { kind: 'mkdir', path: PRIVATE_COPY },
+        { kind: 'mkdir', path: PRIVATE_FOLDER },
+        ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
+        ...INBOX_FOLDER_STEPS,
+        { kind: 'link', path: SKILL_LINK.path, target: SKILL_LINK.target },
+        { kind: 'chmod', path: PRIVATE_COPY },
+        { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+        { kind: 'copy', source: `${PRIVATE_FOLDER}/notes.md`, path: `${PRIVATE_COPY}/notes.md` },
+        ...fileWritesOf(LINKED_PLAN),
+        INBOX_CREATE,
+        STAMP_WRITE,
+      ],
+      warnings: [privateSkippedWarning('be', 'sub')],
+      refusal: null,
+    })
+    expect(result.steps.filter(step => step.kind === 'link' && step.path === PRIVATE_COPY)).toEqual([])
+    expect(privateSkippedWarning('be', 'sub')).toBe(
+      "be's private instructions folder holds sub, which is not a regular file and is not copied to the role",
     )
   })
 
-  test('under commit all, every path a render makes below .runtime is git-ignored, the private link too (M2)', () => {
-    const plan: LaunchPlan = { ...BE_PLAN, links: [MEMORY_LINK, PRIVATE_LINK, SKILL_LINK] }
-    const below = renderSteps(input({ plan }))
+  test('a link at the copy path is removed after the planned links, before every mkdir; its listing is unused', () => {
+    const stats = rendered({ [SKILL_LINK.path]: LINK_OUT, [PRIVATE_COPY]: LINK_OUT })
+    const listings = listed({ [PRIVATE_COPY]: [entry('CLAUDE.md'), entry('old.md')] })
+    const steps = renderSteps(linked({ stats, listings })).steps
+    const removed = steps.findIndex(step => step.kind === 'remove' && step.path === PRIVATE_COPY)
+
+    expect(steps.filter(step => step.kind === 'remove')).toEqual([
+      { kind: 'remove', path: SKILL_LINK.path },
+      { kind: 'remove', path: PRIVATE_COPY },
+    ])
+    expect(steps.findIndex(step => step.kind === 'mkdir')).toBeGreaterThan(removed)
+  })
+
+  test('a dangling link .runtime lists at the copy path, with no stat, is removed the same way', () => {
+    const listings = listed({ [RUNTIME]: [link('private-instructions')] })
+    const result = renderSteps(input({ stats: rendered(), listings }))
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: PRIVATE_COPY }])
+  })
+
+  test('a copy folder is refreshed: after its chmod each entry in it is removed, then the source is copied', () => {
+    const stats = rendered({ [PRIVATE_COPY]: folder(PRIVATE_COPY), [PRIVATE_FOLDER]: folder(PRIVATE_FOLDER) })
+    const listings = listed({
+      [PRIVATE_COPY]: [entry('CLAUDE.md'), entry('old.md'), link('stale')],
+      [PRIVATE_FOLDER]: [entry('CLAUDE.md')],
+    })
+    const steps = renderSteps(input({ stats, listings })).steps
+
+    expect(steps.filter(step => step.path.startsWith(PRIVATE_COPY))).toEqual([
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      { kind: 'chmod', path: PRIVATE_COPY },
+      { kind: 'remove', path: `${PRIVATE_COPY}/CLAUDE.md` },
+      { kind: 'remove', path: `${PRIVATE_COPY}/old.md` },
+      { kind: 'remove', path: `${PRIVATE_COPY}/stale` },
+      { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+    ])
+  })
+
+  test('with no source folder, its folder and the copy folder are made, and nothing is copied or refused', () => {
+    const result = renderSteps(input())
+    const at = result.steps.findIndex(step => step.kind === 'mkdir' && step.path === PRIVATE_FOLDER)
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.slice(at, at + 1 + PRIVATE_LEVELS.length)).toEqual([
+      { kind: 'mkdir', path: PRIVATE_FOLDER },
+      ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
+    ])
+    expect(result.steps.filter(step => step.path.startsWith(PRIVATE_COPY))).toEqual([
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      { kind: 'chmod', path: PRIVATE_COPY },
+    ])
+  })
+
+  test('a real file at the copy path, a real folder in the copy, or a source that cannot be listed refuses', () => {
+    const asFile = renderSteps(input({ stats: rendered({ [PRIVATE_COPY]: regular(PRIVATE_COPY) }) }))
+    const nested = renderSteps(
+      input({
+        stats: rendered({ [PRIVATE_COPY]: folder(PRIVATE_COPY) }),
+        listings: listed({ [PRIVATE_COPY]: [entry('CLAUDE.md'), entry('drafts', 'dir')] }),
+      }),
+    )
+    const unlisted = renderSteps(input({ stats: rendered({ [PRIVATE_FOLDER]: folder(PRIVATE_FOLDER) }) }))
+
+    expect(asFile).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
+    expect(nested).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
+    expect(unlisted).toEqual({ steps: [], warnings: [], refusal: renderFailedReply('be', PRIVATE_FOLDER) })
+  })
+
+  test('a source entry that is not a regular file is not copied: one warning each, by name, after the others', () => {
+    const source = [
+      entry('d-dir', 'dir'),
+      entry('CLAUDE.md'),
+      link('c-link'),
+      entry('b-fifo', 'other'),
+      entry('a-file-link', 'file', true),
+    ]
+    const stats = rendered({ [SKILL_LINK.path]: folder(SKILL_LINK.path) })
+    const result = renderSteps(linked({ stats, listings: listed({ [PRIVATE_FOLDER]: source }) }))
+    const regularOnly = listed({ [PRIVATE_FOLDER]: [entry('CLAUDE.md'), entry('notes.md')] })
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.filter(step => step.kind === 'copy')).toEqual([
+      { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+    ])
+    expect(result.warnings).toEqual([
+      notReplacedWarning(ROOT, SKILL_LINK.path),
+      ...['a-file-link', 'b-fifo', 'c-link', 'd-dir'].map(name => privateSkippedWarning('be', name)),
+    ])
+    expect(renderSteps(input({ listings: regularOnly })).warnings).toEqual([])
+  })
+
+  test('renderPaths stats the private instructions folder and its copy, and lists both after the inbox folder', () => {
+    const paths = renderPaths(ROOT, 'be', BE_PLAN, PATHS_OPTIONS)
+
+    expect(paths.stats).toContain(PRIVATE_FOLDER)
+    expect(paths.stats).toContain(PRIVATE_COPY)
+    expect(paths.listings.slice(-3)).toEqual([INBOX_DIR, PRIVATE_COPY, PRIVATE_FOLDER])
+  })
+
+  test('under commit all, every path a render makes below .runtime is git-ignored, the private copy too (M2)', () => {
+    const plan: LaunchPlan = { ...BE_PLAN, links: [MEMORY_LINK, SKILL_LINK] }
+    const listings = listed({ [PRIVATE_FOLDER]: [entry('CLAUDE.md')] })
+    const below = renderSteps(input({ plan, listings }))
       .steps.filter(step => step.kind !== 'remove' && step.path.startsWith(`${RUNTIME}/`))
       .map(step => runtimeRelative(step))
 
-    expect(below).toContain('private-instructions')
+    expect(below).toContain('private-instructions/')
+    expect(below).toContain('private-instructions/CLAUDE.md')
     expect(below).toContain('overlay/')
     expect(below.filter(path => !isIgnoredUnderAll(path))).toEqual([])
   })

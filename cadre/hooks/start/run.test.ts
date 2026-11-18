@@ -13,6 +13,7 @@ import type {
   LaunchStart,
   ManifestEntry,
   MemoryItem,
+  PortEntry,
   PortStat,
   RoleSpec,
   TerminalChoice,
@@ -115,30 +116,73 @@ async function startLevels(): Promise<string[]> {
   return ['/home/u/.claude/cadre', slug, `${slug}/be`, `${slug}/be/instructions`]
 }
 
+/** The copy of BE's private instructions in its .runtime, which its launcher adds. */
+const PRIVATE_COPY = `${RUNTIME}/private-instructions`
+
+/** appliedWorld with BE's private instructions folder listing `entries` and holding a private CLAUDE.md. */
+async function privateWorld(entries: readonly PortEntry[]): Promise<MemWorld> {
+  const folder = await startPrivateFolder()
+  const base = withFile(await appliedWorld(), `${folder}/CLAUDE.md`, '# Private\n')
+
+  return { ...base, dirs: { ...base.dirs, [folder]: entries } }
+}
+
+/** The argv of each run of a start whose last word is the copy folder or a path in it. */
+function copyRuns(start: StartRun): (readonly string[])[] {
+  return start.calls.map(call => call.argv).filter(argv => argv.at(-1)?.startsWith(PRIVATE_COPY) === true)
+}
+
 describe('built files reach the session (G-02-1f)', () => {
-  test('runStart links .runtime/private-instructions to the role memory instructions folder and makes it', async () => {
-    const start = await startBe(await appliedWorld())
+  test('runStart makes .runtime/private-instructions a real folder and copies the private CLAUDE.md in', async () => {
     const privateFolder = await startPrivateFolder()
+    const start = await startBe(await privateWorld([entry('CLAUDE.md')]))
 
     expect(renderRuns(start).map(call => call.argv)).toEqual([
       ['/bin/mkdir', '-p', '--', RUNTIME],
       ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`],
+      ['/bin/mkdir', '-p', '--', PRIVATE_COPY],
       ['/bin/mkdir', '-p', '--', privateFolder],
       ...(await startLevels()).map(level => ['/bin/chmod', '700', level]),
       ...INBOX_FOLDER_ARGV,
-      ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
+      ['/bin/chmod', '700', PRIVATE_COPY],
+      ['/bin/cp', '-p', '--', `${privateFolder}/CLAUDE.md`, `${PRIVATE_COPY}/CLAUDE.md`],
       ['/usr/bin/tee', '-a', `${INBOX_DIR}/inbox.jsonl`],
     ])
-    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+    expect(start.calls.filter(call => call.argv[0] === '/bin/ln' && call.argv.at(-1) === PRIVATE_COPY)).toEqual([])
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (0 links).')
   })
 
-  test('a whole-files role gets the same link and folder: the folder its launcher adds is there, empty', async () => {
+  test('a copy that exits 1 stops the render with the failed path, and no stamp is written', async () => {
+    const privateFolder = await startPrivateFolder()
+    const argv = ['/bin/cp', '-p', '--', `${privateFolder}/CLAUDE.md`, `${PRIVATE_COPY}/CLAUDE.md`]
+    const failed = { argv, result: { exitCode: 1, stdout: '', stderr: 'denied' } }
+    const start = await startBe(await privateWorld([entry('CLAUDE.md')]), [failed, CLAUDE_OK, GIT_OK])
+
+    expect(start.reply).toBe(renderFailedReply('be', '.cadre/be/.runtime/private-instructions/CLAUDE.md'))
+    expect(writtenPaths(start)).not.toContain(`${RUNTIME}/stamp`)
+  })
+
+  test('a sub-folder of the private instructions folder is not copied and a warning names it', async () => {
+    const privateFolder = await startPrivateFolder()
+    const start = await startBe(await privateWorld([entry('CLAUDE.md'), entry('drafts', 'dir')]))
+    const warning =
+      "warning: be's private instructions folder holds drafts, which is not a regular file " +
+      'and is not copied to the role'
+
+    expect(start.reply.split('\n')).toContain(warning)
+    expect(start.calls.filter(call => call.argv[0] === '/bin/cp').map(call => call.argv)).toEqual([
+      ['/bin/cp', '-p', '--', `${privateFolder}/CLAUDE.md`, `${PRIVATE_COPY}/CLAUDE.md`],
+    ])
+  })
+
+  test('a whole-files role gets the same copy folder: the folder its launcher adds is there, empty', async () => {
     const whole = templateRole('be', { instructions: ['project-claude-md'] })
     const start = await startBe(await appliedWorld(whole))
     const privateFolder = await startPrivateFolder()
 
-    expect(start.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv)).toEqual([
-      ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
+    expect(copyRuns(start)).toEqual([
+      ['/bin/mkdir', '-p', '--', PRIVATE_COPY],
+      ['/bin/chmod', '700', PRIVATE_COPY],
     ])
     expect(writtenPaths(start).filter(path => path.startsWith(privateFolder))).toEqual([])
   })
@@ -160,17 +204,17 @@ const BE_GLOBAL_PART: InstructionPart = {
 }
 
 describe('private role files (G-02-1f)', () => {
-  test('q1-b: the private instructions link points at the folder of the private text file apply writes', async () => {
+  test('q1-b: the private instructions copy comes from the private text file apply writes', async () => {
     const textFile = privateClaudeMdPath(await startRoleFolder())
-    const world = withFile(await appliedWorld(), textFile, privateClaudeMdText('be', 'repo', [BE_GLOBAL_PART]))
+    const folder = textFile.slice(0, textFile.lastIndexOf('/'))
+    const base = withFile(await appliedWorld(), textFile, privateClaudeMdText('be', 'repo', [BE_GLOBAL_PART]))
+    const world = { ...base, dirs: { ...base.dirs, [folder]: [entry('CLAUDE.md')] } }
     const start = await startBe(world)
-    const isPrivateLink = (call: HostCall): boolean =>
-      call.argv[0] === '/bin/ln' && call.argv[3] === `${RUNTIME}/private-instructions`
-    const target = start.calls.find(isPrivateLink)?.argv[2] ?? ''
+    const source = start.calls.find(call => call.argv[0] === '/bin/cp')?.argv[3] ?? ''
 
-    expect(target).toBe(textFile.slice(0, textFile.lastIndexOf('/')))
-    expect(world.files[`${target}/CLAUDE.md`]).toContain('Never commit secrets.')
-    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+    expect(source).toBe(textFile)
+    expect(world.files[source]).toContain('Never commit secrets.')
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (0 links).')
     expect(writtenPaths(start).filter(path => path.startsWith('/home/u/'))).toEqual([])
   })
 })
@@ -629,9 +673,9 @@ async function startBe(
 /** The options of every render step the host runs: no cwd, the render step timeout. */
 const STEP_OPTIONS = { timeoutMs: 10_000 }
 
-/** The runs of a start that remove, make a folder, chmod it, link or append: a refused start makes none of them. */
+/** The runs of a start that remove, make a folder, chmod it, link, copy or append: a refused start makes none. */
 function renderRuns(start: StartRun): HostCall[] {
-  const steps = ['/bin/rm', '/bin/mkdir', '/bin/chmod', '/bin/ln', '/usr/bin/tee']
+  const steps = ['/bin/rm', '/bin/mkdir', '/bin/chmod', '/bin/ln', '/bin/cp', '/usr/bin/tee']
 
   return start.calls.filter(call => steps.includes(call.argv[0] ?? ''))
 }

@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { hasRunFailed } from './steps'
+import { hasRunFailed, renderArgv } from './steps'
+
+describe('renderArgv', () => {
+  test('a copy runs /bin/cp -p -- with the source, then the path', () => {
+    const source = '/u/.claude/cadre/repo-1/be/instructions/CLAUDE.md'
+    const path = '/repo/.cadre/be/.runtime/private-instructions/CLAUDE.md'
+
+    expect(renderArgv({ kind: 'copy', source, path })).toEqual(['/bin/cp', '-p', '--', source, path])
+  })
+})
 
 describe('hasRunFailed', () => {
   test('a run the host rejected failed', () => {
