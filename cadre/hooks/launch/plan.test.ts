@@ -104,6 +104,11 @@ function memoryAndRecordDeny(userDir: string, folder: string): string[] {
   return [`Edit(/${userDir}/projects/-repo/memory/**)`, `Edit(/${folder}/instructions.json)`]
 }
 
+/** The deny of the private instructions copy of role `id` under the root `root`, for a role given no team ids. */
+function privateCopyRules(root: string, id: string): string[] {
+  return [`Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`]
+}
+
 /**
  * The deny of the launch files under the root `root`: Edit on `.claude/settings.json`, `.claude/settings.local.json`,
  * `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
@@ -229,6 +234,7 @@ describe('launch render', () => {
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
           'Edit(//repo/.cadre/bin/**)',
           'Edit(//repo/.cadre/manifest.json)',
+          'Edit(//repo/.cadre/pm/.runtime/private-instructions/**)',
           'Edit(//repo/.claude/settings.json)',
           'Edit(//repo/.claude/settings.local.json)',
           'Edit(//repo/cadre/**)',
@@ -258,7 +264,12 @@ describe('launch render', () => {
     const folder = roleMemoryDir(carrier(), 'pm')
     const own = [...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]
     const inbox = inboxFileRules('/home/u/.claude')
-    const launch = [...launchFileRules('/repo'), ...inbox, ...teamFileRules('/repo', ['pm'])]
+    const launch = [
+      ...launchFileRules('/repo'),
+      ...inbox,
+      ...teamFileRules('/repo', ['pm']),
+      ...privateCopyRules('/repo', 'pm'),
+    ]
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
@@ -398,6 +409,7 @@ describe('launch render', () => {
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
+          'Edit(//repo/.cadre/be/.runtime/private-instructions/**)',
           'Edit(//repo/.cadre/bin/**)',
           'Edit(//repo/.cadre/manifest.json)',
           'Edit(//repo/.claude/settings.json)',
@@ -757,7 +769,11 @@ describe('launch properties', () => {
       const own = [...privateDeny(folder), ...memoryAndRecordDeny(item.launcher.userDir, folder)]
       const roots = [item.launcher.root, item.launcher.givenRoot]
       const launch = [
-        ...roots.flatMap(root => [...launchFileRules(root), ...teamFileRules(root, [item.role.id])]),
+        ...roots.flatMap(root => [
+          ...launchFileRules(root),
+          ...teamFileRules(root, [item.role.id]),
+          ...privateCopyRules(root, item.role.id),
+        ]),
         ...inboxFileRules(item.launcher.userDir),
       ]
       const expected = sortedUnique([...deny.deny, ...own, ...launch, ...memories])

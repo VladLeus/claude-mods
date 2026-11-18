@@ -99,6 +99,11 @@ function memoryAndRecordDeny(userDir: string, folder: string): string[] {
   return [`Edit(/${userDir}/projects/-repo/memory/**)`, `Edit(/${folder}/instructions.json)`]
 }
 
+/** The deny of the private instructions copy of role `id` under the root `root`, for a role given no team ids. */
+function privateCopyRules(root: string, id: string): string[] {
+  return [`Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`]
+}
+
 /**
  * The deny of the launch files under the root `root`: Edit on `.claude/settings.json`, `.claude/settings.local.json`,
  * `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
@@ -533,6 +538,7 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
         ...launchFileRules('/repo'),
         ...inboxFileRules('/home/u/.claude'),
         ...teamFileRules('/repo', ['be']),
+        ...privateCopyRules('/repo', 'be'),
       ]),
     })
   })
@@ -612,7 +618,12 @@ describe('linked memory deny (G-02-1f)', () => {
 
     const own = [...privateDeny(BE_MEMORY), ...memoryAndRecordDeny('/home/u/.claude', BE_MEMORY)]
     const inbox = inboxFileRules('/home/u/.claude')
-    const launch = [...launchFileRules('/repo'), ...inbox, ...teamFileRules('/repo', ['be'])]
+    const launch = [
+      ...launchFileRules('/repo'),
+      ...inbox,
+      ...teamFileRules('/repo', ['be']),
+      ...privateCopyRules('/repo', 'be'),
+    ]
     expect(isPartsFlowRole(role)).toBe(true)
     expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launch]))
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
@@ -661,7 +672,7 @@ describe('linked memory deny (G-02-1f)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = [...launchFileRules('/repo'), ...teamFileRules('/repo', ['be'])]
+    const launch = [...launchFileRules('/repo'), ...teamFileRules('/repo', ['be']), ...privateCopyRules('/repo', 'be')]
     const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch])
     expect(denyOf(plan.settings)).toEqual(expected)
     expect(plan.warnings.slice(0, lead.length + 5)).toEqual([
@@ -848,7 +859,11 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = ['/link/repo', '/repo'].flatMap(root => [...launchFileRules(root), ...teamFileRules(root, ['pm'])])
+    const launch = ['/link/repo', '/repo'].flatMap(root => [
+      ...launchFileRules(root),
+      ...teamFileRules(root, ['pm']),
+      ...privateCopyRules(root, 'pm'),
+    ])
     expect(denyOf(plan.settings)).toEqual(sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch]))
     expect(plan.warnings.slice(lead.length)).toEqual([
       UNDENIED_PRIVATE_WARNING,
@@ -864,11 +879,11 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     )
   })
 
-  test('the matrix keeps only the role.json rules over .cadre/<id>/, none over .planning/', () => {
+  test('the matrix keeps only the private copy and role.json rules over .cadre/<id>/, none over .planning/', () => {
     const results = matrixCases(MATRIX_USER).map(item => {
       const deny = denyOf(item.plan.settings)
       const ownFolder = `//repo/.cadre/${item.role.id}/`
-      const kept = [`Edit(${ownFolder}role.json)`]
+      const kept = [`Edit(${ownFolder}.runtime/private-instructions/**)`, `Edit(${ownFolder}role.json)`]
       const own = deny.filter(entry => entry.includes(ownFolder))
       const planning = deny.filter(entry => entry.includes('//repo/.planning/'))
       const memory = deny.filter(entry => entry.includes('/projects/-repo/memory/'))

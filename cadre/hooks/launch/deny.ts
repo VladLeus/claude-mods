@@ -15,6 +15,7 @@ import {
   INSTRUCTIONS_RECORD_FILE,
   isSafeRoot,
   memoryFolderOf,
+  privateInstructionsCopyOf,
   privateInstructionsDir,
   roleJsonPath,
   roleMemoryDir,
@@ -186,6 +187,14 @@ export function editRules(path: string, suffix: string): string[] | null {
   return lintRuntimeDenyPattern(rule) === null ? [rule] : null
 }
 
+/** The exact Read rule of an absolute path, as editRules builds the Edit rule; null when no exact rule can hold it. */
+function readRules(path: string, suffix: string): string[] | null {
+  if (!isSafeRoot(path)) return null
+  const rule = `Read(/${path}${suffix})`
+
+  return lintRuntimeDenyPattern(rule) === null ? [rule] : null
+}
+
 /**
  * The best-effort read-only deny of a role's linked memories, `Edit(//<path>)` for each link path. A path no exact rule
  * can hold gets undeniedMemoryWarning instead and stays editable; a Bash write is never covered.
@@ -210,6 +219,24 @@ function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
   const rules = editRules(privateInstructionsDir(user, id), '/**')
 
   return rules === null ? { deny: [], warnings: [UNDENIED_PRIVATE_WARNING] } : { deny: rules, warnings: [] }
+}
+
+/**
+ * The deny of the team's private instructions copies under every launch root, Edit of every team role's copy and Read
+ * of every other role's, a rule no exact pattern can hold dropped with no warning, since runtimeDeny warns of the root.
+ */
+function privateCopyDeny(user: LaunchUser, id: string): DenyResult {
+  const roots = sortedUnique(launchRoots(user))
+  const ids = sortedUnique([id, ...(user.teamIds ?? [])])
+  const rules = roots.flatMap(root =>
+    ids.flatMap(teamId => {
+      const copy = privateInstructionsCopyOf(root, teamId)
+
+      return teamId === id ? [editRules(copy, '/**')] : [editRules(copy, '/**'), readRules(copy, '/**')]
+    }),
+  )
+
+  return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
 }
 
 /**
@@ -322,10 +349,11 @@ export function pluginSkillDeny(
  * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
  * for a linked worktree nested in its main checkout (`mainRoot` set), runtimeDeny's denies for the main checkout's root
  * too, so its code dirs get the same exact denies as the worktree's, without its warnings, which would repeat the
- * worktree's; for every role, the deny of its private instructions folder (every launcher adds that folder), of the
- * repo's memory folders, of the launch files, of the inbox tree in the user config folder and of its hand-out record;
- * and for a parts-flow role the read-only deny of the memories /cadre start linked into its memory folder, never of
- * its MEMORY.md or of its own memories; last, the per-skill deny of its plugins (pluginSkillDeny).
+ * worktree's; for every role, the deny of its private instructions folder, of the team's private instructions copies
+ * in `.runtime` (privateCopyDeny; every launcher adds its own copy), of the repo's memory folders, of the launch files,
+ * of the inbox tree in the user config folder and of its hand-out record; and for a parts-flow role the read-only deny
+ * of the memories /cadre start linked into its memory folder, never of its MEMORY.md or of its own memories; last, the
+ * per-skill deny of its plugins (pluginSkillDeny).
  */
 export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
@@ -334,6 +362,7 @@ export function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchU
       ? []
       : [{ deny: runtimeDeny(role, scope, { ...user, root: user.mainRoot }).deny, warnings: [] }]),
     privateInstructionsDeny(user, role.id),
+    privateCopyDeny(user, role.id),
     memoryFolderDeny(user),
     launchFilesDeny(user, role.id),
     inboxFilesDeny(user),
