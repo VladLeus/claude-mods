@@ -21,10 +21,10 @@ Both tiers need Node 24 or newer (type stripping). The live tier assumes macOS (
 ## The e2e login
 
 Every live claude child runs with `CLAUDE_CONFIG_DIR` set to one reusable e2e config dir,
-`~/.cache/claude-mods-e2e/config` (env `E2E_CONFIG_DIR` overrides it). Log into it once, in a normal terminal:
+`~/.config/claude-mods-e2e/config` (env `E2E_CONFIG_DIR` overrides it), outside `~/.cache`, which cadre's Bash roles may write. Log into it once, in a normal terminal:
 
 ```sh
-CLAUDE_CONFIG_DIR=~/.cache/claude-mods-e2e/config claude auth login
+CLAUDE_CONFIG_DIR=~/.config/claude-mods-e2e/config claude auth login
 ```
 
 - The dir is used in place. The harness never reads, copies, prints or writes a credential: no credentials file, no

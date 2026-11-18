@@ -22,7 +22,7 @@ const EPOCH_DIGITS_RE = /^[0-9]+$/
 const EPOCH_MS_FROM = 1e12
 
 export function e2eConfigPath(env: Env = process.env, home: string = userInfo().homedir): string {
-  return env.E2E_CONFIG_DIR || join(home, '.cache', 'claude-mods-e2e', 'config')
+  return env.E2E_CONFIG_DIR || join(home, '.config', 'claude-mods-e2e', 'config')
 }
 
 export function e2eConfigDir(env: Env = process.env, home?: string): string {

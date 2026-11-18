@@ -91,11 +91,11 @@ test('expiresSoon is true before the margin, false after it and false for no exp
   assert.equal(expiresSoon(null, NOW), false)
 })
 
-test('e2eConfigDir resolves E2E_CONFIG_DIR, else the cache folder under home, and refuses a missing dir', async () => {
+test('e2eConfigDir resolves E2E_CONFIG_DIR, else the config folder under home, and refuses a missing dir', async () => {
   const target = join(dir, 'config-target')
   const link = join(dir, 'config-link')
   const home = join(dir, 'home')
-  const fallback = join(home, '.cache', 'claude-mods-e2e', 'config')
+  const fallback = join(home, '.config', 'claude-mods-e2e', 'config')
   await mkdir(target)
   await symlink(target, link)
   await mkdir(fallback, { recursive: true })
