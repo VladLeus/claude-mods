@@ -574,6 +574,15 @@ export const ROWS: readonly RowEntry[] = [
     kind: 'pass',
     file: 'live/03.2-41.test.ts',
   },
+  {
+    id: '03.2#43',
+    title: 'The private CLAUDE.md of a role is copied and loaded',
+    tier: 'live',
+    fixture: ['gsd'],
+    kind: 'pass',
+    file: 'live/03.2-43.test.ts',
+    roleSession: 'be',
+  },
 ]
 
 export function rowEntry(id: string, half?: 'a' | 'b'): RowEntry {

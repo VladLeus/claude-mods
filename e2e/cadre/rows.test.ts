@@ -55,6 +55,7 @@ const RC_PIN_ROWS: readonly string[] = ['03#50', '03#52', '03#59', '03#60', '03#
 const EXCLUSIVE_ROWS: readonly string[] = ['03#61', '03#80', '03#82', '03#83', '03#87', '03.2#3', '03.2#30']
 const ROLE_SESSION_ROWS: readonly string[] = [
   '03#64:be', '03#73:be', '03#76:be', '03#77:be', '03#78:be', '03.1#1:be', '03.1#4:be', '03.1#15:be',
+  '03.2#43:be',
 ]
 const SAMPLE_FROM: Readonly<Record<string, readonly string[]>> = { gsd: ['gsd-pre'], 'gsd-pre': [], 'sp-pre': [] }
 const CYCLE_FROM: Readonly<Record<string, readonly string[]>> = { a: ['b'], b: ['c'], c: ['a'] }
