@@ -212,18 +212,23 @@ export function linkedMemoryDeny(paths: readonly string[]): DenyResult {
 }
 
 /**
- * The deny of a role's private instructions folder, `Edit(//<folder>/**)`, so the role cannot rewrite what its next
- * session loads through it; a folder no exact rule can hold gets UNDENIED_PRIVATE_WARNING instead.
+ * The deny of the private instructions folders: Edit of the role's own, so it cannot rewrite what its next session
+ * loads through it, and Read of every other team role's. A folder no exact rule can hold gets no rule; only the role's
+ * own warns, with UNDENIED_PRIVATE_WARNING, since every folder shares its path up to the role id.
  */
 function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
+  const others = (user.teamIds ?? []).filter(teamId => teamId !== id)
+  const reads = others.flatMap(teamId => readRules(privateInstructionsDir(user, teamId), '/**') ?? [])
   const rules = editRules(privateInstructionsDir(user, id), '/**')
+  if (rules === null) return { deny: reads, warnings: [UNDENIED_PRIVATE_WARNING] }
 
-  return rules === null ? { deny: [], warnings: [UNDENIED_PRIVATE_WARNING] } : { deny: rules, warnings: [] }
+  return { deny: [...rules, ...reads], warnings: [] }
 }
 
 /**
- * The deny of the team's private instructions copies under every launch root, Edit of every team role's copy and Read
- * of every other role's, a rule no exact pattern can hold dropped with no warning, since runtimeDeny warns of the root.
+ * The deny of the team's private instructions copies, Edit of every team role's copy and Read of every other role's,
+ * each under every launch root and at any depth below it, where epic worktrees keep their own copies; a copy no exact
+ * rule can hold gets no rule and no warning, since runtimeDeny warns of the root.
  */
 function privateCopyDeny(user: LaunchUser, id: string): DenyResult {
   const roots = sortedUnique(launchRoots(user))
@@ -231,8 +236,11 @@ function privateCopyDeny(user: LaunchUser, id: string): DenyResult {
   const rules = roots.flatMap(root =>
     ids.flatMap(teamId => {
       const copy = privateInstructionsCopyOf(root, teamId)
+      if (!isSafeRoot(copy)) return []
+      const anyDepth = `/**${copy.slice(root.length)}/**`
+      const edits = [editRules(copy, '/**'), editRules(root, anyDepth)]
 
-      return teamId === id ? [editRules(copy, '/**')] : [editRules(copy, '/**'), readRules(copy, '/**')]
+      return teamId === id ? edits : [...edits, readRules(copy, '/**'), readRules(root, anyDepth)]
     }),
   )
 
@@ -349,7 +357,7 @@ export function pluginSkillDeny(
  * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
  * for a linked worktree nested in its main checkout (`mainRoot` set), runtimeDeny's denies for the main checkout's root
  * too, so its code dirs get the same exact denies as the worktree's, without its warnings, which would repeat the
- * worktree's; for every role, the deny of its private instructions folder, of the team's private instructions copies
+ * worktree's; for every role, the deny of the private instructions folders, of the team's private instructions copies
  * in `.runtime` (privateCopyDeny; every launcher adds its own copy), of the repo's memory folders, of the launch files,
  * of the inbox tree in the user config folder and of its hand-out record; and for a parts-flow role the read-only deny
  * of the memories /cadre start linked into its memory folder, never of its MEMORY.md or of its own memories; last, the
