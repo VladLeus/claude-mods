@@ -1,8 +1,8 @@
 /**
- * The role render of /cadre start and /cadre epic (D-102, D-157), a layer 10 module: renderRole renders one role's
- * runtime folder `.runtime/` for the root it is given, the session's for /cadre start and an epic worktree for
- * /cadre epic. It gathers the launching user there, builds the role's LaunchPlan with its private instructions link,
- * renders the MCP config and the probe expectations, and runs the render steps through the HostIo port, each refusal
+ * The role render of /cadre start and /cadre epic, a layer 10 module: renderRole renders one role's runtime folder
+ * `.runtime/` for the root it is given, the session's for /cadre start and an epic worktree for /cadre epic. It
+ * gathers the launching user there, builds the role's LaunchPlan, renders the MCP config and the probe expectations,
+ * and runs the render steps, the copy of the private instructions included, through the HostIo port, each refusal
  * before anything is written. It imports core, host/steps, launch, messages, paths, probe and the start modules below
  * it; the start command and epic read it.
  */
@@ -17,21 +17,20 @@ import type {
   PortStat,
   RoleSpec,
 } from '../../types'
-import { compareText, sortedUnique } from '../core/text'
+import { sortedUnique } from '../core/text'
 import { isStepDone } from '../host/steps'
 import { pluginSkillDeny } from '../launch/deny'
-import type { LaunchUser, OverlayLink } from '../launch/links'
+import type { LaunchUser } from '../launch/links'
 import { overlayLinks } from '../launch/overlay'
 import { launchPlan } from '../launch/plan'
-import type { LaunchPlan } from '../launch/plan'
 import { inboxRotationOf, isInboxOverRotation } from '../messages/rotate'
 import { INBOX_ROTATE_READ_MAX_BYTES } from '../messages/send'
-import { INBOX_LOG_FILE, PRIVATE_INSTRUCTIONS_LINK, privateInstructionsDir, roleMemoryDir } from '../paths'
+import { INBOX_LOG_FILE, privateInstructionsDir, roleMemoryDir } from '../paths'
 import { deniedSkillNames, expectationsFor, probeExpectationsText } from '../probe/probe'
 import { gatherLaunchUser } from './gather-user'
 import { renderFailedReply } from './launcher-check'
 import { readClaudeJson, runtimeMcpText } from './mcp-config'
-import { renderPaths, renderSteps, repoRelative, runtimeFolder, stampText } from './render-plan'
+import { renderPaths, renderSteps, repoRelative, stampText } from './render-plan'
 import type { RenderInput } from './render-plan'
 
 /**
@@ -74,21 +73,6 @@ async function inboxRotation(
 }
 
 /**
- * The role's LaunchPlan with the link `.cadre/<id>/.runtime/private-instructions` to its private instructions folder,
- * `<role memory folder>/instructions` (D-140 q1-b, q2-a), added in path order: the launcher adds that link with
- * `--add-dir`, so every render makes it, and the folder behind it (privateFolderSteps), for a role with no private part
- * too. The folder lies in the user's config folder, apart from the memory files, and never in the repo.
- */
-function withPrivateInstructions(plan: LaunchPlan, user: LaunchUser, id: string): LaunchPlan {
-  const link: OverlayLink = {
-    path: `${runtimeFolder(user.root, id)}/${PRIVATE_INSTRUCTIONS_LINK}`,
-    target: privateInstructionsDir(user, id),
-  }
-
-  return { ...plan, links: [...plan.links, link].sort((a, b) => compareText(a.path, b.path)) }
-}
-
-/**
  * What makes a render an epic render (D-157): /cadre epic renders a role for its epic worktree, from the team of the
  * main checkout.
  */
@@ -117,10 +101,10 @@ export function worktreeClaudeMd(paths: readonly string[], worktree: string): st
  * `locations` give the root it renders for, and the caller reads and compiles the team (`state`, the role, its compiled
  * scope and the repo's code dirs) in the session's own root. It gathers the launching user for the root
  * (gatherLaunchUser) with the team's role ids, so the settings deny every role's role.json, builds the role's
- * LaunchPlan with its private instructions link (withPrivateInstructions), renders the MCP config from
- * `~/.claude.json` under the stored consent with the project entries of `mcpRoots`, then of the user's `mainRoot` when
- * set, in that order (runtimeMcpText), and the probe expectations, and renders `<root>/.cadre/<id>/.runtime/` and the
- * role's inbox folder that gatherLaunchUser checked: renderPaths names what to stat and list, renderSteps plans the
+ * LaunchPlan, renders the MCP config from `~/.claude.json` under the stored consent with the project entries of
+ * `mcpRoots`, then of the user's `mainRoot` when set, in that order (runtimeMcpText), and the probe expectations, and
+ * renders `<root>/.cadre/<id>/.runtime/`, with the copy of the role's private instructions folder, and the role's inbox
+ * folder that gatherLaunchUser checked: renderPaths names what to stat and list, renderSteps plans the
  * steps from the root the LaunchPlan was built for, and every refusal comes before anything is written. Each step then
  * runs through the host in order, and the first one that fails stops the render with renderFailedReply and no stamp
  * written, so the launcher refuses to start. It refuses with the refusals of gatherLaunchUser, a role memory or inbox
@@ -167,7 +151,8 @@ export async function renderRole(
           mainRoot: input.epic.mainRoot,
           ...(input.epic.slug === undefined ? {} : { epicSlug: input.epic.slug }),
         }
-  const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
+  const plan = launchPlan(role, scope, user)
+  const privateSource = privateInstructionsDir(user, id)
   // The roots gatherLaunchUser kept the user folder outside of (WF-S4): ~/.claude.json follows the same rule (SR-1).
   const mainRoots = gathered.mainRoot === undefined ? [] : [gathered.mainRoot]
   const userRoots = [locations.root, locations.givenRoot, ...mainRoots]
@@ -183,7 +168,8 @@ export async function renderRole(
   const expectationsText = probeExpectationsText(expectations)
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
   const { inboxDir } = launch
-  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan, { inboxDir, kickoff: input.epic !== null }))
+  const paths = renderPaths(user.root, id, plan, { inboxDir, privateSource, kickoff: input.epic !== null })
+  const disk = await renderDiskOf(io, paths)
   const rotation = await inboxRotation(io, inboxDir, id, disk.stats)
   const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
   // Only an epic render names a kickoff, so a /cadre start render never writes or removes one (D-168).
@@ -197,6 +183,7 @@ export async function renderRole(
     ...disk,
     memories: launch.memories,
     inboxDir,
+    privateSource,
     ...kickoff,
     ...seed,
     ...(rotation === null ? {} : { rotation }),

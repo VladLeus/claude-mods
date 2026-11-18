@@ -489,16 +489,16 @@ function startStateText(roles: readonly string[]): string {
 /**
  * The repo of regenHostWorld after a plain init of BE (D-102, LNCH-04): its cadre.json and role.json, the folder
  * `.cadre/be` resolving inside the repo, the launcher `.cadre/bin/be` and a manifest whose `.cadre/bin/be` entry holds
- * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the mkdirs, the link
- * and the inbox append of a render and the chmod 700 of each level of BE's role memory folder (02-GAPS-B3 S7) and of
- * its inbox folder exit 0, and writes are allowed. Pass `over` to change one part of it.
+ * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the mkdirs, the chmod
+ * 700 of the private instructions copy and the inbox append of a render and the chmod 700 of each level of BE's role
+ * memory folder and of its inbox folder exit 0, and writes are allowed. Pass `over` to change one part of it.
  */
 async function startHostWorld(over: Partial<World> = {}): Promise<World> {
   const base = regenHostWorld()
   const launcher = { path: '.cadre/bin/be', sha256: await sha256Hex(START_LAUNCHER), mode: 'exec' }
   const done = { exitCode: 0, stdout: '' }
   const slug = `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
-  // BE's private instructions folder, which the render makes and links from .runtime (D-140 q1-b).
+  // BE's private instructions folder, which the render makes and copies into .runtime; this world puts no file in it.
   const privateFolder = `${slug}/be/instructions`
   const inboxDir = inboxDirOf(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')), 'be')
   const levels = ['/home/u/.claude/cadre', slug, `${slug}/be`, privateFolder, ...inboxFolderLevels(inboxDir)]
@@ -521,7 +521,8 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
       [`/bin/mkdir -p -- ${privateFolder}`]: done,
       [`/bin/mkdir -p -- ${inboxDir}`]: done,
       ...Object.fromEntries(levels.map(level => [`/bin/chmod 700 ${level}`, done])),
-      [`/bin/ln -sfn ${privateFolder} ${START_RUNTIME}/private-instructions`]: done,
+      [`/bin/mkdir -p -- ${START_RUNTIME}/private-instructions`]: done,
+      [`/bin/chmod 700 ${START_RUNTIME}/private-instructions`]: done,
       [`/usr/bin/tee -a ${inboxDir}/inbox.jsonl`]: done,
     },
     isWriteAllowed: true,
@@ -3414,7 +3415,7 @@ describe('cadre start with a faked host', () => {
     const mkdirOp = runOps[mkdirAt] ?? -1
     expect(mkdirOp).toBeGreaterThanOrEqual(0)
     expect(log.ops.findIndex(op => op.startsWith('fs.write '))).toBeGreaterThan(mkdirOp)
-    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
+    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).'])
     const runAt = lines.indexOf('Run this in a terminal to start role be:')
     expect(runAt).toBeGreaterThan(1)
     expect(lines[runAt + 1]).toBe('  /repo/.cadre/bin/be')

@@ -415,15 +415,20 @@ export const RUNTIME_KICKOFF_FILE = 'kickoff.txt'
 export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
 
 /**
- * The name of the link in a role's `.runtime` to its private instructions folder in the user's config folder (D-140
- * q1-b), which the launcher adds with `--add-dir` and /cadre start makes on every render. A link, so it has no trailing
- * slash: git does not match a link with a folder pattern (02-GAPS-B2 M2).
+ * The folder in a role's `.runtime` that holds a copy of its private instructions folder, refreshed by every render and
+ * added by the launcher with `--add-dir`. No trailing slash, so the `all` policy's ignore line matches it as a folder
+ * and as a link an older render left.
  */
-export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
+export const PRIVATE_INSTRUCTIONS_COPY = 'private-instructions'
+
+/** A role's private instructions copy: `<root>/.cadre/<id>/.runtime/private-instructions`. */
+export function privateInstructionsCopyOf(root: string, id: string): string {
+  return `${runtimeDirOf(root, id)}/${PRIVATE_INSTRUCTIONS_COPY}`
+}
 
 /**
  * The per-user files and folders in `.cadre/<id>/.runtime/`: what /cadre start renders at launch (the final settings,
- * the MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations and
+ * the MCP file, the skill overlay, the linked instructions, the private instructions copy, the probe expectations and
  * the stamp written last), and the files an earlier setup left there (its inbox.md, inbox log, session id and inbox
  * archives). The `all` git policy ignores exactly these.
  */
@@ -432,7 +437,7 @@ export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
   'mcp.json',
   'overlay/',
   'instructions/',
-  PRIVATE_INSTRUCTIONS_LINK,
+  PRIVATE_INSTRUCTIONS_COPY,
   INBOX_LOG_FILE,
   SESSION_FILE,
   INBOX_ARCHIVE_GLOB,
@@ -497,9 +502,9 @@ export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
 export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
 
 /**
- * A role's private instructions folder, `<role memory folder>/instructions` (D-140 q1-b, q2-a): apply writes the
- * private text file there, the launcher adds it through `.runtime/private-instructions`, and the role's settings deny
- * writes to it (privateInstructionsDeny, 02-GAPS-B2 S3), all from this one path.
+ * A role's private instructions folder, `<role memory folder>/instructions`: apply writes the private text file there,
+ * a render copies it into `.runtime/private-instructions`, which the launcher adds, and the role's settings deny writes
+ * to it (privateInstructionsDeny), all from this one path.
  */
 export function privateInstructionsDir(
   user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },

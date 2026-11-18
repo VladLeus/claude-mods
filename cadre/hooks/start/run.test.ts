@@ -290,7 +290,6 @@ describe('linked memories (G-02-1f)', () => {
     const start = await startBe(await linkedWorld())
 
     expect(linkRuns(start)).toEqual([
-      ['/bin/ln', '-sfn', `${folder}/instructions`, `${RUNTIME}/private-instructions`],
       ['/bin/ln', '-sfn', `${MEMORY_DIR}/notes.md`, `${folder}/notes.md`],
       ['/bin/ln', '-sfn', `${MEMORY_DIR}/squad.md`, `${folder}/squad.md`],
     ])
@@ -298,7 +297,7 @@ describe('linked memories (G-02-1f)', () => {
       { path: `${folder}/MEMORY.md`, text: blockOf([NOTES_LINE, SQUAD_LINE]), isWritten: true },
     ])
     expect(start.writes.filter(write => write.text.includes(NOTES_TEXT) || write.text.includes(SQUAD_TEXT))).toEqual([])
-    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (3 links).')
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (2 links).')
     expect(writtenPaths(start).at(-1)).toBe(`${RUNTIME}/stamp`)
   })
 
@@ -329,7 +328,7 @@ describe('linked memories (G-02-1f)', () => {
 
     expect(memoryFolderWrites(start, folder)).toEqual([])
     expect(start.reply.split('\n')).toContain(`warning: ${openMemoryBlockWarning('be')}`)
-    expect(linkRuns(start)).toHaveLength(3)
+    expect(linkRuns(start)).toHaveLength(2)
     expect(start.calls.filter(call => call.argv[0] === '/bin/rm')).toEqual([])
     expect(openMemoryBlockWarning('be')).toBe(
       'the MEMORY.md block of be has no end marker: fix it by hand; linked memories are not indexed',
@@ -371,7 +370,7 @@ describe('linked memories (G-02-1f)', () => {
     expect(memoryFolderWrites(start, folder)).toEqual([
       { path: `${folder}/MEMORY.md`, text: `${own}${blockOf([])}`, isWritten: true },
     ])
-    expect(linkRuns(start)).toEqual([['/bin/ln', '-sfn', `${folder}/instructions`, `${RUNTIME}/private-instructions`]])
+    expect(linkRuns(start)).toEqual([])
   })
 
   test('a real file with the name of a memory is never replaced: a warning, no link, not a linked memory', async () => {
@@ -399,7 +398,7 @@ describe('linked memories (G-02-1f)', () => {
 
     expect(lines).toContain(`warning: ${memoryGoneWarning('notes.md')}`)
     expect(lines).toContain(`warning: ${memoryChangedWarning('squad.md', 'be')}`)
-    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`, `${folder}/squad.md`])
+    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${folder}/squad.md`])
     expect(memoryFolderWrites(start, folder)).toEqual([
       { path: `${folder}/MEMORY.md`, text: blockOf([SQUAD_LINE]), isWritten: true },
     ])
@@ -448,7 +447,6 @@ describe('linked memories (G-02-1f)', () => {
     expect(run.reads.filter(path => path.startsWith(`${folder}/`))).toEqual([])
     expect(host.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv[3])).toEqual([
       `${RUNTIME}/instructions/memory/squad.md`,
-      `${RUNTIME}/private-instructions`,
     ])
   })
 
@@ -460,7 +458,7 @@ describe('linked memories (G-02-1f)', () => {
 
       const warned = start.reply.split('\n').includes(`warning: ${unreadableRecordWarning('be')}`)
       expect([text, warned]).toEqual([text, true])
-      expect(linkRuns(start)).toHaveLength(1)
+      expect(linkRuns(start)).toHaveLength(0)
     }
     const squad = await squadMemory()
     const odd = [
@@ -477,7 +475,7 @@ describe('linked memories (G-02-1f)', () => {
       expect(lines).toContain(`warning: ${unsafeMemoryNameWarning(name)}`)
     }
     expect(lines).toContain(`warning: ${memoryGoneWarning('squad.md')}`)
-    expect(linkRuns(start)).toHaveLength(1)
+    expect(linkRuns(start)).toHaveLength(0)
     expect(unreadableRecordWarning('be')).toBe(
       'could not read the hand-out record of be (instructions.json): no memory is linked; ' +
         'run /cadre init to hand the memories out again',
@@ -491,7 +489,7 @@ describe('linked memories (G-02-1f)', () => {
 
     expect(memoryFolderWrites(start, folder)).toEqual([])
     expect(start.reply.split('\n')).toContain(`warning: ${unreadableMemoryIndexWarning('be')}`)
-    expect(linkRuns(start)).toHaveLength(3)
+    expect(linkRuns(start)).toHaveLength(2)
     expect(unreadableMemoryIndexWarning('be')).toBe(
       'could not read the MEMORY.md of be: linked memories are not indexed',
     )
@@ -506,7 +504,7 @@ describe('linked memories (G-02-1f)', () => {
 
     expect(start.writes.filter(write => write.path === index || write.path === '/home/u/.zshrc')).toEqual([])
     expect(start.reply.split('\n')).toContain(`warning: ${memoryIndexLinkWarning('be')}`)
-    expect(linkRuns(start)).toHaveLength(3)
+    expect(linkRuns(start)).toHaveLength(2)
     expect(start.calls.filter(call => call.argv[0] === '/bin/rm')).toEqual([])
     expect(memoryIndexLinkWarning('be')).toBe('the MEMORY.md of be is a link: linked memories are not indexed')
   })
@@ -750,13 +748,14 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
     expect(renderRuns(start)).toEqual([
       { argv: ['/bin/mkdir', '-p', '--', RUNTIME], options: STEP_OPTIONS },
       { argv: ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`], options: STEP_OPTIONS },
+      { argv: ['/bin/mkdir', '-p', '--', PRIVATE_COPY], options: STEP_OPTIONS },
       { argv: ['/bin/mkdir', '-p', '--', privateFolder], options: STEP_OPTIONS },
       ...chmods,
       ...INBOX_FOLDER_ARGV.map(argv => ({ argv, options: STEP_OPTIONS })),
-      { argv: ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`], options: STEP_OPTIONS },
+      { argv: ['/bin/chmod', '700', PRIVATE_COPY], options: STEP_OPTIONS },
       { argv: ['/usr/bin/tee', '-a', `${INBOX_DIR}/inbox.jsonl`], options: { ...STEP_OPTIONS, stdin: '' } },
     ])
-    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
+    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).'])
     expect(runAt).toBeGreaterThan(1)
     expect(lines[runAt + 1]).toBe('  /repo/.cadre/bin/be')
     expect(launcherCommand('/repo', 'be')).toBe('/repo/.cadre/bin/be')
@@ -898,7 +897,7 @@ describe('runStart warnings and links (D-102)', () => {
     expect(writtenPaths(start).at(-1)).toBe(`${RUNTIME}/stamp`)
   })
 
-  test('a skill link and the private link read (2 links), made before any write; the MCP note first', async () => {
+  test('a skill link reads (1 link), made before any write; the MCP note first', async () => {
     const base = await appliedWorld(templateRole('be', { mcp: ['redmine'] }))
     const world = { ...base, dirs: { ...base.dirs, '/home/u/.claude/skills': [entry('create-handoff-doc', 'dir')] } }
     const host = memHost(hostWorld({ runs: [CLAUDE_OK, GIT_OK] }))
@@ -920,11 +919,9 @@ describe('runStart warnings and links (D-102)', () => {
     const skill = `${RUNTIME}/overlay/.claude/skills/create-handoff-doc`
     const notRead = lines.indexOf(`warning: ${NOT_READ}`)
 
-    const privateFolder = await startPrivateFolder()
-    expect(lines[1]).toBe('Rendered .cadre/be/.runtime/ (2 links).')
+    expect(lines[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
     expect(host.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv)).toEqual([
       ['/bin/ln', '-sfn', '/home/u/.claude/skills/create-handoff-doc', skill],
-      ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
     ])
     expect(order.indexOf('run /bin/ln')).toBeGreaterThan(-1)
     expect(order.indexOf('write')).toBeGreaterThan(order.indexOf('run /bin/ln'))
@@ -1022,8 +1019,8 @@ describe('runStart launcher drift and secrets (LNCH-04, T-03-32)', () => {
 /** The launcher command of BE in the start worlds, as the reply prints it, two spaces in. */
 const COMMAND_LINE = '  /repo/.cadre/bin/be'
 
-/** The first two lines of the reply of a render of BE that made only its private instructions link (D-140). */
-const RENDERED_LINES = ['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).']
+/** The first two lines of the reply of a render of BE that made no link. */
+const RENDERED_LINES = ['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).']
 
 /** A fake host rule that answers pbcopy with this run; null is a host with no pbcopy, or one that refused the run. */
 function pbcopyRule(result: HostRun | null): HostRunRule {
@@ -1388,9 +1385,9 @@ function shownHome(path: string): string {
 describe('private folder levels at start (02-GAPS-B3 C5, S7)', () => {
   test('real folders on every level render as before, and each level is made mode 700 after the mkdir', async () => {
     const start = await startBe(await levelsWorld())
-    const levels = [...(await startLevels()), ...inboxFolderLevels(INBOX_DIR)]
+    const levels = [...(await startLevels()), ...inboxFolderLevels(INBOX_DIR), PRIVATE_COPY]
 
-    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (0 links).')
     expect(renderRuns(start).filter(call => call.argv[0] === '/bin/chmod')).toEqual(
       levels.map(level => ({ argv: ['/bin/chmod', '700', level], options: STEP_OPTIONS })),
     )
@@ -1465,12 +1462,12 @@ describe('the hand-out record at start (02-GAPS-B3 S6, N2, N8)', () => {
       const start = await startBe(await linkedWorld({ [instructionsRecordPath(folder)]: text }))
 
       expect(start.reply.split('\n')).toContain(`warning: ${unreadableRecordWarning('be')}`)
-      expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`])
+      expect(linkRuns(start).map(argv => argv[3])).toEqual([])
     }
     const good = JSON.stringify({ schema: 1, parts: [part], memories: [memory] })
     const start = await startBe(await linkedWorld({ [instructionsRecordPath(folder)]: good }))
 
-    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`, `${folder}/squad.md`])
+    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${folder}/squad.md`])
   })
 
   test('a memory named with ( or ), or MEMORY.md in another letter case, is not linked and warns', async () => {
@@ -1482,7 +1479,7 @@ describe('the hand-out record at start (02-GAPS-B3 S6, N2, N8)', () => {
     const lines = start.reply.split('\n')
 
     expect(names.filter(name => !lines.includes(`warning: ${unsafeMemoryNameWarning(name)}`))).toEqual([])
-    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`])
+    expect(linkRuns(start).map(argv => argv[3])).toEqual([])
   })
 })
 

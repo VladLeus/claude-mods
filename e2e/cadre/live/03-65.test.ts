@@ -14,7 +14,7 @@ const EXPECTED_RUNTIME: readonly { readonly name: string; readonly kind: Kind }[
   { name: 'settings.json', kind: 'file' },
   { name: 'mcp.json', kind: 'file' },
   { name: 'overlay', kind: 'folder' },
-  { name: 'private-instructions', kind: 'link' },
+  { name: 'private-instructions', kind: 'folder' },
   { name: 'probe-expectations.json', kind: 'file' },
   { name: 'stamp', kind: 'file' },
 ]

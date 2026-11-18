@@ -12,7 +12,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
   "render": {
     "reply": [
       "cadre start be",
-      "Rendered .cadre/be/.runtime/ (1 link).",
+      "Rendered .cadre/be/.runtime/ (0 links).",
       "warning: could not list the repo root (treated as unknown)",
       "warning: .cadre/bin/be is not the launcher this cadre writes today (written by an older cadre or for another setup): run /cadre regen be to update it",
       "warning: skill create-handoff-doc was not found in your user skills: not linked",
@@ -49,6 +49,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
       "git -C /repo ls-files -z -s -- :(glob)**/.env :(glob)**/.env.* @ -",
       "/bin/mkdir -p -- /repo/.cadre/be/.runtime @ -",
       "/bin/mkdir -p -- /repo/.cadre/be/.runtime/overlay @ -",
+      "/bin/mkdir -p -- /repo/.cadre/be/.runtime/private-instructions @ -",
       "/bin/mkdir -p -- /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
       "/bin/chmod 700 /home/u/.claude/cadre @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
@@ -59,7 +60,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
       "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/inboxes/repo-816fc349 @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/inboxes/repo-816fc349/be @ -",
-      "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.cadre/be/.runtime/private-instructions @ -",
+      "/bin/chmod 700 /repo/.cadre/be/.runtime/private-instructions @ -",
       "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/repo-816fc349/be/inbox.jsonl @ -",
       "/usr/bin/pbcopy @ -"
     ]

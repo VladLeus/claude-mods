@@ -8,7 +8,7 @@
 import type { CompiledScope, RoleSpec, ScopeContext, SettingsTemplate } from '../../types'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
-import { PRIVATE_INSTRUCTIONS_LINK } from '../paths'
+import { PRIVATE_INSTRUCTIONS_COPY } from '../paths'
 import {
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
@@ -129,13 +129,13 @@ function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay']
 }
 
 /**
- * The launcher flags as argv tokens, a flag and its value each their own token, so a launcher can quote every token
- * (D-50, D-78, S1, S4). The paths are repo-relative: the launcher starts in the git top level. Beside the overlay, the
- * role folder and the private instructions link in `.runtime` are added directories, so the engine loads the role's
- * built `.cadre/<id>/CLAUDE.md` and its private CLAUDE.md as CLAUDE.md files when the exec line sets
- * CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD (D-140 q1-b); ROLE.md stays the appended system prompt. The MCP route
- * is a parameter, and the flag that turns off slash commands is never added, because it would turn off the handoff
- * skills. The role id is a validated slug (validateRoleId), so it is safe in a path and in a token.
+ * The launcher flags as argv tokens, a flag and its value each their own token, so a launcher can quote every token.
+ * The paths are repo-relative: the launcher starts in the git top level. Beside the overlay, the role folder and the
+ * private instructions copy in `.runtime` are added directories, so the engine loads the role's built
+ * `.cadre/<id>/CLAUDE.md` and its private CLAUDE.md as CLAUDE.md files when the exec line sets
+ * CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD; ROLE.md stays the appended system prompt. The MCP route is a
+ * parameter, and the flag that turns off slash commands is never added, because it would turn off the handoff skills.
+ * The role id is a validated slug (validateRoleId), so it is safe in a path and in a token.
  */
 function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
   const runtime = `.cadre/${role.id}/.runtime`
@@ -159,7 +159,7 @@ function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
     '--add-dir',
     `.cadre/${role.id}`,
     '--add-dir',
-    `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`,
+    `${runtime}/${PRIVATE_INSTRUCTIONS_COPY}`,
     '--mcp-config',
     `${runtime}/mcp.json`,
   ]

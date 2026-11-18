@@ -181,6 +181,15 @@ const INBOX_FOLDER_STEPS: readonly RenderStep[] = [
   ...inboxFolderLevels(INBOX_DIR).map((path): RenderStep => ({ kind: 'chmod', path })),
 ]
 
+/** The making of BE's private instructions folder: its mkdir, then one chmod 700 per level from the top. */
+const PRIVATE_FOLDER_STEPS: readonly RenderStep[] = [
+  { kind: 'mkdir', path: PRIVATE_FOLDER },
+  ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
+]
+
+/** The chmod 700 of BE's private instructions copy, which a render makes after the links. */
+const COPY_CHMOD: RenderStep = { kind: 'chmod', path: PRIVATE_COPY }
+
 /** The create of an empty inbox: an append of nothing, which never truncates an inbox that is there. */
 const INBOX_CREATE: RenderStep = { kind: 'append', path: INBOX, text: '' }
 
@@ -204,13 +213,15 @@ describe('runtime render (D-102)', () => {
   })
 
   test(
-    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the four files, DONE.md ' +
-      'and the inbox in its folder, and lists .runtime, the stale-link folders and the inbox folder (#72 A2)',
+    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the four files, DONE.md, ' +
+      'the inbox in its folder, the private instructions folder and its copy, and lists .runtime, the stale-link ' +
+      'folders, the inbox folder, the copy and the private instructions folder (#72 A2)',
     () => {
       expect(BE_PLAN.links).toEqual([])
       expect(renderPaths(ROOT, 'be', BE_PLAN, PATHS_OPTIONS)).toEqual({
         stats: [
           INBOX,
+          PRIVATE_FOLDER,
           ROLE_DIR,
           RUNTIME,
           `${RUNTIME}/DONE.md`,
@@ -222,6 +233,7 @@ describe('runtime render (D-102)', () => {
           `${RUNTIME}/overlay/.claude`,
           `${RUNTIME}/overlay/.claude/agents`,
           `${RUNTIME}/overlay/.claude/skills`,
+          PRIVATE_COPY,
           `${RUNTIME}/probe-expectations.json`,
           `${RUNTIME}/settings.json`,
           `${RUNTIME}/stamp`,
@@ -233,6 +245,8 @@ describe('runtime render (D-102)', () => {
           `${RUNTIME}/instructions/global`,
           `${RUNTIME}/instructions/memory`,
           INBOX_DIR,
+          PRIVATE_COPY,
+          PRIVATE_FOLDER,
         ],
       })
     },
@@ -243,6 +257,7 @@ describe('runtime render (D-102)', () => {
 
     expect(renderPaths(ROOT, 'be', plan, PATHS_OPTIONS).stats).toEqual([
       INBOX,
+      PRIVATE_FOLDER,
       ROLE_DIR,
       RUNTIME,
       `${RUNTIME}/DONE.md`,
@@ -257,19 +272,23 @@ describe('runtime render (D-102)', () => {
       `${RUNTIME}/overlay/.claude/skills`,
       SKILL_LINK.path,
       RESUME_LINK.path,
+      PRIVATE_COPY,
       `${RUNTIME}/probe-expectations.json`,
       `${RUNTIME}/settings.json`,
       `${RUNTIME}/stamp`,
     ])
   })
 
-  test('a fresh role: .runtime, its overlay, its inbox folder, three files, an empty inbox, the stamp last', () => {
+  test('a fresh role: .runtime, its overlay, the copy folder, its folders, three files, an inbox, the stamp', () => {
     expect(BE_PLAN.links).toEqual([])
     expect(renderSteps(input())).toEqual({
       steps: [
         { kind: 'mkdir', path: RUNTIME },
         { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+        { kind: 'mkdir', path: PRIVATE_COPY },
+        ...PRIVATE_FOLDER_STEPS,
         ...INBOX_FOLDER_STEPS,
+        COPY_CHMOD,
         ...fileWritesOf(BE_PLAN),
         INBOX_CREATE,
         STAMP_WRITE,
@@ -289,7 +308,10 @@ describe('runtime render (D-102)', () => {
     expect(renderSteps(input({ stats })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      ...PRIVATE_FOLDER_STEPS,
       ...INBOX_FOLDER_STEPS,
+      COPY_CHMOD,
       ...fileWritesOf(BE_PLAN),
       STAMP_WRITE,
     ])
@@ -348,11 +370,13 @@ describe('runtime render (D-102)', () => {
     expect(await isStepDone(failed.io, { kind: 'append', path, text: '' })).toBe(false)
   })
 
-  test('every step of a render lies in the .runtime folder of the role, but its inbox folder and inbox', () => {
+  test('every step of a render lies in the .runtime folder of the role, but its private and inbox folders', () => {
     const paths = renderSteps(input()).steps.map(step => step.path)
 
     expect(paths.length).toBeGreaterThan(0)
     expect(paths.filter(path => path !== RUNTIME && !path.startsWith(`${RUNTIME}/`))).toEqual([
+      PRIVATE_FOLDER,
+      ...PRIVATE_LEVELS,
       INBOX_DIR,
       ...inboxFolderLevels(INBOX_DIR),
       INBOX,
@@ -416,7 +440,10 @@ describe('the rotation of a large inbox', () => {
     expect(renderSteps(input({ stats, rotation })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      ...PRIVATE_FOLDER_STEPS,
       ...INBOX_FOLDER_STEPS,
+      COPY_CHMOD,
       ...fileWritesOf(BE_PLAN),
       { kind: 'move', path: INBOX, target: rotation.archive },
       { kind: 'append', path: INBOX, text: `\n${rotation.text}` },
@@ -446,8 +473,11 @@ describe('runtime render links', () => {
         { kind: 'mkdir', path: RUNTIME },
         { kind: 'mkdir', path: `${RUNTIME}/overlay` },
         { kind: 'mkdir', path: SKILLS },
+        { kind: 'mkdir', path: PRIVATE_COPY },
+        ...PRIVATE_FOLDER_STEPS,
         ...INBOX_FOLDER_STEPS,
         { kind: 'link', path: SKILL_LINK.path, target: SKILL_LINK.target },
+        COPY_CHMOD,
         ...fileWritesOf(LINKED_PLAN),
         INBOX_CREATE,
         STAMP_WRITE,
@@ -460,16 +490,19 @@ describe('runtime render links', () => {
   test('the folders of links in several places are made sorted and once each, then the links in plan order', () => {
     const links = [MEMORY_LINK, SKILL_LINK, RESUME_LINK]
     const steps = renderSteps(input({ plan: { ...BE_PLAN, links } })).steps
+    const firstLink = 5 + PRIVATE_FOLDER_STEPS.length + INBOX_FOLDER_STEPS.length
 
     expect(steps.filter(step => step.kind === 'mkdir').map(step => step.path)).toEqual([
       RUNTIME,
       `${RUNTIME}/instructions/memory`,
       `${RUNTIME}/overlay`,
       SKILLS,
+      PRIVATE_COPY,
+      PRIVATE_FOLDER,
       INBOX_DIR,
     ])
     expect(steps.filter(step => step.kind === 'link')).toEqual(links.map(item => ({ kind: 'link', ...item })))
-    expect(steps.findIndex(step => step.kind === 'link')).toBe(4 + INBOX_FOLDER_STEPS.length)
+    expect(steps.findIndex(step => step.kind === 'link')).toBe(firstLink)
   })
 
   test('a link path that is already a link is removed once, before every mkdir, and then linked again', () => {
@@ -689,7 +722,10 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
     expect(renderSteps(input({ kickoff: 'X\n' })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      ...PRIVATE_FOLDER_STEPS,
       ...INBOX_FOLDER_STEPS,
+      COPY_CHMOD,
       ...fileWritesOf(BE_PLAN),
       INBOX_CREATE,
       { kind: 'write', path: `${RUNTIME}/${RUNTIME_KICKOFF_FILE}`, text: 'X\n' },
