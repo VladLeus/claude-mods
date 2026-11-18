@@ -7,7 +7,7 @@ import type { RowContext } from '../../lib/row.ts'
 import type { Json } from '../../lib/summary.ts'
 import { capture, killServer, listWindows, paneCommand, paneCwd, socketName, startServer } from '../../lib/tmux.ts'
 import type { Server } from '../../lib/tmux.ts'
-import { EPIC_KEY, openEpic, printEpic, roleIdsOf, roleLine } from '../lib/epic.ts'
+import { EPIC_KEY, gitOk, openEpic, printEpic, roleIdsOf, roleLine } from '../lib/epic.ts'
 import { cadrePrint, liveRepo, noteReply, printedCommand, replyOf } from '../lib/session.ts'
 import { rowEntry } from '../rows.ts'
 
@@ -15,7 +15,14 @@ const SECOND_KEY = 'PROJ-2'
 const SECOND_TITLE = 'Add more'
 const SHELL_COMMAND = '/bin/sh -c'
 const COMMAND_SHOWN_CHARS = 40
+const CADRE_FOLDER = '.cadre'
 const BIN_FOLDER = '.cadre/bin'
+const NEW_COPY_SUFFIX = '.cadre-new'
+const FILE_PLAN_HEADER = 'File plan:'
+const EXPECTED_PLAN_VERB = 'change'
+const EXPECTED_WARNING =
+  '.cadre/bin/<id> is not the launcher this cadre writes today (written by an older cadre or for another setup): ' +
+  'run /cadre regen <id> to update it'
 const EXPECTED_NO_WARNING = '.cadre/bin/<id> is not the launcher this cadre writes today'
 const EXPECTED_NO_NOT_OPENED =
   'not opened: the epic branch holds a launcher .cadre/bin/<id> older than the epic kickoff'
@@ -26,7 +33,21 @@ type WindowSeen = {
 }
 
 function filled(text: string, id: string): string {
-  return text.replace('<id>', id)
+  return text.replaceAll('<id>', id)
+}
+
+// The verb of the file plan line that names `path`, such as `change` or `conflict`; null when no line under the
+// `File plan:` header names it.
+function planVerb(reply: string, path: string): string | null {
+  const lines = reply.split('\n')
+  const header = lines.findIndex(line => line.trim() === FILE_PLAN_HEADER)
+  if (header === -1) return null
+  for (const line of lines.slice(header + 1)) {
+    const [verb, named] = line.trim().split(/\s+/)
+    if (verb !== undefined && named === path) return verb
+  }
+
+  return null
 }
 
 // Each window the epic opened is read the moment it is listed, so the role session in it has done nothing yet.
@@ -55,16 +76,45 @@ rowTest(entry, async ctx => {
   const ids = await roleIdsOf(copy)
 
   for (const id of ids) {
-    const started = await cadrePrint(copy, `start ${id}`)
-    noteReply(ctx, `start ${id}`, started)
-    await ctx.check(`start ${id} prints its launcher command`, () => {
-      assert.ok(printedCommand(replyOf(started), id) !== null, `the reply prints no ${id} launcher command`)
+    const launcher = `${BIN_FOLDER}/${id}`
+    const newLauncher = `${launcher}${NEW_COPY_SUFFIX}`
+    const before = await cadrePrint(copy, `start ${id}`)
+    noteReply(ctx, `start ${id} before the regen`, before)
+    await ctx.check(`before the regen, start ${id} warns that its launcher is not the one cadre writes today`, () => {
+      const warning = filled(EXPECTED_WARNING, id)
+      assert.ok(replyOf(before).includes(warning), `the reply does not hold: ${warning}`)
     })
-    await ctx.check(`start ${id} gives no warning that its launcher is not the one cadre writes today`, () => {
+
+    const regen = await cadrePrint(copy, `regen ${id}`)
+    noteReply(ctx, `regen ${id}`, regen)
+    await ctx.check(`regen ${id} rewrites ${launcher} in place`, () => {
+      const verb = planVerb(replyOf(regen), launcher)
+      assert.equal(verb, EXPECTED_PLAN_VERB, `the file plan line of ${launcher} reads ${verb ?? 'nothing'}`)
+    })
+    await ctx.check(`regen ${id} plans and writes no ${newLauncher}`, () => {
+      assert.ok(!replyOf(regen).includes(newLauncher), `the reply names ${newLauncher}`)
+      assert.ok(!existsSync(join(copy.repo, newLauncher)), `${newLauncher} is on disk`)
+    })
+
+    const after = await cadrePrint(copy, `start ${id}`)
+    noteReply(ctx, `start ${id} after the regen`, after)
+    await ctx.check(`after the regen, start ${id} prints its launcher command`, () => {
+      assert.ok(printedCommand(replyOf(after), id) !== null, `the reply prints no ${id} launcher command`)
+    })
+    const noWarning = `after the regen, start ${id} no longer warns that its launcher is not the one cadre writes today`
+    await ctx.check(noWarning, () => {
       const warning = filled(EXPECTED_NO_WARNING, id)
-      assert.ok(!replyOf(started).includes(warning), `the reply holds: ${warning}`)
+      assert.ok(!replyOf(after).includes(warning), `the reply holds: ${warning}`)
     })
   }
+
+  // A new epic worktree is made from HEAD, so the regenerated team is committed first.
+  await gitOk(copy, ['add', '-A', '--', CADRE_FOLDER])
+  await gitOk(copy, ['commit', '-q', '--allow-empty', '-m', 'regen'])
+  const status = await gitOk(copy, ['status', '--porcelain'])
+  ctx.evidence('git status --porcelain after the regen commit', status || 'clean')
+  const committed = await gitOk(copy, ['show', '--stat', '--format=', 'HEAD'])
+  ctx.evidence('the regen commit', committed || 'empty')
 
   const created = await printEpic(copy, EPIC_KEY)
   noteReply(ctx, 'epic', created.result)
