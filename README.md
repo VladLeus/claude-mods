@@ -60,6 +60,8 @@ Handoffs are written to `thoughts/shared/handoffs/` of the project.
 /autopilot 0 0 stop        # hand the wheel back (also clears the goal); /autopilot stop works too
 ```
 
+`/ap` runs the same command with the same arguments: Claude Code reserves the name `autopilot` for a built-in command, so `/ap` keeps working if it ever takes that name over.
+
 `extend`, `shorten` and `until` only work when you type them (in the prompt or over Remote Control), never from the session itself. Give a time, `--restarts N` (1–99), or both. With a limited run, `--restarts` raises or lowers the max restarts by N (lowering never goes below the restarts already used). With an unlimited run, `extend --restarts N` allows N more restarts from now, and `shorten --restarts` is ignored (the reply says so).
 
 A run that ended on time is brought back by extending its time. A run that ended on restarts is brought back by raising the limit while there is time left. Anything else (goal met, weekly limit, work complete) is not revived. The change is refused when the new end would be in the past, less than 1 minute ahead, or more than 7 days ahead.
