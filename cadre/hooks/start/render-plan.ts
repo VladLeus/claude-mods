@@ -482,13 +482,13 @@ function privateFolderSteps(input: RenderInput): RenderStep[] {
 
 /**
  * The refresh of the private instructions copy: its chmod 700, then the removal of each entry in it that is not a
- * folder (a real folder there refuses the render), then a copy of each regular file of the private instructions folder
- * in name order, so a file removed there is gone from the copy and no copy writes through a link left in it.
+ * real folder (a real folder there refuses the render), then a copy of each regular file of the private instructions
+ * folder in name order, so a file removed there is gone from the copy and no copy writes through a link left in it.
  */
 function privateCopySteps(input: RenderInput, runtime: string): RenderStep[] {
   const copy = privateInstructionsCopyOf(input.root, input.id)
   const removals = copyEntries(input, runtime)
-    .filter(entry => entry.kind !== 'dir')
+    .filter(entry => entry.isLink || entry.kind !== 'dir')
     .map(entry => removeStep(`${copy}/${entry.name}`))
   const copies = sourceNames(input).map(name => copyStep(`${input.privateSource}/${name}`, `${copy}/${name}`))
 
