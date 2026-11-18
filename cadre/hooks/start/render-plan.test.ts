@@ -918,6 +918,20 @@ describe('built files reach the session (G-02-1f)', () => {
     ])
   })
 
+  test('a link listed as a folder in the copy folder is removed, not refused', () => {
+    const stats = rendered({ [PRIVATE_COPY]: folder(PRIVATE_COPY), [PRIVATE_FOLDER]: folder(PRIVATE_FOLDER) })
+    const listings = listed({ [PRIVATE_COPY]: [entry('linked', 'dir', true)], [PRIVATE_FOLDER]: [entry('CLAUDE.md')] })
+    const result = renderSteps(input({ stats, listings }))
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.filter(step => step.path.startsWith(PRIVATE_COPY))).toEqual([
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      { kind: 'chmod', path: PRIVATE_COPY },
+      { kind: 'remove', path: `${PRIVATE_COPY}/linked` },
+      { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+    ])
+  })
+
   test('with no source folder, its folder and the copy folder are made, and nothing is copied or refused', () => {
     const result = renderSteps(input())
     const at = result.steps.findIndex(step => step.kind === 'mkdir' && step.path === PRIVATE_FOLDER)
