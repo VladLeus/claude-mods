@@ -915,6 +915,57 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
   })
 })
 
+describe('the private instructions copy deny', () => {
+  /** The `kind` rule of the private instructions copy of role `id` under the root `root`. */
+  function copyRule(kind: 'Edit' | 'Read', root: string, id: string): string {
+    return `${kind}(/${root}/.cadre/${id}/.runtime/private-instructions/**)`
+  }
+
+  /** The rules BE's settingsDeny holds for `launcher` that name a private instructions copy. */
+  function copyDenies(launcher: LaunchUser): string[] {
+    const role = templateRole('be')
+
+    return settingsDeny(role, compileScope(role, context()), launcher).deny.filter(entry =>
+      entry.includes('/.runtime/private-instructions/'),
+    )
+  }
+
+  /** The copy rules of BE in a team of BE, PM and QA under the root `root`. */
+  function teamRules(root: string): string[] {
+    return [
+      copyRule('Edit', root, 'be'),
+      copyRule('Edit', root, 'pm'),
+      copyRule('Edit', root, 'qa'),
+      copyRule('Read', root, 'pm'),
+      copyRule('Read', root, 'qa'),
+    ]
+  }
+
+  test('a role denies Edit of every team copy and Read of every other role copy, never Read of its own', () => {
+    const denies = copyDenies(user({ teamIds: ['be', 'pm', 'qa'] }))
+
+    expect(denies).toEqual([
+      'Edit(//repo/.cadre/be/.runtime/private-instructions/**)',
+      'Edit(//repo/.cadre/pm/.runtime/private-instructions/**)',
+      'Edit(//repo/.cadre/qa/.runtime/private-instructions/**)',
+      'Read(//repo/.cadre/pm/.runtime/private-instructions/**)',
+      'Read(//repo/.cadre/qa/.runtime/private-instructions/**)',
+    ])
+    expect(denies).not.toContain('Read(//repo/.cadre/be/.runtime/private-instructions/**)')
+  })
+
+  test('an epic role gets the same rules under its worktree root and under the main checkout root', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: ['be', 'pm', 'qa'] })
+
+    expect(copyDenies(launcher)).toEqual(sortedUnique([...teamRules('/repo'), ...teamRules(worktree)]))
+  })
+
+  test('with no team ids a role denies Edit of its own copy only, and Read of no copy', () => {
+    expect(copyDenies(user())).toEqual([copyRule('Edit', '/repo', 'be')])
+  })
+})
+
 describe('the inbox tree deny', () => {
   const TEAM_IDS: readonly TemplateRoleId[] = ['pm', 'tl', 'be']
 
