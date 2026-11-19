@@ -20,6 +20,7 @@ export type WaitReason =
   | 'workflow-end'
   | 'subagent-result'
   | 'background-task'
+  | 'idle-inbox'
   | 'other'
 
 /** A wait the session declared: what for, from whom, since when, and when autopilot checks on it. */

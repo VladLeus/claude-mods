@@ -32,11 +32,13 @@ export const WAIT_REASONS: readonly WaitReason[] = [
   'workflow-end',
   'subagent-result',
   'background-task',
+  'idle-inbox',
   'other',
 ]
 const MAX_WAIT_FROM = 64
 const MAX_WAIT_NOTE = 200
 export const MAX_IDLE_TURNS = 2
+export const PARK_NOTE = 'two turns without progress'
 /**
  * A threshold below this sits close to what a resume alone loads, so every
  * handoff after the first fires RESUME_BUMP points later. At or above it the
@@ -625,18 +627,47 @@ export function limitAction(run: Run, windows: readonly TokenWindow[], now: numb
   }
 }
 
-export type TurnAction = 'continue' | 'wrapup' | 'final' | 'pause' | 'finish' | 'resume-done' | 'none'
+export type LimitStops = 'all' | 'week' | 'none'
+
+/** The weekly stop also ends a run in the turn that declares a wait; the 5-hour stop never ends a wait. */
+export function limitStopsFor(phase: Phase, isTurnEnd: boolean): LimitStops {
+  if (phase === 'running' || phase === 'resuming' || phase === 'waiting') return 'all'
+  if (phase === 'awaiting' && isTurnEnd) return 'week'
+
+  return 'none'
+}
+
+export type TurnAction = 'continue' | 'wrapup' | 'final' | 'pause' | 'park' | 'finish' | 'resume-done' | 'none'
+
+const ENGINE_CALL_KEYS: readonly string[] = ['tool', 'tool_use_id', 'agentId', 'requestMeta', 'consent']
+
+/** The engine's per-call keys are dropped because `tool_use_id` differs on every call. */
+export function callSignature(call: unknown): string {
+  if (typeof call !== 'object' || call === null) return ''
+  const tool = 'tool' in call && typeof call.tool === 'string' ? call.tool : ''
+  const input = Object.entries(call)
+    .filter(([key]) => !ENGINE_CALL_KEYS.includes(key))
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+
+  return JSON.stringify([tool, input])
+}
+
+/** A main-loop turn made no progress when it called no tool or exactly the calls of the turn before. */
+export function isIdleTurn(previous: readonly string[] | null, current: readonly string[]): boolean {
+  if (current.length === 0) return true
+  if (previous === null || previous.length !== current.length) return false
+  return current.every((signature, index) => signature === previous[index])
+}
 
 /**
- * What to do when a main-loop turn ends, from the run, the context fill, the
- * time, whether the turn called any tool, and the ceiling below auto-compact.
- * The token windows are judged apart (limitAction), before this.
+ * What to do when a main-loop turn ends, from the run, the context fill, the time, whether the turn made progress
+ * and the ceiling; the token windows are judged before it. A stall parks a run without a goal; one with a goal pauses.
  */
 export function afterTurn(
   run: Run,
   now: number,
   percent: number | null,
-  calledTools: boolean,
+  madeProgress: boolean,
   ceiling = DEFAULT_CEILING,
 ): TurnAction {
   // The turn that called the restart tool ends before /clear runs: queue nothing,
@@ -653,9 +684,14 @@ export function afterTurn(
 
   if (now >= run.until) return 'final'
   if (percent !== null && percent >= effectiveTrigger(run, ceiling)) return canRestart(run) ? 'wrapup' : 'final'
-  if (!calledTools && run.idleTurns + 1 >= MAX_IDLE_TURNS) return 'pause'
+  if (!madeProgress && run.idleTurns + 1 >= MAX_IDLE_TURNS) return run.goal ? 'pause' : 'park'
 
   return 'continue'
+}
+
+/** The heartbeat's time stop, also for a run that waits or is parked. */
+export function isTimeUp(run: Run, now: number): boolean {
+  return (run.phase === 'running' || run.phase === 'waiting' || run.phase === 'awaiting') && now >= run.until
 }
 
 /** Whether a tool result mid-turn should carry the wrap-up instruction now. */
@@ -697,11 +733,7 @@ function waitField(value: unknown, name: string, max: number): { value: string |
   return { value: text || null, cut: whole.length > max }
 }
 
-/**
- * The wait_for tool's input as a wait starting now: a known reason, optional
- * `from` and `note`, and an optional `timeout` ("30m", "1h") after which
- * autopilot checks once, never later than the run's end.
- */
+/** The wait_for input as a wait starting now; a timeout checks once, never past the run's end. */
 export function parseWaitInput(
   input: unknown,
   now: number,
@@ -727,6 +759,10 @@ export function parseWaitInput(
   return { kind: 'ok', awaiting: { reason, from: from.value, note: note.value, since: now, timeoutAt, pinged: false } }
 }
 
+export function parkedWait(now: number): Awaiting {
+  return { reason: 'other', from: null, note: PARK_NOTE, since: now, timeoutAt: null, pinged: false }
+}
+
 /** Whether a main-loop tool call ends a declared wait: any tool but the wait tool itself means the session went on working. */
 export function endsWait(phase: Phase, tool: string): boolean {
   return phase === 'awaiting' && tool !== FULL_WAIT_TOOL
@@ -746,6 +782,59 @@ export function waitPhaseRefusal(phase: Phase): string | null {
 }
 
 const PERSON_REASONS: readonly WaitReason[] = ['user-answer', 'user-input']
+
+/** Whether the person can answer a question now, so AskUserQuestion reaches them. */
+export function passesQuestion(mode: Mode): boolean {
+  return mode === 'asking' || mode === 'draining'
+}
+
+/** A string with something besides whitespace. */
+function hasText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+/**
+ * Whether a drained question's dialog answered it, so the question leaves the queue: only while draining, on a result
+ * with no deny, no error and no AFK timeout that holds a non-empty answer under a question naming it, or a free-text
+ * response to a dialog of that one question. Anything else keeps the question queued.
+ */
+export function removesDrainedQuestion(mode: Mode, ran: unknown, call: unknown, q: Question): boolean {
+  if (mode !== 'draining' || typeof ran !== 'object' || ran === null) return false
+  if ('deny' in ran && ran.deny !== undefined) return false
+  if ('isError' in ran && ran.isError === true) return false
+  if (!('result' in ran) || typeof ran.result !== 'object' || ran.result === null) return false
+  const result = ran.result
+  if ('afkTimeoutMs' in result && result.afkTimeoutMs !== undefined) return false
+  const texts = queuedQuestionTexts(call, q)
+  if (texts.length === 0) return false
+  if ('response' in result && hasText(result.response) && callQuestions(call).length === 1) return true
+  if (!('answers' in result) || typeof result.answers !== 'object' || result.answers === null) return false
+
+  return Object.entries(result.answers).some(([text, answer]) => texts.includes(text) && hasText(answer))
+}
+
+/** The questions of an AskUserQuestion call; [] for a malformed call. */
+function callQuestions(call: unknown): unknown[] {
+  if (typeof call !== 'object' || call === null || !('questions' in call)) return []
+
+  return Array.isArray(call.questions) ? call.questions : []
+}
+
+/**
+ * The questions of an AskUserQuestion call that ask the queued question `q`, in call order: those holding its text or
+ * the tag `#k`, not as the start of a longer number.
+ */
+export function queuedQuestionTexts(call: unknown, q: Question): string[] {
+  const tag = new RegExp(`#${q.id}(?!\\d)`)
+
+  return callQuestions(call).flatMap(item => {
+    if (typeof item !== 'object' || item === null || !('question' in item)) return []
+    const text = item.question
+    if (typeof text !== 'string') return []
+
+    return text.includes(q.text) || tag.test(text) ? [text] : []
+  })
+}
 
 /**
  * Why a wait is refused, or null when allowed. Waiting for the person needs a
@@ -858,12 +947,10 @@ export function questionIdFromNote(note: string | null, questions: readonly Ques
 }
 
 /**
- * The run after the person answered during a drain: the wait's tagged
- * question goes, else the one the drain asked. No id, nothing removed. A
- * drain prompt still pending goes too: it names a question now answered.
+ * The run after the person answered question `id` during a drain, by default the wait's tagged question, else the one
+ * the drain asked; a drain prompt still pending goes too. No id, or one no longer queued, changes nothing.
  */
-export function answeredQuestion(run: Run): Run {
-  const id = run.awaiting?.questionId ?? run.askingId
+export function answeredQuestion(run: Run, id = run.awaiting?.questionId ?? run.askingId): Run {
   const questions = run.questions ?? []
   const left = questions.filter(question => question.id !== id)
   if (left.length === questions.length) return run
@@ -885,14 +972,24 @@ export function criticalCount(n: number): string {
 }
 
 /**
- * How to ask one queued question: as text, then a wait whose note starts with
- * its #k tag. Shared by drainPrompt and the draining role section (task 05).
+ * How to ask one queued question: an answer through AskUserQuestion as one question tagged #k, and as text with a wait
+ * tagged #k only when that tool cannot be used; an action as text, then a wait tagged #k. Shared by drainPrompt and
+ * the draining role section.
  */
 export function askQuestionText(q: Question): string {
   const meanwhile = q.provisional ? ` (meanwhile you went with: ${quoteValue(q.provisional, MAX_PROVISIONAL)})` : ''
-  const reason = q.kind === 'action' ? 'user-input' : 'user-answer'
+  const asked = `Ask question #${q.id} now, and only it: ${quoteValue(q.text, MAX_QUESTION)}${meanwhile}.`
+  const tagged = `a note that starts with "#${q.id}", then end your turn.`
+  if (q.kind === 'action') {
+    return `${asked} Write it to the person as text, call ${WAIT_TOOL} with reason user-input and ${tagged}`
+  }
 
-  return `Ask question #${q.id} now, and only it: ${quoteValue(q.text, MAX_QUESTION)}${meanwhile}. Write it to the person as text, call ${WAIT_TOOL} with reason ${reason} and a note that starts with "#${q.id}", then end your turn.`
+  return [
+    asked,
+    `Ask it with AskUserQuestion as one question that starts with "#${q.id}", the recommended option first.`,
+    'Only when AskUserQuestion is unavailable or the person said not to use it, write it to the person as text,',
+    `call ${WAIT_TOOL} with reason user-answer and ${tagged}`,
+  ].join(' ')
 }
 
 /** The prompt for the one ping when a session's away time ends with questions queued (spec §7.2). */
@@ -1183,7 +1280,22 @@ const CRITICAL_WHEN =
 const PLAIN_PERSON_LINE =
   '- Only when a question truly cannot wait for the person and blocks all useful work, call the PushNotification tool with a one-line question (under 200 characters), then continue with whatever else you can do.'
 
-const ASK_PERSON_LINE = `- Only when the person is truly required — ${CRITICAL_WHEN} — call PushNotification with the one-line question, then call ${WAIT_TOOL} with reason user-answer (or user-input for an action the person must take) and the question as note, and end your turn. Everything else you decide yourself.`
+const ASK_PERSON_LINE = [
+  `- Only when the person is truly required — ${CRITICAL_WHEN} — ask them with AskUserQuestion: up to 4 questions per`,
+  'call, the recommended option first. For an action the person must take, or when AskUserQuestion is unavailable or',
+  'the person said not to use it, write it to them as text, call PushNotification with the one-line question, then',
+  `call ${WAIT_TOOL} with reason user-answer (or user-input for an action the person must take) and the question as`,
+  'note, and end your turn. Everything else you decide yourself.',
+].join(' ')
+
+/** The queue_question refusal while the person can be asked: AskUserQuestion first, the notification and wait after. */
+export const ASKING_QUEUE_REFUSAL = [
+  'The person can be asked right now: do not queue. If they are truly required, ask them with AskUserQuestion: up to',
+  '4 questions per call, the recommended option first. For an action they must take, or when AskUserQuestion is',
+  'unavailable or they said not to use it, send one PushNotification with the question, call',
+  `${WAIT_TOOL} with reason user-answer (or user-input for an action they must take) and the question as note, and`,
+  'end your turn.',
+].join(' ')
 
 /** The paused section, with the questions still queued for the person when there are any. */
 function pausedSection(run: Run): string {
@@ -1345,6 +1457,27 @@ export function askAnswer(mode: Mode): string {
 /** What the model reads after an action the permission mode refused. */
 export const DEFERRED_NOTE =
   'Autopilot: this action was refused by the permission mode. Do not try to get around it. It is logged as deferred until the person returns; put it in your handoff and continue with other work.'
+
+// Refusals of the permission mode, its classifier and safety check; a settings rule's refusal is final, not among them.
+const MODE_DENY_PREFIXES: readonly string[] = [
+  'Permission for this action ',
+  'Permission for this tool use was denied',
+  'Permission for this command was denied by a built-in Claude Code safety check',
+]
+const MODE_DENY_MARKER = ' has been denied because Claude Code is running in '
+const MAX_LOGGED_DENY = 300
+
+/** Whether a deny waits for the person (the mode, its classifier or its safety check refused it) or is final. */
+export function isModeDeny(deny: string): boolean {
+  if (MODE_DENY_PREFIXES.some(prefix => deny.startsWith(prefix))) return true
+  return deny.startsWith('Permission to use ') && deny.includes(MODE_DENY_MARKER)
+}
+
+/** The log line of a refusal while autopilot drives. */
+export function refusalLogText(tool: string, deny: string): string {
+  if (isModeDeny(deny)) return `deferred (refused by the permission mode): ${tool}: ${deny.slice(0, MAX_LOGGED_DENY)}`
+  return `refused (passed through): ${tool}: ${deny.slice(0, MAX_LOGGED_DENY)}`
+}
 
 /** How far ahead of now a record's `setAt` may lie (two processes' clocks differ a little); further is a broken or forged write. */
 const MAX_SET_AT_AHEAD_MS = 5 * 60_000

@@ -16,7 +16,7 @@ Function-hook mods are early access: you need a recent Claude Code (built and te
 Install a signed release tag, not `main`: pick the latest tag from the [releases](https://github.com/VladLeus/claude-mods/releases) and put it after `#`.
 
 ```bash
-claude plugin marketplace add VladLeus/claude-mods#v0.5.0
+claude plugin marketplace add VladLeus/claude-mods#v0.6.6
 claude plugin install autopilot@local-mods
 claude plugin install agent-fleet@local-mods
 ```
@@ -55,8 +55,10 @@ Handoffs are written to `thoughts/shared/handoffs/` of the project.
 /autopilot extend [<time>] [--restarts N]   # add time and/or restarts
 /autopilot shorten [<time>] [--restarts N]  # take time and/or restarts off
 /autopilot until HH:MM     # end at a local time
-/autopilot 0 0 stop        # hand the wheel back (also clears the goal)
+/autopilot 0 0 stop        # hand the wheel back (also clears the goal); /autopilot stop works too
 ```
+
+`/ap` runs the same command with the same arguments: Claude Code reserves the name `autopilot` for a built-in command, so `/ap` keeps working if it ever takes that name over.
 
 `extend`, `shorten` and `until` only work when you type them (in the prompt or over Remote Control), never from the session itself. Give a time, `--restarts N` (1–99), or both. With a limited run, `--restarts` raises or lowers the max restarts by N (lowering never goes below the restarts already used). With an unlimited run, `extend --restarts N` allows N more restarts from now, and `shorten --restarts` is ignored (the reply says so).
 
@@ -77,18 +79,24 @@ Example, a night run:
 - **--goal**: a `/goal` completion condition, set again after every `/clear`. When the evaluator marks it met, autopilot asks for a final handoff and stops. Phrase it in terms of files or repo state, not "in the chat": after `/clear` the chat is empty.
 - **--5h**: at this % of the 5-hour token window it parks and resumes 2 minutes after the window resets.
 - **--week**: at this % of the weekly window it stops for good: final handoff, summary, a phone notification from the session, autopilot off.
-- **--ask-user**: lets the session wait for you, for critical things only (an irreversible or outward-facing action, missing access, a decision outside its role): it sends a phone notification with the question, waits with `wait_for`, and is not nudged until you answer. Everything else it still decides itself. Without the flag it never waits for you unless you turn asking on with `/ask-user on`; `/ask-user on|off` works while the run goes or before it starts (see [Away, back and ask-user](#away-back-and-ask-user)).
+- **--ask-user**: lets the session wait for you, for critical things only (an irreversible or outward-facing action, missing access, a decision outside its role): it asks you in an `AskUserQuestion` dialog, or, for an action you must take or when it cannot use the dialog, sends a phone notification with the question, waits with `wait_for`, and is not nudged until you answer. Everything else it still decides itself. Without the flag it never waits for you unless you turn asking on with `/ask-user on`; `/ask-user on|off` works while the run goes or before it starts (see [Away, back and ask-user](#away-back-and-ask-user)).
 
 While it runs:
 
-- Ordinary questions (`AskUserQuestion`) are answered with "decide yourself within your role"; the decision goes into the handoff. Only a question that truly cannot wait is sent to your phone (`PushNotification`).
-- Permissions stay as they are. Run the session in auto mode or with allow rules. An action the permission mode refuses (a push, a commit) is never retried another way: it is logged as deferred and left for you.
+- Ordinary questions (`AskUserQuestion`) are answered with "decide yourself within your role"; the decision goes into the handoff. Only a question that truly cannot wait is sent to your phone (`PushNotification`). With asking on and you available (you are not away, and no ended away is still waiting for you to write), an `AskUserQuestion` reaches you as a dialog instead, the menus of a workflow the session runs (a GSD menu, for example) included, so a session started with `--ask-user` can stop at such a menu until you answer or go `/away`; the session's own questions stay for critical ones.
+- Permissions stay as they are. Run the session in auto mode or with allow rules. A refused action is never retried another way.
+  - An action the permission mode refuses (a push, a commit), or its classifier or safety check, is logged as deferred and left for you.
+  - A refusal by a settings rule (a deny in `permissions`) is final: it reaches the session unchanged and is logged.
 - The session never ends or hands off on its own; autopilot decides. If the work is done it answers `AUTOPILOT_DONE` and autopilot wraps up.
 - Waiting: when the session hands work to someone else and has nothing useful left, it calls the `wait_for` tool and ends its turn. While it waits, autopilot does not nudge it, does not count idle turns and drops the goal's re-prompt. Any new turn (a message from another session, a subagent or workflow finishing, you) wakes it.
-  - Reasons: `session-answer`, `session-ping`, `subagent-result`, `workflow-end`, `background-task`, `other`, and, while it may ask you (asking is on with `--ask-user` or `/ask-user on`, you are not away, and no ended away is still waiting for you to write), also `user-answer` and `user-input` (these need the question as `note`). `from` names who it waits for.
+  - Reasons: `session-answer`, `session-ping`, `subagent-result`, `workflow-end`, `background-task`, `idle-inbox`, `other`, and, while it may ask you (asking is on with `--ask-user` or `/ask-user on`, you are not away, and no ended away is still waiting for you to write), also `user-answer` and `user-input` (these need the question as `note`). `from` names who it waits for.
+  - `idle-inbox`: nothing to do until a message comes. Give it no timeout; any incoming message wakes the session.
   - `timeout` (`30m`, `1h`): past it, autopilot asks the session once to check whether the answer is stuck. It never runs past the run's time.
+  - Polling (a build, a deploy, a slow job): wait with `background-task` and a timeout, not the same check every turn.
+  - Stops: the run's time ends a wait. The weekly stop also ends a run in the turn that declares a wait. The 5-hour stop never ends an idle wait.
   - The status and the fleet badge show what it waits for, from whom and for how long: `/autopilot` prints `Waiting: session-answer ← "BE-expert" · 12m`, the fleet badge `⏸ session-answer ← BE-expert · 12m00s`.
-- Log: `~/.claude/autopilot/<session id>.log` (decisions, deferrals, restarts, limits).
+- Stalls: two turns in a row without progress (no tool call, or exactly the same calls as the turn before) park a run without `--goal`. It waits with reason `other` and you get the toast "Autopilot parked: no progress for two turns"; any new message resumes it. A run with a goal pauses instead.
+- Log: `~/.claude/autopilot/<session id>.log` (decisions, deferrals, refusals, restarts, limits).
 
 ### Away, back and ask-user
 
@@ -106,7 +114,7 @@ These tell the session whether it may ask you now. They only work when you type 
 - **`/away`** needs a time: a duration (at least 1 minute, at most 7 days) or `until <clock>` (same clock forms as `/autopilot until`, always under 24 hours ahead). Bare `/away`, an unknown word or a time out of range is an error and changes nothing.
 - **While you are away** (or asking is off), the session works as without `--ask-user`: it decides ordinary questions itself. A critical question (one it would have stopped and asked you about) goes into a queue with `queue_question`, with what it does meanwhile, and it keeps working on what that question does not block. The queue never drops a question; above 20 a toast warns. If the session was waiting for your answer when you went away, the wait ends and that question stays queued (at the head if it was not queued yet); if the wait did not carry the question, the session is told to queue it itself.
 - **When the away ends** with an empty queue, nothing happens. With questions queued, the session sends **one** phone notification ("N critical questions are queued") and keeps working without asking until you write in it. A message you write before the away ends does not count: use `/back`. A global away ends with **one** combined notification across sessions ("7 questions in 3 sessions"), sent by one of them. An away that ends while asking is off sends nothing.
-- **`/back`**, or your first message after the away ended, starts the questions: one at a time, as text, waiting with `wait_for user-answer`. Your answer, typed while the session waits for it, takes it off the queue and the next one follows. A message you send before a question is asked removes nothing. New critical questions join the end of the queue.
+- **`/back`**, or your first message after the away ended, starts the questions: one at a time, in an `AskUserQuestion` dialog when it can (as text, waiting with `wait_for user-answer`, when not). An answer in the dialog takes the question off the queue, as does your answer typed while the session waits for it, and the next one follows; a dismissed or unanswered dialog leaves it queued. A message you send before a question is asked removes nothing. New critical questions join the end of the queue.
 - **`/ask-user off`** is an away without an end: critical questions are queued. **`/ask-user on`** turns asking on, also for a run started without `--ask-user`; when you are not away it starts the queued questions. During an active `/away` it only flips the switch: the away holds until its time.
 - A run started without `--ask-user`, with no `/ask-user` setting anywhere, never waits for you and queues nothing: `/away` is stored but changes nothing until `/ask-user on`.
 - Notifications and questions reach the session only while it works or waits for an answer. While it is parked on the 5-hour limit, paused or restarting, you get a toast; they are delivered when it works again. An away-end notification not delivered yet is dropped once it is no longer true: you are back and the questions start, you go away again, asking is turned off, or (for a global away) a day has passed since it ended.
