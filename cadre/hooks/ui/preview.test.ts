@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, PaneKey, ShownBlock } from '../../types'
+import type { AskContext, ContextRow, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { BIDI_OVERRIDE } from '../testkit'
 import { wrapLine } from './pane'
@@ -12,6 +12,7 @@ import {
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
   previewColumns,
+  previewFits,
   previewMarkdown,
   PREVIEW_LINE_ROWS,
   PREVIEW_ROWS,
@@ -527,6 +528,61 @@ describe('fitPreview (D-228)', () => {
     const whole = previewMarkdown([context])
     expect(optionPreviews(askRewrite([PICK_QUESTION], context, true, true)?.questions)).toEqual([[whole, whole, whole]])
   })
+
+  test('with rows, a paged context previews its page rows, a section title first; unpaged keeps fitting', () => {
+    const context = linesContext(30)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [
+      { title: null, rows: [plain('line 4'), plain('line 5')] },
+      { title: 'More', rows: [plain('line 6')] },
+    ]
+    const paged: AskContext = { ...context, rows, page: { index: 1, count: 3 } }
+    const page = previewMarkdown([{ ...context, lines: ['line 4', 'line 5', 'More', 'line 6'] }])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], paged, true, true, null, 21)?.questions)).toEqual([
+      [page, page, page],
+    ])
+    const fitted = previewMarkdown([{ ...context, lines: fitPreview(context, 21, null).lines }])
+    const unpaged: AskContext = { ...context, rows }
+    expect(optionPreviews(askRewrite([PICK_QUESTION], unpaged, true, true, null, 21)?.questions)).toEqual([
+      [fitted, fitted, fitted],
+    ])
+  })
+
+  test('with rows, a paged Review keeps its own lines', () => {
+    const review: AskContext = {
+      ...linesContext(30, 'review'),
+      rows: [{ title: null, rows: [{ role: 'plain', text: 'line 4', indent: 0 }] }],
+      page: { index: 0, count: 2 },
+    }
+    const whole = previewMarkdown([review])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], review, true, true, null, 21)?.questions)).toEqual([
+      [whole, whole, whole],
+    ])
+  })
+})
+
+describe('previewFits', () => {
+  /** A conflict-like context of `lines`, each one plain row, on page 1 of 2 when `isPaged`. */
+  function rowsContext(lines: readonly string[], isPaged: boolean): AskContext {
+    const rows = [{ title: null, rows: lines.map((text): ContextRow => ({ role: 'plain', text, indent: 0 })) }]
+    const context: AskContext = { title: 'Diff', lines: ['other'], kind: 'conflict-diff', summary: 'diff', rows }
+
+    return isPaged ? { ...context, page: { index: 0, count: 2 } } : context
+  }
+
+  test('a whole context fits by its lines; a page by its rows, its title row counted', () => {
+    const rows = Array.from({ length: PREVIEW_LINE_ROWS - 1 }, (_, at) => `line ${at + 1}`)
+    expect(previewFits(rowsContext(rows, false), PREVIEW_LINE_ROWS, 80)).toBe(true)
+    expect(previewFits(rowsContext(rows, true), PREVIEW_LINE_ROWS, 80)).toBe(true)
+    expect(previewFits(rowsContext([...rows, 'one more'], true), PREVIEW_LINE_ROWS, 80)).toBe(false)
+  })
+
+  test('a page whose rows fit but whose preview passes MAX_PREVIEW_CHARS does not fit', () => {
+    const rows = Array.from({ length: 10 }, (_, at) => `${at}`.padEnd(230, 'x'))
+    expect(previewMarkdown([{ title: 'Diff', lines: rows }], 122).endsWith('\n…')).toBe(true)
+    expect(previewFits(rowsContext(rows, true), PREVIEW_LINE_ROWS, 122)).toBe(false)
+    expect(previewFits(rowsContext(rows.slice(0, 5), true), PREVIEW_LINE_ROWS, 122)).toBe(true)
+  })
 })
 
 describe('answersFromNotes (A3)', () => {
@@ -742,6 +798,15 @@ describe('tuiTranscriptEntries (WD-S4, D-262)', () => {
     const wide = { ...linesContext(15), lines: wrapped }
     const entries = [tuiTranscriptEntries(wide, null, null), tuiTranscriptEntries(wide, null, 40)]
     expect(entries).toEqual([[], ['Lines', ...wrapped]])
+  })
+
+  test('a paged context whose page fits the preview gives no entry; the same context unpaged gives every line', () => {
+    const context = linesContext(40)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [{ title: null, rows: context.lines.slice(0, 10).map(plain) }]
+    const paged: AskContext = { ...context, rows, page: { index: 0, count: 4 } }
+    expect(tuiTranscriptEntries(paged, null, null)).toEqual([])
+    expect(tuiTranscriptEntries(context, null, null)).toEqual(['Lines', ...context.lines])
   })
 
   test('the context printed last, by its title and lines, gives no entry; a changed one gives them all', () => {

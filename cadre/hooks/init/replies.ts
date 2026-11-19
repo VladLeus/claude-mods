@@ -4,12 +4,13 @@
  * INIT_FILE_SYSTEM_ROOT_REPLY), the reply of a cancelled run (INIT_CANCELLED, cancelledReply) and the note of the
  * Ignore all git policy (IGNORE_ALL_NOTE); Wave E moves these texts into locales/en.ts. The three refusals are private:
  * no module reads them, and the specs pin their text through the guard and the builders they are made of (#119). It
- * is pure and imports core and guards; init.ts reads it.
+ * is pure and imports core, guards and the flow type of init/state; init.ts reads it.
  */
 import { reportText } from '../core/text'
 import { fileSystemRootReply, homeRootReply } from '../guards/refusals'
 import { rootUnknownReply } from '../guards/repo'
 import { t } from '../locales/t'
+import type { InitFlow } from './state'
 
 /** The reply when the session root cannot be read: init stops before it reads anything. */
 const INIT_ROOT_UNKNOWN_REPLY = rootUnknownReply('init')
@@ -26,13 +27,26 @@ const INIT_FILE_SYSTEM_ROOT_REPLY = fileSystemRootReply('init')
  */
 export const INIT_CANCELLED = t('init.replies.initCancelled')
 
+/** The start of the reply of a cancelled run of `flow`: INIT_CANCELLED for init, whose flow may be absent. */
+export function cancelledText(flow?: InitFlow): string {
+  return flow === 'frameworks' ? t('frameworks.replies.cancelled') : INIT_CANCELLED
+}
+
 /**
- * The reply of a cancelled init (D-45, batch-1 review S1): INIT_CANCELLED, a colon and the step's reason cleaned as a
- * report cell, so every surface shows why init stopped.
+ * The reply of a cancelled run: the flow's cancel text (cancelledText), a colon and the step's reason cleaned as a
+ * report cell, so every surface shows why the run stopped.
  */
-export function cancelledReply(reason: string): string {
-  return t('init.replies.cancelledReply', { initCancelled: INIT_CANCELLED, reason: reportText(reason) })
+export function cancelledReply(reason: string, flow?: InitFlow): string {
+  const shown = reportText(reason)
+  if (flow !== 'frameworks') return t('init.replies.cancelledReply', { initCancelled: INIT_CANCELLED, reason: shown })
+
+  return t('frameworks.replies.cancelledReply', { cancelled: cancelledText(flow), reason: shown })
 }
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
 export const IGNORE_ALL_NOTE = t('init.replies.ignoreAllNote')
+
+/** The refusal of `/cadre frameworks` in an epic worktree, naming the main checkout to run it in. */
+export function frameworksInEpicReply(main: string): string {
+  return t('frameworks.epicWorktree', { main: reportText(main) })
+}

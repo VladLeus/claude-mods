@@ -5,8 +5,10 @@
  * epic, init and testkit read the template here.
  */
 import type {
+  CadreState,
   DecisionType,
   Effort,
+  FrameworkId,
   PermissionMode,
   ProposedRole,
   RoleCarry,
@@ -31,6 +33,8 @@ export type TemplateRole = {
   readonly hasBash: boolean
   /** Whether the role starts with `--ask-user` (D-10). */
   readonly askUser: boolean
+  /** The role's own framework; absent for a role that takes the repo default. */
+  readonly framework?: FrameworkId
 }
 
 /** The role template in the order every proposal and every change list keeps: PM, TL, BE, FE, QA, Security. */
@@ -41,6 +45,7 @@ export const ROLE_TEMPLATE: readonly TemplateRole[] = freezeRows([
     purpose: ARTIFACT.templatePmPurpose,
     hasBash: false,
     askUser: true,
+    framework: 'none',
   },
   {
     id: 'tl',
@@ -107,10 +112,11 @@ export const NO_TESTS_REASON = t('roles.template.noTestsReason')
 /** Why BE is dropped (D-85): no source file at all. */
 export const NO_SOURCE_REASON = t('roles.template.noSourceReason')
 
-/** What a role's base decides: whether it has Bash and whether it asks the person. */
+/** What a role's base decides: whether it has Bash, whether it asks the person, and its own framework if any. */
 export type RoleTraits = {
   readonly hasBash: boolean
   readonly askUser: boolean
+  readonly framework?: FrameworkId
 }
 
 /** A role with the defaults every role shares and the traits its base decides: no MCP, no skills, nothing carried. */
@@ -129,6 +135,7 @@ export function roleOf(proposed: ProposedRole, traits: RoleTraits): RoleSpec {
     skills: [],
     instructions: [],
     carry: EMPTY_CARRY,
+    ...(traits.framework === undefined ? {} : { framework: traits.framework }),
   }
 }
 
@@ -149,6 +156,26 @@ export type ChainRole = string | Pick<RoleSpec, 'id' | 'basedOn'>
  */
 export function standsFor(role: Pick<RoleSpec, 'id' | 'basedOn'>, templateId: TemplateRoleId): boolean {
   return role.id === templateId || role.basedOn === templateId
+}
+
+/** The template roles that run the repo's checks: specs, lint and Docker. */
+export const CHECK_RUNNER_ROLES: readonly TemplateRoleId[] = Object.freeze(['be', 'fe', 'qa'])
+
+/** Whether a role runs the repo's checks: it stands for BE, FE or QA. */
+export function runsRepoChecks(role: Pick<RoleSpec, 'id' | 'basedOn'>): boolean {
+  return CHECK_RUNNER_ROLES.some(templateId => standsFor(role, templateId))
+}
+
+/** Whether init recorded cadre's core team; an unrecorded team counts as custom. */
+export function isCoreTeam(state: Pick<CadreState, 'structure'>): boolean {
+  return state.structure === 'core'
+}
+
+/** Whether a role of a core team starts with --ask-user in an epic: the template row's choice, not role.json. */
+export function asksInEpic(role: Pick<RoleSpec, 'id' | 'basedOn'>, isCoreTeam: boolean): boolean {
+  if (!isCoreTeam) return false
+
+  return ROLE_TEMPLATE.find(row => standsFor(role, row.id))?.askUser ?? false
 }
 
 /**

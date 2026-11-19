@@ -12,6 +12,7 @@ import type {
   AskContext,
   AskSpec,
   ContextRow,
+  FrameworkId,
   HunkOp,
   InitLocations,
   InstructionGroup,
@@ -26,6 +27,7 @@ import type {
   RoleChange,
   RoleSpec,
   SkillRef,
+  TeamStructure,
 } from '../../types'
 import type { ApplyOutcome } from '../apply/run'
 import type { GuardResult } from '../guards/repo'
@@ -38,16 +40,17 @@ import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
 import type { SurfaceModule } from '../ui/surfaces/contract'
 import type { NameAssignment } from './assign-rules'
-import type { Draft, DraftBase, PlanResult, Reviewed } from './draft'
+import type { Draft, DraftBase, PlanResult, Reframed, Reviewed } from './draft'
 import type { HandoutCursor } from './handout'
 import type { PlanStepInput } from './initplan'
 
 /**
  * The stages of an init run in today's order (D-43, D-230, A1): the guard, the ~/.claude.json consent, the scans, the
  * history question, the role steps (the roles, their frameworks, the security plugins, the duration, each role's model
- * and effort, the MCP and skill assignments, the instructions and memories, the carried settings, the hunks and the
- * improver install), the git policy, the launcher start, and the review with Confirm's apply; then `done`, a run that
- * ended with its reply, or `cancelled`, a run that ended with nothing written.
+ * and effort, the MCP and skill assignments, PM's grill plugin, the instructions and memories, the carried settings,
+ * the hunks and the improver install), the git policy, the launcher start, and the review with Confirm's apply; then
+ * `done`, a run that ended with its reply, or `cancelled`, a run that ended with nothing written. `reframe-review` is
+ * the review of the frameworks flow (FLOW_ORDER).
  */
 export type InitStage =
   | 'guard'
@@ -60,6 +63,7 @@ export type InitStage =
   | 'duration'
   | 'model'
   | 'assign'
+  | 'pm-plugin'
   | 'instructions'
   | 'carry'
   | 'hunks'
@@ -67,6 +71,7 @@ export type InitStage =
   | 'policy'
   | 'launch'
   | 'review'
+  | 'reframe-review'
   | 'cancelled'
   | 'done'
 
@@ -82,6 +87,7 @@ export const STAGE_ORDER: readonly InitStage[] = Object.freeze([
   'duration',
   'model',
   'assign',
+  'pm-plugin',
   'instructions',
   'carry',
   'hunks',
@@ -90,6 +96,15 @@ export const STAGE_ORDER: readonly InitStage[] = Object.freeze([
   'launch',
   'review',
 ])
+
+/** The run the machine drives: /cadre init, or the framework step again for /cadre frameworks. */
+export type InitFlow = 'init' | 'frameworks'
+
+/** The stages each flow goes through, in order: init's are STAGE_ORDER. */
+export const FLOW_ORDER: Readonly<Record<InitFlow, readonly InitStage[]>> = Object.freeze({
+  init: STAGE_ORDER,
+  frameworks: Object.freeze<InitStage[]>(['frameworks', 'hunks', 'reframe-review']),
+})
 
 /**
  * What a stage gives the runner before its effect, in order (D-133): a fold, content no later context holds, which the
@@ -123,7 +138,8 @@ export type SessionListing = {
  * (readRepoFile), the names of the repo's rule files and AGENTS.md (repoInstructionNames), the read of the instruction
  * files after the content consent (readInstructionFiles), the check that a typed launcher folder is a folder inside
  * the repo (isRepoFolder), GSD's own check after a Yes (io.gsdIdentity, D-243), the review's plan (planStep) and
- * Confirm's apply (applyConfirmed).
+ * Confirm's apply (applyConfirmed); for the frameworks flow, its review's plan (reframePlan) and Confirm's apply of it
+ * (reframeApplied).
  */
 export type IoCall =
   | { readonly id: 'guard' }
@@ -137,6 +153,8 @@ export type IoCall =
   | { readonly id: 'gsd-identity'; readonly locations: InitLocations }
   | { readonly id: 'plan'; readonly input: PlanStepInput }
   | { readonly id: 'apply'; readonly reviewed: Reviewed }
+  | { readonly id: 'reframe-plan'; readonly input: PlanStepInput }
+  | { readonly id: 'reframe-apply'; readonly reframed: Reframed }
 
 /**
  * What an IoCall gave, under the same id; a session folder that cannot be listed gives null, and so does an apply in a
@@ -156,6 +174,8 @@ export type IoResult =
   | { readonly id: 'gsd-identity'; readonly result: RawGsdCandidate | null }
   | { readonly id: 'plan'; readonly result: PlanResult }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
+  | { readonly id: 'reframe-plan'; readonly result: PlanResult }
+  | { readonly id: 'reframe-apply'; readonly result: StepResult<Applied> | null }
 
 /**
  * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
@@ -283,9 +303,13 @@ export type EachCursor = {
  * - `review`: the review question about `planned` is out on page `page` (D-233), asked `tries` times so far.
  * - `launch-dir`: the launcher folder question is out, asked `tries` times so far.
  * - `launch-check`: the check of the folder `path`, typed as `answer` at try `tries`, is out.
+ * - `launch-settings`: the read of the checked folder `path`'s `.claude/settings.json` is out.
  * - `back`: the review goes back to the stage `to` (D-204); nextStage enters it.
  * - `mode`, `all`, `each`: a question asked once for every role or per role, asked `tries` times so far: the mode
  *   question, the question for all roles, or the question of the role at `index`, with the roles answered before it.
+ * - `set`: the question of which frameworks the team keeps is out, asked `tries` times so far.
+ * - `set-install`: the install question of `framework` is out for a set answer that adds it, asked `tries` times so
+ *   far; `pending` keeps the frameworks the set holds so far and the ones still to ask about.
  * - `roles`: the roles question about `roles` with their scan `changes` is out, asked `tries` times so far, in the
  *   `rounds`-th proposal of the roles stage.
  * - `adjust`: the Adjust question is out for the `round`-th time, with the roles as adjusted so far, in proposal
@@ -296,6 +320,8 @@ export type EachCursor = {
  * - `roles-gsd-check`: GSD's own check question, or the check itself after a Yes, is out for an Adjust answer that
  *   sets a role to gsd (D-269, edge #35), asked `tries` times so far; `pending` keeps that answer and the Adjust cursor
  *   it was typed at, so the Adjust is taken again once the check answered.
+ * - `install`: the install question of `framework` is out for an Adjust answer that sets a role to it while the repo
+ *   does not have it installed, asked `tries` times so far; `pending` keeps that answer and its Adjust cursor.
  * - `mcp-model`: the model call that recommends roles for every MCP server is out, before the server questions, with
  *   the names given before it (`done`, D-248).
  * - `mcp-handout`, `mcp-whole`: the MCP servers' hand-out at `cursor` (D-250), or the question for all the servers at
@@ -330,9 +356,17 @@ export type StageSub =
   | { readonly kind: 'review'; readonly tries: number; readonly planned: PlanResult; readonly page: number }
   | { readonly kind: 'launch-dir'; readonly tries: number }
   | { readonly kind: 'launch-check'; readonly tries: number; readonly answer: string; readonly path: string }
+  | { readonly kind: 'launch-settings'; readonly path: string }
   | { readonly kind: 'back'; readonly to: InitStage }
   | { readonly kind: 'mode'; readonly tries: number }
   | { readonly kind: 'all'; readonly tries: number }
+  | { readonly kind: 'set'; readonly tries: number }
+  | {
+      readonly kind: 'set-install'
+      readonly tries: number
+      readonly framework: FrameworkId
+      readonly pending: { readonly set: readonly FrameworkId[]; readonly rest: readonly FrameworkId[] }
+    }
   | ({ readonly kind: 'each' } & EachCursor)
   | {
       readonly kind: 'roles'
@@ -340,6 +374,7 @@ export type StageSub =
       readonly rounds: number
       readonly roles: readonly RoleSpec[]
       readonly changes: readonly RoleChange[]
+      readonly structure: TeamStructure
     }
   | {
       readonly kind: 'adjust'
@@ -347,6 +382,7 @@ export type StageSub =
       readonly round: number
       readonly roles: readonly RoleSpec[]
       readonly changes: readonly RoleChange[]
+      readonly structure: TeamStructure
     }
   | {
       readonly kind: 'describe'
@@ -365,6 +401,20 @@ export type StageSub =
         readonly round: number
         readonly roles: readonly RoleSpec[]
         readonly changes: readonly RoleChange[]
+        readonly structure: TeamStructure
+      }
+    }
+  | {
+      readonly kind: 'install'
+      readonly tries: number
+      readonly framework: FrameworkId
+      readonly pending: {
+        readonly answer: string
+        readonly rounds: number
+        readonly round: number
+        readonly roles: readonly RoleSpec[]
+        readonly changes: readonly RoleChange[]
+        readonly structure: TeamStructure
       }
     }
   | { readonly kind: 'mcp-model'; readonly done: readonly NameAssignment[] }
@@ -459,6 +509,8 @@ export type InitState = {
    * the first step and when the width is unknown (tests, `-p`).
    */
   readonly pageColumns: number | null
+  /** The run the machine drives (FLOW_ORDER); absent is /cadre init. */
+  readonly flow?: InitFlow
 }
 
 /**
@@ -553,6 +605,15 @@ export function fullDraft(draft: Partial<Draft>): Draft | null {
   if (base === null || duration === undefined || roles === undefined || changes === undefined) return null
   if (repoDefault === undefined || hunks === undefined || pluginInstalls === undefined) return null
   if (instructions === undefined || policy === undefined || launchStart === undefined) return null
+  const { frameworkSet, frameworkInstalls, projectPluginInstalls, structure } = draft
+  const fields = { duration, roles, changes, repoDefault, hunks, pluginInstalls, instructions, policy, launchStart }
 
-  return { ...base, duration, roles, changes, repoDefault, hunks, pluginInstalls, instructions, policy, launchStart }
+  return {
+    ...base,
+    ...fields,
+    ...(frameworkSet === undefined ? {} : { frameworkSet }),
+    ...(frameworkInstalls === undefined ? {} : { frameworkInstalls }),
+    ...(projectPluginInstalls === undefined ? {} : { projectPluginInstalls }),
+    ...(structure === undefined ? {} : { structure }),
+  }
 }

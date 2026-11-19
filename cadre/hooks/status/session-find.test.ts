@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { entryAt } from '../testkit'
-import { beatSessionOf, MAX_TRANSCRIPTS, transcriptCandidates } from './session-find'
+import type { PortEntry } from '../../types'
+import { mangledProjectDir } from '../paths'
+import { DEFAULT_LOCATIONS, entry, entryAt, hostWorld, memHost, memIo, memWorld } from '../testkit'
+import type { HostRunRule } from '../testkit'
+import {
+  beatSessionOf,
+  cwdGrepArgv,
+  MAX_TRANSCRIPTS,
+  sessionOf,
+  titleGrepArgv,
+  transcriptCandidates,
+} from './session-find'
+import type { FoundSession } from './session-find'
 
 /** A fleet beat of agent-fleet's on-disk shape, for the session `id`; `over` changes the fields it names. */
 function beat(id: string, over: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
@@ -55,5 +66,117 @@ describe('status discovery (D-131)', () => {
     expect(beatSessionOf(values, 'be', '/repo', ['/repo'])).toEqual({ sessionId: 's-new', cwd: '/repo' })
     expect(beatSessionOf([], 'be', '/repo', ['/repo'])).toBeNull()
     expect(beatSessionOf([beat('s-pm', { name: 'cadre-pm' })], 'be', '/repo', ['/repo'])).toBeNull()
+  })
+})
+
+describe('the shortened transcript folder', () => {
+  const projects = '/home/u/.claude/projects'
+  const startFolder = `/repo/${'w'.repeat(103)}/${Array.from({ length: 5 }, (_, at) => `${at}`.repeat(50)).join('/')}`
+  const shortened = `${mangledProjectDir(startFolder).slice(0, 200)}-x1y2z3`
+  const titleRow = `${JSON.stringify({ type: 'custom-title', customTitle: 'cadre-be', sessionId: 'x' })}\n`
+  const TITLED = { exitCode: 0, stdout: titleRow, stderr: '' }
+  const HELD = { exitCode: 0, stdout: '', stderr: '' }
+  const NOT_HELD = { exitCode: 1, stdout: '', stderr: '' }
+
+  /** The folder name the engine gives a start folder whose encoded name is over 200 characters. */
+  function shortenedOf(folder: string, suffix: string): string {
+    return `${mangledProjectDir(folder).slice(0, 200)}-${suffix}`
+  }
+
+  /** sessionOf of be in `startFolder` over these listings and grep rules, with the greps it ran. */
+  async function found(
+    start: string,
+    dirs: Readonly<Record<string, readonly PortEntry[]>>,
+    runs: readonly HostRunRule[],
+  ): Promise<{ readonly session: FoundSession | null; readonly greps: readonly (readonly string[])[] }> {
+    const host = memHost(hostWorld({ runs }))
+    const session = await sessionOf(memIo(memWorld({ dirs }), {}).io, host.io, {
+      locations: DEFAULT_LOCATIONS,
+      id: 'be',
+      startFolder: start,
+    })
+
+    return { session, greps: host.calls.map(call => call.argv) }
+  }
+
+  test('sessionOf greps the one shortened folder whose transcript holds the start folder', async () => {
+    const folder = `${projects}/${shortened}`
+    const dirs = { [projects]: [entry(shortened, 'dir')], [folder]: [entryAt('s9.jsonl', 'file', 5)] }
+    const runs = [
+      { argv: cwdGrepArgv(`${folder}/s9.jsonl`, startFolder), result: HELD },
+      { argv: titleGrepArgv(`${folder}/s9.jsonl`), result: TITLED },
+    ]
+    const { session } = await found(startFolder, dirs, runs)
+
+    expect(session).toEqual({ sessionId: 's9', foundBy: 'title', folder: startFolder })
+    expect(cwdGrepArgv('/p/s.jsonl', '/a/b')).toEqual([
+      '/usr/bin/grep',
+      '-F',
+      '-q',
+      '-m',
+      '1',
+      '-e',
+      '"cwd":"/a/b"',
+      '--',
+      '/p/s.jsonl',
+    ])
+  })
+
+  test('an epic worktree whose root shares the prefix does not follow the main checkout\'s folder', async () => {
+    const root = `/repo/${'w'.repeat(250)}`
+    const worktree = `${root}/.claude/worktrees/proj-1`
+    const main = `${projects}/${shortenedOf(root, 'm1')}`
+    const dirs = { [projects]: [entry(shortenedOf(root, 'm1'), 'dir')], [main]: [entryAt('s1.jsonl', 'file', 5)] }
+    const runs = [
+      { argv: cwdGrepArgv(`${main}/s1.jsonl`, worktree), result: NOT_HELD },
+      { argv: titleGrepArgv(`${main}/s1.jsonl`), result: TITLED },
+    ]
+    const { session, greps } = await found(worktree, dirs, runs)
+
+    expect(mangledProjectDir(worktree).slice(0, 200)).toBe(mangledProjectDir(root).slice(0, 200))
+    expect([session, greps]).toEqual([null, [cwdGrepArgv(`${main}/s1.jsonl`, worktree)]])
+  })
+
+  test('PROJ-1 does not follow PROJ-2\'s folder when only PROJ-2 has run', async () => {
+    const root = `/${'w'.repeat(183)}`
+    const proj1 = `${root}/.claude/worktrees/PROJ-1`
+    const proj2 = `${root}/.claude/worktrees/PROJ-2`
+    const folder = `${projects}/${shortenedOf(proj2, 'h2')}`
+    const dirs = { [projects]: [entry(shortenedOf(proj2, 'h2'), 'dir')], [folder]: [entryAt('s2.jsonl', 'file', 5)] }
+    const runs = [
+      { argv: cwdGrepArgv(`${folder}/s2.jsonl`, proj1), result: NOT_HELD },
+      { argv: titleGrepArgv(`${folder}/s2.jsonl`), result: TITLED },
+    ]
+    const { session } = await found(proj1, dirs, runs)
+
+    expect(mangledProjectDir(root).length).toBe(184)
+    expect(session).toBeNull()
+  })
+
+  test('of two candidates the one whose transcript holds the start folder is followed', async () => {
+    const [a, b] = [`${projects}/${shortenedOf(startFolder, 'a1')}`, `${projects}/${shortenedOf(startFolder, 'b2')}`]
+    const dirs = {
+      [projects]: [entry(shortenedOf(startFolder, 'a1'), 'dir'), entry(shortenedOf(startFolder, 'b2'), 'dir')],
+      [a]: [entryAt('sa.jsonl', 'file', 5)],
+      [b]: [entryAt('sb.jsonl', 'file', 5)],
+    }
+    const runs = [
+      { argv: cwdGrepArgv(`${a}/sa.jsonl`, startFolder), result: NOT_HELD },
+      { argv: titleGrepArgv(`${a}/sa.jsonl`), result: TITLED },
+      { argv: cwdGrepArgv(`${b}/sb.jsonl`, startFolder), result: HELD },
+      { argv: titleGrepArgv(`${b}/sb.jsonl`), result: TITLED },
+    ]
+    const { session } = await found(startFolder, dirs, runs)
+
+    expect(session).toEqual({ sessionId: 'sb', foundBy: 'title', folder: startFolder })
+  })
+
+  test('a start folder of 200 characters or fewer runs no cwd grep', async () => {
+    const folder = `${projects}/-repo`
+    const dirs = { [folder]: [entryAt('s9.jsonl', 'file', 5)] }
+    const runs = [{ argv: titleGrepArgv(`${folder}/s9.jsonl`), result: TITLED }]
+    const { session, greps } = await found('/repo', dirs, runs)
+
+    expect([session?.sessionId, greps]).toEqual(['s9', [titleGrepArgv(`${folder}/s9.jsonl`)]])
   })
 })

@@ -5,7 +5,7 @@ import { isObject } from '../core/json'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { memorySlug, roleMemoryDir } from '../paths'
-import { INFRA_SKILLS } from '../roles/infra'
+import { GRILL_SKILLS, INFRA_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope } from '../scope/compile'
 import {
@@ -59,6 +59,13 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
   }
 }
 
+/** The sandbox of BE as the template holds it: docker outside it, the tool caches writable. */
+const BE_SANDBOX = {
+  enabled: true,
+  excludedCommands: ['docker *', 'docker-compose *'],
+  filesystem: { allowWrite: ['~/.cache'] },
+}
+
 /** What a role carries from the user's settings: the window, the status line, one env name and one hook script. */
 const CARRY_ALL = {
   autoCompactWindow: true,
@@ -81,35 +88,57 @@ function carrier(over: Partial<LaunchUser> = {}): LaunchUser {
 }
 
 /**
- * The deny of a role's private instructions folder under its role memory folder `folder` (02-GAPS-B2 S3): Edit and
- * Write on `<folder>/instructions/**`, written as exact `//` rules.
+ * The deny of a role's private instructions folder under its role memory folder `folder`: Edit on
+ * `<folder>/instructions/**`, written as an exact `//` rule.
  */
 function privateDeny(folder: string): string[] {
-  return [`Edit(/${folder}/instructions/**)`, `Write(/${folder}/instructions/**)`]
+  return [`Edit(/${folder}/instructions/**)`]
 }
 
 /**
- * The deny every role gets beside its private folder deny, for the fixture repo /repo (02-GAPS-B3 C2, C3): Edit and
- * Write on the repo's memory folder under `userDir`, `<userDir>/projects/-repo/memory/**`, and on the hand-out record
- * in the role memory folder `folder`, `<folder>/instructions.json`.
+ * The deny every role gets beside its private folder deny, for the fixture repo /repo: Edit on the repo's memory
+ * folder under `userDir`, `<userDir>/projects/-repo/memory/**`, and on the hand-out record in the role memory folder
+ * `folder`, `<folder>/instructions.json`.
  */
 function memoryAndRecordDeny(userDir: string, folder: string): string[] {
+  return [`Edit(/${userDir}/projects/-repo/memory/**)`, `Edit(/${folder}/instructions.json)`]
+}
+
+/**
+ * The deny of the private instructions copy of role `id` under the root `root` and at any depth below it, for a role
+ * given no team ids.
+ */
+function privateCopyRules(root: string, id: string): string[] {
   return [
-    `Edit(/${userDir}/projects/-repo/memory/**)`,
-    `Write(/${userDir}/projects/-repo/memory/**)`,
-    `Edit(/${folder}/instructions.json)`,
-    `Write(/${folder}/instructions.json)`,
+    `Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`,
+    `Edit(/${root}/**/.cadre/${id}/.runtime/private-instructions/**)`,
   ]
 }
 
 /**
- * The deny of the launch files under the root `root` (03.1-SEC-S1): Edit and Write on `.claude/settings.json`,
- * `.claude/settings.local.json`, `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
+ * The deny of the launch files under the root `root`: Edit on `.claude/settings.json`, `.claude/settings.local.json`,
+ * `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
  */
 function launchFileRules(root: string): string[] {
   const files = ['.cadre/bin/**', '.cadre/manifest.json', '.claude/settings.json', '.claude/settings.local.json']
 
-  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+  return files.map(file => `Edit(/${root}/${file})`)
+}
+
+/** The deny of the inbox tree in the user folder `userDir`, every role's inbox and session files, as a `//` rule. */
+function inboxFileRules(userDir: string): string[] {
+  return [`Edit(/${userDir}/cadre/inboxes/**)`]
+}
+
+/**
+ * The deny of cadre.json, the role.json of each role in `ids` and the folders GSD's project install runs code from,
+ * under the root `root`, as exact `//` rules.
+ */
+function teamFileRules(root: string, ids: readonly string[]): string[] {
+  const roleFiles = ids.map(id => `.cadre/${id}/role.json`)
+  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**', '.claude/scripts/**']
+
+  return files.map(file => `Edit(/${root}/${file})`)
 }
 
 describe('launch render', () => {
@@ -193,10 +222,10 @@ describe('launch render', () => {
     expect(plan.settings).toEqual({
       autoCompactWindow: 800000,
       autoMemoryDirectory: '/home/u/.claude/cadre/repo-1a2b3c4d/pm',
-      claudeMdExcludes: [],
+      claudeMdExcludes: ['/repo/.claude/AGENTS.md', '/repo/AGENTS.md'],
       deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
-      env: { JIRA_URL: 'https://j' },
+      env: { JIRA_URL: 'https://j', GSD_WORKSTREAM: 'cadre-pm', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' },
       hooks: {
         PreToolUse: [
           { hooks: [{ type: 'command', command: 'node /home/u/.claude/hooks/gsd-secret-read-guard.js' }] },
@@ -204,13 +233,15 @@ describe('launch render', () => {
       },
       permissions: {
         defaultMode: 'auto',
-        deny: [
+        deny: sortedUnique([
           'Bash',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
+          'Edit(//repo/**/.cadre/pm/.runtime/private-instructions/**)',
           'Edit(//repo/.cadre/bin/**)',
           'Edit(//repo/.cadre/manifest.json)',
+          'Edit(//repo/.cadre/pm/.runtime/private-instructions/**)',
           'Edit(//repo/.claude/settings.json)',
           'Edit(//repo/.claude/settings.local.json)',
           'Edit(//repo/cadre/**)',
@@ -221,14 +252,9 @@ describe('launch render', () => {
           'Read(//repo/cadre/**)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
-          'Write(//home/u/.claude/projects/-repo/memory/**)',
-          'Write(//repo/.cadre/bin/**)',
-          'Write(//repo/.cadre/manifest.json)',
-          'Write(//repo/.claude/settings.json)',
-          'Write(//repo/.claude/settings.local.json)',
-        ],
+          ...inboxFileRules('/home/u/.claude'),
+          ...teamFileRules('/repo', ['pm']),
+        ]),
       },
       sandbox: { enabled: false },
       statusLine: { type: 'command', command: '/home/u/x.js' },
@@ -244,10 +270,17 @@ describe('launch render', () => {
     const plan = launchPlan(role, scope, carrier())
     const folder = roleMemoryDir(carrier(), 'pm')
     const own = [...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]
+    const inbox = inboxFileRules('/home/u/.claude')
+    const launch = [
+      ...launchFileRules('/repo'),
+      ...inbox,
+      ...teamFileRules('/repo', ['pm']),
+      ...privateCopyRules('/repo', 'pm'),
+    ]
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
-      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...own, ...launchFileRules('/repo')]),
+      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...own, ...launch]),
     })
   })
 
@@ -266,7 +299,12 @@ describe('launch render', () => {
     const plan = launchPlan(role, scope, carrier())
     const text = JSON.stringify(plan)
 
-    expect(plan.settings.env).toEqual({ JIRA_URL: 'https://j' })
+    expect(plan.settings.env).toEqual({
+      JIRA_URL: 'https://j',
+      GSD_WORKSTREAM: 'cadre-pm',
+      CADRE_ROLE: 'pm',
+      CADRE_ROOT: '/repo',
+    })
     expect(text).not.toContain('API_KEY')
     expect(text).not.toContain('"k"')
   })
@@ -277,7 +315,37 @@ describe('launch render', () => {
     const env = { ZED: 'z', JIRA_URL: 'https://j', ALPHA: 'a' }
     const plan = launchPlan(role, scope, carrier({ env }))
 
-    expect(Object.keys(plan.settings.env ?? {})).toEqual(['ALPHA', 'JIRA_URL', 'ZED'])
+    expect(Object.keys(plan.settings.env ?? {})).toEqual([
+      'ALPHA',
+      'JIRA_URL',
+      'ZED',
+      'GSD_WORKSTREAM',
+      'CADRE_ROLE',
+      'CADRE_ROOT',
+    ])
+  })
+
+  test("cadre's CADRE_ROLE and CADRE_ROOT win over the values of the same names the role carries", () => {
+    const role = templateRole('be', { carry: { ...CARRY_ALL, env: ['CADRE_ROLE', 'CADRE_ROOT', 'TOKEN'] } })
+    const scope = compileScope(role, context())
+    const plan = launchPlan(role, scope, user({ env: { CADRE_ROLE: 'x', CADRE_ROOT: '/elsewhere', TOKEN: 'v' } }))
+
+    expect(plan.settings.env).toEqual({ CADRE_ROLE: 'be', CADRE_ROOT: '/repo', TOKEN: 'v', GSD_WORKSTREAM: 'cadre-be' })
+  })
+
+  test('a role rendered into a worktree gets its main checkout as CADRE_MAIN_ROOT after CADRE_ROOT; others not', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+    const worktree = '/repo/.claude/worktrees/x'
+    const epicUser = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo' })
+    const epicEnv = launchPlan(role, scope, epicUser).settings.env
+    const mainEnv = launchPlan(role, scope, user()).settings.env
+
+    expect(isObject(epicEnv) ? Object.entries(epicEnv).slice(-2) : null).toEqual([
+      ['CADRE_ROOT', worktree],
+      ['CADRE_MAIN_ROOT', '/repo'],
+    ])
+    expect(isObject(mainEnv) ? Object.hasOwn(mainEnv, 'CADRE_MAIN_ROOT') : null).toBe(false)
   })
 
   test('a carried env name the user has no value for is left out, and so is an empty env', () => {
@@ -286,8 +354,13 @@ describe('launch render', () => {
     const some = launchPlan(role, scope, carrier({ env: { JIRA_URL: 'https://j' } }))
     const none = launchPlan(role, scope, carrier({ env: { OTHER: 'x' } }))
 
-    expect(some.settings.env).toEqual({ JIRA_URL: 'https://j' })
-    expect(Object.keys(none.settings)).not.toContain('env')
+    expect(some.settings.env).toEqual({
+      JIRA_URL: 'https://j',
+      GSD_WORKSTREAM: 'cadre-pm',
+      CADRE_ROLE: 'pm',
+      CADRE_ROOT: '/repo',
+    })
+    expect(none.settings.env).toEqual({ GSD_WORKSTREAM: 'cadre-pm', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
   })
 
   test('an env name that is a property of every object is never read as a value', () => {
@@ -295,7 +368,7 @@ describe('launch render', () => {
     const scope = compileScope(role, context())
     const plan = launchPlan(role, scope, carrier({ env: {} }))
 
-    expect(Object.keys(plan.settings)).not.toContain('env')
+    expect(plan.settings.env).toEqual({ GSD_WORKSTREAM: 'cadre-pm', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
   })
 
   test('an env value the user object only inherits is not the value of the user settings and is not rendered', () => {
@@ -304,7 +377,7 @@ describe('launch render', () => {
     const inherited = Object.create({ JIRA_URL: 'SENTINEL_SECRET_VALUE' })
     const plan = launchPlan(role, scope, carrier({ env: inherited }))
 
-    expect(Object.keys(plan.settings)).not.toContain('env')
+    expect(plan.settings.env).toEqual({ GSD_WORKSTREAM: 'cadre-pm', CADRE_ROLE: 'pm', CADRE_ROOT: '/repo' })
     expect(JSON.stringify(plan)).not.toContain('SENTINEL_SECRET_VALUE')
   })
 
@@ -317,6 +390,7 @@ describe('launch render', () => {
       'claudeMdExcludes',
       'deniedMcpServers',
       'enabledPlugins',
+      'env',
       'permissions',
       'sandbox',
     ]
@@ -332,15 +406,18 @@ describe('launch render', () => {
 
     expect(plan.settings).toEqual({
       autoMemoryDirectory: '/home/u/.claude/cadre/repo-1a2b3c4d/be',
-      claudeMdExcludes: [],
+      claudeMdExcludes: ['/repo/.claude/AGENTS.md', '/repo/AGENTS.md'],
       deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
+      env: { GSD_WORKSTREAM: 'cadre-be', CADRE_ROLE: 'be', CADRE_ROOT: '/repo' },
       permissions: {
         defaultMode: 'auto',
-        deny: [
+        deny: sortedUnique([
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
+          'Edit(//repo/**/.cadre/be/.runtime/private-instructions/**)',
+          'Edit(//repo/.cadre/be/.runtime/private-instructions/**)',
           'Edit(//repo/.cadre/bin/**)',
           'Edit(//repo/.cadre/manifest.json)',
           'Edit(//repo/.claude/settings.json)',
@@ -351,17 +428,22 @@ describe('launch render', () => {
           'Read(//repo/.env.*)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
-          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
-          'Write(//home/u/.claude/projects/-repo/memory/**)',
-          'Write(//repo/.cadre/bin/**)',
-          'Write(//repo/.cadre/manifest.json)',
-          'Write(//repo/.claude/settings.json)',
-          'Write(//repo/.claude/settings.local.json)',
-        ],
+          ...inboxFileRules('/home/u/.claude'),
+          ...teamFileRules('/repo', ['be']),
+        ]),
       },
-      sandbox: { enabled: true },
+      sandbox: BE_SANDBOX,
     })
+  })
+
+  test('the runtime sandbox is the template sandbox: BE keeps docker and ~/.cache, the PM stays off', () => {
+    const be = templateRole('be')
+    const beScope = compileScope(be, context())
+    const pm = templateRole('pm')
+
+    expect(launchPlan(be, beScope, user()).settings.sandbox).toEqual(beScope.settings.sandbox)
+    expect(launchPlan(be, beScope, user()).settings.sandbox).toEqual(BE_SANDBOX)
+    expect(launchPlan(pm, compileScope(pm, context()), user()).settings.sandbox).toEqual({ enabled: false })
   })
 
   test('the context monitor hook is never rendered, even when the role lists it (D-62)', () => {
@@ -656,6 +738,17 @@ describe('launch properties', () => {
     expect(matrixProblems()).toEqual([])
   })
 
+  test('every matrix plan runs as its role id, with CADRE_ROOT the root of its launching user', () => {
+    const wrong = matrixCases(MATRIX_USER).filter(item => {
+      const env = item.plan.settings.env
+      if (!isObject(env)) return true
+
+      return env.CADRE_ROLE !== item.role.id || env.CADRE_ROOT !== item.launcher.root
+    })
+
+    expect(wrong.map(item => item.label)).toEqual([])
+  })
+
   test('the matrix is not empty: seven roles, three frameworks, two assignment sets, and links to check', () => {
     const plans = FRAMEWORKS.flatMap(framework =>
       MATRIX_ROLES.flatMap(base =>
@@ -682,7 +775,15 @@ describe('launch properties', () => {
       const memories = isPartsFlowRole(item.role) ? linkedMemoryDeny(item.launcher.linkedMemories).deny : []
       const folder = roleMemoryDir(item.launcher, item.role.id)
       const own = [...privateDeny(folder), ...memoryAndRecordDeny(item.launcher.userDir, folder)]
-      const launch = [item.launcher.root, item.launcher.givenRoot].flatMap(launchFileRules)
+      const roots = [item.launcher.root, item.launcher.givenRoot]
+      const launch = [
+        ...roots.flatMap(root => [
+          ...launchFileRules(root),
+          ...teamFileRules(root, [item.role.id]),
+          ...privateCopyRules(root, item.role.id),
+        ]),
+        ...inboxFileRules(item.launcher.userDir),
+      ]
       const expected = sortedUnique([...deny.deny, ...own, ...launch, ...memories])
 
       return {
@@ -861,5 +962,113 @@ describe('launch properties', () => {
     const { role, scope, plan } = pmCase()
 
     expect(launchProblems({ ...plan, warnings: ['x'] }, role, scope, 'gsd')).toEqual(['warning: x'])
+  })
+})
+
+/** The enabledPlugins record of a launch plan's settings; {} when it is not one. */
+function pluginsOf(plan: LaunchPlan): Readonly<Record<string, unknown>> {
+  return isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+}
+
+describe('plugins the repo settings enable (project scope)', () => {
+  const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] })
+  const listed = { [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd'] }
+
+  test('a project-enabled plugin the scope does not enable renders false; one the scope enables stays on', () => {
+    const be = templateRole('be')
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS] })
+    const launching = user({ projectPlugins: [MATTPOCOCK_PLUGIN, 'tool@m'], pluginSkills: listed })
+    const bePlan = launchPlan(be, compileScope(be, context({ setup })), launching)
+    const pmPlan = launchPlan(pm, compileScope(pm, context({ framework: 'none', setup })), launching)
+
+    expect([pluginsOf(bePlan)[MATTPOCOCK_PLUGIN], pluginsOf(bePlan)['tool@m']]).toEqual([false, false])
+    expect([pluginsOf(pmPlan)[MATTPOCOCK_PLUGIN], pluginsOf(pmPlan)['tool@m']]).toEqual([true, false])
+    expect(pluginsOf(bePlan)['autopilot@local-mods']).toBe(true)
+  })
+
+  test('with no project plugins the rendered plugins are the scope record', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ setup }))
+
+    expect(pluginsOf(launchPlan(be, scope, user()))).toEqual(scope.settings.enabledPlugins)
+  })
+})
+
+describe('the GSD workstream env', () => {
+  /** The env BE renders on `framework` for the launching user `launching`. */
+  function envOf(framework: FrameworkId, launching: LaunchUser, role = templateRole('be')): unknown {
+    return renderRuntimeSettings(role, compileScope(role, context({ framework })), launching, []).env
+  }
+
+  test('a gsd role renders GSD_WORKSTREAM: cadre-<epic slug>-<id> in an epic, else cadre-<id>', () => {
+    expect(envOf('gsd', user({ epicSlug: 'proj-1' }))).toEqual({
+      GSD_WORKSTREAM: 'cadre-proj-1-be',
+      CADRE_ROLE: 'be',
+      CADRE_ROOT: '/repo',
+    })
+    expect(envOf('gsd', user())).toEqual({ GSD_WORKSTREAM: 'cadre-be', CADRE_ROLE: 'be', CADRE_ROOT: '/repo' })
+  })
+
+  test('a role on none or superpowers renders no GSD_WORKSTREAM', () => {
+    const others: readonly FrameworkId[] = ['none', 'superpowers']
+
+    for (const framework of others) {
+      expect(envOf(framework, user({ epicSlug: 'proj-1' }))).toEqual({ CADRE_ROLE: 'be', CADRE_ROOT: '/repo' })
+    }
+  })
+
+  test("cadre's workstream name wins over a GSD_WORKSTREAM the role carries from the user", () => {
+    const be = templateRole('be')
+    const carrier = { ...be, carry: { ...be.carry, env: ['GSD_WORKSTREAM'] } }
+
+    expect(envOf('gsd', user({ env: { GSD_WORKSTREAM: 'mine' } }), carrier)).toEqual({
+      GSD_WORKSTREAM: 'cadre-be',
+      CADRE_ROLE: 'be',
+      CADRE_ROOT: '/repo',
+    })
+  })
+})
+
+describe('the env files git tracks in the runtime sandbox', () => {
+  /** The env files git tracks at the root, as gatherLaunchUser carries them. */
+  const TRACKED = ['.env.test', 'web/.env.development']
+
+  /** The runtime sandbox of a template role launched by this user. */
+  function sandboxOf(id: 'be' | 'tl', launching: LaunchUser): unknown {
+    const role = templateRole(id)
+
+    return launchPlan(role, compileScope(role, context()), launching).settings.sandbox
+  }
+
+  test('BE may read them through the sandbox, each as a plain absolute path under the root', () => {
+    expect(sandboxOf('be', user({ trackedEnvFiles: TRACKED }))).toEqual({
+      ...BE_SANDBOX,
+      filesystem: { allowWrite: ['~/.cache'], allowRead: ['/repo/.env.test', '/repo/web/.env.development'] },
+    })
+  })
+
+  test('TL gets no allowRead for the same files, and BE gets none at an unsafe root', () => {
+    expect(sandboxOf('tl', user({ trackedEnvFiles: TRACKED }))).toEqual({
+      enabled: true,
+      filesystem: { allowWrite: ['~/.cache'] },
+    })
+    expect(sandboxOf('be', user({ root: '/my repo', trackedEnvFiles: TRACKED }))).toEqual(BE_SANDBOX)
+  })
+
+  test('a role without Bash gets no allowRead for them', () => {
+    const role = { ...templateRole('be'), hasBash: false }
+    const scope = compileScope(role, context())
+
+    expect(launchPlan(role, scope, user({ trackedEnvFiles: TRACKED })).settings.sandbox).toEqual(scope.settings.sandbox)
+  })
+
+  test('the Read denies of BE are the same with or without the tracked files', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context())
+    const withFiles = launchPlan(be, scope, user({ trackedEnvFiles: TRACKED })).settings
+    const without = launchPlan(be, scope, user()).settings
+
+    expect(denyOf(withFiles)).toEqual(denyOf(without))
+    expect(denyOf(withFiles)).toContain('Read(//repo/**/.env.*)')
   })
 })

@@ -85,15 +85,13 @@ describe('repo parts git tracks (02-GAPS-B2 M3)', () => {
     expect([...trackedFilesOf('')]).toEqual([])
   })
 
-  test('the untracked warning names the file, cleaned; the unknown warning says no repo part is written', () => {
-    expect(untrackedPartsWarning('notes/local.md')).toBe(
-      'notes/local.md is not tracked by git: its parts are not written to .cadre/',
-    )
+  test('the untracked warning names the file, cleaned; the unknown warning gives the files to no role', () => {
+    expect(untrackedPartsWarning('notes/local.md')).toBe('notes/local.md is not tracked by git: no role is given it')
     expect(untrackedPartsWarning(`notes/a\nb${BIDI_OVERRIDE}.md`)).toBe(
-      'notes/ab.md is not tracked by git: its parts are not written to .cadre/',
+      'notes/ab.md is not tracked by git: no role is given it',
     )
     expect(GIT_TRACKING_UNKNOWN_WARNING).toBe(
-      'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+      'could not ask git which instruction files it tracks: no role is given them',
     )
   })
 })

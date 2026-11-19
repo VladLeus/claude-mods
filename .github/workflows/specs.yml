@@ -1,6 +1,7 @@
 name: specs
 
-# Runs every mod's tests and validation, plus the cadre strict type check, on each PR and on main.
+# Runs every mod's tests and validation, the cadre and e2e strict type checks, and the e2e job on each PR and on main.
+# The e2e job runs the offline tier only: no claude login, no credential, no live tier.
 # `pull_request` (not `pull_request_target`): PR code runs with a read-only
 # token and no secrets. Actions are pinned to commit SHAs.
 on:
@@ -66,3 +67,20 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Type-check cadre (tsc strict)
         run: npm run typecheck:cadre
+      - name: Type-check e2e (tsc strict)
+        run: npm run typecheck:e2e
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install dev dependencies (lockfile only, no install scripts)
+        run: npm ci --ignore-scripts
+      - name: Run the offline e2e tier
+        run: npm run e2e

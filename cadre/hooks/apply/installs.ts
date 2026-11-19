@@ -4,8 +4,9 @@
  * installs (decision #39, D-141). It imports core, roles/infra and the types, so the apply runner and init read it
  * here.
  */
-import type { HostRun, SetupScan } from '../../types'
+import type { FrameworkId, HostRun, ProjectInstall, SetupScan } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
+import { adapterOf } from '../framework/registry'
 import { t, tn } from '../locales/t'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 
@@ -100,6 +101,61 @@ export function noHomeInstallText(key: string): string {
       command: pluginInstallArgv(shown).join(' '),
     })
   )
+}
+
+/** How long the slowest project install, GSD's npx install, may run before it is given up. */
+export const PROJECT_INSTALL_TIMEOUT_MS = 600_000
+
+/** The framework's install at project scope, as its adapter declares it; null when there is nothing to install. */
+export function projectInstallOf(id: FrameworkId): ProjectInstall | null {
+  return adapterOf(id).projectInstall
+}
+
+/** A plugin's install at project scope by its exact key, run from the repo root like a framework's install. */
+export function projectPluginInstall(key: string): ProjectInstall {
+  return Object.freeze({
+    id: key,
+    argv: Object.freeze(['claude', 'plugin', 'install', key, '--scope', 'project']),
+    timeoutMs: 180_000,
+    writes: Object.freeze(['enabledPlugins in .claude/settings.json']),
+    runs: Object.freeze([]),
+    isPlugin: true,
+  })
+}
+
+/** The text init prints for a project install that failed: the command to run by hand from the repo root. */
+export function projectInstallFailureText(install: ProjectInstall): string {
+  return t('apply.installs.projectInstallFailureText', {
+    shown: reportText(install.id),
+    command: reportText(install.argv.join(' ')),
+  })
+}
+
+/**
+ * The line of a framework install that did not land: who fell back to what, the command to run, then
+ * /cadre frameworks again.
+ */
+export function frameworkFallbackText(fallen: {
+  readonly name: string
+  readonly command: string
+  readonly roles: readonly string[]
+  readonly isRepoDefault: boolean
+  readonly fallback: string
+}): string {
+  const { name, roles, isRepoDefault, fallback } = fallen
+  const command = reportText(fallen.command)
+  const moved = [
+    ...(roles.length === 0 ? [] : [tn('apply.installs.fallbackRoles', roles.length, { ids: roles.join(', ') })]),
+    ...(isRepoDefault ? [t('apply.installs.fallbackDefault')] : []),
+  ]
+  if (moved.length === 0) return t('apply.installs.frameworkFallbackNone', { name, command })
+
+  return t('apply.installs.frameworkFallback', {
+    name,
+    moved: moved.join(t('apply.installs.namesJoin')),
+    fallback,
+    command,
+  })
 }
 
 /**

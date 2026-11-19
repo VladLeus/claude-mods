@@ -14,6 +14,8 @@ import { compareText } from '../core/text'
 import { GSD_ADAPTER } from '../framework/gsd/adapter'
 import { BUILTIN_ADAPTER } from '../framework/none/adapter'
 import { SUPERPOWERS_ADAPTER } from '../framework/superpowers/adapter'
+import { ARTIFACT } from '../locales/artifact'
+import { fill } from '../locales/t'
 import { scopeCardLines } from '../scope/card'
 import { parseCadreState } from '../state/cadre-files'
 import {
@@ -26,10 +28,16 @@ import {
   TEMPLATE_ROLES,
   templateRole,
 } from '../testkit'
-import { cadreJsonText, indexMdText, partsBody, roleClaudeMdText, roleMdText } from './docs'
+import { cadreJsonText, indexMdText, partsBody, roleClaudeMdText, roleMdText, rubricText } from './docs'
+import type { RoleMdTeam } from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { builtClaudeMdPath } from './launcher'
+
+/** The idle wait sentence, spelled out so the specs pin its words. */
+const IDLE_WAIT =
+  'When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ' +
+  'when your task is finished, give the done answer autopilot asks for.'
 
 /** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
 function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
@@ -85,6 +93,7 @@ const BE_PATHS: readonly string[] = [
   '.cadre/be/settings.json',
   '.cadre/bin/be',
   '.cadre/cadre.json',
+  '.cadre/sizing.md',
 ]
 
 /** The desired paths that belong to one role: its folder and its launcher. */
@@ -92,68 +101,59 @@ function pathsOfRole(files: readonly DesiredFile[], id: string): string[] {
   return files.map(file => file.path).filter(path => path.startsWith(`.cadre/${id}/`) || path === `.cadre/bin/${id}`)
 }
 
-/** The first line of the built CLAUDE.md of role `id`, as the plan writes it (G-02-1f, D-140). */
+/** The first line of the built CLAUDE.md of role `id`, as the plan writes it. */
 function builtHeader(id: string): string {
   return (
-    `<!-- cadre: instructions for role ${id}, built from this repo's CLAUDE.md files, rules and docs. ` +
-    `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
+    `<!-- cadre: instructions for role ${id}. The repo's CLAUDE.md files and rules given to this role load from ` +
+    `their originals; after you change them, run /cadre regen ${id}. -->`
   )
 }
 
+/** The root AGENTS.md of the repo as one part, read with no heading. */
+const AGENTS_PART = part('P4', 'AGENTS.md', '', 'Work in small steps.\n')
+
+describe('rubricText', () => {
+  const lines = rubricText().split('\n')
+
+  test('printable ASCII lines ending in one newline, the same text every time, with no date and no count', () => {
+    expect(/^[\x20-\x7E\n]*$/.test(rubricText())).toBe(true)
+    expect([rubricText().endsWith('\n'), rubricText().endsWith('\n\n')]).toEqual([true, false])
+    expect(rubricText()).toBe(rubricText())
+    expect(/\d{4}-\d{2}-\d{2}/.test(rubricText())).toBe(false)
+  })
+
+  test('each of the four dimensions has a heading with its anchors at 0.2, 0.5 and 0.9, in that order', () => {
+    for (const dimension of ['scope', 'complexity', 'risk', 'effort']) {
+      const at = lines.findIndex(line => line.startsWith(`## ${dimension}: `))
+
+      expect(at).toBeGreaterThan(0)
+      expect(lines.slice(at + 1, at + 4).map(line => line.slice(0, 7))).toEqual(['- 0.2: ', '- 0.5: ', '- 0.9: '])
+    }
+  })
+
+  test('it says a size is the highest of the four scores and is large at the threshold in cadre.json', () => {
+    const text = rubricText()
+
+    expect(text).toContain('highest of its four scores')
+    expect(text).toContain('sizing.threshold in .cadre/cadre.json')
+    expect(text).toContain('from 0.1 to 1.0')
+  })
+})
+
 describe('roleClaudeMdText (G-02-1f)', () => {
-  test('the header line, a blank line, then each part under its marker, a blank line apart, one final newline', () => {
-    expect(roleClaudeMdText('be', [RULES_PART, SECRETS_PART])).toBe(
-      [
-        builtHeader('be'),
-        '',
-        '<!-- from CLAUDE.md > Rules -->',
-        '# Rules',
-        'Run the tests before a commit.',
-        '',
-        '<!-- from .claude/rules/security.md > Secrets -->',
-        '## Secrets',
-        'Keep keys out of the repo.',
-        '',
-      ].join('\n'),
-    )
-  })
-
-  test('the parts come in the order given, read order, and a part with no heading is marked (top of file)', () => {
-    const top = part('P1', 'AGENTS.md', '', 'Work in small steps.\nAsk before a large change.')
-    const lines = roleClaudeMdText('qa', [top, SECRETS_PART]).split('\n')
-
-    expect(lines.filter(line => line.startsWith('<!-- from '))).toEqual([
-      '<!-- from AGENTS.md > (top of file) -->',
-      '<!-- from .claude/rules/security.md > Secrets -->',
-    ])
-    expect(lines.slice(0, 6)).toEqual([
-      builtHeader('qa'),
-      '',
-      '<!-- from AGENTS.md > (top of file) -->',
-      'Work in small steps.',
-      'Ask before a large change.',
-      '',
-    ])
-  })
-
-  test('a part read with CRLF line ends is written with LF, and the text ends with exactly one newline', () => {
-    const crlf = part('P2', 'CLAUDE.md', 'Rules', '# Rules\r\nRun the tests.\r\n\r\n')
-    const text = roleClaudeMdText('be', [crlf])
-
-    expect(text.includes('\r')).toBe(false)
-    expect(text.endsWith('<!-- from CLAUDE.md > Rules -->\n# Rules\nRun the tests.\n')).toBe(true)
-  })
-
-  test("a '--' in a marker's file or heading is written '- -', so only the marker's end closes it (N2)", () => {
-    const dashed = part('P2', 'x--y.md', 'a --> b', 'Text.\n')
-    const marker = roleClaudeMdText('be', [dashed]).split('\n')[2] ?? ''
-
-    expect(marker).toBe('<!-- from x- -y.md > a - -> b -->')
-    expect(marker.split('-->')).toEqual(['<!-- from x- -y.md > a - -> b ', ''])
-  })
-
   test('with no part the text is the header line alone, with its newline', () => {
     expect(roleClaudeMdText('be', [])).toBe(`${builtHeader('be')}\n`)
+  })
+
+  test('a role given AGENTS.md gets the header, a blank line and its import line; no marker and no part text', () => {
+    const text = roleClaudeMdText('be', [RULES_PART, AGENTS_PART])
+
+    expect(text).toBe(`${builtHeader('be')}\n\n@../../AGENTS.md\n`)
+    expect([text.includes('<!-- from '), text.includes('Run the tests'), text.includes('small steps')]).toEqual([
+      false,
+      false,
+      false,
+    ])
   })
 
   test('builtClaudeMdPath is the one home of a role built CLAUDE.md path, the one desiredFiles writes (S6)', () => {
@@ -161,45 +161,14 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     expect(builtClaudeMdPath('security')).toBe('.cadre/security/CLAUDE.md')
   })
 
-  test('partsBody is the text after the header: a blank line before each part, one final newline (N5)', () => {
-    expect(partsBody([])).toBe('\n')
-    expect(partsBody([RULES_PART, SECRETS_PART])).toBe(
-      [
-        '',
-        '',
-        '<!-- from CLAUDE.md > Rules -->',
-        '# Rules',
-        'Run the tests before a commit.',
-        '',
-        '<!-- from .claude/rules/security.md > Secrets -->',
-        '## Secrets',
-        'Keep keys out of the repo.',
-        '',
-      ].join('\n'),
-    )
-    expect(roleClaudeMdText('be', [RULES_PART])).toBe(`${builtHeader('be')}${partsBody([RULES_PART])}`)
-  })
-
-  test('a file name or heading with a line break or a bidi character adds no line to the file', () => {
-    const hostile = part('P2', `docs/a\nb${BIDI_OVERRIDE}.md`, `Ru\rles${BIDI_OVERRIDE}`, '# Rules\nRun the tests.\n')
-
-    expect(roleClaudeMdText('be', [hostile]).split('\n').slice(2)).toEqual([
-      '<!-- from docs/ab.md > Rules -->',
-      '# Rules',
-      'Run the tests.',
-      '',
-    ])
-  })
-
-  test('desiredFiles adds .cadre/<id>/CLAUDE.md, a plain file: the repo parts given, else the header alone', () => {
+  test('desiredFiles adds .cadre/<id>/CLAUDE.md, a plain file: the header alone whatever repo parts it got', () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
     const repoParts = new Map([['be', [RULES_PART, SECRETS_PART]]])
     const files = desiredFiles(inputOf([pm, be], 'gsd', { repoParts }))
-    const content = roleClaudeMdText('be', [RULES_PART, SECRETS_PART])
 
     expect(files.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([
-      { path: '.cadre/be/CLAUDE.md', content, mode: 'file' },
+      { path: '.cadre/be/CLAUDE.md', content: `${builtHeader('be')}\n`, mode: 'file' },
       { path: '.cadre/pm/CLAUDE.md', content: `${builtHeader('pm')}\n`, mode: 'file' },
     ])
     expect(pathsOfRole(files, 'be')).toEqual(['.cadre/be/CLAUDE.md', ...BE_PATHS.filter(path => path.includes('/be'))])
@@ -215,9 +184,17 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     ])
     const files = desiredFiles(inputOf([pm, be], 'gsd', { repoParts }))
 
-    expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(roleClaudeMdText('be', [RULES_PART]))
+    expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(`${builtHeader('be')}\n`)
     expect(contentOf(files, '.cadre/pm/CLAUDE.md')).toBe(`${builtHeader('pm')}\n`)
     expect(files.filter(file => file.content.includes(GLOBAL_ONLY_SENTENCE))).toEqual([])
+  })
+
+  test('a global part named AGENTS.md gives no @ line: only repo parts reach the built file (T-02-69)', () => {
+    const be = templateRole('be')
+    const repoParts = new Map([['be', [{ ...GLOBAL_PART, file: 'AGENTS.md' }]]])
+    const files = desiredFiles(inputOf([be], 'gsd', { repoParts }))
+
+    expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(`${builtHeader('be')}\n`)
   })
 
   test('without repoParts the files are those of the whole-files flow; with no part, those and the header file', () => {
@@ -228,6 +205,71 @@ describe('roleClaudeMdText (G-02-1f)', () => {
 
     expect(without.map(file => file.path)).toEqual(BE_PATHS)
     expect(empty).toEqual([...without, header].sort((a, b) => compareText(a.path, b.path)))
+  })
+})
+
+describe('partsBody, the parts of the private role file (N5)', () => {
+  test('a blank line before each part under its marker, one final newline; a newline alone with no part', () => {
+    expect(partsBody([])).toBe('\n')
+    expect(partsBody([RULES_PART, SECRETS_PART])).toBe(
+      [
+        '',
+        '',
+        '<!-- from CLAUDE.md > Rules -->',
+        '# Rules',
+        'Run the tests before a commit.',
+        '',
+        '<!-- from .claude/rules/security.md > Secrets -->',
+        '## Secrets',
+        'Keep keys out of the repo.',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  test('the parts come in the order given, read order, and a part with no heading is marked (top of file)', () => {
+    const top = part('P1', 'AGENTS.md', '', 'Work in small steps.\nAsk before a large change.')
+    const lines = partsBody([top, SECRETS_PART]).split('\n')
+
+    expect(lines.filter(line => line.startsWith('<!-- from '))).toEqual([
+      '<!-- from AGENTS.md > (top of file) -->',
+      '<!-- from .claude/rules/security.md > Secrets -->',
+    ])
+    expect(lines.slice(0, 6)).toEqual([
+      '',
+      '',
+      '<!-- from AGENTS.md > (top of file) -->',
+      'Work in small steps.',
+      'Ask before a large change.',
+      '',
+    ])
+  })
+
+  test('a part read with CRLF line ends is written with LF, and the text ends with exactly one newline', () => {
+    const crlf = part('P2', 'CLAUDE.md', 'Rules', '# Rules\r\nRun the tests.\r\n\r\n')
+    const text = partsBody([crlf])
+
+    expect(text.includes('\r')).toBe(false)
+    expect(text.endsWith('<!-- from CLAUDE.md > Rules -->\n# Rules\nRun the tests.\n')).toBe(true)
+  })
+
+  test("a '--' in a marker's file or heading is written '- -', so only the marker's end closes it (N2)", () => {
+    const dashed = part('P2', 'x--y.md', 'a --> b', 'Text.\n')
+    const marker = partsBody([dashed]).split('\n')[2] ?? ''
+
+    expect(marker).toBe('<!-- from x- -y.md > a - -> b -->')
+    expect(marker.split('-->')).toEqual(['<!-- from x- -y.md > a - -> b ', ''])
+  })
+
+  test('a file name or heading with a line break or a bidi character adds no line to the file', () => {
+    const hostile = part('P2', `docs/a\nb${BIDI_OVERRIDE}.md`, `Ru\rles${BIDI_OVERRIDE}`, '# Rules\nRun the tests.\n')
+
+    expect(partsBody([hostile]).split('\n').slice(2)).toEqual([
+      '<!-- from docs/ab.md > Rules -->',
+      '# Rules',
+      'Run the tests.',
+      '',
+    ])
   })
 })
 
@@ -242,9 +284,129 @@ const ADAPTER_OF: Readonly<Record<FrameworkId, FrameworkAdapter>> = {
   none: BUILTIN_ADAPTER,
 }
 
+/** The template team as init records it when the user keeps cadre's core team. */
+const CORE_TEAM: RoleMdTeam = { isCore: true, roles: TEMPLATE_ROLES }
+
+/** The template TL renamed to `lead`, and the core team it leads. */
+const LEAD = templateRole('tl', { id: 'lead', title: 'Lead' })
+const LEAD_TEAM: RoleMdTeam = { isCore: true, roles: TEMPLATE_ROLES.map(role => (role.id === 'tl' ? LEAD : role)) }
+
+/** The core TL's fed-ticket and brief lines, spelled out so the specs pin their words. */
+const CORE_TL_FED =
+  "Work only on the ticket PM fed, and answer PM's code-fact questions during the grill; do no research on later " +
+  'tickets.'
+const CORE_TL_BRIEF =
+  'Send each implementer a brief, not a plan: the goal, the acceptance criteria, your architecture decisions with ' +
+  'their reasons, the areas at risk, what is out of scope, the report form and what must be proven. Leave out ' +
+  'method signatures, spec bodies and commands.'
+const CORE_TL_HOLD = 'Do not dispatch the part of a task an open product question affects.'
+
+/** The core TL's trust, failed-report, routing, wait and report lines, spelled out so the specs pin their words. */
+const CORE_TL_TRUST =
+  "Trust the implementer's report: read the diff for architecture and scope fit, and do not re-run the checks it " +
+  'lists as run.'
+const CORE_TL_FAILED =
+  "On a failed or partial report, decide on the implementer's proposed answer; dig deeper only when that answer " +
+  'does not hold.'
+const CORE_TL_QA =
+  'Once the implementer reports, send QA a verify task (inbox_send kind task): QA runs the specs and checks and ' +
+  'reports.'
+const CORE_TL_SECURITY =
+  'When the implementers and QA have reported a ticket done, send Security the ticket (inbox_send kind task); ' +
+  'Security reviews the whole change and decides itself what is risky.'
+const CORE_TL_SECURITY_NO_QA =
+  'When the implementers have reported a ticket done, send Security the ticket (inbox_send kind task); Security ' +
+  'reviews the whole change and decides itself what is risky.'
+const CORE_TL_FINDINGS =
+  'Security reports every finding to you with its severity; you decide which ones to raise with the person.'
+const CORE_TL_WAIT =
+  'Wait for a report with wait_for reason session-answer and a timeout, and for your own subagents with reason ' +
+  'subagent-result and a timeout; with nothing to wait for, use reason idle-inbox and no timeout.'
+const CORE_TL_REPORT =
+  "Wait for the implementer's report and the QA and Security reports you asked for, then report to PM in the form " +
+  'PM asked (by default: outcome, changes, verification, the vector with its reason, the framework used, the doc ' +
+  'paths and the open questions) and wait for the next ticket.'
+
+/** A core worker's plan, blocker and report lines, spelled out so the specs pin their words. */
+const CORE_WORKER_PLAN =
+  "Plan each task yourself from TL's brief (the brief is not a plan), do it, and run the repo's specs, lint and " +
+  'checks with the commands you know.'
+const CORE_WORKER_BLOCKED =
+  'When a check fails or cannot run (a service is down, the environment blocks it), study it and send TL a question ' +
+  'at once with your analysis and a proposed answer (PM in a team without TL); do not hold it to the end of the task.'
+const CORE_WORKER_REPORT =
+  'Report each task to TL when it is done (to PM in a team without TL), then wait for the next; report a task whose ' +
+  'checks did not run as partial, never as complete.'
+
+/** Core Security's review and findings report lines, spelled out so the specs pin their words. */
+const CORE_SECURITY_REVIEW =
+  'When TL sends you a ticket, review its whole change and decide yourself what in it is risky.'
+const CORE_SECURITY_REPORT =
+  'Report every finding to TL with its severity (to PM in a team without TL): a blocking one at once, the rest when ' +
+  'the review is done; then wait for the next ticket.'
+
+/** The core PM's How you work lines, spelled out so the specs pin their words. */
+const CORE_PM_INTRO =
+  'As PM you fetch the work, grill the user, brief TL, feed it the tickets and accept the reports; you do not plan, ' +
+  'build or verify code.'
+const CORE_PM_FETCH = 'Fetch: get the epic and its tickets with your tracker MCP.'
+const CORE_PM_GRILL = 'Grill: grill the user on the epic and every ticket, as the Hierarchy section says.'
+const CORE_PM_BRIEF =
+  'Brief: send TL the brief with the planning mode the user confirmed (your roles in a team without TL).'
+const CORE_PM_FEED = 'Feed: send TL one ticket at a time with its key, your scope and risk scores and the report form.'
+const CORE_PM_ACCEPT = "Accept: check each report against the ticket's acceptance criteria, then feed the next ticket."
+const CORE_PM_DEPS =
+  'Before the grill, resolve every dependency a ticket names (linked tickets, spikes, docs) in the tracker and the ' +
+  'repo, and put what you find into the grill.'
+const CORE_PM_FACTS =
+  'For code facts, send TL a question (inbox_send kind question) and keep those grill branches open until TL answers.'
+const CORE_PM_NOT_FOUND =
+  'Report a fact you could not find as "not found by me (searched X)", naming where you searched; never as ' +
+  '"not in the repo".'
+const CORE_PM_OUTCOMES =
+  'State what must be true (acceptance criteria, behaviour, scope); leave code structure, tests and review routing ' +
+  'to TL.'
+const CORE_PM_REPORT_FORM =
+  'In the report form, ask for verification as a summary, with the details in the docs named in docPaths.'
+
+/** The core PM's ask and decide-alone lines, and the custom PM's line they replace, spelled out. */
+const CORE_PM_ASK =
+  'Make no product decision without the user: send a product question to the user (AskUserQuestion while they are ' +
+  'here, queue_question while they are away) whenever its answer changes or narrows an acceptance criterion, a ' +
+  'user-visible flow or a decision the user made, or picks between real alternatives.'
+const CORE_PM_DECIDE_ALONE =
+  'Decide alone only when the answer follows directly from a grill answer, and log which grill answer it follows from.'
+const PM_GRILL_CRITICAL = 'After the grill, ask the user only critical questions.'
+
+/** The core team's ask lines, spelled out so the specs pin their words. */
+const CORE_ASK_USER = 'Outside an epic you start with --ask-user: ask the person yourself with AskUserQuestion.'
+const CORE_EPIC_ASK =
+  'In an epic you start with --ask-user too: ask the person with AskUserQuestion while they are here and with ' +
+  'queue_question while they are away.'
+const CORE_EPIC_NO_ASK =
+  'In an epic you start without --ask-user: send what only a person can do or decide (start a service, accept a ' +
+  'risk) to TL as a question, and TL asks the person.'
+const CORE_TL_ASK =
+  'Ask the person about architecture and high-level decisions, and about what an implementer sends you that only ' +
+  'a person can do or decide.'
+const CORE_SECURITY_ASK = 'Ask the person when a matter is unclear or a risk must be accepted that TL cannot accept.'
+
+/** What the built-in framework's kickoff tells a role and the core PM's How you work leaves out. */
+const BUILD_LOOP_WORDS: readonly string[] = ['plan.md', 'test and lint', 'do not ask the human', 'ExitPlanMode']
+
 /** The lines of a document that start a section. */
 function headings(text: string): string[] {
   return text.split('\n').filter(line => line.startsWith('## '))
+}
+
+/** The lines of a document from `heading` up to the next heading or the end; [] when it has no such heading. */
+function sectionLines(text: string, heading: string): string[] {
+  const lines = text.split('\n')
+  const at = lines.indexOf(heading)
+  if (at < 0) return []
+  const end = lines.findIndex((line, index) => index > at && line.startsWith('## '))
+
+  return lines.slice(at, end < 0 ? lines.length : end)
 }
 
 /** The lines of a document that start with `Attended:` at the left margin: the banner, never an indented card rule. */
@@ -273,11 +435,20 @@ describe('role documents', () => {
     ])
   })
 
-  test('ROLE.md has the sections How you work, Decisions, Handoffs, Inbox and Scope, in that order', () => {
+  test('ROLE.md has How you work, Decisions, Handoffs, Inbox, Planning docs, Hierarchy, Sizing and Scope', () => {
     const be = templateRole('be')
     const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
 
-    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Inbox', '## Scope'])
+    expect(headings(text)).toEqual([
+      '## How you work',
+      '## Decisions',
+      '## Handoffs',
+      '## Inbox',
+      '## Planning docs',
+      '## Hierarchy',
+      '## Sizing',
+      '## Scope',
+    ])
     expect(text.endsWith('\n')).toBe(true)
     expect(text.endsWith('\n\n')).toBe(false)
   })
@@ -341,22 +512,30 @@ describe('role documents', () => {
     )
   })
 
-  test('Inbox names the inbox of the role id and how to leave a note for another role, in two lines (D-114)', () => {
-    const be = templateRole('be')
-    const api = templateRole('be', { id: 'api', title: 'Backend API' })
-    const text = roleMdText(be, scopeOf(be, 'gsd', [be]))
+  test(
+    'Inbox names the inbox in the user config folder, the three inbox tools, the idle wait and the states, ' +
+      'in four lines',
+    () => {
+      const be = templateRole('be')
+      const api = templateRole('be', { id: 'api', title: 'Backend API' })
+      const text = roleMdText(be, scopeOf(be, 'gsd', [be]))
 
-    expect(text).toContain(
-      '## Inbox\n\n' +
-        'Your inbox is .cadre/be/.runtime/inbox.md, a path from the git root. ' +
-        'Read it when you start and after every restart.\n' +
-        'To leave a note for another role, append one dated line to .cadre/<role id>/.runtime/inbox.md of that role ' +
-        '(the role ids are in .cadre/INDEX.md); never edit or delete a line that is there.\n\n## Scope\n',
-    )
-    expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(
-      '\n\nYour inbox is .cadre/api/.runtime/inbox.md, a path from the git root. ',
-    )
-  })
+      expect(text).toContain(
+        '## Inbox\n\n' +
+          'Your inbox lives in your user config folder, outside the repo, and only the cadre inbox tools write it. ' +
+          'Read it with inbox_read when you start, after every restart and when a wait ends.\n' +
+          IDLE_WAIT + '\n' +
+          'Send a message to another role with inbox_send (the role ids are in .cadre/INDEX.md).\n' +
+          'Each new entry is unread. Mark it with inbox_mark: read, awaiting (waitsFor: the id of the entry ' +
+          'you wait for), blocked (name what it waits on), rejected (with the reason; it goes back up) or done (a ' +
+          'one-line outcome). Never edit an inbox file by hand: only the cadre inbox tools write them.\n\n' +
+          '## Planning docs\n',
+      )
+      expect(text).not.toContain('inbox.md')
+      expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(`\n\n${ARTIFACT.roleMdInboxLine}\n`)
+      expect(ARTIFACT.roleMdInboxLine).not.toContain('.cadre')
+    },
+  )
 
   test('Scope holds the lines of the scope card', () => {
     const be = templateRole('be', { mcp: ['jira'] })
@@ -394,14 +573,22 @@ describe('role documents', () => {
     expect(text).not.toContain('Attended: Attended:')
   })
 
-  test('a PM on GSD in an attended context has two Attended card rules and still one banner', () => {
+  test('a PM on GSD in an attended context has three Attended card rules and still one banner', () => {
     const pm = templateRole('pm')
     const scope = scopeOf(pm, 'gsd', TEMPLATE_ROLES, { isAttended: true })
     const text = roleMdText(pm, scope)
 
     expect(bannerLines(text)).toEqual([ATTENDED_LINE])
-    expect(text.split('\n').filter(line => line.startsWith('    [none] Attended:'))).toHaveLength(2)
+    expect(text.split('\n').filter(line => line.startsWith('    [none] Attended:'))).toHaveLength(3)
     expect(text).not.toContain('Attended: Attended:')
+  })
+
+  test('TL on GSD, started with --ask-user, holds the banner once; BE on GSD holds none', () => {
+    const banners = [templateRole('tl'), templateRole('be')].map(
+      role => roleMdText(role, scopeOf(role, 'gsd', TEMPLATE_ROLES)).split(ARTIFACT.roleMdAttended).length - 1,
+    )
+
+    expect(banners).toEqual([1, 0])
   })
 
   test('a title and a purpose are cleaned before they reach the document', () => {
@@ -412,7 +599,16 @@ describe('role documents', () => {
     expect(leaks(text, [BIDI_OVERRIDE])).toEqual([])
     expect(lines[0]).toBe('# PM (cadre role pm)')
     expect(lines[2]).toBe('Owns a thing.## Injectedmore')
-    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Inbox', '## Scope'])
+    expect(headings(text)).toEqual([
+      '## How you work',
+      '## Decisions',
+      '## Handoffs',
+      '## Inbox',
+      '## Planning docs',
+      '## Hierarchy',
+      '## Sizing',
+      '## Scope',
+    ])
   })
 
   test('INDEX.md of two roles is the header, the table header and one row each, in role order', () => {
@@ -429,9 +625,9 @@ describe('role documents', () => {
         '| Role | Purpose | Framework | Model | Scope | Launcher | Handoffs |',
         '| --- | --- | --- | --- | --- | --- | --- |',
         '| PM (pm) | Owns product decisions: scope, requirements and acceptance. | GSD | opus + medium | ' +
-          'no Bash; MCP: none; skills: 8 | .cadre/bin/pm | thoughts/shared/handoffs/pm/ |',
+          'no Bash; MCP: none; skills: 12 | .cadre/bin/pm | thoughts/shared/handoffs/pm/ |',
         '| BE (be) | Implements the backend and core code. | GSD | opus + medium | ' +
-          'sandboxed Bash; MCP: none; skills: 8 | .cadre/bin/be | thoughts/shared/handoffs/be/ |',
+          'sandboxed Bash; MCP: none; skills: 12 | .cadre/bin/be | thoughts/shared/handoffs/be/ |',
         '',
       ].join('\n'),
     )
@@ -440,7 +636,7 @@ describe('role documents', () => {
   test('the scope cell lists the MCP servers sorted and counts the skills the role can run, by framework', () => {
     const be = templateRole('be', { mcp: ['jira', 'github'], skills: ['codex:rescue', 'my-skill', 'gsd-plan-phase'] })
     const expected: readonly (readonly [FrameworkId, string])[] = [
-      ['gsd', 'sandboxed Bash; MCP: github, jira; skills: 10'],
+      ['gsd', 'sandboxed Bash; MCP: github, jira; skills: 14'],
       ['superpowers', 'sandboxed Bash; MCP: github, jira; skills: 9'],
       ['none', 'sandboxed Bash; MCP: github, jira; skills: 5'],
     ]
@@ -516,6 +712,606 @@ describe('role documents', () => {
       for (const launchStart of starts) {
         const text = cadreJsonText({ ...state, launchStart, readUserMcp })
         expect(parseCadreState(text)).toEqual({ ...state, launchStart, readUserMcp })
+      }
+    }
+  })
+})
+
+describe("the core PM's How you work", () => {
+  const howYouWork = (text: string): string[] => sectionLines(text, '## How you work')
+
+  test('a core PM works by fetch, grill, brief, feed and accept, with no build loop and no ask gate', () => {
+    const pms = [templateRole('pm'), templateRole('pm', { id: 'product', title: 'Product' })]
+
+    for (const framework of FRAMEWORKS) {
+      for (const pm of pms) {
+        const section = howYouWork(roleMdText(pm, scopeOf(pm, framework, TEMPLATE_ROLES), CORE_TEAM))
+
+        expect(section).toEqual([
+          '## How you work',
+          '',
+          CORE_PM_INTRO,
+          CORE_PM_FETCH,
+          CORE_PM_DEPS,
+          CORE_PM_GRILL,
+          CORE_PM_FACTS,
+          CORE_PM_NOT_FOUND,
+          CORE_PM_BRIEF,
+          CORE_PM_FEED,
+          CORE_PM_OUTCOMES,
+          CORE_PM_REPORT_FORM,
+          CORE_PM_ACCEPT,
+          '',
+        ])
+        expect(BUILD_LOOP_WORDS.filter(words => section.join('\n').includes(words))).toEqual([])
+      }
+    }
+  })
+
+  test('a PM of a custom or unrecorded team keeps the kickoff text of its framework', () => {
+    const pm = templateRole('pm')
+
+    for (const framework of FRAMEWORKS) {
+      const text = roleMdText(pm, scopeOf(pm, framework, TEMPLATE_ROLES))
+      const kickoff = ADAPTER_OF[framework].kickoffText({ title: 'PM', roleId: 'pm', specPath: null })
+
+      expect(text).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
+    }
+    const builtin = howYouWork(roleMdText(pm, scopeOf(pm, 'none', TEMPLATE_ROLES))).join('\n')
+
+    expect(BUILD_LOOP_WORDS.filter(words => builtin.includes(words))).toEqual(BUILD_LOOP_WORDS)
+  })
+})
+
+/** The built-in question gate of a role that asks the person in an epic, spelled out so the specs pin its words. */
+const BUILTIN_ASK_GATE =
+  '- any open question: Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ' +
+  'Security); ask the person only as your Hierarchy section says.'
+
+describe('How you work of the core TL and Security on the built-in framework', () => {
+  const howYouWork = (role: RoleSpec, team?: RoleMdTeam): string[] =>
+    sectionLines(roleMdText(role, scopeOf(role, 'none', TEMPLATE_ROLES), team), '## How you work')
+
+  test('the core TL works each ticket PM feeds as its Hierarchy says, with the ask gate and no build loop', () => {
+    const cases: readonly [RoleSpec, RoleMdTeam, string, string][] = [
+      [
+        templateRole('tl'),
+        CORE_TEAM,
+        'You are the Team Lead role. This repo has no dev framework: work each ticket PM feeds as your Hierarchy ' +
+          'section says.',
+        'Write .cadre/tl/.runtime/DONE.md with what you did and how you verified it, then answer with a line that ' +
+          'starts with AUTOPILOT_DONE.',
+      ],
+      [
+        LEAD,
+        LEAD_TEAM,
+        'You are the Lead role. This repo has no dev framework: work each ticket PM feeds as your Hierarchy section ' +
+          'says.',
+        'Write .cadre/lead/.runtime/DONE.md with what you did and how you verified it, then answer with a line that ' +
+          'starts with AUTOPILOT_DONE.',
+      ],
+    ]
+
+    for (const [tl, team, intro, doneLine] of cases) {
+      const section = howYouWork(tl, team)
+
+      expect(section).toEqual(['## How you work', '', intro, 'Human gates:', BUILTIN_ASK_GATE, doneLine, ''])
+      expect(BUILD_LOOP_WORDS.filter(words => section.join('\n').includes(words))).toEqual([])
+    }
+  })
+
+  test('core Security keeps its plan file and the ExitPlanMode gate, with no verify line and no ban on asking', () => {
+    const text = howYouWork(templateRole('security'), CORE_TEAM).join('\n')
+
+    expect(BUILD_LOOP_WORDS.filter(words => text.includes(words))).toEqual(['plan.md', 'ExitPlanMode'])
+  })
+
+  test('core BE and a custom TL and Security keep the whole build loop', () => {
+    const cases: readonly [RoleSpec, RoleMdTeam | undefined][] = [
+      [templateRole('be'), CORE_TEAM],
+      [templateRole('tl'), undefined],
+      [templateRole('security'), undefined],
+    ]
+
+    for (const [role, team] of cases) {
+      const text = howYouWork(role, team).join('\n')
+
+      expect([role.id, BUILD_LOOP_WORDS.filter(words => text.includes(words))]).toEqual([role.id, BUILD_LOOP_WORDS])
+    }
+  })
+})
+
+describe('How you work of core Security on GSD and superpowers', () => {
+  const security = templateRole('security')
+  const textOn = (framework: FrameworkId): string =>
+    roleMdText(security, scopeOf(security, framework, TEMPLATE_ROLES), CORE_TEAM)
+
+  test('it is the kickoff of a core reviewer that asks in an epic, on GSD with its Start and no Verify line', () => {
+    const frameworks: readonly FrameworkId[] = ['gsd', 'superpowers']
+
+    for (const framework of frameworks) {
+      const kickoff = ADAPTER_OF[framework].kickoffText({
+        title: 'Security',
+        roleId: 'security',
+        specPath: null,
+        isCoreReviewer: true,
+        asksInEpic: true,
+      })
+
+      expect(textOn(framework)).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
+    }
+    const gsd = sectionLines(textOn('gsd'), '## How you work').join('\n')
+
+    expect(gsd).not.toContain('Verify with /gsd-validate-phase')
+    expect(gsd).toContain('Start: /gsd-autonomous')
+  })
+
+  test('core Security keeps its Planning docs section on GSD', () => {
+    expect(headings(textOn('gsd'))).toContain('## Planning docs')
+  })
+})
+
+describe('the Planning docs section of ROLE.md', () => {
+  const planningDocs = (text: string): string[] => sectionLines(text, '## Planning docs')
+  const stepLines = (adapter: FrameworkAdapter, roleId: string, isLead: boolean): string[] =>
+    adapter.roleWork.startSteps({ roleId, isLead }).map(step => `- ${step}`)
+
+  test('TL that may run GSD and superpowers groups the steps under each framework, own framework first', () => {
+    const tl = templateRole('tl')
+    const scope = scopeOf(tl, 'gsd', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] })
+    const section = planningDocs(roleMdText(tl, scope))
+    const gsd = stepLines(GSD_ADAPTER, 'tl', true)
+    const superpowers = stepLines(SUPERPOWERS_ADAPTER, 'tl', true)
+
+    expect(section).toEqual([
+      '## Planning docs',
+      '',
+      ARTIFACT.roleMdPlanningIntro,
+      ARTIFACT.roleMdPlanningPick,
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'GSD', id: 'gsd' }),
+      ...gsd,
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'superpowers', id: 'superpowers' }),
+      ...superpowers,
+      '',
+    ])
+    expect(section.filter(line => line.startsWith('- '))).toEqual([...gsd, ...superpowers])
+  })
+
+  test('a role on superpowers that also runs gsd lists the superpowers group first', () => {
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'superpowers', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] })
+
+    expect(planningDocs(roleMdText(be, scope))).toEqual([
+      '## Planning docs',
+      '',
+      ARTIFACT.roleMdPlanningIntro,
+      ARTIFACT.roleMdPlanningPick,
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'superpowers', id: 'superpowers' }),
+      ...stepLines(SUPERPOWERS_ADAPTER, 'be', false),
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: 'GSD', id: 'gsd' }),
+      ...stepLines(GSD_ADAPTER, 'be', false),
+      '',
+    ])
+  })
+
+  test('BE on gsd has the worker steps with the no-TL step; BE on superpowers its plan file and the method', () => {
+    const be = templateRole('be')
+    const gsd = planningDocs(roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES)))
+    const superpowers = planningDocs(roleMdText(be, scopeOf(be, 'superpowers', TEMPLATE_ROLES))).join('\n')
+    const worker = GSD_ADAPTER.roleWork.startSteps({ roleId: 'be', isLead: false })
+
+    expect(gsd.filter(line => line.startsWith('- '))).toEqual(worker.map(step => `- ${step}`))
+    expect(gsd.join('\n')).toContain('no TL')
+    expect(superpowers).toContain('docs/superpowers/plans/be-<ticket>.md')
+    expect(superpowers).toContain('superpowers:subagent-driven-development')
+  })
+
+  test('BE on gsd alone or on superpowers alone has the intro and the steps, with no pick line and no label', () => {
+    const be = templateRole('be')
+    const alone: readonly FrameworkId[] = ['gsd', 'superpowers']
+
+    for (const framework of alone) {
+      const section = planningDocs(roleMdText(be, scopeOf(be, framework, TEMPLATE_ROLES)))
+
+      expect(section).toEqual([
+        '## Planning docs',
+        '',
+        ARTIFACT.roleMdPlanningIntro,
+        ...stepLines(ADAPTER_OF[framework], 'be', false),
+        '',
+      ])
+    }
+  })
+
+  test('the core TL has the lead steps without the quick or phase path', () => {
+    const steps = [ARTIFACT.gsdStepNewProject, ARTIFACT.gsdStepWorkstream, ARTIFACT.gsdStepMilestoneLead]
+    const cases: readonly [RoleSpec, RoleMdTeam][] = [
+      [templateRole('tl'), CORE_TEAM],
+      [LEAD, LEAD_TEAM],
+    ]
+
+    for (const [tl, team] of cases) {
+      const text = roleMdText(tl, scopeOf(tl, 'gsd', TEMPLATE_ROLES), team)
+      const howYouWork = sectionLines(text, '## How you work').join('\n')
+
+      expect(planningDocs(text)).toEqual([
+        '## Planning docs',
+        '',
+        ARTIFACT.roleMdPlanningIntro,
+        ...steps.map(step => `- ${step}`),
+        '',
+      ])
+      expect(howYouWork).not.toContain('Start: /gsd-autonomous')
+      expect(howYouWork).not.toContain('Verify with /gsd-validate-phase')
+    }
+    const custom = roleMdText(templateRole('tl'), scopeOf(templateRole('tl'), 'gsd', TEMPLATE_ROLES))
+
+    expect(planningDocs(custom).join('\n')).toContain('/gsd-quick')
+    expect(sectionLines(custom, '## How you work').join('\n')).toContain('Start: /gsd-autonomous')
+    expect(sectionLines(custom, '## How you work').join('\n')).toContain('Verify with /gsd-validate-phase')
+  })
+
+  test('PM on none has no Planning docs section, whatever the repo records', () => {
+    const pm = templateRole('pm')
+    const text = roleMdText(pm, scopeOf(pm, 'none', TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] }))
+
+    expect(headings(text)).not.toContain('## Planning docs')
+  })
+
+  test('every section line is printable ASCII, and none tells the role to write under .planning/ itself', () => {
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const scope = scopeOf(role, framework, TEMPLATE_ROLES, { alsoRuns: ['gsd', 'superpowers'] })
+        const section = planningDocs(roleMdText(role, scope))
+
+        expect(section.filter(line => !/^[\x20-\x7e]*$/.test(line))).toEqual([])
+        expect(section.filter(line => /\b(write|edit)\b[^.]*\.planning\//i.test(line))).toEqual([])
+      }
+    }
+  })
+})
+
+describe('the Hierarchy section of ROLE.md', () => {
+  /** The Hierarchy section of the ROLE.md of `role` on `framework` in the template team, as one text. */
+  function hierarchyOf(role: RoleSpec, framework: FrameworkId, team?: RoleMdTeam): string {
+    return sectionLines(roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES), team), '## Hierarchy').join('\n')
+  }
+
+  test('PM grills the user through AskUserQuestion rounds until nothing is open, then proposes the mode', () => {
+    const text = hierarchyOf(templateRole('pm'), 'none')
+
+    expect(text).toContain('grill the user on the epic and on every ticket in one attended run')
+    expect(text).toContain('Use mattpocock-skills:grilling for it when that skill is available.')
+    expect(text).toContain('AskUserQuestion: the whole open frontier per round, up to 4 questions per call')
+    expect(text).toContain('2-4 options each, the recommended option first')
+    expect(text).toContain('split a larger round over several calls')
+    expect(text).toContain('The grill is done when no question is open and the user confirms.')
+    expect(text).toContain('write the question as text and call wait_for with reason user-answer')
+    expect(text).toContain('propose a planning mode')
+    expect(text).toContain('do not move on before the user confirms it')
+    expect(text).toContain('send epic-end')
+  })
+
+  test('PM runs the grill itself with the same rules when the grill skill is not available', () => {
+    expect(hierarchyOf(templateRole('pm'), 'none')).toContain(
+      'When it is not available (its plugin was declined or did not install), ' +
+        'run the grill yourself with the same rules.',
+    )
+  })
+
+  test('the core PM sends every product question that moves an AC, a flow or a user decision to the user', () => {
+    for (const pm of [templateRole('pm'), templateRole('pm', { id: 'product', title: 'Product' })]) {
+      const lines = hierarchyOf(pm, 'none', CORE_TEAM).split('\n')
+
+      expect(lines.slice(lines.indexOf(ARTIFACT.roleMdPmGrillFeed), -1)).toEqual([
+        ARTIFACT.roleMdPmGrillFeed,
+        CORE_PM_ASK,
+        CORE_PM_DECIDE_ALONE,
+      ])
+      expect(lines).not.toContain(PM_GRILL_CRITICAL)
+    }
+    const custom = hierarchyOf(templateRole('pm'), 'none').split('\n')
+
+    expect(custom).toContain(PM_GRILL_CRITICAL)
+    expect(custom.filter(line => line === CORE_PM_ASK || line === CORE_PM_DECIDE_ALONE)).toEqual([])
+  })
+
+  test('the core TL holds the part of a task an open product question affects, right after the brief', () => {
+    for (const text of [hierarchyOf(templateRole('tl'), 'gsd', CORE_TEAM), hierarchyOf(LEAD, 'gsd', LEAD_TEAM)]) {
+      const lines = text.split('\n')
+
+      expect(lines[lines.indexOf(CORE_TL_BRIEF) + 1]).toBe(CORE_TL_HOLD)
+    }
+    expect(hierarchyOf(templateRole('tl'), 'gsd').split('\n')).not.toContain(CORE_TL_HOLD)
+  })
+
+  test('BE has no PM part', () => {
+    const be = templateRole('be')
+    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
+
+    expect(text).not.toContain('mattpocock-skills:grilling')
+    expect(text).not.toContain('grill the user')
+  })
+
+  test(
+    'TL sizes each ticket, plans it, sends BE and FE their tasks in parallel, waits and reports to PM ' +
+      '(custom or unrecorded team)',
+    () => {
+      const text = hierarchyOf(templateRole('tl'), 'gsd')
+
+      expect(text).toContain('Your ticket loop as TL: on each ticket PM sends, add complexity and effort')
+      expect(text).toContain('compute the size and pick the framework or GSD path')
+      expect(text).toContain('record the vector with a one-line reason')
+      expect(text).toContain('Plan the ticket in your own planning docs.')
+      expect(text).toContain('Send BE and FE their tasks in parallel (inbox_send kind task), split by area')
+      expect(text).toContain('a file both would touch is yours to serialise')
+      expect(text).toContain('Wait for every report, then report to PM in the form PM asked')
+      expect(text).toContain(
+        'outcome, changes, verification, the vector with its reason, the framework used, the doc paths and the open ' +
+          'questions',
+      )
+      expect(text).toContain('wait for the next ticket')
+    },
+  )
+
+  test('the core TL sizes each ticket, works only on the fed ticket, briefs and sends BE and FE their tasks', () => {
+    const texts = [hierarchyOf(templateRole('tl'), 'gsd', CORE_TEAM), hierarchyOf(LEAD, 'gsd', LEAD_TEAM)]
+
+    for (const text of texts) {
+      const lines = text.split('\n')
+
+      expect(lines.slice(lines.indexOf(ARTIFACT.roleMdTlLoop), -1)).toEqual([
+        ARTIFACT.roleMdTlLoop,
+        CORE_TL_FED,
+        CORE_TL_BRIEF,
+        CORE_TL_HOLD,
+        CORE_TL_ASK,
+        ARTIFACT.roleMdTlTasks,
+        CORE_TL_TRUST,
+        CORE_TL_FAILED,
+        CORE_TL_QA,
+        CORE_TL_SECURITY,
+        CORE_TL_FINDINGS,
+        CORE_TL_WAIT,
+        CORE_TL_REPORT,
+      ])
+      expect(text).toContain('Your ticket loop as TL: on each ticket PM sends, add complexity and effort')
+      expect(text).toContain('Send BE and FE their tasks in parallel (inbox_send kind task), split by area')
+      expect(text).not.toContain('Plan the ticket in your own planning docs.')
+      expect(text).not.toContain('Wait for every report, then report to PM')
+    }
+  })
+
+  test('a core team without QA or Security has no QA or Security line for TL', () => {
+    const tl = templateRole('tl')
+    const without = (...ids: readonly string[]): RoleSpec[] => TEMPLATE_ROLES.filter(role => !ids.includes(role.id))
+    const cases: readonly [readonly RoleSpec[], readonly string[]][] = [
+      [without('qa'), [CORE_TL_SECURITY_NO_QA, CORE_TL_FINDINGS]],
+      [without('security'), [CORE_TL_QA]],
+      [without('qa', 'security'), []],
+    ]
+
+    for (const [roles, routes] of cases) {
+      const text = roleMdText(tl, scopeOf(tl, 'gsd', roles), { isCore: true, roles })
+      const lines = sectionLines(text, '## Hierarchy')
+
+      expect(lines.slice(lines.indexOf(ARTIFACT.roleMdTlLoop), -1)).toEqual([
+        ARTIFACT.roleMdTlLoop,
+        CORE_TL_FED,
+        CORE_TL_BRIEF,
+        CORE_TL_HOLD,
+        CORE_TL_ASK,
+        ARTIFACT.roleMdTlTasks,
+        CORE_TL_TRUST,
+        CORE_TL_FAILED,
+        ...routes,
+        CORE_TL_WAIT,
+        CORE_TL_REPORT,
+      ])
+    }
+  })
+
+  test(
+    'a core worker that is not Security, an added role included, plans from the brief, runs the checks, raises a ' +
+      'blocker at once and reports partial',
+    () => {
+      const ops = templateRole('be', { id: 'ops', title: 'Ops', basedOn: null })
+      const workers = [...TEMPLATE_ROLES.filter(role => ['be', 'fe', 'qa'].includes(role.id)), ops]
+
+      expect(workers.map(role => role.id)).toEqual(['be', 'fe', 'qa', 'ops'])
+      for (const worker of workers) {
+        const lines = hierarchyOf(worker, 'gsd', CORE_TEAM).split('\n')
+
+        expect(lines.slice(lines.indexOf(CORE_WORKER_PLAN), -1)).toEqual([
+          CORE_WORKER_PLAN,
+          ARTIFACT.roleMdWorkerCommit,
+          CORE_WORKER_BLOCKED,
+          CORE_WORKER_REPORT,
+          ARTIFACT.roleMdWorkerNoTl,
+        ])
+        expect(lines).not.toContain(ARTIFACT.roleMdWorkerTask)
+        expect(lines).not.toContain(ARTIFACT.roleMdWorkerReport)
+      }
+    },
+  )
+
+  test(
+    'core Security reviews the whole change of a finished ticket and reports every finding with its severity, on ' +
+      'every framework',
+    () => {
+      const appsec = templateRole('security', { id: 'appsec', title: 'AppSec' })
+      const workerLines = [CORE_WORKER_PLAN, CORE_WORKER_BLOCKED, CORE_WORKER_REPORT]
+
+      for (const framework of FRAMEWORKS) {
+        for (const security of [templateRole('security'), appsec]) {
+          const lines = hierarchyOf(security, framework, CORE_TEAM).split('\n')
+
+          expect(lines.slice(lines.indexOf(CORE_SECURITY_REVIEW), -1)).toEqual([
+            CORE_SECURITY_REVIEW,
+            ARTIFACT.roleMdWorkerCommit,
+            CORE_SECURITY_REPORT,
+            ARTIFACT.roleMdWorkerNoTl,
+            CORE_SECURITY_ASK,
+          ])
+          expect(workerLines.filter(line => lines.includes(line))).toEqual([])
+        }
+      }
+      const customSecurity = hierarchyOf(templateRole('security'), 'gsd').split('\n')
+      const customTl = hierarchyOf(templateRole('tl'), 'gsd').split('\n')
+      const newLines = [
+        CORE_SECURITY_REVIEW,
+        CORE_SECURITY_REPORT,
+        CORE_TL_SECURITY,
+        CORE_TL_SECURITY_NO_QA,
+        CORE_TL_FINDINGS,
+      ]
+
+      expect(customSecurity).toContain(ARTIFACT.roleMdWorkerTask)
+      expect(newLines.filter(line => customSecurity.includes(line) || customTl.includes(line))).toEqual([])
+      expect(customTl.slice(customTl.indexOf(ARTIFACT.roleMdTlLoop), -1)).toEqual([
+        ARTIFACT.roleMdTlLoop,
+        ARTIFACT.roleMdTlPlan,
+        ARTIFACT.roleMdTlTasks,
+        ARTIFACT.roleMdTlReport,
+      ])
+    },
+  )
+
+  test(
+    'BE plans in its own docs, commits only its own files, reports to TL and sizes alone with no TL ' +
+      '(custom or unrecorded team)',
+    () => {
+      const text = hierarchyOf(templateRole('be'), 'gsd')
+
+      expect(text).toContain('Plan and execute each task in your own planning docs.')
+      expect(text).toContain('Commit only your own files on the epic branch: git add <paths>, never git add -A.')
+      expect(text).toContain('When git reports an index lock, wait and retry')
+      expect(text).toContain('never rebase or reset the shared branch')
+      expect(text).toContain('Report each task to TL when it is done')
+      expect(text).toContain('A technical question goes to your parent role and TL decides it')
+      expect(text).toContain('In a team without TL, PM sends you the ticket: add complexity and effort')
+      expect(text).toContain('take the no-TL step of Planning docs when it has one')
+    },
+  )
+
+  test(
+    'every role is told where a question goes, that in an epic only PM asks the user, a rejection and the epic end ' +
+      '(custom or unrecorded team)',
+    () => {
+      for (const role of TEMPLATE_ROLES) {
+        const text = hierarchyOf(role, 'gsd')
+
+        expect(text.startsWith('## Hierarchy\n\nA technical question goes to your parent role')).toBe(true)
+        expect(text).toContain('a product or ticket question goes straight to PM')
+        expect(text).toContain('In an epic, only PM asks the user')
+        expect(text).toContain('An entry you mark rejected goes back up to the role that sent it')
+        expect(text).toContain('On epic-end, mark your open inbox entries, write your handoff')
+        expect(text).toContain('AUTOPILOT_DONE; PM does this last.')
+      }
+    },
+  )
+
+  test('only a role started with --ask-user gets a line telling it to ask the person', () => {
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const lines = roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES)).split('\n')
+        const asks = lines.filter(line => /\bask the user\b|\bwith AskUserQuestion\b/i.test(line))
+
+        expect([role.id, asks.length > 0]).toEqual([role.id, role.autopilot.askUser])
+      }
+    }
+  })
+
+  test(
+    'a role started with --ask-user gets the line to ask the person outside an epic, after the epic line ' +
+      '(custom or unrecorded team)',
+    () => {
+      for (const role of TEMPLATE_ROLES) {
+        const lines = hierarchyOf(role, 'gsd').split('\n')
+        const at = lines.indexOf(ARTIFACT.roleMdHierarchyAskUser)
+        const isAfter = at > lines.indexOf(ARTIFACT.roleMdHierarchyCommonAsk)
+
+        expect([role.id, at >= 0, isAfter]).toEqual([role.id, role.autopilot.askUser, role.autopilot.askUser])
+      }
+    },
+  )
+
+  test('a core role is told whether it starts with --ask-user in an epic, with no PM-only line and no critical', () => {
+    const ops = templateRole('be', { id: 'ops', autopilot: { ...templateRole('be').autopilot, askUser: true } })
+    const cases: readonly [RoleSpec, readonly string[]][] = [
+      [templateRole('pm'), [CORE_ASK_USER, CORE_EPIC_ASK]],
+      [templateRole('tl'), [CORE_ASK_USER, CORE_EPIC_ASK]],
+      [templateRole('be'), [CORE_EPIC_NO_ASK]],
+      [templateRole('fe'), [CORE_EPIC_NO_ASK]],
+      [templateRole('qa'), [CORE_EPIC_NO_ASK]],
+      [templateRole('security'), [CORE_ASK_USER, CORE_EPIC_ASK]],
+      [ops, [CORE_ASK_USER, CORE_EPIC_NO_ASK]],
+    ]
+
+    for (const [role, askLines] of cases) {
+      const text = hierarchyOf(role, 'gsd', CORE_TEAM)
+      const custom = hierarchyOf(role, 'gsd')
+
+      expect(text.split('\n').slice(0, 5 + askLines.length)).toEqual([
+        '## Hierarchy',
+        '',
+        ARTIFACT.roleMdHierarchyCommonQuestions,
+        ARTIFACT.roleMdHierarchyCommonRejected,
+        ARTIFACT.roleMdHierarchyCommonEpicEnd,
+        ...askLines,
+      ])
+      expect(text).not.toContain('In an epic, only PM asks the user')
+      expect([role.id, /critical/i.test(text)]).toEqual([role.id, false])
+      expect(custom).toContain('In an epic, only PM asks the user')
+      expect([CORE_ASK_USER, CORE_EPIC_ASK, CORE_EPIC_NO_ASK].filter(line => custom.includes(line))).toEqual([])
+    }
+  })
+
+  test('the core TL and Security say what they ask the person about', () => {
+    for (const text of [hierarchyOf(templateRole('tl'), 'gsd', CORE_TEAM), hierarchyOf(LEAD, 'gsd', LEAD_TEAM)]) {
+      const lines = text.split('\n')
+
+      expect(lines.slice(0, 7)).toEqual([
+        '## Hierarchy',
+        '',
+        ARTIFACT.roleMdHierarchyCommonQuestions,
+        ARTIFACT.roleMdHierarchyCommonRejected,
+        ARTIFACT.roleMdHierarchyCommonEpicEnd,
+        CORE_ASK_USER,
+        CORE_EPIC_ASK,
+      ])
+      expect(lines[lines.indexOf(CORE_TL_HOLD) + 1]).toBe(CORE_TL_ASK)
+    }
+    const security = hierarchyOf(templateRole('security'), 'gsd', CORE_TEAM).split('\n')
+
+    expect(security.slice(-2)).toEqual([CORE_SECURITY_ASK, ''])
+    expect(hierarchyOf(templateRole('be'), 'gsd', CORE_TEAM)).not.toContain(CORE_SECURITY_ASK)
+    expect(hierarchyOf(templateRole('tl'), 'gsd')).not.toContain(CORE_TL_ASK)
+    expect(hierarchyOf(templateRole('security'), 'gsd')).not.toContain(CORE_SECURITY_ASK)
+  })
+
+  test('a custom role started with --ask-user gets the line to ask the person outside an epic too', () => {
+    const ops = templateRole('be', { id: 'ops', autopilot: { ...templateRole('be').autopilot, askUser: true } })
+
+    expect(hierarchyOf(ops, 'gsd').split('\n')).toContain(ARTIFACT.roleMdHierarchyAskUser)
+  })
+})
+
+describe('the Sizing section of ROLE.md', () => {
+  test('every role gets the four dimensions, who scores which, the size rule, the rubric and the user pin', () => {
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const text = roleMdText(role, scopeOf(role, framework, TEMPLATE_ROLES))
+        const section = sectionLines(text, '## Sizing').join('\n')
+
+        expect(section.startsWith('## Sizing\n\n')).toBe(true)
+        expect(section).toContain('four scores, each from 0.1 to 1.0: scope, complexity, risk and effort')
+        expect(section).toContain('PM scores scope and risk; TL adds complexity and effort')
+        expect(section).toContain('The size is the highest of the four')
+        expect(section).toContain('large at or over sizing.threshold in .cadre/cadre.json')
+        expect(section).toContain('the anchors in .cadre/sizing.md')
+        expect(section).toContain('A size the user pins on a ticket overrides the computed class.')
+        expect(text).toContain(`${section}\n## Scope\n`)
       }
     }
   })

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { CONTRACTS } from '../locales/contracts'
 import { isRoleId, RESERVED_ROLE_IDS, ROLE_ID_PATTERN } from './role-id'
 
 describe('ROLE_ID_PATTERN', () => {
@@ -29,9 +30,14 @@ describe('ROLE_ID_PATTERN', () => {
 })
 
 describe('isRoleId', () => {
-  test('bin, all and none are reserved: bin is the launcher folder, all and none are answer words', () => {
-    expect(RESERVED_ROLE_IDS).toEqual(['bin', 'all', 'none'])
+  test('bin, all, none and cadre are reserved: the launcher folder, two answer words and the cadre sender', () => {
+    expect(RESERVED_ROLE_IDS).toEqual(['bin', 'all', 'none', 'cadre'])
     expect(Object.isFrozen(RESERVED_ROLE_IDS)).toBe(true)
+  })
+
+  test('cadre is not a role id: it is the sender cadre signs its own inbox entries with', () => {
+    expect(isRoleId('cadre')).toBe(false)
+    expect(RESERVED_ROLE_IDS).toContain(CONTRACTS.cadreSender)
   })
 
   test('a slug that is not reserved is a role id', () => {

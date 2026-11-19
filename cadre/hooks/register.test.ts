@@ -23,9 +23,13 @@ import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
 import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
-import { t } from './locales/t'
+import { PROMPTS } from './locales/prompts'
+import { fill, t } from './locales/t'
+import { sessionRecordText } from './messages/record'
+import { BODY_MAX_CHARS, CHANGES_MAX_CHARS, LIST_ITEM_MAX_CHARS, LIST_MAX_ITEMS } from './messages/send'
+import { inboxDirOf, inboxFolderLevels, inboxHomeOf, ROLE_ENV, ROOT_ENV } from './paths'
 import { autopilotReply } from './scan/autopilot'
-import { REGEN_NO_STATE, regenNoRole } from './team'
+import { noStateReply, REGEN_NO_STATE, regenNoRole } from './team'
 import {
   ABSOLUTE_PATH_MARKERS,
   answerFor,
@@ -134,6 +138,13 @@ type World = {
   readonly tools: unknown
   /** The model's replies in order; once they run out, `model.complete` answers that the model gave no text. */
   readonly replies: readonly string[]
+  /**
+   * The runtime env of a role session: what `env.get` answers for CADRE_ROLE and CADRE_ROOT. Only such a world answers
+   * `tool.register` and `session.send`.
+   */
+  readonly roleEnv?: { readonly role: string; readonly root: string }
+  /** What a live send answers in a role world; delivered when absent. */
+  readonly sendResult?: { readonly isDelivered: boolean }
 }
 
 /**
@@ -160,6 +171,10 @@ type HostLog = {
   /** Each status line the plugin set, null for a clear (D-232). */
   readonly statuses: (string | null)[]
   readonly writes: string[]
+  /** Each live send of a role world, as `<to> <text>`. */
+  readonly sends: string[]
+  /** Each tool spec a role world registered, as the host got it. */
+  readonly toolSpecs: unknown[]
 }
 
 /**
@@ -204,6 +219,8 @@ function newLog(): HostLog {
     paneStates: [],
     statuses: [],
     writes: [],
+    sends: [],
+    toolSpecs: [],
   }
 }
 
@@ -311,6 +328,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
       '/repo/docs': [entry('superpowers', 'dir')],
     },
     files: {
+      '/repo/.planning/config.json': '{}',
       '/home/u/.claude/gsd-core/VERSION': '1.16.0\n',
       '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs': 'const packageName = "@opengsd/gsd-core";\n',
       '/home/u/.claude/gsd-core/bin/lib/cli-exit.cjs': '',
@@ -471,18 +489,19 @@ function startStateText(roles: readonly string[]): string {
 /**
  * The repo of regenHostWorld after a plain init of BE (D-102, LNCH-04): its cadre.json and role.json, the folder
  * `.cadre/be` resolving inside the repo, the launcher `.cadre/bin/be` and a manifest whose `.cadre/bin/be` entry holds
- * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the mkdirs of a render
- * and the chmod 700 of each level of BE's role memory folder (02-GAPS-B3 S7) exit 0, and writes are allowed. Pass
- * `over` to change one part of it.
+ * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the mkdirs, the chmod
+ * 700 of the private instructions copy and the inbox append of a render and the chmod 700 of each level of BE's role
+ * memory folder and of its inbox folder exit 0, and writes are allowed. Pass `over` to change one part of it.
  */
 async function startHostWorld(over: Partial<World> = {}): Promise<World> {
   const base = regenHostWorld()
   const launcher = { path: '.cadre/bin/be', sha256: await sha256Hex(START_LAUNCHER), mode: 'exec' }
   const done = { exitCode: 0, stdout: '' }
   const slug = `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
-  // BE's private instructions folder, which the render makes and links from .runtime (D-140 q1-b).
+  // BE's private instructions folder, which the render makes and copies into .runtime; this world puts no file in it.
   const privateFolder = `${slug}/be/instructions`
-  const levels = ['/home/u/.claude/cadre', slug, `${slug}/be`, privateFolder]
+  const inboxDir = inboxDirOf(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')), 'be')
+  const levels = ['/home/u/.claude/cadre', slug, `${slug}/be`, privateFolder, ...inboxFolderLevels(inboxDir)]
 
   return {
     ...base,
@@ -500,8 +519,11 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
       [`/bin/mkdir -p -- ${START_RUNTIME}`]: done,
       [`/bin/mkdir -p -- ${START_RUNTIME}/overlay`]: done,
       [`/bin/mkdir -p -- ${privateFolder}`]: done,
+      [`/bin/mkdir -p -- ${inboxDir}`]: done,
       ...Object.fromEntries(levels.map(level => [`/bin/chmod 700 ${level}`, done])),
-      [`/bin/ln -sfn ${privateFolder} ${START_RUNTIME}/private-instructions`]: done,
+      [`/bin/mkdir -p -- ${START_RUNTIME}/private-instructions`]: done,
+      [`/bin/chmod 700 ${START_RUNTIME}/private-instructions`]: done,
+      [`/usr/bin/tee -a ${inboxDir}/inbox.jsonl`]: done,
     },
     isWriteAllowed: true,
     ...over,
@@ -542,6 +564,15 @@ async function statusHostWorld(over: Partial<World> = {}): Promise<World> {
     runResults: { ...base.runResults, [STATUS_GREP.join(' ')]: { exitCode: 0, stdout: titleRow } },
     ...over,
   }
+}
+
+/** What `env.get` answers: the role env of a role world for CADRE_ROLE and CADRE_ROOT, else the world's env. */
+function envValueOf(world: World, name: string): string | undefined {
+  const { roleEnv } = world
+  if (roleEnv !== undefined && name === ROLE_ENV) return roleEnv.role
+  if (roleEnv !== undefined && name === ROOT_ENV) return roleEnv.root
+
+  return world.env[name]
 }
 
 /** Whether the fake host has the path: a listed folder, a bare folder, or a file. */
@@ -638,7 +669,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: world.ancestors }
   })
-  on('env.get', async (_$, e) => ({ value: world.env[e.name] }))
+  on('env.get', async (_$, e) => ({ value: envValueOf(world, e.name) }))
   on('fs.exists', async (_$, e) => {
     log.ops.push(`fs.exists ${e.path}`)
     if (world.denyExists.includes(e.path)) return { deny: 'exists refused' }
@@ -709,8 +740,23 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
       return { value: undefined }
     })
   }
+  if (world.roleEnv !== undefined) {
+    on('tool.register', async (_$, e) => {
+      log.ops.push(`tool.register ${e.name}`)
+      log.toolSpecs.push(e)
+
+      return { value: { tool: `mcp__cadre__${e.name}` } }
+    })
+    on('session.send', async (_$, e) => {
+      log.sends.push(`${e.to} ${e.text}`)
+      if (world.sendResult?.isDelivered === false) return { isDelivered: false, reason: 'not delivered in this world' }
+
+      return { isDelivered: true }
+    })
+  }
   for (const op of FORBIDDEN_OPS) {
     if (op === 'fs.write' && world.isWriteAllowed) continue
+    if (op === 'tool.register' && world.roleEnv !== undefined) continue
     on(op, async () => {
       log.ops.push(`forbidden ${op}`)
 
@@ -1422,28 +1468,23 @@ describe('cadre init with a faked host', () => {
     expect(order).toEqual([0, 1, 1, 2, 3, 4, 5, 6, 7])
   })
 
-  test('a GSD repo with no config file asks two hunks after the model questions, before the policy', async ($, on) => {
-    const log = newLog()
-    fakeHost(on, initWorld(), log)
-    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    const hunkAts = log.asks.flatMap((ask, at) => (ask.startsWith('ask .planning/config.json:') ? [at] : []))
-    const modelAt = askHeads(log).indexOf('ask Model and effort for all roles?')
-    const policyAt = askHeads(log).indexOf(POLICY_ASK)
-    expect(hunkAts).toHaveLength(2)
-    expect(modelAt).not.toBe(-1)
-    expect(hunkAts.map(at => at > modelAt && at < policyAt)).toEqual([true, true])
-    expect(hunkAts.map(at => (log.asks[at] ?? '').split('\n')[0])).toEqual([
-      'ask .planning/config.json: mode',
-      'ask .planning/config.json: workflow.text_mode',
-    ])
-    expect(hunkAts.map(at => log.askOptions[at])).toEqual([
-      ['Accept', 'Decline'],
-      ['Accept', 'Decline'],
-    ])
-    expect(log.logs.some(text => text.includes('attended:'))).toBe(false)
-    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(log.runs).toEqual([])
-  })
+  test(
+    'a GSD repo with no .planning/config.json asks no hunk, and plain init runs no config-set and writes nothing ' +
+      'under .planning/',
+    async ($, on) => {
+      const log = newLog()
+      const files = Object.fromEntries(
+        Object.entries(ambiguousWorld().files).filter(([file]) => file !== '/repo/.planning/config.json'),
+      )
+      fakeHost(on, initWorld({ isWriteAllowed: true, files }), log)
+      const out = await $.command.run({ command: 'cadre', args: 'init' })
+      expect(log.asks.filter(ask => ask.startsWith('ask .planning/config.json:'))).toEqual([])
+      expect(log.runs.filter(argv => argv.includes('config-set'))).toEqual([])
+      expect(log.writes.filter(path => path.includes('/repo/.planning/'))).toEqual([])
+      expect(planRows(out.text).filter(row => row.kind === 'hunk')).toEqual([])
+      expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    },
+  )
 
   test('commit all prints its own policy line and no worktree line', async ($, on) => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), newLog())
@@ -2637,7 +2678,10 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, DOCK_PANE, open, SECURITY_INSTALL_PREFIX) }), log)
     await $.command.run(DRY_RUN)
-    expect(open.map(entry => [entry.drawn.first, entry.header])).toEqual([['Security plugins', 'Security']])
+    expect(open.map(entry => [entry.drawn.first, entry.header])).toEqual([
+      ['Security plugins', 'Security'],
+      ['Security plugins', 'Security'],
+    ])
   })
 
   test('a dismissed dialog still writes the idle state, so the pane draws the empty frame (D-304)', async ($, on) => {
@@ -2799,6 +2843,8 @@ const TUI_ASKS_AT_BASE: readonly string[] = [
     'session.',
   'ask Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the ' +
     'scan.',
+  'ask Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project ' +
+    'scope after Confirm.\nRoles: pm, tl, security.\nOr press n, type your own answer, then Enter.',
   'ask Which framework do the roles use? (asked because more than one framework is in use)\nRoles: ' +
     'pm, tl, security.',
   'ask Framework for all roles?\nRoles: pm, tl, security.\nOr press n, type your own answer, then ' +
@@ -2818,6 +2864,9 @@ const TUI_ASKS_AT_BASE: readonly string[] = [
   'ask Which roles get your own skills (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role ' +
     'given these skills can run them in its session; a role not given them cannot.\nOr press n, type ' +
     'your own answer, then Enter.',
+  'ask Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM ' +
+    'mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, ' +
+    'never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project',
   'ask .planning/config.json: mode',
   'ask .planning/config.json: workflow.text_mode',
   'ask Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. ' +
@@ -2825,7 +2874,7 @@ const TUI_ASKS_AT_BASE: readonly string[] = [
   'ask Where should the role launchers start their sessions? (asked once for this repo)\nThe ' +
     'launcher of each role (pm, tl, security) starts its session there.',
   'ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one ' +
-    'item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: ' +
+    'item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: ' +
     'commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, ' +
     'or type duration, model, assignments, memory, env or hunks as a note (press n).',
 ]
@@ -3265,6 +3314,44 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
   })
 })
 
+describe('cadre frameworks with a faked host', () => {
+  test('in claude -p frameworks answers its own refusal before any op or question', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, regenHostWorld({ surfaces: [] }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'frameworks' })
+    expect([out.text, log.ops, log.asks]).toEqual([t('frameworks.notInteractive'), [], []])
+  })
+
+  test('with a running autopilot frameworks refuses with the autopilot reply and asks nothing', async ($, on) => {
+    const log = newLog()
+    const world = regenHostWorld()
+    fakeHost(on, { ...world, files: { ...world.files, '/home/u/.claude/autopilot/s1.json': AUTOPILOT_RUNNING } }, log)
+    const out = await $.command.run({ command: 'cadre', args: 'frameworks --dry-run' })
+    expect([out.text, log.asks]).toEqual([autopilotReply('active', 'frameworks'), []])
+  })
+
+  test('with no cadre.json frameworks says there is nothing to work from and asks nothing', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    const out = await $.command.run({ command: 'cadre', args: 'frameworks --dry-run' })
+    expect([out.text, log.asks]).toEqual([noStateReply('frameworks'), []])
+  })
+
+  test('frameworks --dry-run over an applied team, answered to Confirm, writes and runs nothing', async ($, on) => {
+    const log = newLog()
+    const answers = { ...INIT_ANSWERS, [t('frameworks.review.question')]: 'Confirm' }
+    fakeHost(on, regenHostWorld({ answers }), log)
+    const lines = (await $.command.run({ command: 'cadre', args: 'frameworks --dry-run' })).text.split('\n')
+    const asked = askHeads(log)
+    expect([lines[0], lines.at(-1)]).toEqual([t('frameworks.reply.headDry'), 'Dry run: nothing was written.'])
+    expect([asked.some(ask => ask.includes('Which frameworks does this team use?')), asked.at(-1)]).toEqual([
+      true,
+      `ask ${t('frameworks.review.question')}`,
+    ])
+    expect([log.writes, log.runs, log.ops.filter(op => op.startsWith('forbidden '))]).toEqual([[], [], []])
+  })
+})
+
 describe('cadre regen with a faked host', () => {
   test('regen be --dry-run replies with the plan of BE and asks nothing (B3, D-68)', async ($, on) => {
     const log = newLog()
@@ -3319,7 +3406,7 @@ describe('cadre start with a faked host', () => {
     const log = newLog()
     fakeHost(on, await startHostWorld(), log)
     const lines = (await $.command.run({ command: 'cadre', args: 'start be' })).text.split('\n')
-    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
     expect(log.writes).toEqual(written.map(name => `${START_RUNTIME}/${name}`))
     expect(log.ops.filter(op => op.startsWith('fs.write ')).at(-1)).toBe(`fs.write ${START_RUNTIME}/stamp`)
     // The n-th process.run op is the n-th run, so the mkdir of .runtime is found among the ops by its run index.
@@ -3328,7 +3415,7 @@ describe('cadre start with a faked host', () => {
     const mkdirOp = runOps[mkdirAt] ?? -1
     expect(mkdirOp).toBeGreaterThanOrEqual(0)
     expect(log.ops.findIndex(op => op.startsWith('fs.write '))).toBeGreaterThan(mkdirOp)
-    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
+    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).'])
     const runAt = lines.indexOf('Run this in a terminal to start role be:')
     expect(runAt).toBeGreaterThan(1)
     expect(lines[runAt + 1]).toBe('  /repo/.cadre/bin/be')
@@ -3463,22 +3550,27 @@ function noFrameworkWorld(over: Partial<World> = {}): World {
 }
 
 /**
- * What only one framework world shows in its `init --dry-run`, so a fixture that drifts into another world fails (B2):
- * how many `.planning/config.json` hunk rows its plan holds, how often the framework question is asked, and a text its
- * scope cards log that names the chosen adapter, or null when no card text is checked.
+ * What only one framework world shows in its `init --dry-run`, so a fixture that drifts into another world fails: how
+ * many `.planning/config.json` hunk rows its plan holds, how often the framework question is asked, how often the set
+ * question is asked, and a text its scope cards log that names the chosen adapter, or null when no card text is
+ * checked.
  */
 type WorldExpect = {
   readonly hunks: number
   readonly frameworkAsks: number
+  readonly setAsks: number
   readonly card: string | null
 }
 
+/** The start of the set question, which asks which frameworks the team uses. */
+const SET_QUESTION_START = 'Which frameworks does this team use?'
+
 /** The four framework worlds of the matrix, each with the name its tests carry and what only that world shows. */
 const FRAMEWORK_WORLDS: readonly (readonly [string, () => World, WorldExpect])[] = [
-  ['GSD only', gsdOnlyWorld, { hunks: 2, frameworkAsks: 0, card: null }],
-  ['superpowers only', superpowersOnlyWorld, { hunks: 0, frameworkAsks: 0, card: 'framework: superpowers;' }],
-  ['ambiguous', initWorld, { hunks: 2, frameworkAsks: 1, card: null }],
-  ['no framework', noFrameworkWorld, { hunks: 0, frameworkAsks: 0, card: 'framework: built-in;' }],
+  ['GSD only', gsdOnlyWorld, { hunks: 2, frameworkAsks: 0, setAsks: 1, card: null }],
+  ['superpowers only', superpowersOnlyWorld, { hunks: 0, frameworkAsks: 0, setAsks: 1, card: 'framework: built-in;' }],
+  ['ambiguous', initWorld, { hunks: 2, frameworkAsks: 1, setAsks: 1, card: null }],
+  ['no framework', noFrameworkWorld, { hunks: 0, frameworkAsks: 0, setAsks: 0, card: 'framework: built-in;' }],
 ]
 
 /**
@@ -3628,7 +3720,7 @@ describe('Phase 2 faked-host matrix', () => {
       expect(rows.some(row => row.path === '.gitignore')).toBe(true)
     })
 
-    test(`${name}: the world is the one it claims: hunks, framework question, card (B2)`, async ($, on) => {
+    test(`${name}: the world is the one it claims: hunks, framework and set questions, card`, async ($, on) => {
       const log = newLog()
       fakeHost(on, build(), log)
       const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
@@ -3636,6 +3728,8 @@ describe('Phase 2 faked-host matrix', () => {
       expect(hunks.length).toBe(expected.hunks)
       const frameworkAsks = log.asks.filter(ask => ask.startsWith(`ask ${FRAMEWORK_QUESTION_PREFIX}`))
       expect(frameworkAsks.length).toBe(expected.frameworkAsks)
+      const setAsks = log.asks.filter(ask => ask.startsWith(`ask ${SET_QUESTION_START}`))
+      expect(setAsks.length).toBe(expected.setAsks)
       if (expected.card === null) return
       expect((openedContext(log, REVIEW_QUESTION)?.lines ?? []).join('\n')).toContain(expected.card)
     })
@@ -3886,5 +3980,283 @@ describe('Phase 2 faked-host matrix', () => {
     const dialogs = JSON.stringify(log.askQuestions)
     const shown = [out.text, ...log.logs, pane, asked, dialogs, ...log.asks, ...log.askOptions.flat()].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+  })
+})
+
+/** BE's role.json in roleWorld. */
+const ROLE_BE_JSON = '/repo/.cadre/be/role.json'
+
+/** The inbox home of the root /repo in the user folder of roleWorld's HOME, /home/u. */
+const ROLE_HOME = inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo'))
+
+/** TL's inbox folder in roleWorld, where its inbox and the session id it published lie. */
+const ROLE_TL_FOLDER = inboxDirOf(ROLE_HOME, 'tl')
+
+/** BE's inbox folder and the session.json in it, there only in the worlds that add it. */
+const ROLE_BE_FOLDER = inboxDirOf(ROLE_HOME, 'be')
+const ROLE_BE_SESSION = `${ROLE_BE_FOLDER}/session.json`
+
+/** The inbox_send call of a note from BE to TL. */
+const ROLE_NOTE = { tool: 'mcp__cadre__inbox_send', to: 'tl', kind: 'note', subject: 'Hi', body: 'Hello' }
+
+/**
+ * A role session of BE: the runtime env names BE and /repo with HOME /home/u, cadre.json lists pm, tl and be with
+ * their role.json files, TL's inbox folder holds the session id it published, an append to TL's inbox exits 0 and
+ * writes are allowed; BE's own inbox folder is not there. Pass `over` to change one part of it.
+ */
+function roleWorld(over: Partial<World> = {}): World {
+  const base = ambiguousWorld()
+
+  return {
+    ...base,
+    roleEnv: { role: 'be', root: '/repo' },
+    dirs: [...base.dirs, '/repo/.cadre', ROLE_TL_FOLDER],
+    files: {
+      ...base.files,
+      '/repo/.cadre/cadre.json': startStateText(['pm', 'tl', 'be']),
+      '/repo/.cadre/pm/role.json': roleJsonText(templateRole('pm')),
+      '/repo/.cadre/tl/role.json': roleJsonText(templateRole('tl')),
+      [ROLE_BE_JSON]: roleJsonText(templateRole('be')),
+      [`${ROLE_TL_FOLDER}/session.json`]: sessionRecordText('s-tl'),
+    },
+    realPaths: { ...base.realPaths, [ROLE_TL_FOLDER]: ROLE_TL_FOLDER },
+    runResults: { [`/usr/bin/tee -a ${ROLE_TL_FOLDER}/inbox.jsonl`]: { exitCode: 0, stdout: '' } },
+    isWriteAllowed: true,
+    ...over,
+  }
+}
+
+/** roleWorld with BE's inbox folder there, as /cadre start renders it. */
+function beFolderWorld(): World {
+  const base = roleWorld()
+
+  return {
+    ...base,
+    dirs: [...base.dirs, ROLE_BE_FOLDER],
+    realPaths: { ...base.realPaths, [ROLE_BE_FOLDER]: ROLE_BE_FOLDER },
+  }
+}
+
+/** beFolderWorld with BE's session.json holding s1, the session id of the world. */
+function beStartedWorld(): World {
+  const base = beFolderWorld()
+
+  return {
+    ...base,
+    sessionId: 's1',
+    files: { ...base.files, [ROLE_BE_SESSION]: sessionRecordText('s1') },
+  }
+}
+
+/** The ops of a log that name a tool registration, a refused one included. */
+function registrations(log: HostLog): string[] {
+  return log.ops.filter(op => op.includes('tool.register'))
+}
+
+/**
+ * Starts the test's session at /repo, so the plugin's session.start runs: the core below it registers the /cadre
+ * command and echoes the cwd.
+ */
+async function startSession($: Engine, on: HostOn): Promise<void> {
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+}
+
+describe('the inbox tools in a role session', () => {
+  test('a session with no CADRE_ROLE registers no tool and writes nothing', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld(), log)
+    await startSession($, on)
+
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
+  })
+
+  test('a role session registers the inbox tools and publishes its session id in its inbox folder', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, beFolderWorld(), log)
+    await startSession($, on)
+
+    expect(registrations(log)).toEqual([
+      'tool.register inbox_send',
+      'tool.register inbox_read',
+      'tool.register inbox_mark',
+    ])
+    expect(log.writes).toEqual([ROLE_BE_SESSION])
+  })
+
+  test('a role session registers inbox_send with every cap in its schema and its description', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, beFolderWorld(), log)
+    await startSession($, on)
+    const at = (value: unknown, key: string): unknown => (isObject(value) ? value[key] : undefined)
+    const spec = log.toolSpecs.find(held => at(held, 'name') === 'inbox_send')
+    const properties = at(at(spec, 'inputSchema'), 'properties')
+    const description = at(spec, 'description')
+    const text = typeof description === 'string' ? description : ''
+
+    expect(at(at(properties, 'body'), 'maxLength')).toBe(BODY_MAX_CHARS)
+    expect(at(at(properties, 'changes'), 'maxLength')).toBe(CHANGES_MAX_CHARS)
+    expect(at(at(properties, 'openQuestions'), 'maxItems')).toBe(LIST_MAX_ITEMS)
+    expect(at(at(at(properties, 'openQuestions'), 'items'), 'maxLength')).toBe(LIST_ITEM_MAX_CHARS)
+    expect(text).toContain(`body ${BODY_MAX_CHARS}`)
+    expect(text).toContain(`changes ${CHANGES_MAX_CHARS}`)
+  })
+
+  test('a role session registers inbox_read with its all and id inputs in its schema', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, beFolderWorld(), log)
+    await startSession($, on)
+    const at = (value: unknown, key: string): unknown => (isObject(value) ? value[key] : undefined)
+    const spec = log.toolSpecs.find(held => at(held, 'name') === 'inbox_read')
+    const properties = at(at(spec, 'inputSchema'), 'properties')
+
+    expect(at(at(properties, 'id'), 'type')).toBe('string')
+    expect(at(at(properties, 'all'), 'type')).toBe('boolean')
+  })
+
+  test('a role session with no inbox folder writes nothing, and inbox_read and inbox_send refuse', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld(), log)
+    await startSession($, on)
+    const read = await $.tool.call({ tool: 'mcp__cadre__inbox_read' }).catch(() => null)
+    const send = await $.tool.call(ROLE_NOTE).catch(() => null)
+    const missing = fill(PROMPTS.inboxOwnMissing, { id: 'be' })
+
+    expect(registrations(log)).toEqual([
+      'tool.register inbox_send',
+      'tool.register inbox_read',
+      'tool.register inbox_mark',
+    ])
+    expect(log.writes).toEqual([])
+    expect([read?.deny, send?.deny]).toEqual([missing, missing])
+    expect([log.runs, log.sends]).toEqual([[], []])
+  })
+
+  test('a role session with neither HOME nor CLAUDE_CONFIG_DIR logs one line and registers no tool', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld({ env: {} }), log)
+    await startSession($, on)
+
+    expect(log.logs).toEqual([fill(PROMPTS.inboxNoHome, { id: 'be' })])
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
+  })
+
+  test('a role session whose HOME lies inside its repo logs one line and registers no tool', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, roleWorld({ env: { HOME: '/repo/u' } }), log)
+    await startSession($, on)
+
+    expect(log.logs).toEqual([fill(PROMPTS.inboxNoHome, { id: 'be' })])
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
+  })
+
+  test('a role session whose role.json is absent registers nothing and writes nothing', async ($, on) => {
+    const log = newLog()
+    const world = roleWorld()
+    const files = Object.fromEntries(Object.entries(world.files).filter(([path]) => path !== ROLE_BE_JSON))
+    fakeHost(on, { ...world, files }, log)
+    await startSession($, on)
+
+    expect(registrations(log)).toEqual([])
+    expect(log.writes).toEqual([])
+  })
+
+  test('a role session whose role.json is absent logs one line naming the role', async ($, on) => {
+    const log = newLog()
+    const world = roleWorld()
+    const files = Object.fromEntries(Object.entries(world.files).filter(([path]) => path !== ROLE_BE_JSON))
+    fakeHost(on, { ...world, files }, log)
+    await startSession($, on)
+
+    expect(log.logs).toEqual([fill(PROMPTS.inboxRoleMissing, { id: 'be' })])
+    expect(registrations(log)).toEqual([])
+  })
+
+  test(
+    'a worktree role session reads its role from the main checkout and keeps its session in the worktree',
+    async ($, on) => {
+      const log = newLog()
+      const base = ambiguousWorld()
+      const wtFolder = inboxDirOf(inboxHomeOf('/home/u/.claude', '/wt', await sha256Hex('/wt')), 'be')
+      const world = roleWorld({
+        roleEnv: { role: 'be', root: '/wt' },
+        env: { ...base.env, CADRE_MAIN_ROOT: '/main' },
+        dirs: [...base.dirs, '/main/.cadre', wtFolder],
+        files: {
+          ...base.files,
+          '/main/.cadre/cadre.json': startStateText(['pm', 'tl', 'be']),
+          '/main/.cadre/pm/role.json': roleJsonText(templateRole('pm')),
+          '/main/.cadre/tl/role.json': roleJsonText(templateRole('tl')),
+          '/main/.cadre/be/role.json': roleJsonText(templateRole('be')),
+        },
+      })
+      fakeHost(on, world, log)
+      await startSession($, on)
+
+      expect(registrations(log)).toEqual([
+        'tool.register inbox_send',
+        'tool.register inbox_read',
+        'tool.register inbox_mark',
+      ])
+      expect(log.writes).toEqual([`${wtFolder}/session.json`])
+    },
+  )
+
+  test("a turn start writes session.json only when it does not hold this session's id", async ($, on) => {
+    const log = newLog()
+    let sessionId = 's1'
+    const world: World = {
+      ...beStartedWorld(),
+      get sessionId() {
+        return sessionId
+      },
+    }
+    fakeHost(on, world, log)
+    on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+    await startSession($, on)
+    await $.turn.start({ text: '', turnId: 't1' })
+    await $.turn.start({ text: '', turnId: 't2' })
+    const sameId = [...log.writes]
+    sessionId = 's2'
+    await $.turn.start({ text: '', turnId: 't3' })
+
+    expect(sameId).toEqual([])
+    expect(log.writes).toEqual([ROLE_BE_SESSION])
+  })
+
+  test('a turn start after another session overwrote session.json writes it back', async ($, on) => {
+    const log = newLog()
+    let published = sessionRecordText('s1')
+    const started = beStartedWorld()
+    const world: World = {
+      ...started,
+      get files() {
+        return { ...started.files, [ROLE_BE_SESSION]: published }
+      },
+    }
+    fakeHost(on, world, log)
+    on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+    await startSession($, on)
+    const atStart = [...log.writes]
+    published = sessionRecordText('s-probe')
+    await $.turn.start({ text: '', turnId: 't1' })
+
+    expect(atStart).toEqual([])
+    expect(log.writes).toEqual([ROLE_BE_SESSION])
+  })
+
+  test('inbox_send in a role session appends to the inbox of the receiver, then sends one live wake', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, beFolderWorld(), log)
+    await startSession($, on)
+    await $.tool.call(ROLE_NOTE).catch(() => null)
+
+    expect(log.runs).toEqual([['/usr/bin/tee', '-a', `${ROLE_TL_FOLDER}/inbox.jsonl`]])
+    expect(log.sends).toHaveLength(1)
+    expect(log.sends[0] ?? '').toContain('s-tl')
   })
 })

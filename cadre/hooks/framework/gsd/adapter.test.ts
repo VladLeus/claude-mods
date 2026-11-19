@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, GsdFact, RepoEntry, SetupScan } from '../../../types'
 import { adaptersReportLines } from '../../detect/report'
+import { ARTIFACT } from '../../locales/artifact'
 import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 import { isDecisionType } from '../contract'
 import { adapterOf } from '../registry'
@@ -265,7 +266,8 @@ describe('GSD_GATES', () => {
         needsHuman: false,
         handling: 'autopilot-denies',
         kickoff:
-          'Autopilot answers GSD menus with "decide yourself": ' +
+          'While asking is on and the person is not away, a GSD menu reaches them as an AskUserQuestion dialog; ' +
+          'while they are away or asking is off, autopilot answers it with "decide yourself": ' +
           'take the recommended option and log it in decisions.md.',
       },
       {
@@ -496,6 +498,13 @@ describe('gsdKickoffText', () => {
     expect(text).toContain('Verify with /gsd-validate-phase N and /gsd-code-review N.')
   })
 
+  test('it names every startWork entry word for word, the new project of a checkout with no .planning/ too', () => {
+    const text = gsdKickoffText({ title: 'BE', roleId: 'be', specPath: null })
+
+    expect(GSD_ADAPTER.startWork.filter(entry => !text.includes(entry))).toEqual([])
+    expect(text).toContain('A checkout with no .planning/ starts with /gsd-new-project (no .planning/ yet)')
+  })
+
   test('its last line is the done answer, with no trailing newline', () => {
     const lines = gsdKickoffText({ title: 'BE', roleId: 'be', specPath: null }).split('\n')
 
@@ -512,7 +521,9 @@ describe('gsdKickoffText', () => {
     expect(gateLines).toEqual(GSD_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`))
     expect(gateLines[0]).toBe(
       '- AskUserQuestion menus inside GSD workflows: ' +
-        'Autopilot answers GSD menus with "decide yourself": take the recommended option and log it in decisions.md.',
+        'While asking is on and the person is not away, a GSD menu reaches them as an AskUserQuestion dialog; ' +
+        'while they are away or asking is off, autopilot answers it with "decide yourself": ' +
+        'take the recommended option and log it in decisions.md.',
     )
   })
 
@@ -697,6 +708,10 @@ describe('GSD_ADAPTER', () => {
       'gsd-execute-phase',
       'gsd-validate-phase',
       'gsd-code-review',
+      'gsd-new-project',
+      'gsd-new-milestone',
+      'gsd-quick',
+      'gsd-phase',
     ])
     expect(GSD_ADAPTER.ownsSkill({ name: 'gsd-x', plugin: null })).toBe(true)
     expect(GSD_ADAPTER.ownsSkill({ name: 'x', plugin: null })).toBe(false)
@@ -707,5 +722,124 @@ describe('GSD_ADAPTER', () => {
     expect(GSD_ADAPTER.install).toBe('npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global')
     expect(GSD_ADAPTER.factsHeading).toBe('GSD hooks registered (activation depends on GSD config)')
     expect([GSD_ADAPTER.startSkills, GSD_ADAPTER.pluginsToEnable].every(list => Object.isFrozen(list))).toBe(true)
+  })
+
+  test('a core TL starts with /gsd-autonomous like every role', () => {
+    expect(GSD_ADAPTER.roleStart('tl', true)).toBe('/gsd-autonomous')
+  })
+})
+
+/** Whether every step is one line of printable ASCII. */
+function isPrintable(steps: readonly string[]): boolean {
+  return steps.every(step => /^[\x20-\x7e]+$/.test(step))
+}
+
+describe('the GSD start steps of a role', () => {
+  const lead = GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true })
+  const worker = GSD_ADAPTER.roleWork.startSteps({ roleId: 'be', isLead: false })
+  /** What each step runs, in order: the new project, the workstream, the milestone, then the quick or phase path. */
+  const RUNS = [
+    '/gsd-new-project',
+    'workstream.create "$GSD_WORKSTREAM" --no-migrate',
+    '/gsd-new-milestone',
+    '/gsd-quick',
+  ]
+
+  test('the lead: /gsd-new-project with no .planning/, the workstream, the epic milestone, then quick or phase', () => {
+    expect(lead.map((step, at) => step.includes(RUNS[at] ?? '-'))).toEqual([true, true, true, true])
+    expect([lead[0]?.includes('.planning/'), lead[2]?.includes('epic')]).toEqual([true, true])
+    for (const run of ['/gsd-phase add', '/gsd-plan-phase', '/gsd-execute-phase']) expect(lead[3]).toContain(run)
+    expect([Object.isFrozen(lead), isPrintable(lead)]).toEqual([true, true])
+  })
+
+  test("a worker: the no-TL new project step, the workstream, TL's task as milestone goal, then quick or phase", () => {
+    expect(worker.map((step, at) => step.includes(RUNS[at] ?? '-'))).toEqual([true, true, true, true])
+    const facts = [worker[0]?.includes('no TL'), worker[0]?.includes('.planning/'), worker[2]?.includes("TL's task")]
+
+    expect(facts).toEqual([true, true, true])
+    expect(worker).not.toContain(lead[0])
+    expect([worker[1], worker[3]]).toEqual([lead[1], lead[3]])
+    expect([Object.isFrozen(worker), isPrintable(worker)]).toEqual([true, true])
+  })
+
+  test('the new project and milestone steps send their menus to the person while asking is on', () => {
+    const steps = [lead[0], lead[2], worker[0], worker[2]]
+    const said = steps.map(step => [
+      step?.includes('go to the person while asking is on'),
+      step?.includes('decide them yourself'),
+    ])
+
+    expect(said).toEqual([
+      [true, true],
+      [true, true],
+      [true, true],
+      [true, true],
+    ])
+    expect([...lead, ...worker].filter(step => step.includes('under autopilot'))).toEqual([])
+  })
+
+  test('every command a start step or a kickoff start, new project or verify line names is a start skill', () => {
+    const steps = [
+      ...GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }),
+      ...GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: false }),
+    ]
+    const texts = [...steps, ARTIFACT.gsdKickoffStart, ARTIFACT.gsdKickoffNewProject, ARTIFACT.gsdKickoffVerify]
+    const named = texts.flatMap(text => [...text.matchAll(/\/(gsd-[a-z-]+)/g)].map(match => match[1] ?? ''))
+
+    expect(named.filter(name => !GSD_ADAPTER.startSkills.includes(name))).toEqual([])
+    expect([named.length > 0, named.includes('gsd-new-milestone'), named.includes('gsd-quick')]).toEqual([
+      true,
+      true,
+      true,
+    ])
+  })
+
+  test('no step names a direct write under .planning/ or the workstreams skill that migrates', () => {
+    for (const step of [...lead, ...worker]) {
+      expect(step.includes('gsd-workstreams')).toBe(false)
+      expect(/\b(write|edit|create) \.planning\//i.test(step)).toBe(false)
+    }
+  })
+
+  test('the core lead has no quick or phase path step and no Start or Verify kickoff line', () => {
+    const coreLead = GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true, isCoreLead: true })
+    const ctx = { title: 'Team Lead', roleId: 'tl', specPath: null }
+    const today = gsdKickoffText(ctx).split('\n')
+    const core = gsdKickoffText({ ...ctx, isCoreLead: true }).split('\n')
+    const isLeftOut = (line: string): boolean =>
+      line === ARTIFACT.gsdKickoffStart || line === ARTIFACT.gsdKickoffVerify
+
+    expect(coreLead).toEqual([ARTIFACT.gsdStepNewProject, ARTIFACT.gsdStepWorkstream, ARTIFACT.gsdStepMilestoneLead])
+    expect([Object.isFrozen(coreLead), isPrintable(coreLead)]).toEqual([true, true])
+    expect(lead).toEqual([...coreLead, ARTIFACT.gsdStepPath])
+    expect(GSD_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true, isCoreLead: false })).toEqual(lead)
+    expect(today.filter(isLeftOut)).toEqual([ARTIFACT.gsdKickoffStart, ARTIFACT.gsdKickoffVerify])
+    expect(core).toEqual(today.filter(line => !isLeftOut(line)))
+  })
+
+  test('core Security has no Verify kickoff line and keeps its Start, new project, specs, gate and done lines', () => {
+    const ctx = { title: 'Security', roleId: 'security', specPath: null }
+    const today = gsdKickoffText(ctx).split('\n')
+    const reviewer = gsdKickoffText({ ...ctx, isCoreReviewer: true }).split('\n')
+
+    expect(today).toContain(ARTIFACT.gsdKickoffVerify)
+    expect(reviewer).toEqual(today.filter(line => line !== ARTIFACT.gsdKickoffVerify))
+    expect(reviewer).toContain(ARTIFACT.gsdKickoffStart)
+  })
+})
+
+describe('GSD_ADAPTER.isInstalled', () => {
+  test('is true only with a proven install; unknown, absent or .planning/ alone is not installed', () => {
+    const unknown: GsdFact = { ...PROVEN_USER_INSTALL, identity: 'unknown' }
+    const absent: GsdFact = { ...PROVEN_USER_INSTALL, identity: 'absent' }
+    const cases = [
+      facts({ gsd: [PROVEN_USER_INSTALL] }),
+      facts({ repoEntries: [PLANNING_DIR], gsd: [unknown, PROVEN_USER_INSTALL] }),
+      facts({ repoEntries: [PLANNING_DIR] }),
+      facts({ repoEntries: [PLANNING_DIR], gsd: [unknown, absent] }),
+      facts({}),
+    ]
+
+    expect(cases.map(GSD_ADAPTER.isInstalled)).toEqual([true, true, false, false, false])
   })
 })

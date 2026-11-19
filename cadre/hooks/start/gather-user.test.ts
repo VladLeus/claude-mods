@@ -2,9 +2,14 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun, InitLocations, LaunchStart, RoleSpec, ScopeContext } from '../../types'
 import { sha256Hex } from '../core/hash'
+import { isObject } from '../core/json'
+import { adapterOf } from '../framework/registry'
+import { GIT_TIMEOUT_MS } from '../git/argv'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import type { LaunchUser } from '../launch/links'
 import { launchPlan } from '../launch/plan'
+import { inboxDirOf, inboxHomeOf } from '../paths'
+import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { compileScope } from '../scope/compile'
 import {
@@ -29,6 +34,7 @@ import {
   hookSourcesFor,
   launchHooksOf,
   launchSettingsOf,
+  privateFolderRefusal,
   START_NO_GIT_DIR,
   START_NO_HOME,
 } from './gather-user'
@@ -89,6 +95,31 @@ function gitRule(result: HostRun | null): HostRunRule {
 /** The git run of the fixture repo: git answers /repo/.git, with its line break. */
 const GIT_OK = gitRule({ exitCode: 0, stdout: '/repo/.git\n', stderr: '' })
 
+/** The argv that lists the env files git tracks at /repo, NUL-ended, with their mode and stage. */
+const TRACKED_ENV = ['git', '-C', '/repo', 'ls-files', '-z', '-s', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+
+/** git's `ls-files -z -s` entry of the tracked regular file .env.test. */
+const ENV_TEST_ENTRY = '100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0\t.env.test\0'
+
+/** The run of the tracked env files as the host is asked for it: no cwd, as the argv names the root. */
+const TRACKED_ENV_CALL = { argv: TRACKED_ENV, options: { timeoutMs: GIT_TIMEOUT_MS } }
+
+/** A fake host rule that answers the tracked env files run with this run; null is a run the host rejected. */
+function trackedEnvRule(result: HostRun | null): HostRunRule {
+  return { argv: TRACKED_ENV, result }
+}
+
+/** The argv that lists, NUL-ended, the tracked env files at /repo whose working-tree file differs from the index. */
+const MODIFIED_ENV = ['git', '-C', '/repo', 'ls-files', '-z', '-m', '--', ':(glob)**/.env', ':(glob)**/.env.*']
+
+/** The run of the modified env files as the host is asked for it: no cwd, as the argv names the root. */
+const MODIFIED_ENV_CALL = { argv: MODIFIED_ENV, options: { timeoutMs: GIT_TIMEOUT_MS } }
+
+/** A fake host rule that answers the modified env files run with this run; null is a run the host rejected. */
+function modifiedEnvRule(result: HostRun | null): HostRunRule {
+  return { argv: MODIFIED_ENV, result }
+}
+
 /** A launcher start at the git root. */
 const GIT_ROOT: LaunchStart = { kind: 'git-root' }
 
@@ -145,11 +176,12 @@ describe('gatherLaunchUser (D-98)', () => {
 
     expect(read).toEqual({
       kind: 'ok',
-      user: user({ commonDirHash, codeDirs: ['src'] }),
+      user: user({ commonDirHash, codeDirs: ['src'], trackedEnvFiles: [] }),
       warnings: [],
       memories: NO_MEMORY_LINKS,
+      inboxDir: inboxDirOf(inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo')), 'be'),
     })
-    expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
+    expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }, TRACKED_ENV_CALL])
   })
 
   test('the common dir is its stat realpath, else as git gave it; CLAUDE_CONFIG_DIR is the user folder', async () => {
@@ -164,9 +196,11 @@ describe('gatherLaunchUser (D-98)', () => {
         userDir: '/cfg',
         gitCommonDir: '/data/repo/.git',
         commonDirHash: await sha256Hex('/data/repo/.git'),
+        trackedEnvFiles: [],
       }),
       warnings: [],
       memories: NO_MEMORY_LINKS,
+      inboxDir: inboxDirOf(inboxHomeOf('/cfg', '/repo', await sha256Hex('/repo')), 'be'),
     })
     const unresolved = userOf((await gather(memWorld({}), [GIT_OK])).read)
     expect([unresolved.gitCommonDir, unresolved.commonDirHash]).toEqual(['/repo/.git', await sha256Hex('/repo/.git')])
@@ -206,6 +240,22 @@ describe('gatherLaunchUser (D-98)', () => {
     expect(beDir).toBe(`/home/u/.claude/cadre/${slug}/be`)
     expect(pmDir).toBe(`/home/u/.claude/cadre/${slug}/pm`)
     expect(beDir).not.toBe(pmDir)
+  })
+
+  test('a link at the inbox tree in the user folder refuses with the private folder refusal naming it', async () => {
+    const tree = '/home/u/.claude/cadre/inboxes'
+    const dirs = {
+      '/repo/.git': [],
+      '/home/u/.claude': [entry('cadre', 'dir')],
+      '/home/u/.claude/cadre': [entry('inboxes', 'dir')],
+      [tree]: [],
+    }
+    const linkedTree = { ...dirs, '/home/u/.claude/cadre': [link('inboxes')] }
+    const byStat = await gather(repoWorld({ dirs, realPaths: { [tree]: '/elsewhere/inboxes' } }), [GIT_OK])
+    const byListing = await gather(repoWorld({ dirs: linkedTree }), [GIT_OK])
+    const refusal = { kind: 'refuse', text: privateFolderRefusal('~/.claude/cadre/inboxes', 'link') }
+
+    expect([byStat.read, byListing.read]).toEqual([refusal, refusal])
   })
 
   test('no HOME refuses before any run, even with CLAUDE_CONFIG_DIR set', async () => {
@@ -329,6 +379,17 @@ const GLOBAL_MD = '/home/u/.claude/CLAUDE.md'
 async function gatheredUser(world: MemWorld, launchStart: LaunchStart = GIT_ROOT): Promise<LaunchUser> {
   return userOf((await gather(world, [GIT_OK], DEFAULT_LOCATIONS, launchStart)).read)
 }
+
+describe('the start folder of a launch', () => {
+  test('a dir start sets startDir to its folder; a git-root or here start sets none', async () => {
+    const dir = await gatheredUser(repoWorld(), { kind: 'dir', path: 'src' })
+    const root = await gatheredUser(repoWorld())
+    const here = await gatheredUser(repoWorld(), { kind: 'here' })
+
+    expect(dir.startDir).toBe('src')
+    expect(['startDir' in root, 'startDir' in here]).toEqual([false, false])
+  })
+})
 
 describe('launch user settings (D-103)', () => {
   test('launchSettingsOf carries the compact window, the status line and the string env values of the user', () => {
@@ -490,5 +551,356 @@ describe('launch user settings (D-103)', () => {
 
     expect(reads.map(read => read.kind)).toEqual(['ok', 'refuse', 'refuse'])
     expect(leaks(texts.join('\n'), SECRET_FIXTURES)).toEqual([])
+  })
+})
+
+/** The fixture user's installed_plugins.json. */
+const INSTALLED_PLUGINS = '/home/u/.claude/plugins/installed_plugins.json'
+
+/** Where the fixture's mattpocock-skills is installed, as installed_plugins.json records it. */
+const MATT_PATH = '/u/.claude/plugins/cache/x/mattpocock-skills/1.3.1'
+
+/** The skills the fixture plugin.json lists: three paths and one bare name. */
+const MATT_SKILLS = [
+  './skills/productivity/grilling',
+  './skills/productivity/grill-me',
+  './skills/engineering/tdd',
+  'to-spec',
+]
+
+/** installed_plugins.json with these entries for the mattpocock-skills key. */
+function installedText(entries: readonly Record<string, unknown>[]): string {
+  return JSON.stringify({ version: 2, plugins: { [MATTPOCOCK_PLUGIN]: entries } })
+}
+
+/** The plugin.json of the plugin installed at `path`, listing `skills`. */
+function manifestAt(path: string, skills: unknown): Record<string, string> {
+  return { [`${path}/.claude-plugin/plugin.json`]: JSON.stringify({ name: 'mattpocock-skills', skills }) }
+}
+
+/** The files of mattpocock-skills installed at user scope at MATT_PATH, its plugin.json listing `skills`. */
+function userInstall(skills: unknown): Record<string, string> {
+  return {
+    [INSTALLED_PLUGINS]: installedText([{ scope: 'user', installPath: MATT_PATH, version: '1.3.1' }]),
+    ...manifestAt(MATT_PATH, skills),
+  }
+}
+
+/** The files of mattpocock-skills installed for the project at `projectPath`, at MATT_PATH, listing MATT_SKILLS. */
+function projectInstall(projectPath: string): Record<string, string> {
+  return {
+    [INSTALLED_PLUGINS]: installedText([{ scope: 'project', projectPath, installPath: MATT_PATH, version: '1.3.1' }]),
+    ...manifestAt(MATT_PATH, MATT_SKILLS),
+  }
+}
+
+/** A start in the worktree /repo/.claude/worktrees/proj-1, nested in the main checkout /repo. */
+const WORKTREE: InitLocations = {
+  ...DEFAULT_LOCATIONS,
+  root: '/repo/.claude/worktrees/proj-1',
+  givenRoot: '/repo/.claude/worktrees/proj-1',
+}
+
+/** The launch user gathered in WORKTREE over `world`. */
+async function worktreeUser(world: MemWorld): Promise<LaunchUser> {
+  return userOf((await gather(world, [GIT_OK], WORKTREE)).read)
+}
+
+describe('the plugin skills and project plugins a launch reads', () => {
+  test('pluginSkills holds the skill names of the installed plugin.json, sorted and once each', async () => {
+    const gathered = await gatheredUser(repoWorld({ files: userInstall([...MATT_SKILLS, 'tdd']) }))
+
+    expect(gathered.pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd', 'to-spec'] })
+  })
+
+  test('the entry for this repo wins over the user one, and another project is never used', async () => {
+    const repoPath = '/repo-install/mattpocock-skills/1.3.1'
+    const otherPath = '/other-install/mattpocock-skills/1.3.1'
+    const entries = [
+      { scope: 'user', installPath: MATT_PATH, version: '1.3.1' },
+      { scope: 'project', projectPath: '/elsewhere', installPath: otherPath, version: '1.3.1' },
+      { scope: 'project', projectPath: '/repo/', installPath: repoPath, version: '1.3.1' },
+    ]
+    const files = {
+      [INSTALLED_PLUGINS]: installedText(entries),
+      ...manifestAt(MATT_PATH, ['grill-me']),
+      ...manifestAt(otherPath, ['tdd']),
+      ...manifestAt(repoPath, ['grilling']),
+    }
+    const onlyOther = { ...files, [INSTALLED_PLUGINS]: installedText(entries.slice(1, 2)) }
+
+    expect((await gatheredUser(repoWorld({ files }))).pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grilling'] })
+    expect('pluginSkills' in (await gatheredUser(repoWorld({ files: onlyOther })))).toBe(false)
+  })
+
+  test('a worktree nested in the main checkout reads the install for the main checkout', async () => {
+    const gathered = await worktreeUser(repoWorld({ files: projectInstall('/repo') }))
+
+    expect([gathered.mainRoot, gathered.pluginSkills]).toEqual([
+      '/repo',
+      { [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd', 'to-spec'] },
+    ])
+  })
+
+  test('a worktree never reads the install of another project; the main checkout reads its own', async () => {
+    const elsewhere = await worktreeUser(repoWorld({ files: projectInstall('/elsewhere') }))
+    const main = await gatheredUser(repoWorld({ files: projectInstall('/repo') }))
+
+    expect('pluginSkills' in elsewhere).toBe(false)
+    expect(main.pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grill-me', 'grilling', 'tdd', 'to-spec'] })
+  })
+
+  test("PM's runtime in such a worktree keeps the plugin on and allows only the grill skills", async () => {
+    const gathered = await worktreeUser(repoWorld({ files: projectInstall('/repo') }))
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS] })
+    const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] })
+    const plan = launchPlan(pm, compileScope(pm, { ...context(), framework: 'none', setup }), gathered)
+    const plugins = isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+    const permissions = plan.settings.permissions
+    const deny: readonly unknown[] = isObject(permissions) && Array.isArray(permissions.deny) ? permissions.deny : []
+
+    expect(plugins[MATTPOCOCK_PLUGIN]).toBe(true)
+    expect(deny).toContain('Skill(mattpocock-skills:tdd)')
+    expect(deny).toContain('Skill(mattpocock-skills:to-spec)')
+    for (const skill of GRILL_SKILLS) expect(deny).not.toContain(`Skill(${skill})`)
+    expect(plan.warnings.filter(warning => warning.includes(MATTPOCOCK_PLUGIN))).toEqual([])
+  })
+
+  test('a list read from objects with a name counts like one read from paths', async () => {
+    const gathered = await gatheredUser(repoWorld({ files: userInstall([{ name: 'grilling' }, './skills/x/tdd']) }))
+
+    expect(gathered.pluginSkills).toEqual({ [MATTPOCOCK_PLUGIN]: ['grilling', 'tdd'] })
+  })
+
+  test('a list it cannot read whole gives no entry for the plugin: it fails closed', async () => {
+    const lists: readonly unknown[] = [
+      undefined,
+      'grilling',
+      [],
+      ['grilling', 7],
+      ['grilling', { title: 'tdd' }],
+      ['grilling', 'Grill-Me'],
+      ['grilling', './skills/x/'],
+      ['grilling', '-tdd'],
+      ['grilling', `a${'b'.repeat(64)}`],
+    ]
+    for (const skills of lists) {
+      const gathered = await gatheredUser(repoWorld({ files: userInstall(skills) }))
+
+      expect([skills, 'pluginSkills' in gathered]).toEqual([skills, false])
+    }
+    const notJson = { ...userInstall(['grilling']), [`${MATT_PATH}/.claude-plugin/plugin.json`]: '{"skills": [' }
+    const noManifest = { [INSTALLED_PLUGINS]: userInstall(['grilling'])[INSTALLED_PLUGINS] ?? '' }
+    const relativePath = installedText([{ scope: 'user', installPath: 'x' }])
+    const relative = { ...userInstall(['grilling']), [INSTALLED_PLUGINS]: relativePath }
+    for (const files of [notJson, noManifest, relative]) {
+      expect('pluginSkills' in (await gatheredUser(repoWorld({ files })))).toBe(false)
+    }
+  })
+
+  test('projectPlugins are the enabledPlugins keys the repo settings turn on', async () => {
+    const enabledPlugins = { [MATTPOCOCK_PLUGIN]: true, 'off@m': false, 'odd@m': 'yes', 'tool@m': true }
+    const files = { '/repo/.claude/settings.json': JSON.stringify({ enabledPlugins }) }
+
+    expect((await gatheredUser(repoWorld({ files }))).projectPlugins).toEqual([MATTPOCOCK_PLUGIN, 'tool@m'])
+  })
+
+  test('a dir start adds the keys its start folder settings enable; git-root and here read no start file', async () => {
+    const files = {
+      '/repo/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'a@m': true } }),
+      '/repo/src/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'tool@m': true } }),
+    }
+    const world = repoWorld({ files })
+    const dir = await gatheredUser(world, { kind: 'dir', path: 'src' })
+    const root = await gatheredUser(world)
+    const here = await gatheredUser(world, { kind: 'here' })
+
+    expect(dir.projectPlugins).toEqual(['a@m', 'tool@m'])
+    expect([root.projectPlugins, here.projectPlugins]).toEqual([['a@m'], ['a@m']])
+  })
+
+  test('a start file that links out of the repo, is missing or is not JSON adds no key', async () => {
+    const rootFile = { '/repo/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'a@m': true } }) }
+    const start = '/repo/src/.claude/settings.json'
+    const enabling = { ...rootFile, [start]: JSON.stringify({ enabledPlugins: { 'tool@m': true } }) }
+    const linked = repoWorld({ files: enabling, realPaths: { [start]: '/elsewhere/settings.json' } })
+    const notJson = repoWorld({ files: { ...rootFile, [start]: '{"enabledPlugins": [' } })
+    for (const world of [linked, repoWorld({ files: rootFile }), notJson]) {
+      expect((await gatheredUser(world, { kind: 'dir', path: 'src' })).projectPlugins).toEqual(['a@m'])
+    }
+  })
+
+  test('with no install and no repo settings the user has neither field', async () => {
+    const gathered = await gatheredUser(repoWorld())
+    const files = { '/repo/.claude/settings.json': '{"enabledPlugins": [' }
+    const malformed = await gatheredUser(repoWorld({ files }))
+
+    expect([gathered, malformed].map(read => ['pluginSkills' in read, 'projectPlugins' in read])).toEqual([
+      [false, false],
+      [false, false],
+    ])
+  })
+})
+
+describe('the skills and agents the launch root provides', () => {
+  test('repoSkills and repoAgents are the names of the launch root .claude folders, by kind', async () => {
+    const dirs = {
+      '/repo/.git': [],
+      '/repo/.claude/commands': [
+        entry('gsd-autonomous.md'),
+        entry('gsd-quick.md'),
+        entry('notes.txt'),
+        entry('sub.md', 'dir'),
+        link('linked.md'),
+      ],
+      '/repo/.claude/skills': [entry('own-skill', 'dir'), link('linked-skill'), entry('README.md')],
+      '/repo/.claude/agents': [entry('gsd-executor.md'), entry('folder.md', 'dir'), link('x.md')],
+    }
+    const gathered = await gatheredUser(repoWorld({ dirs }))
+    const none = (await gather(repoWorld(), [GIT_OK])).read
+
+    expect(gathered.repoSkills).toEqual(['gsd-autonomous', 'gsd-quick', 'linked-skill', 'own-skill'])
+    expect(gathered.repoAgents).toEqual(['gsd-executor'])
+    expect(['repoSkills' in userOf(none), 'repoAgents' in userOf(none)]).toEqual([false, false])
+    expect(none.kind === 'ok' ? none.warnings : null).toEqual([])
+  })
+
+  test('a launch root folder that links out of the repo or cannot be read gives no name and a warning', async () => {
+    const dirs = {
+      '/repo/.git': [],
+      '/repo/.claude/skills': [entry('own-skill', 'dir')],
+      '/repo/.claude/commands': [entry('gsd-quick.md')],
+    }
+    const world = repoWorld({
+      dirs,
+      realPaths: { '/repo/.claude/skills': '/elsewhere/skills' },
+      unknownPaths: ['/repo/.claude/agents'],
+    })
+    const { read } = await gather(world, [GIT_OK])
+    const gathered = userOf(read)
+
+    expect([gathered.repoSkills, 'repoAgents' in gathered]).toEqual([['gsd-quick'], false])
+    expect(read.kind === 'ok' ? read.warnings : null).toEqual([
+      'could not read <repo>/.claude/skills (treated as unknown)',
+      'could not read <repo>/.claude/agents (treated as unknown)',
+    ])
+  })
+
+  test('a GSD role whose launch root holds the GSD commands and agent gets no gsd- warning, no repo link', async () => {
+    const commands = adapterOf('gsd').startSkills.map(name => entry(`${name}.md`))
+    const agents = [entry('gsd-executor.md')]
+    const dirs = { '/repo/.git': [], '/repo/.claude/commands': commands, '/repo/.claude/agents': agents }
+    const gathered = await gatheredUser(repoWorld({ dirs }))
+    const scope = compileScope(BE, { ...context(), setup: emptySetupScan({ agents: ['gsd-executor'] }) })
+    const plan = launchPlan(BE, scope, gathered)
+
+    expect(plan.warnings.filter(warning => warning.includes('gsd-'))).toEqual([])
+    expect(plan.warnings).toContain('skill create-handoff-doc was not found in your user skills: not linked')
+    expect(plan.warnings).toContain('skill resume-handoff-doc was not found in your user skills: not linked')
+    expect(plan.links.filter(link => link.target.startsWith('/repo/.claude'))).toEqual([])
+  })
+
+  test("an epic worktree reads its own launch root, never the main checkout's", async () => {
+    const commands = [entry('gsd-autonomous.md')]
+    const mainOnly = await worktreeUser(repoWorld({ dirs: { '/repo/.git': [], '/repo/.claude/commands': commands } }))
+    const worktreeDirs = { '/repo/.git': [], '/repo/.claude/worktrees/proj-1/.claude/commands': commands }
+    const inWorktree = await worktreeUser(repoWorld({ dirs: worktreeDirs }))
+
+    expect('repoSkills' in mainOnly).toBe(false)
+    expect(inWorktree.repoSkills).toEqual(['gsd-autonomous'])
+  })
+
+  test('an epic worktree reads the launch root folders its mirror links into the main checkout', async () => {
+    const claude = '/repo/.claude/worktrees/proj-1/.claude'
+    const dirs = {
+      '/repo/.git': [],
+      [`${claude}/commands`]: [entry('gsd-autonomous.md')],
+      [`${claude}/agents`]: [entry('gsd-executor.md')],
+      [`${claude}/skills`]: [entry('own-skill', 'dir')],
+    }
+    const realPaths = {
+      [`${claude}/commands`]: '/repo/.claude/commands',
+      [`${claude}/agents`]: '/repo/.claude/agents',
+      [`${claude}/skills`]: '/elsewhere/skills',
+    }
+    const { read } = await gather(repoWorld({ dirs, realPaths }), [GIT_OK], WORKTREE)
+    const gathered = userOf(read)
+
+    expect([gathered.mainRoot, gathered.repoSkills, gathered.repoAgents]).toEqual([
+      '/repo',
+      ['gsd-autonomous'],
+      ['gsd-executor'],
+    ])
+    expect(read.kind === 'ok' ? read.warnings : null).toEqual([
+      'could not read <repo>/.claude/skills (treated as unknown)',
+    ])
+  })
+
+  test('without a main checkout a launch root folder that links into another checkout is still refused', async () => {
+    const notNested: InitLocations = { ...DEFAULT_LOCATIONS, root: '/wt', givenRoot: '/wt' }
+    const dirs = { '/repo/.git': [], '/wt/.claude/commands': [entry('gsd-autonomous.md')] }
+    const realPaths = { '/wt/.claude/commands': '/repo/.claude/commands' }
+    const { read } = await gather(repoWorld({ dirs, realPaths }), [GIT_OK], notNested)
+    const gathered = userOf(read)
+
+    expect(['mainRoot' in gathered, 'repoSkills' in gathered]).toEqual([false, false])
+    expect(read.kind === 'ok' ? read.warnings : null).toEqual([
+      'could not read <repo>/.claude/commands (treated as unknown)',
+    ])
+  })
+})
+
+describe('the env files git tracks, for a role that runs the repo checks', () => {
+  test('a BE launch lists them at the root once and carries what git gave', async () => {
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: ENV_TEST_ENTRY, stderr: '' })
+    const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked])
+
+    expect(userOf(read).trackedEnvFiles).toEqual(['.env.test'])
+    expect(calls).toEqual([
+      { argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } },
+      TRACKED_ENV_CALL,
+      MODIFIED_ENV_CALL,
+    ])
+  })
+
+  test('a tracked env file git lists as modified is left out', async () => {
+    const entries = `${ENV_TEST_ENTRY}100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0\tweb/.env.local\0`
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: entries, stderr: '' })
+    const modified = modifiedEnvRule({ exitCode: 0, stdout: 'web/.env.local\0', stderr: '' })
+    const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked, modified])
+
+    expect(userOf(read).trackedEnvFiles).toEqual(['.env.test'])
+    expect(calls).toEqual([
+      { argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } },
+      TRACKED_ENV_CALL,
+      MODIFIED_ENV_CALL,
+    ])
+  })
+
+  test('a modified-files run the host rejects or that exits non-zero leaves the field out', async () => {
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: ENV_TEST_ENTRY, stderr: '' })
+    for (const result of [null, { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' }]) {
+      const { read } = await gather(repoWorld(), [GIT_OK, tracked, modifiedEnvRule(result)])
+
+      expect(Object.hasOwn(userOf(read), 'trackedEnvFiles')).toBe(false)
+    }
+  })
+
+  test('a PM or TL launch makes no such run and has no field', async () => {
+    const tracked = trackedEnvRule({ exitCode: 0, stdout: ENV_TEST_ENTRY, stderr: '' })
+    for (const role of [templateRole('pm'), templateRole('tl')]) {
+      const { read, calls } = await gather(repoWorld(), [GIT_OK, tracked], DEFAULT_LOCATIONS, GIT_ROOT, [], role)
+
+      expect(Object.hasOwn(userOf(read), 'trackedEnvFiles')).toBe(false)
+      expect(calls.map(call => call.argv)).toEqual([GIT_ARGV])
+    }
+  })
+
+  test('a run the host rejects or that exits non-zero leaves the field out', async () => {
+    for (const result of [null, { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' }]) {
+      const { read } = await gather(repoWorld(), [GIT_OK, trackedEnvRule(result)])
+
+      expect(Object.hasOwn(userOf(read), 'trackedEnvFiles')).toBe(false)
+    }
   })
 })

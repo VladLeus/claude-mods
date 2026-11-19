@@ -89,6 +89,16 @@ describe('probe verdicts', () => {
     expect(verdictsOf(crossed, present)).toEqual(['violated', 'violated', 'violated'])
   })
 
+  test('skill-absent is violated when the skills list names the token, and holds when it does not', () => {
+    const denied = expectation('skill-absent', 'mattpocock-skills:tdd', 'best-effort')
+    const listed = inventory([], { skills: ['mattpocock-skills:grilling', 'mattpocock-skills:tdd'] })
+    const unlisted = inventory(['mattpocock-skills:tdd'], { skills: ['mattpocock-skills:grilling'] })
+
+    expect(verdictsOf(listed, [denied])).toEqual(['violated'])
+    expect(verdictsOf(unlisted, [denied])).toEqual(['best-effort'])
+    expect(verdictsOf(unlisted, [{ ...denied, enforcement: 'hard' }])).toEqual(['enforced'])
+  })
+
   test('permission-mode is violated when the mode differs or is not shown', () => {
     const auto = expectation('permission-mode', 'auto')
 

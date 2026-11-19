@@ -30,6 +30,10 @@ export const CONTRACTS = Object.freeze({
   probeToolPresent: 'tool {token} present',
   probeCommandPresent: 'command {token} present',
   probeSkillPresent: 'skill {token} present',
+  probeSkillAbsent: 'skill {token} absent',
+  probeSkillGranted: 'Skill given to the role',
+  probeSkillDenied: 'Skill denied to the role',
+  probeSkillUnavailable: 'Skill given to the role, not available at this launch: {name}',
   probePermissionMode: 'permission mode {token}',
   probeChecked: '{text} [{label}]',
   probeMemoryFolder: 'Memory folder: {dir} (autoMemoryDirectory)',
@@ -42,7 +46,38 @@ export const CONTRACTS = Object.freeze({
   // excludes file, and the line that hides each role's own `.runtime/` there (AUTO-PICK #25, RESEARCH Pitfall 5).
   excludesHeading: '# cadre links (cadre epic)',
   runtimeExcludeLine: '/.cadre/*/.runtime/',
+  // The record words of an inbox.jsonl line (messages/record): the type of an entry and of a mark, and the sender
+  // of an entry cadre writes itself.
+  inboxEntryType: 'entry',
+  inboxMarkType: 'mark',
+  cadreSender: 'cadre',
 }) satisfies Record<string, string>
+
+/**
+ * The kind fields an inbox entry may carry beside its subject and body, by their record names in the record's key
+ * order. They are never renamed, or a stored line would lose them.
+ */
+export const INBOX_ENTRY_FIELDS: readonly string[] = Object.freeze([
+  'ticketKey',
+  'scores',
+  'pin',
+  'reportForm',
+  'vector',
+  'use',
+  'specPath',
+  'outcome',
+  'changes',
+  'verification',
+  'reason',
+  'frameworkUsed',
+  'docPaths',
+  'openQuestions',
+  'mode',
+  'tickets',
+])
+
+/** The fields cadre stamps on an entry itself, after the kind fields, and never reads from a model's input. */
+export const INBOX_ENTRY_STAMPS: readonly string[] = Object.freeze(['size', 'large', 'pinned', 'planPath', 'method'])
 
 /**
  * The answer the engine gives a dialog submitted from its notes field with no option chosen (seen on 2.1.318, RF-01):

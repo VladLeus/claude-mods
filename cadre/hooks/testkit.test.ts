@@ -409,6 +409,9 @@ describe('shared fixtures', () => {
       'Use these roles?': 'Use these roles',
       'Which framework do the roles use': 'Same for all roles',
       'Framework for': 'GSD',
+      'Which frameworks does this team use? Found: GSD.': 'Keep GSD (Recommended)',
+      'Which frameworks does this team use? Found: superpowers.': 'Keep superpowers (Recommended)',
+      'Which frameworks does this team use? Found: GSD and superpowers.': 'Keep GSD and superpowers (Recommended)',
       'Autopilot duration': '4h',
       'Model and effort: same': 'Same for all roles',
       'Model and effort for': 'opus + medium',
@@ -423,7 +426,7 @@ describe('shared fixtures', () => {
       "Scan this repo's session history": 'No, skip it',
       "Run GSD's own check": 'No, skip the check',
     })
-    expect(Object.keys(INIT_ANSWERS)).toHaveLength(17)
+    expect(Object.keys(INIT_ANSWERS)).toHaveLength(20)
     expect(Object.isFrozen(INIT_ANSWERS)).toBe(true)
   })
 

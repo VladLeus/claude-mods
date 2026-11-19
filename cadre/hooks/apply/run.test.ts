@@ -1,20 +1,34 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile } from '../../types'
+import type { DesiredFile, FrameworkId, HostRun, ProjectInstall } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { attendedNote } from '../framework/gsd/hunks'
 import { untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { planWithManifest } from '../plan/plan'
-import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, outcomeOf, USER_DIR_LISTED } from '../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  entry,
+  hostWorld,
+  link,
+  memHost,
+  memIo,
+  memWorld,
+  outcomeOf,
+  USER_DIR_LISTED,
+} from '../testkit'
+import type { MemWorld } from '../testkit'
 import { hunkFailureLine } from './hunks'
 import type { HunkRun } from './hunks'
 import { improverArgv } from './improver'
 import type { BuiltFile } from './improver'
+import { MARKETPLACE_ADD_ARGV, projectInstallFailureText, projectInstallOf } from './installs'
 import type { ApplyInput, ApplyStep } from './private'
 import {
   APPLIED_NONE_NOTE,
   appliedLines,
+  installProject,
+  isNewRepoFileWritable,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
   roleFoldersOf,
@@ -28,23 +42,23 @@ import { applySteps } from './steps'
 /** BE's built CLAUDE.md, repo-relative, as the plan and the reply name it. */
 const BE_CLAUDE_MD = '.cadre/be/CLAUDE.md'
 
-/** BE's built CLAUDE.md as an absolute path under the fixture repo /repo. */
-const BE_CLAUDE_MD_PATH = `/repo/${BE_CLAUDE_MD}`
-
-/** The text apply writes to BE's built CLAUDE.md: its header line, then one repo part. */
+/** The text of BE's built CLAUDE.md in the fixture apply. */
 const BE_BUILT = '<!-- cadre: instructions for role be -->\n\n# Rules\nRun the tests before a commit.\n'
 
 /** The one desired file of the fixture apply: BE's built CLAUDE.md. */
 const DESIRED: readonly DesiredFile[] = [{ path: BE_CLAUDE_MD, content: BE_BUILT, mode: 'file' }]
 
-/** BE's built CLAUDE.md as the improver pass gets it, watching nothing else and with no flags. */
-const BE_BUILT_FILE: BuiltFile = {
-  path: BE_CLAUDE_MD_PATH,
-  repoPath: BE_CLAUDE_MD,
-  text: BE_BUILT,
-  watched: [],
-  runFlags: [],
-}
+/** BE's role memory folder in the fixture repo (D-140 q2-a): `<userDir>/cadre/<repo>-<hash8>/be`. */
+const BE_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d/be'
+
+/** BE's private text file, at its absolute path in its role memory folder. */
+const BE_TEXT_FILE = `${BE_DIR}/instructions/CLAUDE.md`
+
+/** BE's private text file as the improver pass gets it. */
+const BE_PRIVATE_FILE: BuiltFile = { path: BE_TEXT_FILE, text: 'private\n' }
+
+/** The private step that writes BE's private text file in its role memory folder. */
+const BE_PRIVATE_STEP: ApplyStep = { kind: 'private', path: BE_DIR, files: [BE_PRIVATE_FILE] }
 
 /** The apply input of DESIRED planned over an empty repo with no manifest: no conflict and no private file. */
 async function fixtureInput(): Promise<ApplyInput> {
@@ -79,50 +93,27 @@ describe('writeWithImprover', () => {
 
   test('with a built file offered it runs the improver pass as writeImproved does', async () => {
     const input = await fixtureInput()
-    const steps = await applySteps(input)
-    const world = memWorld({ files: { [BE_CLAUDE_MD_PATH]: BE_BUILT } })
+    const steps = [...(await applySteps(input)), BE_PRIVATE_STEP]
+    const world = memWorld({ files: { [BE_TEXT_FILE]: BE_PRIVATE_FILE.text }, dirs: USER_DIR_LISTED })
     const helper = memHost(hostWorld({}))
     const direct = memHost(hostWorld({}))
-    const args = { locations: DEFAULT_LOCATIONS, input, steps, offered: [BE_BUILT_FILE], allowed: new Set<string>() }
+    const allowed = new Set([BE_TEXT_FILE])
+    const args = { locations: DEFAULT_LOCATIONS, input, steps, offered: [BE_PRIVATE_FILE], allowed }
     const outcome = await writeWithImprover(memIo(world, {}).io, helper.io, args)
 
     expect(outcome).toEqual(await writeImproved(memIo(world, {}).io, direct.io, args))
     expect(helper.writes).toEqual(direct.writes)
     expect(helper.calls.filter(call => call.argv[0] === 'claude').map(call => call.argv)).toEqual([
-      improverArgv(BE_CLAUDE_MD_PATH),
+      improverArgv(BE_TEXT_FILE),
     ])
   })
 })
 
-/** BE's role memory folder in the fixture repo (D-140 q2-a): `<userDir>/cadre/<repo>-<hash8>/be`. */
-const BE_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d/be'
-
-/** BE's private text file, at its absolute path in its role memory folder. */
-const BE_TEXT_FILE = `${BE_DIR}/instructions/CLAUDE.md`
-
 /** BE's private text file as a reply shows it, from the home folder. */
 const BE_TEXT_SHOWN = '~/.claude/cadre/repo-1a2b3c4d/be/instructions/CLAUDE.md'
 
-/** A repo file whose repo-relative path is the very text a reply shows for BE's private text file (D-242). */
-const LOOKALIKE_PATH = `/repo/${BE_TEXT_SHOWN}`
-
-/** The writes of the D-242 specs: the lookalike repo file, then BE's private text file in its own private step. */
-const COLLIDING_STEPS: readonly ApplyStep[] = [
-  { kind: 'write', path: BE_TEXT_SHOWN, text: 'repo\n' },
-  { kind: 'private', path: BE_DIR, files: [{ path: BE_TEXT_FILE, text: 'private\n' }] },
-]
-
-/** The lookalike repo file as the improver pass would get it. */
-const LOOKALIKE_FILE: BuiltFile = {
-  path: LOOKALIKE_PATH,
-  repoPath: BE_TEXT_SHOWN,
-  text: 'repo\n',
-  watched: [],
-  runFlags: [],
-}
-
-/** BE's private text file as the improver pass would get it: outside the repo, so not repo-relative. */
-const BE_PRIVATE_FILE: BuiltFile = { path: BE_TEXT_FILE, repoPath: null, text: 'private\n', watched: [], runFlags: [] }
+/** The writes of the D-242 specs: a repo file at the very path a reply shows for BE's private text file, then it. */
+const COLLIDING_STEPS: readonly ApplyStep[] = [{ kind: 'write', path: BE_TEXT_SHOWN, text: 'repo\n' }, BE_PRIVATE_STEP]
 
 /** Runs writeImproved over COLLIDING_STEPS, offering `offered`, with the host failing the writes of `writeFails`. */
 async function collidingRun(
@@ -142,12 +133,6 @@ describe('written set by absolute path and kind (D-242)', () => {
 
     expect(outcome.improved).toEqual({ changed: 0, total: 1 })
     expect(outcome.written.filter(path => path === BE_TEXT_SHOWN)).toEqual([BE_TEXT_SHOWN, BE_TEXT_SHOWN])
-  })
-
-  test('a repo file whose write failed is not offered when a private file shown the same was written', async () => {
-    const outcome = await collidingRun([LOOKALIKE_FILE], [LOOKALIKE_PATH])
-
-    expect(outcome.improved).toBeNull()
   })
 
   test('a private file whose write failed is not offered when a repo file shown the same was written', async () => {
@@ -198,6 +183,38 @@ describe('init apply (D-105)', () => {
     expect(appliedLines(outcomeOf({ failed: ['.cadre/INDEX.md'] }))[0]).toBe('Applied: wrote 0 files (0 executable).')
   })
 
+  test('appliedLines: the not-run hunk lines come right after the install problems, before the untracked parts', () => {
+    const run: HunkRun = { key: 'mode', file: '.planning/config.json', argv: ['node'], display: 'node ~/x mode yolo' }
+    const notRun = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+    const installProblems = ['GSD did not install, so the repo default fell back to none (built-in)', 'install it']
+    const untracked = untrackedPartsWarning('notes/local.md')
+    const outcome = outcomeOf({
+      hunkFailures: [run],
+      notRunLines: [notRun],
+      attended: ['mode'],
+      installProblems,
+      untrackedParts: [untracked],
+    })
+    const lines = appliedLines(outcome)
+    expect(lines).toEqual([
+      APPLIED_NONE_NOTE,
+      `warning: ${hunkFailureLine(run)}`,
+      `warning: ${attendedNote(['mode'])}`,
+      `warning: ${installProblems[0]}`,
+      `warning: ${installProblems[1]}`,
+      `warning: ${notRun}`,
+      `warning: ${untracked}`,
+      NEXT_STEP_NOTE,
+    ])
+    const at = lines.indexOf(`warning: ${notRun}`)
+    expect(installProblems.map(problem => lines.indexOf(`warning: ${problem}`) < at)).toEqual([true, true])
+    expect(appliedLines(outcomeOf({ hunkFailures: [run] }))).toEqual([
+      APPLIED_NONE_NOTE,
+      `warning: ${hunkFailureLine(run)}`,
+      NEXT_STEP_NOTE,
+    ])
+  })
+
   test('appliedLines: the untracked-parts warnings come right after the install problems (02-GAPS-B2 M3)', () => {
     const untracked = untrackedPartsWarning('notes/local.md')
     const problems = { installProblems: ['install it by hand'], untrackedParts: [untracked] }
@@ -222,5 +239,81 @@ describe('roleFoldersOf (D-238)', () => {
 
       expect(folderOf?.('be')).toBe(`/home/u/.claude/cadre/${slug}/be`)
     }
+  })
+})
+
+describe('a new file in the repo', () => {
+  /** The repo root and its .cadre folder as real folders, the rubric not in .cadre. */
+  const FOLDERS = { '/repo': [entry('.cadre', 'dir')], '/repo/.cadre': [entry('cadre.json')] }
+
+  /** Whether the rubric may be written new over the world `over` describes. */
+  async function isRubricWritable(over: Partial<MemWorld>): Promise<boolean> {
+    return isNewRepoFileWritable(memIo(memWorld(over), {}).io, '/repo', '.cadre/sizing.md')
+  }
+
+  test('isNewRepoFileWritable: only an absent path under real folders, with no link on its way', async () => {
+    const there = { '/repo/.cadre/sizing.md': 'my anchors\n' }
+    const dangling = { ...FOLDERS, '/repo/.cadre': [link('sizing.md')] }
+    const linked = { '/repo/.cadre': '/elsewhere/.cadre' }
+
+    expect([
+      await isRubricWritable({ dirs: FOLDERS }),
+      await isRubricWritable({ dirs: FOLDERS, files: there }),
+      await isRubricWritable({ dirs: dangling }),
+      await isRubricWritable({ dirs: FOLDERS, realPaths: linked }),
+      await isRubricWritable({ dirs: FOLDERS, unknownPaths: ['/repo/.cadre/sizing.md'] }),
+    ]).toEqual([true, false, false, false, false])
+  })
+})
+
+/** The project install of a framework that has one; a spec fails for one that has none. */
+function installOf(id: FrameworkId): ProjectInstall {
+  const install = projectInstallOf(id)
+  if (install === null) throw new Error(`${id} has no project install`)
+
+  return install
+}
+
+/** An install run that exited 1. */
+const FAILED_RUN: HostRun = { exitCode: 1, stdout: '', stderr: 'npm ERR! network' }
+
+describe('installProject', () => {
+  test('runs each install in order from the repo root with its own timeout; exit 0 counts it installed', async () => {
+    const [gsd, superpowers] = [installOf('gsd'), installOf('superpowers')]
+    const host = memHost(hostWorld({}))
+    const outcome = await installProject(host.io, '/repo', '/home/u', [gsd, superpowers])
+    expect(host.calls).toEqual([
+      { argv: gsd.argv, options: { cwd: '/repo', timeoutMs: 600_000 } },
+      { argv: superpowers.argv, options: { cwd: '/repo', timeoutMs: 180_000 } },
+    ])
+    expect(outcome).toEqual({ installed: [gsd.id, superpowers.id], installProblems: [] })
+  })
+
+  test('a failed GSD install runs once, adds no marketplace, and gives its command from the repo root', async () => {
+    const gsd = installOf('gsd')
+    for (const result of [FAILED_RUN, null]) {
+      const host = memHost(hostWorld({ runs: [{ argv: gsd.argv, result }] }))
+      const outcome = await installProject(host.io, '/repo', '/home/u', [gsd])
+      expect(host.calls.map(call => call.argv)).toEqual([gsd.argv])
+      expect(outcome).toEqual({ installed: [], installProblems: [projectInstallFailureText(gsd)] })
+    }
+  })
+
+  test('a plugin install failing twice adds the marketplace once from home, retries once from the root', async () => {
+    const superpowers = installOf('superpowers')
+    const host = memHost(hostWorld({ runs: [{ argv: superpowers.argv, result: FAILED_RUN }] }))
+    const outcome = await installProject(host.io, '/repo', '/home/u', [superpowers])
+    const fromRoot = { argv: superpowers.argv, options: { cwd: '/repo', timeoutMs: 180_000 } }
+    const add = { argv: MARKETPLACE_ADD_ARGV, options: { cwd: '/home/u', timeoutMs: 180_000 } }
+    expect(host.calls).toEqual([fromRoot, add, fromRoot])
+    expect(outcome).toEqual({ installed: [], installProblems: [projectInstallFailureText(superpowers)] })
+  })
+
+  test('with no home folder a plugin install runs from the root, adds no marketplace, gives its command', async () => {
+    const superpowers = installOf('superpowers')
+    const host = memHost(hostWorld({ runs: [{ argv: superpowers.argv, result: FAILED_RUN }] }))
+    const outcome = await installProject(host.io, '/repo', null, [superpowers])
+    expect(host.calls).toEqual([{ argv: superpowers.argv, options: { cwd: '/repo', timeoutMs: 180_000 } }])
+    expect(outcome).toEqual({ installed: [], installProblems: [projectInstallFailureText(superpowers)] })
   })
 })

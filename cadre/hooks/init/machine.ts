@@ -1,20 +1,25 @@
 /**
  * The /cadre init stage machine (D-204, D-230), a layer 10 module: STAGES, the StageDef of every InitStage;
- * initialState, a run with its first effect out; and nextStage, the one transition: the open stage takes the answer,
- * and once that stage is done the stages after it in STAGE_ORDER are entered until one sets an effect. A cancelled
- * stage ends the run with cancelledReply, the one place its reason is printed (A1, D-45, D-265); an answer that does
- * not fit the effect that is out, or any answer once the run ended, ends it with INIT_CANCELLED (fail closed). Every
- * stage is a pure StageDef of init/stages, but for the guard and the scans, which are io effects here. Pure: it gives
- * states and never performs an effect; only init/run and the tests import it.
+ * initialState, a run with its first effect out, and frameworksState, the first state of /cadre frameworks; and
+ * nextStage, the one transition: the open stage takes the answer, and once that stage is done the stages after it in
+ * its flow's order (FLOW_ORDER) are entered until one sets an effect. A cancelled stage ends the run with
+ * cancelledReply in the flow's words, the one place its reason is printed; an answer that does not fit the effect that
+ * is out, or any answer once the run ended, ends it with the flow's cancel text (fail closed). Every stage is a pure
+ * StageDef of init/stages, but for the guard and the scans, which are io effects here. Pure: it gives states and never
+ * performs an effect; only init/run and the tests import it.
  */
+import type { InitLocations, RoleSpec } from '../../types'
 import { isObject } from '../core/json'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
 import { proposeRoles } from '../roles/propose'
+import type { Gathered } from '../scan/gather'
+import type { TeamState } from '../team'
 import type { SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
-import { cancelledReply, INIT_CANCELLED } from './replies'
-import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect } from './state'
+import type { Draft } from './draft'
+import { cancelledReply, cancelledText, INIT_CANCELLED } from './replies'
+import { FLOW_ORDER, stageDone, stageEnded, stageFailed, withEffect } from './state'
 import type { Answer, Effect, InitStage, InitState, Kept, StageDef } from './state'
 import { assignStage } from './stages/assign'
 import { carryStage } from './stages/carry'
@@ -27,7 +32,9 @@ import { improverInstallStage } from './stages/improver-install'
 import { instructionsStage } from './stages/instructions'
 import { launchStage } from './stages/launch'
 import { modelStage } from './stages/model'
+import { pmPluginStage } from './stages/pm-plugin'
 import { policyStage } from './stages/policy'
+import { reframeReviewStage } from './stages/reframe'
 import { reviewStage } from './stages/review'
 import { rolesStage } from './stages/roles'
 import { securityStage } from './stages/security'
@@ -57,6 +64,13 @@ function toolNamesOf(tools: unknown): string[] {
   return tools.flatMap(tool => (isObject(tool) && typeof tool.name === 'string' ? [tool.name] : []))
 }
 
+/** The frameworks installed and the framework choice the scans' detections give. */
+function detectedOf(gathered: Gathered): Pick<Draft, 'installed' | 'choice'> {
+  const detections = detectAll(gathered.facts.facts)
+
+  return { installed: installedFrameworks(detections), choice: chooseFramework(detections, null) }
+}
+
 /**
  * The scans (SCAN-01, SCAN-02), an io effect with the consent answer, and what the scans fix for the whole run: the
  * frameworks installed, the framework choice, the template proposal, and the session's tool names for the MCP server
@@ -74,14 +88,7 @@ const scanStage: StageDef = Object.freeze({
     const { locations } = state.draft
     if (answer.kind !== 'io' || answer.result.id !== 'scan' || locations === undefined) return stageFailed(state)
     const gathered = answer.result.result
-    const detections = detectAll(gathered.facts.facts)
-    const draft = {
-      ...state.draft,
-      gathered,
-      installed: installedFrameworks(detections),
-      choice: chooseFramework(detections, null),
-      proposal: proposeRoles(gathered.repo),
-    }
+    const draft = { ...state.draft, gathered, ...detectedOf(gathered), proposal: proposeRoles(gathered.repo) }
 
     return stageDone({ ...state, draft, toolNames: toolNamesOf(answer.result.tools) })
   },
@@ -105,6 +112,7 @@ export const STAGES: Readonly<Record<InitStage, StageDef>> = Object.freeze({
   duration: durationStage,
   model: modelStage,
   assign: assignStage,
+  'pm-plugin': pmPluginStage,
   instructions: instructionsStage,
   carry: carryStage,
   hunks: hunksStage,
@@ -112,23 +120,26 @@ export const STAGES: Readonly<Record<InitStage, StageDef>> = Object.freeze({
   policy: policyStage,
   launch: launchStage,
   review: reviewStage,
+  'reframe-review': reframeReviewStage,
   cancelled: endStage,
   done: endStage,
 })
 
-/** A run that cannot go on (fail closed): it ends with INIT_CANCELLED, and nothing more is logged. */
+/** A run that cannot go on (fail closed): it ends with the flow's cancel text, and nothing more is logged. */
 function failed(state: InitState): InitState {
-  return withEffect({ ...state, stage: 'cancelled', sub: { kind: 'start' } }, { kind: 'end', reply: INIT_CANCELLED })
+  const ended: InitState = { ...state, stage: 'cancelled', sub: { kind: 'start' } }
+
+  return withEffect(ended, { kind: 'end', reply: cancelledText(state.flow) })
 }
 
 /**
- * A run a stage cancelled (A1, D-45): it ends with the reply that names the reason (cancelledReply, batch-1 review
- * S1), the one place a cancel reason is printed, so no output logs it as a line of its own (D-265).
+ * A run a stage cancelled: it ends with the reply that names the reason in the flow's words (cancelledReply), the one
+ * place a cancel reason is printed, so no output logs it as a line of its own.
  */
 function cancelledWith(state: InitState, reason: string): InitState {
   const ended: InitState = { ...state, stage: 'cancelled', sub: { kind: 'start' } }
 
-  return withEffect(ended, { kind: 'end', reply: cancelledReply(reason) })
+  return withEffect(ended, { kind: 'end', reply: cancelledReply(reason, state.flow) })
 }
 
 /** A run that ended with `reply`. */
@@ -136,11 +147,17 @@ function endedWith(state: InitState, reply: string): InitState {
   return withEffect({ ...state, stage: 'done', sub: { kind: 'start' } }, { kind: 'end', reply })
 }
 
-/** The stage after `stage` in STAGE_ORDER; null after the last one and for a stage that ends a run. */
-function stageAfter(stage: InitStage): InitStage | null {
-  const at = STAGE_ORDER.indexOf(stage)
+/** The stages of the flow `state` runs, in order. */
+function orderOf(state: InitState): readonly InitStage[] {
+  return FLOW_ORDER[state.flow ?? 'init']
+}
 
-  return at === -1 ? null : (STAGE_ORDER[at + 1] ?? null)
+/** The stage after the state's stage in its flow's order; null after the last one and for a stage that ends a run. */
+function stageAfter(state: InitState): InitStage | null {
+  const order = orderOf(state)
+  const at = order.indexOf(state.stage)
+
+  return at === -1 ? null : (order[at + 1] ?? null)
 }
 
 /** The state with `stage` entered: its cursor at start, then the stage's own enter. */
@@ -171,7 +188,7 @@ function backToReview(state: InitState): InitState {
  */
 function settled(state: InitState): InitState {
   let current = state
-  for (let hops = 0; hops <= STAGE_ORDER.length; hops += 1) {
+  for (let hops = 0; hops <= orderOf(state).length; hops += 1) {
     const { sub } = current
     if (sub.kind === 'cancelled') return cancelledWith(current, sub.reason)
     if (sub.kind === 'end') return endedWith(current, sub.reply)
@@ -185,7 +202,7 @@ function settled(state: InitState): InitState {
       current = backToReview(current)
       continue
     }
-    const next = stageAfter(current.stage)
+    const next = stageAfter(current)
     if (next === null) return failed(current)
     current = entered(current, next)
   }
@@ -214,13 +231,9 @@ function isAnswerTo(effect: Effect, answer: Answer): boolean {
   }
 }
 
-/**
- * A run before its first answer (D-230): the guard entered, its effect out, nothing to show yet, on the surface module
- * the run was given, with no page width yet (D-292). A run given no surface, as the tests and the golden capture, runs
- * on the desktop pane, today's default (D-208, D-353).
- */
-export function initialState(dryRun: boolean, surface: SurfaceModule = PANE_DESKTOP): InitState {
-  const blank: InitState = {
+/** A run before any stage was entered: nothing drafted or shown, no question, no go-back and no page width yet. */
+function blankState(dryRun: boolean, surface: SurfaceModule): InitState {
+  return {
     stage: 'guard',
     sub: { kind: 'start' },
     draft: {},
@@ -236,8 +249,51 @@ export function initialState(dryRun: boolean, surface: SurfaceModule = PANE_DESK
     surface,
     pageColumns: null,
   }
+}
 
-  return settled(entered(blank, 'guard'))
+/**
+ * A run before its first answer (D-230): the guard entered, its effect out, nothing to show yet, on the surface module
+ * the run was given, with no page width yet (D-292). A run given no surface, as the tests and the golden capture, runs
+ * on the desktop pane, today's default (D-208, D-353).
+ */
+export function initialState(dryRun: boolean, surface: SurfaceModule = PANE_DESKTOP): InitState {
+  return settled(entered(blankState(dryRun, surface), 'guard'))
+}
+
+/** The role with no GSD or superpowers framework of its own, so the framework step decides it again; none stays. */
+function redecided(role: RoleSpec): RoleSpec {
+  const { framework, ...rest } = role
+
+  return framework === 'none' ? role : rest
+}
+
+/**
+ * The first state of /cadre frameworks: the framework step entered in the frameworks flow over a draft of the stored
+ * team (its roles, git policy, launcher start, ~/.claude.json consent and recorded structure) and the fresh scans, with
+ * every role's GSD or superpowers value cleared; the step and the stages after it set the framework answers. A run
+ * given no surface runs on the desktop pane.
+ */
+export function frameworksState(
+  dryRun: boolean,
+  surface: SurfaceModule | undefined,
+  seed: { readonly locations: InitLocations; readonly gathered: Gathered; readonly team: TeamState },
+): InitState {
+  const { locations, gathered, team } = seed
+  const { gitPolicy, launchStart, readUserMcp, structure } = team.state
+  const roles = team.roles.map(redecided)
+  const draft = {
+    locations,
+    gathered,
+    ...detectedOf(gathered),
+    readUserMcp,
+    policy: gitPolicy,
+    launchStart,
+    roles,
+    ...(structure === undefined ? {} : { structure }),
+  }
+  const blank = blankState(dryRun, surface ?? PANE_DESKTOP)
+
+  return settled(entered({ ...blank, draft, flow: 'frameworks' }, 'frameworks'))
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, InitLocations, PortEntry } from '../../../types'
 import { PANE_LIST_WORDS } from '../../locales/t'
+import { mangledProjectDir } from '../../paths'
 import { proposeRoles } from '../../roles/propose'
 import { listSessions, scanHistory } from '../../scan/history'
 import type { HistoryScan } from '../../scan/history'
@@ -147,7 +148,9 @@ function scanAskContext(total: number): unknown {
 /** The history stage's host operations as init/run performs them, through `io` (listSessions, scanHistory). */
 function historyCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
   return async call => {
-    if (call.id === 'list-sessions') return { id: 'list-sessions', result: await listSessions(io, call.dir) }
+    if (call.id === 'list-sessions') {
+      return { id: 'list-sessions', result: await listSessions(io, call.dir) }
+    }
     if (call.id !== 'scan-history') throw new Error(`the history stage does not set ${call.id}`)
 
     return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
@@ -267,6 +270,21 @@ describe('history scan', () => {
     expect(drive.state.draft.hints).toEqual(new Map())
     expect(drive.asked).toEqual([])
     expect(drive.outputs).toEqual([{ kind: 'log', text: UNLISTED_HISTORY_NOTE }, scanFoldAt(DEFAULT_LOCATIONS)])
+    expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
+  })
+
+  test('historyStage: a root encoded over 200 characters has no transcript read before the answer', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const world = memWorld({
+      dirs: { '/home/u/.claude/projects': [entry(name, 'dir')], [shortened]: [transcript('a.jsonl', 1)] },
+      files: { [`${shortened}/a.jsonl`]: `${JSON.stringify({ type: 'user', cwd: root })}\n${EXAMPLE}` },
+    })
+    const run = memIo(world, [])
+    const locations = { ...DEFAULT_LOCATIONS, root, givenRoot: root }
+    const drive = await drivenWith(historyAt(locations), ['Yes, scan names and counts'], historyCalls(run.io))
+    expect(drive.asked).toEqual([])
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
   })
 
@@ -452,7 +470,8 @@ describe('the history stage (D-230)', () => {
   test('Yes scans the listed sessions as an io effect, folds the history block and keeps the names as hints', () => {
     const asking = nextStage(historyAt(), listed(ONE_SESSION))
     const scanning = nextStage(asking, { kind: 'answer', text: 'Yes, scan names and counts' })
-    expect(scanning.effect).toEqual({ kind: 'io', call: { id: 'scan-history', dir: DIR, sessions: ONE_SESSION } })
+    const call = { id: 'scan-history', dir: DIR, sessions: ONE_SESSION }
+    expect(scanning.effect).toEqual({ kind: 'io', call })
     const done = nextStage(scanning, { kind: 'io', result: { id: 'scan-history', result: EXAMPLE_SCAN } })
     expect(done.stage).toBe('roles')
     expect(done.outputs[0]).toEqual(historyFoldOf(EXAMPLE_SCAN))

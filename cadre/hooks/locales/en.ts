@@ -132,6 +132,7 @@ export const EN = Object.freeze({
   'init.roles.unreadChange': 'Could not read that change: {trim}. Use {verbs}.',
   'init.roles.notInstalledMessage':
     'Cannot set {id} to {framework}: it is not installed for this repo (installed: {names}). {id} keeps its framework.',
+  'init.roles.notInstalledCommand': '{message} To install it, run from the repo root: {command}',
   'init.roles.proposedRole': '{title} ({id})',
   'init.roles.proposed': 'Proposed: {roles}.',
   'init.roles.proposedChanges.one': 'Proposed: {roles}; {count} change from the scan.',
@@ -154,6 +155,29 @@ export const EN = Object.freeze({
   'init.frameworks.gsdCheckTitle': 'GSD install',
   'init.frameworks.gsdCheckLine': '{dir}: found, not proven',
   'init.frameworks.gsdCheckDismissedReason': 'The GSD check question was dismissed or not answered.',
+  'init.frameworks.installQuestion': 'Install {name} for this repo?',
+  'init.frameworks.installCommand':
+    `cadre runs {command} from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) ${
+    ''}decide where it fetches from.`,
+  'init.frameworks.installWrites': 'It writes {writes}.',
+  'init.frameworks.installTitle': 'Install {name}',
+  'init.frameworks.setQuestion':
+    'Which frameworks does this team use? Found: {found}. Adding one installs it at project scope after Confirm.',
+  'init.frameworks.setQuestionNoneFound':
+    'Which frameworks does this team use? None was found. Adding one installs it at project scope after Confirm.',
+  'init.frameworks.setNamesJoin': ' and ',
+  'init.frameworks.setKeep': 'Keep {names} (Recommended)',
+  'init.frameworks.setAdd': 'Add {name} too',
+  'init.frameworks.setAddOnly': 'Add {name}',
+  'init.frameworks.setNone': 'None (built-in)',
+  'init.frameworks.setAccepts': '{labels}, or the frameworks by name: {words}',
+  'init.frameworks.storedNoneNote':
+    'Frameworks: None is recorded for this repo, and the scan found {found}. Run /cadre frameworks to choose again.',
+  'init.frameworks.installReasonInUse': '{name} is in use here ({where}) but not installed',
+  'init.frameworks.storedUninstalledNote':
+    'Frameworks: {names} kept from cadre.json but not installed for this repo. Run /cadre frameworks to install.',
+  'init.frameworks.installNo': 'No',
+  'init.frameworks.installYes': 'Yes, install it',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',
   'init.frameworks.frameworkAskAccepts': '{map} - a role runs one framework',
 
@@ -169,11 +193,21 @@ export const EN = Object.freeze({
 
   'init.improverInstall.improverInstallQuestion':
     `Install claude-md-management from claude-plugins-official after you confirm the plan? Its ${
-    ''}claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.`,
+    ''}claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept ${
+    ''}or keep each change.`,
   'init.improverInstall.improverInstallContext':
-    'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
+    'Without it the private CLAUDE.md files stay as cadre wrote them; a --dry-run installs nothing.',
   'init.improverInstall.improverInstallDismissedReason':
     'The claude-md-management question was dismissed or not answered.',
+
+  'init.pmPlugin.question':
+    'Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM {skills}.',
+  'init.pmPlugin.context': 'It runs from the repo root at project scope, never in a --dry-run: {command}',
+  'init.pmPlugin.no': 'No',
+  'init.pmPlugin.yes': 'Yes, install it',
+  'init.pmPlugin.skillsJoin': ' and ',
+  'init.pmPlugin.declined':
+    'PM runs without its grill skills: to add them, run {command} from the repo root, then /cadre init again.',
 
   'init.duration.durationQuestion': 'Autopilot duration for roles?',
   'init.duration.durationContextLine': 'Applies to every role: {ids}.',
@@ -310,33 +344,39 @@ export const EN = Object.freeze({
     ''}repo, never committed)`,
   'init.review.privateFilesHeading': 'Private files per role (written after Confirm):',
   'init.review.reviewLines': 'Plugins to install after Confirm (a --dry-run installs nothing): {keys}',
+  'init.review.frameworkInstall':
+    `Framework install from the repo root after Confirm (a --dry-run installs nothing; the repo's own settings for ${
+    ''}the command, such as its .npmrc for npx, decide where it fetches from): {command}; it writes {writes}`,
+  'init.review.pluginInstall':
+    'Plugin install from the repo root after Confirm (a --dry-run installs nothing): {command}; it writes {writes}',
   'init.review.rolesHeading': 'Roles:',
   'init.review.roleRow': '  {title} ({id})',
   'init.review.title': 'Review',
   'init.review.pagedTitle': 'Review (page {number} of {count})',
   'init.review.improverRun.one':
-    `After Confirm, claude-md-improver runs on up to {count} built file ${
+    `After Confirm, claude-md-improver runs on up to {count} private CLAUDE.md, built from your global CLAUDE.md ${
     ''}(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
   'init.review.improverRun.other':
-    `After Confirm, claude-md-improver runs on up to {count} built files ${
-    ''}(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
+    `After Confirm, claude-md-improver runs on up to {count} private CLAUDE.md files, built from your global ${
+    ''}CLAUDE.md (claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
 
   'init.reply.dryRunHead': 'cadre init --dry-run',
   'init.reply.head': 'cadre init',
   'init.conflict.dismissed': 'A Keep mine or Take new question was dismissed or not answered.',
   'init.conflict.context': 'Keep mine leaves your edited file as it is; Take new writes the new version over it.',
 
-  'init.status.scan': 'cadre: scanning the repo…',
-  'init.status.history': 'cadre: reading session history…',
-  'init.status.describeRoles': 'cadre: reading your structure…',
-  'init.status.mcp': 'cadre: recommending MCP servers…',
-  'init.status.skills': 'cadre: recommending skills…',
-  'init.status.topics': 'cadre: grouping instructions…',
-  'init.status.parts': 'cadre: recommending instruction parts…',
-  'init.status.regen': 'cadre: checking changed parts…',
-  'init.status.applyHunks': 'cadre: running the accepted changes…',
-  'init.status.installPlugins': 'cadre: installing plugins…',
-  'init.status.improver': 'cadre: running the improver…',
+  'init.status.scan': 'Scanning the repo…',
+  'init.status.history': 'Reading session history…',
+  'init.status.describeRoles': 'Reading your structure…',
+  'init.status.mcp': 'Recommending MCP servers…',
+  'init.status.skills': 'Recommending skills…',
+  'init.status.topics': 'Grouping instructions…',
+  'init.status.parts': 'Recommending instruction parts…',
+  'init.status.regen': 'Checking changed parts…',
+  'init.status.applyHunks': 'Running the accepted changes…',
+  'init.status.installPlugins': 'Installing plugins…',
+  'init.status.installFrameworks': 'Installing frameworks…',
+  'init.status.improver': 'Running the improver…',
   'init.status.summary.scan': 'the repo, your settings, plugins, skills and MCP servers',
   'init.status.summary.describe': 'the roles you described',
   'init.status.count.servers.one': '{count} server',
@@ -359,6 +399,8 @@ export const EN = Object.freeze({
   'init.status.count.hunks.other': '{count} hunks',
   'init.status.count.plugins.one': '{count} plugin',
   'init.status.count.plugins.other': '{count} plugins',
+  'init.status.count.frameworks.one': '{count} framework',
+  'init.status.count.frameworks.other': '{count} frameworks',
   'init.status.count.files.one': '{count} file',
   'init.status.count.files.other': '{count} files',
   'init.status.count.items.one': '{count} item',
@@ -520,8 +562,9 @@ export const EN = Object.freeze({
   'ui.context.memoryGroupTitlesProjectClaudeMd': 'Project CLAUDE.md',
   'ui.context.globalGroupLine': '{globalClaudeMdText} and the files it imports',
   'ui.context.envContext': 'Env variables',
-  'ui.context.improverInstallContext': '  {id}: {builtClaudeMdPath}',
-  'ui.context.improverInstallContext2': 'Built CLAUDE.md files it would tidy:',
+  'ui.context.improverInstallContext': '  {id}: {privateClaudeMdPath}',
+  'ui.context.improverInstallContext2': 'Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:',
+  'ui.context.privateClaudeMdPath': '<config dir>/cadre/<repo>-<hash8>/{id}/instructions/CLAUDE.md',
   'ui.context.improverInstallContext3': 'Improver install',
   'ui.context.launchContext': 'Git root: the top of this repo, the same for every launcher.',
   'ui.context.launchContext2': 'Run folder: wherever you run a launcher from.',
@@ -602,7 +645,6 @@ export const EN = Object.freeze({
   'apply.conflict.takeNewCounts.one': 'Take new: {count} line added, {removed} removed',
   'apply.conflict.takeNewCounts.other': 'Take new: {count} lines added, {removed} removed',
 
-  'apply.improver.unguardedRunReason': 'its folder has a path a permission rule cannot hold',
   'apply.improver.accept': 'Accept',
   'apply.improver.keepOriginal': 'Keep original',
   'apply.improver.diffCounts.one': '{count} line added, {removed} removed',
@@ -647,9 +689,26 @@ export const EN = Object.freeze({
   'apply.installs.pythonProblem4': 'python3 --version says {line}',
   'apply.installs.noHomeInstallText':
     'could not install {shown}: no home folder is known to run it from: run it yourself: {command}',
+  'apply.installs.projectInstallFailureText':
+    'could not install {shown}: run it yourself from the repo root: {command}',
+  'apply.installs.frameworkFallback':
+    `{name} did not install, so {moved} fell back to {fallback}: run {command} from the repo root, ${
+    ''}then /cadre frameworks again`,
+  'apply.installs.frameworkFallbackNone':
+    '{name} did not install: run {command} from the repo root, then /cadre frameworks again',
+  'apply.installs.fallbackRoles.one': 'role {ids}',
+  'apply.installs.fallbackRoles.other': 'roles {ids}',
+  'apply.installs.fallbackDefault': 'the repo default',
 
   'apply.hunks.hunkFailureLine': 'the {file} change {key}',
   'apply.hunks.hunkFailureLine2': '{change} failed: run it yourself: {display}',
+  'apply.hunks.hunkNotRunLine': '{change} was not run by cadre: run this yourself: {display}',
+  'apply.hunks.gsdNotInstalledLine':
+    'GSD is not installed for this repo, so the accepted {file} changes wait for it: {keys}',
+  'apply.hunks.gsdWaitCommand': 'waits for GSD (not installed for this repo)',
+  'apply.hunks.hunkNotRunRequiredLine':
+    `{change} was not run by cadre: run this yourself: {display}, ${
+    'then /cadre regen; the GSD roles stay attended until then'}`,
   'apply.improver.otherListed': '{named}, +{rest} more',
   'apply.improver.otherChanges.one':
     'the improver also changed {count} other file in {folder}: {listed}; review them (listed above)',
@@ -681,11 +740,13 @@ export const EN = Object.freeze({
   'regen.review.regenDismissedReason': 'A regen question on instruction parts was dismissed or not answered.',
   'regen.review.chip': 'Regen',
   'regen.review.regenPartQuestion': 'Should {id} get "{heading}" from {file}?',
+  'regen.review.regenFileQuestion': 'Should {id} get {file}?',
   'regen.review.changeNew': 'New since init.',
   'regen.review.changeChanged': 'Changed since init.',
   'regen.review.regenPartContextLine': '{regenChangeTexts} Recommended: {value}.',
   'regen.review.regenMemoryQuestion': 'Should {id} get the memory "{file}"?',
   'regen.review.partDroppedLine': 'dropped from {id}: {file} > {heading} (gone from its file)',
+  'regen.review.fileDroppedLine': 'dropped from {id}: {file} (gone)',
   'regen.review.memoryDroppedLine': 'dropped from {id}: memory {file} (gone)',
   'regen.review.partSource': '{file} > {heading}',
   'regen.review.memorySource': 'memory {file}: {value}',
@@ -697,6 +758,12 @@ export const EN = Object.freeze({
   'regen.review.notHandedOut.other':
     `{count} new or changed instruction parts or memories for {id} were not handed out: ${
     ''}run /cadre regen {id} in a session to answer them`,
+  'regen.review.loadsAsNow.one':
+    `1 repo instruction file given to {id} changed since init and loads as it is now: ${
+    ''}run /cadre regen {id} in a session to review it`,
+  'regen.review.loadsAsNow.other':
+    `{count} repo instruction files given to {id} changed since init and load as they are now: ${
+    ''}run /cadre regen {id} in a session to review them`,
 
   'regen.plan.improverNotOfferedWarning':
     `the improver was not offered for {id}: claude -p cannot ask Accept or Keep original; run /cadre ${
@@ -719,6 +786,24 @@ export const EN = Object.freeze({
     ''}not compared; run /cadre init to hand them out again`,
   'regen.sideRead.regenTotalWarning':
     'regen stopped reading at {value} KiB for {id}: its instruction parts were not compared',
+
+  'frameworks.notInteractive':
+    `cadre frameworks needs an interactive session to ask its questions. Run /cadre frameworks in a terminal ${
+    ''}session, not with claude -p.`,
+  'frameworks.epicWorktree':
+    'run /cadre frameworks in the root session of the main checkout, not in an epic worktree: {main}',
+  'frameworks.review.question': 'Review the framework changes. Confirm writes them; Cancel writes nothing.',
+  'frameworks.review.cancel': 'Cancel',
+  'frameworks.review.cancelledReason': 'Cancel was chosen at the review.',
+  'frameworks.review.kept': 'Frameworks: {names}',
+  'frameworks.review.role': '{id}: {framework}',
+  'frameworks.reply.head': 'cadre frameworks',
+  'frameworks.reply.headDry': 'cadre frameworks --dry-run',
+  'frameworks.reply.nothing': 'cadre frameworks: nothing changes, so nothing was written.',
+  'frameworks.replies.cancelled': 'frameworks cancelled, nothing written',
+  'frameworks.replies.cancelledReply': '{cancelled}: {reason}',
+  'frameworks.manifestSkippedNote':
+    '.cadre/manifest.json was not written because a file above was not written: run /cadre frameworks again.',
 
   'status.report.donePresent': 'DONE.md: present',
   'status.report.doneAbsent': 'DONE.md: not written yet',
@@ -751,6 +836,10 @@ export const EN = Object.freeze({
   'command.usage.usageRows10': 're-render one role from its role.json and write its files',
   'command.usage.usageRows11': '/cadre regen <id> --dry-run',
   'command.usage.usageRows12': "print that role's plan and write nothing",
+  'command.usage.usageRowsFrameworks': '/cadre frameworks',
+  'command.usage.usageRowsFrameworksText': "choose the team's frameworks again: the questions, a review, then write",
+  'command.usage.usageRowsFrameworksDry': '/cadre frameworks --dry-run',
+  'command.usage.usageRowsFrameworksDryText': 'the same questions; prints the changes and writes nothing',
   'command.usage.usageRows13': '/cadre start <id>',
   'command.usage.usageRows14': "render a role's runtime files, then print and copy its launcher command",
   'command.usage.usageRowsCommand': '/cadre start <id> --terminal',
@@ -777,6 +866,12 @@ export const EN = Object.freeze({
     'the memory folder of this repo has a path a permission rule cannot hold: its memories stay editable',
   'launch.deny.undeniedRecordWarning':
     'the hand-out record instructions.json has a path a permission rule cannot hold: it stays editable',
+  'launch.deny.undeniedInboxWarning':
+    'the inbox and session files have a path a permission rule cannot hold: they stay editable',
+  'launch.deny.undeniedStartFolderWarning': `the start folder {folder} has a path a permission rule cannot hold: ${
+    ''}its .claude settings files and framework install folders stay editable`,
+  'launch.deny.pluginOffWarning':
+    'plugin {plugin} is turned off for this role: cadre could not read its skill list from the installed plugin.json',
 
   'launch.links.unsafeMemoryNameWarning': 'memory file {name} has an unsafe name: not linked',
   'launch.links.globalLinks': 'global file {name} has an unsafe name: not linked',
@@ -789,10 +884,11 @@ export const EN = Object.freeze({
   'start.renderPlan.runtimeRefusal2': '{what}: remove it and run /cadre start {role} again',
   'start.renderPlan.unstatedLinkRefusal': '.cadre/{role}/.runtime/{name} is a link /cadre start could not check',
   'start.renderPlan.unstatedLinkRefusal2': '{what}: remove it and run /cadre start {role} again',
-  'start.renderPlan.privateLinkRefusal':
-    '.cadre/{role}/.runtime/{privateInstructionsLink} is a real file or folder, not a link',
-  'start.renderPlan.privateLinkRefusal2': '{what}: remove it and run /cadre start {role} again',
+  'start.renderPlan.inboxRefusal':
+    'the inbox of {role} at {path} is a link or not a regular file: remove it and run /cadre start {role} again',
   'start.renderPlan.notReplacedWarning': '{repoRelative} is a real file or folder, not a link: not replaced',
+  'start.renderPlan.privateSkippedWarning':
+    "{role}'s private instructions folder holds {name}, which is not a regular file and is not copied to the role",
 
   'start.gatherUser.startNoHome': 'cadre start needs HOME to render the role files, so it stopped.',
   'start.gatherUser.startNoGitDir':
@@ -881,6 +977,9 @@ export const EN = Object.freeze({
   'epic.done.epicRemoveFailedReply':
     `git could not remove the epic worktree, so cadre epic done stopped. The links it records were ${
     ''}removed first: run /cadre epic {key} to link them again.`,
+  'epic.done.epicCopyBackFailedReply':
+    `cadre epic done could not copy {path} back into the main checkout, so it removed nothing: copy it by hand or ${
+    ''}remove it from the worktree, then run cadre epic done {key} again`,
   'epic.done.cleanProblems': 'git shows changes in the worktree: commit or stash them there',
   'epic.done.cleanProblems2':
     'git could not tell whether the worktree is clean: run git status there, then commit or stash what it shows',
@@ -932,7 +1031,12 @@ export const EN = Object.freeze({
     ''}the regenerated .cadre/bin/{role} and .cadre/manifest.json to the branch and run /cadre epic with ${
     ''}the same key again.`,
   'epic.launcher.epicWorktreeLauncherChangedLine':
-    "not opened: the worktree's .cadre/bin/{role} is not the launcher cadre checked in the main checkout.",
+    `not opened: the worktree's .cadre/bin/{role} differs from the launcher cadre checked in the main checkout. ${
+    ''}Commit .cadre/ in the main checkout and bring that commit to the epic branch, or commit the regenerated ${
+    ''}.cadre/bin/{role} and .cadre/manifest.json to the epic branch, then run /cadre epic with the same key again.`,
+  'epic.launcher.epicWorktreeLauncherUnreadLine':
+    `not opened: cadre could not read the worktree's .cadre/bin/{role} in full, so it did not check it against the ${
+    ''}launcher in the main checkout.`,
 
   'epic.mirrorRun.globalExcludesWarning':
     `cadre epic could not read your global git excludes file {path}, so the worktree's excludes file ${
@@ -946,6 +1050,9 @@ export const EN = Object.freeze({
   'epic.mirrorRun.epicStepFailedReply':
     `cadre epic could not make {path} in the worktree (a folder, link or copy), so it stopped there. The ${
     ''}worktree stays: fix it and run /cadre epic with the same key again.`,
+  'epic.mirrorRun.epicCopyFailedReply':
+    `cadre epic could not copy {path} into the worktree, so it stopped there. The worktree stays: remove ${
+    ''}{temp} if it is there, fix what stopped the copy and run /cadre epic with the same key again.`,
 
   'epic.mirror.mirrorLinkedParentWarning':
     `cadre epic left {path} out of the worktree: a folder above it there is a link, and cadre never ${
@@ -953,6 +1060,9 @@ export const EN = Object.freeze({
   'epic.mirror.mirrorUnhideableWarning':
     `cadre epic left {path} out of the worktree: its name holds a line break or another control ${
     ''}character, so no excludes line could hide it from git.`,
+  'epic.mirror.mirrorCopyTempWarning':
+    `cadre epic left {path} out of the worktree: {temp} is there, left by a copy that did not finish. ${
+    ''}Remove {temp}, then run /cadre epic with the same key again.`,
 
   'epic.pick.epicUnknownCheckout':
     'cadre epic could not tell from git whether this is the main checkout, so it stopped before creating anything.',
@@ -1032,6 +1142,9 @@ export const EN = Object.freeze({
 
   'team.noStateReply': 'cadre {command} needs .cadre/cadre.json from /cadre init: run /cadre init first.',
   'team.regenBadState': '.cadre/cadre.json is not valid: fix it, or run /cadre init again.',
+  'team.regenCadreRole':
+    `.cadre/cadre.json lists the role id "cadre", which is reserved: cadre signs its own inbox entries with it. ${
+    ''}Run /cadre init again and give that role another id.`,
   'team.regenNoRole': 'no role {id} in .cadre/cadre.json (roles: {roles})',
   'team.regenBadRole': '.cadre/{id}/role.json is missing or not valid: fix it, or run /cadre init again.',
   'team.regenNeedsFramework':
@@ -1099,14 +1212,9 @@ export const EN = Object.freeze({
   'scan.instructions.memories.unreadableWarning': 'could not read {file}: no role gets it',
   'scan.instructions.memories.memoryOverSizeWarning': '{file} is over {value} KiB: not offered',
 
-  'scan.instructions.read.moreDocsWarning': '{count} more referenced docs were not read: no role gets them',
   'scan.instructions.read.overSizeWarning': '{file} is over {value} KiB, not split: no role gets it',
   'scan.instructions.read.outsideWarning':
     '{file} is outside the repo and your config folder, not read: no role gets it',
-  'scan.instructions.read.repoImportWarning':
-    '{file} is imported by a repo file and is outside the repo, not read: no role gets it',
-  'scan.instructions.read.unfollowedImportWarning':
-    '{file} is linked from a repo file and is a dotfile, under .git/ or not a .md file, not read: no role gets it',
   'scan.instructions.read.configFileWarning':
     `{file} is not a plain .md file of your config folder (no dot name, not under projects/, cadre/ or ${
     ''}plugins/), not read: no role gets it`,
@@ -1148,6 +1256,9 @@ export const EN = Object.freeze({
   'scan.couldNotParse': 'could not parse {what} as JSON',
   'scan.couldNotList': 'could not list {what}',
   'scan.couldNotReadSettings': 'could not read {source} settings',
+  'scan.startSettings.couldNotRead': 'could not read {path}/.claude/settings.json of the start folder',
+  'scan.startSettings.keys': `{path}/.claude/settings.json sets {keys}, which cadre does not scan: ${
+    ''}they apply in every role started there; {path}/.claude/skills, agents and commands also load unscanned`,
   'scan.notRegularFile': 'skipped {what}: not a regular file inside the repo',
   'scan.notValidCadre': 'ignored {what}: not a valid cadre {noun}',
   'scan.repoRootUnlisted': 'could not list the repo root',
@@ -1197,6 +1308,7 @@ export const EN = Object.freeze({
   'roles.recommend.recommendWhy3':
     "claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
   'roles.recommend.recommendWhy4': 'no hooks warn the Security role about risky edits',
+  'roles.recommend.pmGrillWhy': 'PM has no grill skill to sharpen each ticket with you before it goes to TL',
 
   'roles.template.noFrontendReason': 'no frontend framework found (react, vue, next, svelte, angular)',
   'roles.template.noTestsReason': 'no tests or E2E setup found',
@@ -1206,6 +1318,7 @@ export const EN = Object.freeze({
   'roles.validate.validateRoleId': 'role id "bin" is reserved: it is the launcher folder .cadre/bin/',
   'roles.validate.validateRoleId2': 'role id "{id}" is reserved: all and none are answer words in init questions',
   'roles.validate.validateRoleId3': 'role id "{id}" must be {slugRule}',
+  'roles.validate.validateRoleIdCadre': 'role id "cadre" is reserved: cadre signs its own inbox entries with it',
   'roles.validate.idProblems': 'duplicate role id "{id}"',
   'roles.validate.validateRoles': 'no roles: describe at least one role',
   'roles.validate.validateRoles2': 'at most {maxRoles} roles (got {count})',
@@ -1302,9 +1415,11 @@ export const EN = Object.freeze({
   'framework.superpowers.adapter.detectSuperpowers': 'no docs/superpowers/ or .superpowers/',
   'framework.superpowers.adapter.detectSuperpowers2': 'no enabled superpowers@ plugin',
   'framework.superpowers.adapter.installedEvidence': 'enabledPlugins["{key}"]=true ({source})',
+  'framework.superpowers.adapter.notInstalledEvidence':
+    'enabledPlugins["{key}"]=true ({source}), not installed for this repo',
   'framework.superpowers.adapter.superpowersAdapter':
     `in use: docs/superpowers/ or .superpowers/ at the repo root; installed: an enabledPlugins key ${
-    ''}starting superpowers@ set to true`,
+    ''}starting superpowers@ set to true that has an installed_plugins entry for this repo`,
   'framework.superpowers.adapter.superpowersAdapter2': 'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
   'framework.superpowers.adapter.superpowersAdapter3': 'superpowers:brainstorming (TL/PM)',
   'framework.superpowers.adapter.superpowersAdapter4': "the project's test command",
@@ -1332,9 +1447,9 @@ export const EN = Object.freeze({
   'scope.lint.infraViolations2': 'handoff skill {name} is not in the overlay',
   'scope.lint.infraViolations3': 'flag {flag} would turn off the handoff skills',
 
-  'generate.gittrack.untrackedPartsWarning': '{file} is not tracked by git: its parts are not written to .cadre/',
+  'generate.gittrack.untrackedPartsWarning': '{file} is not tracked by git: no role is given it',
   'generate.gittrack.gitTrackingUnknownWarning':
-    'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+    'could not ask git which instruction files it tracks: no role is given them',
 
   'suggest.propose.fallbackNote': 'Using the template proposal; you can still adjust it.',
   'suggest.propose.fallbackMessage': 'Could not use the described structure: {reason}. {fallbackNote}',
@@ -1361,7 +1476,7 @@ export const EN = Object.freeze({
 
   'register.paneTitle': 'cadre init',
   'register.commandDescription':
-    'Split this repo into scope-limited role sessions: detect, init, regen, start, status, epic',
+    'Split this repo into scope-limited role sessions: detect, init, regen, frameworks, start, status, epic',
   'register.paneEmpty': 'cadre init has not shown anything yet.',
 }) satisfies Record<string, string>
 

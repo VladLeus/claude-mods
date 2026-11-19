@@ -16,7 +16,7 @@ function hasStrayBrace(template: string): boolean {
   return /[{}]/.test(template.replace(/\{[a-zA-Z]+\}/g, ''))
 }
 
-/** One part of an instruction file, as a built role file marks it. */
+/** One part of an instruction file, as the private role file marks it. */
 const PART: InstructionPart = {
   id: 'P1',
   file: 'CLAUDE.md',
@@ -44,10 +44,10 @@ describe('locales/artifact (D-221)', () => {
     expect(Object.entries(ARTIFACT).filter(([, text]) => hasStrayBrace(text))).toEqual([])
   })
 
-  test("a built role file keeps today's header and part marker bytes", () => {
+  test('the built role file header names the originals; the part marker bytes stay', () => {
     expect(roleClaudeMdText('be', [])).toBe(
-      "<!-- cadre: instructions for role be, built from this repo's CLAUDE.md files, rules and docs. " +
-        'Edit the originals and run /cadre regen be; this file is rebuilt. -->\n',
+      "<!-- cadre: instructions for role be. The repo's CLAUDE.md files and rules given to this role load from " +
+        'their originals; after you change them, run /cadre regen be. -->\n',
     )
     expect(partsBody([PART])).toBe('\n\n<!-- from CLAUDE.md > Style -->\nUse tabs.\n')
   })

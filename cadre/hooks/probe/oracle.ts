@@ -95,6 +95,7 @@ function holds(inventory: InitInventory, expectation: ProbeExpectation): boolean
   if (check === 'tool-present') return inventory.tools.includes(token)
   if (check === 'command-present') return inventory.slashCommands.includes(token)
   if (check === 'skill-present') return inventory.skills.includes(token)
+  if (check === 'skill-absent') return !inventory.skills.includes(token)
   if (check === 'permission-mode') return inventory.permissionMode === token
   if (check === 'memory-path') return inventory.memoryAuto === token || inventory.memoryAuto === `${token}/`
 

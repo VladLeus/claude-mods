@@ -25,17 +25,32 @@ export const INFRA_PLUGINS: readonly string[] = Object.freeze([
  */
 export const INFRA_SKILLS: readonly string[] = Object.freeze(['create-handoff-doc', 'resume-handoff-doc'])
 
+export const AUTOPILOT_WAIT_TOOL = 'mcp__autopilot__wait_for'
+
 /**
  * The tools autopilot relies on in every role: its three MCP tools, Skill, and PushNotification. No deny rule may name
  * or cover them (ISO-04, D-77).
  */
 export const INFRA_TOOLS: readonly string[] = Object.freeze([
   'mcp__autopilot__restart_session',
-  'mcp__autopilot__wait_for',
+  AUTOPILOT_WAIT_TOOL,
   'mcp__autopilot__queue_question',
   'Skill',
   'PushNotification',
 ])
+
+/** The start of the full name of every tool cadre registers: the model calls `mcp__cadre__<name>`. */
+export const CADRE_TOOL_PREFIX = 'mcp__cadre__'
+
+/** The short names of cadre's inbox tools, as cadre registers them in a role session. */
+export const INBOX_SEND_TOOL = 'inbox_send'
+export const INBOX_READ_TOOL = 'inbox_read'
+export const INBOX_MARK_TOOL = 'inbox_mark'
+
+/** The full names of cadre's inbox tools. */
+export const CADRE_TOOLS: readonly string[] = Object.freeze(
+  [INBOX_SEND_TOOL, INBOX_READ_TOOL, INBOX_MARK_TOOL].map(name => `${CADRE_TOOL_PREFIX}${name}`),
+)
 
 /**
  * The MCP servers that are infrastructure: every role always has them, so they are never asked about, never assigned
@@ -117,6 +132,24 @@ export const SECURITY_PLUGINS: readonly string[] = Object.freeze([CLAUDE_SECURIT
  * gets a built file and it is missing (G-02-1f, D-141). No role is given it.
  */
 export const CLAUDE_MD_PLUGIN = 'claude-md-management@claude-plugins-official'
+
+/** Matt Pocock's skills plugin, by its exact key in claude-plugins-official: PM gets its grill skills. */
+export const MATTPOCOCK_PLUGIN = 'mattpocock-skills@claude-plugins-official'
+
+/**
+ * The grill skills of MATTPOCOCK_PLUGIN, as `plugin:skill`: `grilling` is the one the model can call, `grill-me` the
+ * one the user types. A role given them is denied every other skill of the plugin at launch.
+ */
+export const GRILL_SKILLS: readonly string[] = Object.freeze([
+  'mattpocock-skills:grilling',
+  'mattpocock-skills:grill-me',
+])
+
+/**
+ * The plugins whose skill list the launch reads, so a role is denied each of their skills it is not given, at call
+ * time.
+ */
+export const PER_SKILL_DENY_PLUGINS: readonly string[] = Object.freeze([MATTPOCOCK_PLUGIN])
 
 /**
  * The review skill of claude-security, as `plugin:skill`, which every Security role gets when the person answers

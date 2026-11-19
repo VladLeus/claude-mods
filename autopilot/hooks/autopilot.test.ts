@@ -2,17 +2,20 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Avail, AvailCommand, Awaiting, BadgeAvail, Effective, LockOwner, Pending, Question, QueueInput, Run, WaitReason } from '../types'
 import {
+  ASKING_QUEUE_REFUSAL,
   ASK_ANSWER,
   CONTINUE_PROMPT,
   FULL_QUEUE_TOOL,
   FULL_WAIT_TOOL,
   GRACE_MS,
   HEARTBEAT_MS,
+  PARK_NOTE,
   QUEUE_TOOL,
   QUEUE_WARN,
   RELEASE_PROMPT,
   RELEASE_UNQUEUED_PROMPT,
   WAIT_REASONS,
+  WAIT_TOOL,
   addQuestion,
   afterTurn,
   answeredQuestion,
@@ -24,6 +27,7 @@ import {
   availMode,
   availStatusLines,
   awayUntil,
+  callSignature,
   canDeliver,
   canRestart,
   combinedPingText,
@@ -55,11 +59,16 @@ import {
   isDoneAnswer,
   isGraceEligible,
   isGraceLive,
+  isIdleTurn,
   isLiveFinishedValue,
+  isModeDeny,
+  isTimeUp,
   isValidHandoffPath,
   limitAction,
+  limitStopsFor,
   lockStale,
   namedSkills,
+  parkedWait,
   parseAskUser,
   parseAway,
   parseBack,
@@ -71,11 +80,15 @@ import {
   parseQueueInput,
   parseUtcOffset,
   parseWaitInput,
+  passesQuestion,
   pushPending,
   questionIdFromNote,
   questionsBlock,
   queuedAcross,
+  queuedQuestionTexts,
   queuedResult,
+  refusalLogText,
+  removesDrainedQuestion,
   retime,
   revivePrompt,
   roleSection,
@@ -732,9 +745,52 @@ describe('after a turn', () => {
     expect(afterTurn(run({ maxRestarts: 2, restarts: 2 }), 10, 61, true)).toBe('final')
   })
 
-  test('two turns without tools pause it', async () => {
+  test('two turns without tools park a run; a run with a goal pauses', async () => {
     expect(afterTurn(run({ idleTurns: 0 }), 10, 30, false)).toBe('continue')
-    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, false)).toBe('pause')
+    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, false)).toBe('park')
+    expect(afterTurn(run({ idleTurns: 1, goal: 'issue #42 resolved' }), 10, 30, false)).toBe('pause')
+  })
+
+  test('the parked wait: reason other, a note, no timeout; the time stop still ends it and no nudge follows', async () => {
+    expect(PARK_NOTE).toBe('two turns without progress')
+    expect(parkedWait(5_000)).toEqual({
+      reason: 'other',
+      from: null,
+      note: PARK_NOTE,
+      since: 5_000,
+      timeoutAt: null,
+      pinged: false,
+    })
+    const parked = run({ phase: 'awaiting', awaiting: parkedWait(0), until: 100 })
+    expect(isTimeUp(parked, 100)).toBe(true)
+    expect(afterTurn(parked, 10, 30, false)).toBe('none')
+  })
+
+  test('a turn that repeats the calls of the turn before counts as idle; any difference resets it', async () => {
+    expect(isIdleTurn(null, [])).toBe(true)
+    expect(isIdleTurn(['a'], [])).toBe(true)
+    expect(isIdleTurn(null, ['a'])).toBe(false)
+    expect(isIdleTurn(['a', 'b'], ['a', 'b'])).toBe(true)
+    expect(isIdleTurn(['a', 'b'], ['b', 'a'])).toBe(false)
+    expect(isIdleTurn(['a'], ['a', 'a'])).toBe(false)
+    expect(isIdleTurn(['a', 'b'], ['a'])).toBe(false)
+    const s = callSignature({ tool: 'mcp__notes__check' })
+    expect(afterTurn(run({ idleTurns: 1 }), 10, 30, !isIdleTurn([s], [s]))).toBe('park')
+    expect(afterTurn(run({ idleTurns: 0 }), 10, 30, !isIdleTurn([s], [s]))).toBe('continue')
+  })
+
+  test("a call's signature is its tool and its input, without the engine's per-call keys", async () => {
+    const check = callSignature({ tool: 'mcp__notes__check', tool_use_id: 'toolu_1' })
+    expect(callSignature({ tool: 'mcp__notes__check', tool_use_id: 'toolu_2' })).toBe(check)
+    const listed = callSignature({ tool: 'Bash', command: 'ls', description: 'list' })
+    expect(callSignature({ tool: 'Bash', description: 'list', command: 'ls' })).toBe(listed)
+    const ls = callSignature({ tool: 'Bash', command: 'ls' })
+    const withKeys = { tool: 'Bash', command: 'ls', agentId: 'a1', requestMeta: { k: 'v' }, consent: 'yes' }
+    expect(callSignature(withKeys)).toBe(ls)
+    expect(callSignature({ tool: 'Bash', command: 'pwd' })).not.toBe(ls)
+    expect(callSignature({ tool: 'Read', command: 'ls' })).not.toBe(ls)
+    expect(callSignature(null)).toBe('')
+    expect(callSignature('Bash')).toBe('')
   })
 
   test('phases: restart resumes, final finishes, wrapping and paused wait', async () => {
@@ -864,9 +920,154 @@ describe('questions while the person is in control', () => {
   })
 })
 
+describe('refusals while autopilot drives', () => {
+  const ruleDeny = 'Permission to use Bash with command printf probe-one has been denied.'
+  const dontAsk =
+    "Permission to use Write has been denied because Claude Code is running in don't ask mode. IMPORTANT: stop"
+
+  test('a rule refusal passes through and a mode refusal is deferred', async () => {
+    expect(isModeDeny(ruleDeny)).toBe(false)
+    expect(isModeDeny(dontAsk)).toBe(true)
+    expect(isModeDeny('')).toBe(false)
+  })
+
+  test('while away every refusal is logged, a mode refusal as deferred', async () => {
+    expect(refusalLogText('Bash', ruleDeny)).toBe(`refused (passed through): Bash: ${ruleDeny}`)
+    expect(refusalLogText('Write', dontAsk)).toBe(`deferred (refused by the permission mode): Write: ${dontAsk}`)
+    expect(refusalLogText('Bash', 'x'.repeat(400))).toBe(`refused (passed through): Bash: ${'x'.repeat(300)}`)
+  })
+
+  test('mode, classifier and safety refusals are deferred', async () => {
+    const texts = [
+      dontAsk,
+      "Permission to use Bash with command ls has been denied because Claude Code is running in don't ask mode.",
+      'Permission for this action was denied by the Claude Code auto mode classifier. Reason: pushes to main',
+      'Permission for this action has been denied. Reason: outside the role',
+      'Permission for this tool use was denied. It requires approval, and this session has no approval surface',
+      'Permission for this tool use was denied: it requires interactive approval',
+      'Permission for this command was denied by a built-in Claude Code safety check, not by the user.',
+    ]
+    for (const text of texts) expect(isModeDeny(text)).toBe(true)
+  })
+
+  test("rule refusals and a hook's or a tool's own deny pass through", async () => {
+    const texts = [
+      'Permission to use Bash with command printf probe-one has been denied.',
+      'Permission to use Write has been denied.',
+      'Permission to edit /repo/a.ts has been denied.',
+      'Permission to read /etc/hosts has been denied.',
+      'Permission denied for: git push origin main',
+      'Skill execution blocked by permission rules',
+      'File is in a directory that is denied by your permission settings.',
+      "Claude requested permissions to write to /repo/a.ts, but you haven't granted it yet.",
+      'Permission denied by hook',
+      'Permission denied for Bash: blocked by a hook',
+      'The notes tool failed. Try again.',
+      'Autopilot could not record the wait. Continue your work.',
+      ' Permission for this action has been denied. Reason: x',
+      'permission for this action has been denied.',
+    ]
+    for (const text of texts) expect(isModeDeny(text)).toBe(false)
+  })
+})
+
+describe('AskUserQuestion while asking is on', () => {
+  const MODES = ['plain', 'queueing', 'overdue', 'draining', 'asking'] as const
+  const queued: Question = { id: 3, text: 'Which DB?', kind: 'answer', provisional: null, at: 0 }
+  const call = (...texts: unknown[]) => ({
+    questions: texts.map(question => ({ question, header: 'DB', options: [] })),
+  })
+
+  test('a question passes to the person only while asking or draining', async () => {
+    expect(MODES.map(mode => [mode, passesQuestion(mode)])).toEqual([
+      ['plain', false],
+      ['queueing', false],
+      ['overdue', false],
+      ['draining', true],
+      ['asking', true],
+    ])
+  })
+
+  test('it passes in exactly the modes that allow a wait for the person', async () => {
+    const note = '#1 Which DB?'
+    const wait: Awaiting = { reason: 'user-answer', from: null, note, since: 0, timeoutAt: null, pinged: false }
+    for (const mode of MODES) expect(passesQuestion(mode)).toBe(waitRefusal(wait, mode) === null)
+  })
+
+  test('a drained question leaves the queue only on a dialog answer while draining', async () => {
+    const answered = { result: { questions: [], answers: { 'Which DB?': 'Postgres' } } }
+    const asked = call('Which DB?')
+    expect(removesDrainedQuestion('draining', answered, asked, queued)).toBe(true)
+    expect(removesDrainedQuestion('draining', { result: { response: 'Use Postgres 16' } }, asked, queued)).toBe(true)
+    for (const mode of ['plain', 'queueing', 'overdue', 'asking'] as const) {
+      expect(removesDrainedQuestion(mode, answered, asked, queued)).toBe(false)
+    }
+  })
+
+  test('a dialog with no answer, a deny, an error or an AFK timeout keeps the drained question queued', async () => {
+    const kept: unknown[] = [
+      { result: { questions: [], answers: {} } },
+      { result: { questions: [], answers: { 'Which DB?': '' } } },
+      { result: { questions: [], answers: { 'Which DB?': '  ' } } },
+      { result: { questions: [] } },
+      { result: { response: '' } },
+      { result: 'Postgres' },
+      { result: null },
+      { deny: 'The person dismissed the question.' },
+      { isError: true, result: { answers: { 'Which DB?': 'Postgres' } } },
+      { result: { answers: { 'Which DB?': 'Postgres' }, afkTimeoutMs: 60_000 } },
+      null,
+      'Postgres',
+    ]
+    for (const ran of kept) expect(removesDrainedQuestion('draining', ran, call('Which DB?'), queued)).toBe(false)
+  })
+
+  test('a two-question dialog keeps the queued question unless the answer is under its own question', async () => {
+    const both = call('#3 Which DB?', 'Which cache?')
+    const other = { result: { answers: { 'Which cache?': 'Redis' } } }
+    const own = { result: { answers: { '#3 Which DB?': 'Postgres' } } }
+    expect(removesDrainedQuestion('draining', other, both, queued)).toBe(false)
+    expect(removesDrainedQuestion('draining', own, both, queued)).toBe(true)
+  })
+
+  test('a free-text response counts only for a dialog of one question', async () => {
+    const response = { result: { response: 'Use Postgres 16' } }
+    expect(removesDrainedQuestion('draining', response, call('#3 Which DB?'), queued)).toBe(true)
+    expect(removesDrainedQuestion('draining', response, call('#3 Which DB?', 'Which cache?'), queued)).toBe(false)
+  })
+
+  test('an answer in a dialog that does not name the queued question keeps it queued', async () => {
+    const answered = { result: { answers: { 'Which cache?': 'Redis' } } }
+    expect(removesDrainedQuestion('draining', answered, call('Which cache?'), queued)).toBe(false)
+  })
+
+  test('the questions of a dialog that ask the queued question hold its text or its #k tag', async () => {
+    expect(queuedQuestionTexts(call('Which DB?'), queued)).toEqual(['Which DB?'])
+    const long = '#3 Which database should we use?'
+    expect(queuedQuestionTexts(call(long), queued)).toEqual([long])
+    expect(queuedQuestionTexts(call('Unrelated', 'Before we go on: Which DB?'), queued)).toEqual([
+      'Before we go on: Which DB?',
+    ])
+    expect(queuedQuestionTexts(call('#30 Which cache?'), queued)).toEqual([])
+    expect(queuedQuestionTexts(call('Which cache?'), queued)).toEqual([])
+    expect(queuedQuestionTexts(call(3), queued)).toEqual([])
+    expect(queuedQuestionTexts({ questions: 'Which DB?' }, queued)).toEqual([])
+    expect(queuedQuestionTexts(null, queued)).toEqual([])
+  })
+
+  test('the asking refusal of queue_question names AskUserQuestion before the notification fallback', async () => {
+    const text = ASKING_QUEUE_REFUSAL
+    const parts = ['AskUserQuestion', 'PushNotification', `${WAIT_TOOL} with reason user-answer`, 'end your turn']
+    expect(text.startsWith('The person can be asked right now: do not queue.')).toBe(true)
+    expect(parts.filter(part => !text.includes(part))).toEqual([])
+    expect(text.indexOf('AskUserQuestion')).toBeLessThan(text.indexOf('PushNotification'))
+  })
+})
+
 describe('wait_for', () => {
   const now = 1_000
   const until = 10 * 60 * 60_000
+  const idle: Awaiting = { reason: 'idle-inbox', from: null, note: null, since: now, timeoutAt: null, pinged: false }
 
   test('a valid wait: reason, from, note, timeout', async () => {
     expect(parseWaitInput({ reason: 'session-answer', from: 'BE-expert', note: 'API shape', timeout: '30m' }, now, until)).toEqual({
@@ -885,6 +1086,33 @@ describe('wait_for', () => {
     expect(parseWaitInput({}, now, until).kind).toBe('error')
     expect(parseWaitInput(null, now, until).kind).toBe('error')
     expect(parseWaitInput('session-answer', now, until).kind).toBe('error')
+  })
+
+  test('idle-inbox: a reason for nothing to do until a message comes, with no timeout', async () => {
+    expect(WAIT_REASONS).toEqual([
+      'user-input',
+      'user-answer',
+      'session-answer',
+      'session-ping',
+      'workflow-end',
+      'subagent-result',
+      'background-task',
+      'idle-inbox',
+      'other',
+    ])
+    expect(parseWaitInput({ reason: 'idle-inbox' }, now, until)).toEqual({ kind: 'ok', awaiting: idle })
+    for (const mode of ['plain', 'queueing', 'overdue', 'draining', 'asking'] as const) {
+      expect(waitRefusal(idle, mode)).toBe(null)
+    }
+  })
+
+  test('an unknown reason is refused with the list of reasons', async () => {
+    expect(parseWaitInput({ reason: 'coffee' }, now, until)).toEqual({
+      kind: 'error',
+      message:
+        'reason must be one of: user-input, user-answer, session-answer, session-ping, workflow-end, ' +
+          'subagent-result, background-task, idle-inbox, other.',
+    })
   })
 
   test('non-string fields and unreadable or zero timeouts are refused', async () => {
@@ -962,6 +1190,14 @@ describe('wait_for', () => {
     }
   })
 
+  test('an idle-inbox wait is not nudged, ends on any other tool call and ends on time', async () => {
+    expect(afterTurn(run({ phase: 'awaiting', awaiting: idle, idleTurns: 5 }), 10, 99, false)).toBe('none')
+    expect(wrapMidTurn(run({ phase: 'awaiting', awaiting: idle }), 10, 99)).toBe(null)
+    expect(endsWait('awaiting', 'mcp__notes__check')).toBe(true)
+    expect(isTimeUp(run({ phase: 'awaiting', awaiting: idle, until: 100 }), 100)).toBe(true)
+    expect(isTimeUp(run({ phase: 'awaiting', awaiting: idle, until: 100 }), 99)).toBe(false)
+  })
+
   test('wait_for is taken while running and again while awaiting; refused while resuming or not driving', async () => {
     expect(waitPhaseRefusal('running')).toBe(null)
     expect(waitPhaseRefusal('awaiting')).toBe(null)
@@ -995,9 +1231,15 @@ describe('wait_for', () => {
     expect(plain).not.toContain('or need the person')
     expect(asking).toContain('a workflow or a background task, or need the person, and nothing else useful is left for you')
     expect(asking).toContain('Only when the person is truly required')
+    expect(asking).toContain('ask them with AskUserQuestion: up to 4 questions per call, the recommended option first.')
+    expect(asking).toContain(
+      'For an action the person must take, or when AskUserQuestion is unavailable or the person said not to use it, ' +
+        'write it to them as text, call PushNotification',
+    )
     expect(asking).toContain('call wait_for with reason user-answer (or user-input')
     expect(asking).toContain('Everything else you decide yourself.')
     expect(asking).toContain('- Ordinary questions: decide yourself')
+    expect(plain).not.toContain('AskUserQuestion')
   })
 
   test('a run stored by an older version, without the new fields, reads as not waiting and not asking', async () => {
@@ -1089,6 +1331,28 @@ describe('token limits', () => {
 
   test('a waiting run queues nothing after a turn', async () => {
     expect(afterTurn(run({ phase: 'waiting' }), 10, 30, true)).toBe('none')
+  })
+
+  test("the heartbeat's time stop takes a running, a parked or an awaiting run, nothing else", async () => {
+    for (const phase of ['running', 'waiting'] as const) {
+      expect(isTimeUp(run({ phase, until: 100 }), 100)).toBe(true)
+    }
+    for (const phase of ['paused', 'final', 'wrapping', 'restarting', 'resuming'] as const) {
+      expect(isTimeUp(run({ phase, until: 100 }), 100)).toBe(false)
+    }
+  })
+
+  test('the limit stops by phase: all while working, only the weekly stop at the end of the turn that declares a wait, none otherwise', async () => {
+    for (const phase of ['running', 'resuming', 'waiting'] as const) {
+      expect(limitStopsFor(phase, true)).toBe('all')
+      expect(limitStopsFor(phase, false)).toBe('all')
+    }
+    expect(limitStopsFor('awaiting', true)).toBe('week')
+    expect(limitStopsFor('awaiting', false)).toBe('none')
+    for (const phase of ['paused', 'final', 'wrapping', 'restarting'] as const) {
+      expect(limitStopsFor(phase, true)).toBe('none')
+      expect(limitStopsFor(phase, false)).toBe('none')
+    }
   })
 
   test('the weekly stop asks for a phone notification', async () => {
@@ -1741,6 +2005,14 @@ describe('question queue', () => {
     expect(after.drain).toBe(true)
   })
 
+  test('answeredQuestion removes the question whose id it is given and keeps askingId', async () => {
+    const asking = run({ questions: [queued(1, 'Push?'), queued(2, 'Merge?')], drain: true, askingId: 2 })
+    const after = answeredQuestion(asking, 1)
+    expect(after.questions?.map(question => question.id)).toEqual([2])
+    expect(after.askingId).toBe(2)
+    expect(after.drain).toBe(true)
+  })
+
   test('answeredQuestion falls back to the asked question and clears askingId', async () => {
     const untagged = run({
       questions: [queued(1, 'Push?'), queued(2, 'Merge?')],
@@ -1846,15 +2118,19 @@ describe('pending prompts', () => {
     expect(criticalCount(7)).toBe('7 critical questions are')
   })
 
-  test('askQuestionText asks one question as text, then a wait tagged #k', async () => {
+  test('askQuestionText asks an answer with AskUserQuestion tagged #k, and an action as text with a wait', async () => {
     const answer: Question = { id: 1, text: 'Push the release tag v2.0?', kind: 'answer', provisional: 'kept it local', at: 1 }
     expect(askQuestionText(answer)).toBe(
-      'Ask question #1 now, and only it: "Push the release tag v2.0?" (meanwhile you went with: "kept it local"). Write it to the person as text, call wait_for with reason user-answer and a note that starts with "#1", then end your turn.',
+      'Ask question #1 now, and only it: "Push the release tag v2.0?" (meanwhile you went with: "kept it local"). ' +
+        'Ask it with AskUserQuestion as one question that starts with "#1", the recommended option first. ' +
+        'Only when AskUserQuestion is unavailable or the person said not to use it, write it to the person as text, ' +
+        'call wait_for with reason user-answer and a note that starts with "#1", then end your turn.',
     )
     const action: Question = { id: 2, text: 'Add the deploy key to the repo', kind: 'action', provisional: null, at: 1 }
     expect(askQuestionText(action)).toBe(
       'Ask question #2 now, and only it: "Add the deploy key to the repo". Write it to the person as text, call wait_for with reason user-input and a note that starts with "#2", then end your turn.',
     )
+    expect(askQuestionText(action)).not.toContain('AskUserQuestion')
   })
 
   test('askQuestionText shows the question as one quoted line, controls and bidi marks stripped', async () => {

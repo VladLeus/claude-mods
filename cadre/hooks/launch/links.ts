@@ -7,7 +7,7 @@
 import type { RoleSpec } from '../../types'
 import { compareText, isChangedByClean, shown, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
-import { memoryFolderOf } from '../paths'
+import { AGENTS_MD_FILE, memoryFolderOf, runtimeDirOf } from '../paths'
 
 /**
  * The facts about the launching user that the launch half needs (D-98). renderRole gathers them at launch and passes
@@ -60,12 +60,19 @@ export type LaunchUser = {
   readonly userSkills: readonly string[]
   /** File names without `.md` in `<userDir>/agents`. */
   readonly userAgents: readonly string[]
+  /**
+   * The skills the launch root's own `.claude/skills` folders and links and `.claude/commands` `.md` files provide;
+   * absent when none.
+   */
+  readonly repoSkills?: readonly string[]
+  /** The `.md` files of the launch root's `.claude/agents`, by name; absent when none. */
+  readonly repoAgents?: readonly string[]
   /** The top-level code dirs to deny with exact patterns; renderRole passes the repo scan's at launch. */
   readonly codeDirs: readonly string[]
   /**
-   * The absolute link paths in the role memory folder of the memories /cadre start links for the role (G-02-1f, D-140
-   * q3-a), from its hand-out record; empty for a whole-files role and for a role given no memory. The role's settings
-   * deny Edit and Write on each of them (linkedMemoryDeny).
+   * The absolute link paths in the role memory folder of the memories /cadre start links for the role, from its
+   * hand-out record; empty for a whole-files role and for a role given no memory. The role's settings deny Edit on each
+   * of them (linkedMemoryDeny).
    */
   readonly linkedMemories: readonly string[]
   /**
@@ -74,6 +81,18 @@ export type LaunchUser = {
    * Pitfall 2, 03.1-W3 M1). Absent for the main checkout.
    */
   readonly mainRoot?: string
+  /** The role ids of the team from cadre.json; absent when the launch does not know the team. */
+  readonly teamIds?: readonly string[]
+  /** The skill names of each installed plugin whose own skill list was read, by plugin key; absent when none was. */
+  readonly pluginSkills?: Readonly<Record<string, readonly string[]>>
+  /** The plugin keys the repo's `.claude/settings.json` enables; absent when it enables none. */
+  readonly projectPlugins?: readonly string[]
+  /** The slug of the epic whose worktree the role is rendered for; absent for /cadre start. */
+  readonly epicSlug?: string
+  /** The repo-relative folder of a dir start; absent for a git-root or here start. */
+  readonly startDir?: string
+  /** The env files git tracks at the root, for a role that runs the repo's checks. */
+  readonly trackedEnvFiles?: readonly string[]
 }
 
 /**
@@ -110,7 +129,7 @@ const MAX_NAME_CHARS = 255
 
 /** The folder that holds everything the launch creates for a role: `<root>/.cadre/<id>/.runtime`. */
 export function runtimeDir(user: LaunchUser, id: string): string {
-  return `${user.root}/.cadre/${id}/.runtime`
+  return runtimeDirOf(user.root, id)
 }
 
 /** The links in the order of their paths, as a new array. */
@@ -191,37 +210,36 @@ function memoryLinks(id: string, user: LaunchUser): LinkSet {
 }
 
 /**
- * Whether a role is a parts-flow role (G-02-1f): it has no instruction group, as the parts hand-out gives every role,
- * so it loads only its built files, and /cadre start links the memories its hand-out record names into its memory
- * folder. A role with a group is a whole-files role (D-63).
+ * Whether a role is a parts-flow role: it has no instruction group, loads the repo files it was given from the
+ * originals and excludes the rest, and gets the memories its hand-out record names. A role with a group is a
+ * whole-files role.
  */
 export function isPartsFlowRole(role: Pick<RoleSpec, 'instructions'>): boolean {
   return role.instructions.length === 0
 }
 
 /**
- * The CLAUDE.md files a role must not load, sorted and once each (P11, G-02-1f). A parts-flow role (isPartsFlowRole)
- * loads only its built files, so every CLAUDE.md of the loaded chain, every rule file and every other role's built
- * `.cadre/<other>/CLAUDE.md` is excluded, never its own `<root>/.cadre/<id>/CLAUDE.md` (T-02-70). A role with groups
- * keeps the whole-files rule: without 'project-claude-md' every CLAUDE.md of the loaded chain is excluded, and with it
- * none is.
+ * The CLAUDE.md, rule and AGENTS.md files a role must not load, sorted and once each. A parts-flow role loads the repo
+ * files its records name from the originals and excludes every other one found under the launch roots, and every other
+ * role's built CLAUDE.md; a role with groups excludes the chain unless it has 'project-claude-md'.
  */
 function claudeMdExcludesOf(role: RoleSpec, user: LaunchUser): string[] {
   if (role.instructions.includes('project-claude-md')) return []
   if (!isPartsFlowRole(role)) return sortedUnique(user.claudeMd)
   const own = `${user.root}/.cadre/${role.id}/CLAUDE.md`
   const others = user.roleClaudeMds.filter(path => path !== own)
+  const files = new Set((role.instructionParts ?? []).map(record => record.file))
+  const given = new Set([...files].flatMap(file => [`${user.root}/${file}`, `${user.givenRoot}/${file}`]))
+  const agents = launchRoots(user).flatMap(root => [`${root}/${AGENTS_MD_FILE}`, `${root}/.claude/${AGENTS_MD_FILE}`])
+  const loaded = [...user.claudeMd, ...user.rules, ...agents].filter(path => !given.has(path))
 
-  return sortedUnique([...user.claudeMd, ...user.rules, ...others])
+  return sortedUnique([...loaded, ...others])
 }
 
 /**
- * What a role gets of the user's instructions and memories, from the D-63 answers (D-98) or the parts flow (G-02-1f).
- * Under `--setting-sources project` the user-level CLAUDE.md never loads, while the project's and every ancestor's
- * does, and so do the rule files (P11): the excludes of claudeMdExcludesOf keep a role to what it was given. The
- * global CLAUDE.md with its imports is linked into `.runtime/instructions/global/` only for 'global-claude-md', and
- * this repo's memory files into `.runtime/instructions/memory/` only for 'auto-memory': a role is narrow by default,
- * whatever exists on disk. Nothing here makes a link: renderRole makes them under `.runtime/` (D-100).
+ * What a role gets of the user's instructions and memories: the excludes of claudeMdExcludesOf, so a parts-flow role
+ * loads the repo files it was given from the originals and excludes the rest, and the links of the global CLAUDE.md
+ * and the memory files its groups ask for. renderRole makes the links under `.runtime/`.
  */
 export function instructionPlan(
   role: RoleSpec,

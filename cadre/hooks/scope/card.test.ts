@@ -3,13 +3,19 @@ import { describe, expect, test } from 'claude-code/testing'
 import type {
   CompiledScope,
   FrameworkId,
+  HookScript,
   LaunchStart,
   McpRoute,
   ProbeCheck,
   RoleSpec,
+  ScopeContext,
   ScopeRule,
   SetupScan,
+  StartSettings,
+  StartSettingsKey,
 } from '../../types'
+import { ARTIFACT } from '../locales/artifact'
+import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import {
   BIDI_OVERRIDE,
@@ -22,7 +28,7 @@ import {
   skillRef,
   templateRole,
 } from '../testkit'
-import { mcpToolName, scopeCardLines } from './card'
+import { callDeniedLines, mcpToolName, scopeCardLines, SKILLS_RULE_ENFORCEMENT } from './card'
 import { compileScope } from './compile'
 
 /** The card rule with exactly this text, or undefined when the card has none. */
@@ -47,6 +53,13 @@ const MERGED_ROUTE_RULE = 'MCP route: merged (no --strict-mcp-config, so /fleet 
 /** The rule on every card that the infra stays (D-77). */
 const AVAILABLE_RULE = 'Autopilot, agent-fleet and the handoff skills are always available'
 
+/** The rule on every card, right after the infra rule, that only the cadre inbox tools write the inbox files. */
+const INBOX_RULE =
+  'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them'
+
+/** The note of a bypass card, right after the inbox rule. */
+const HELD_RULE = 'Live messages may be held in this permission mode; the inbox is the record'
+
 /**
  * The checks of the infra rule (D-112, D-77): the autopilot command, the two handoff skills and autopilot's three MCP
  * tools are in the startup inventory, in this order.
@@ -70,11 +83,11 @@ const MERGED_REACHABLE_RULE =
   'Denied servers: tools removed and the whole server denied ' +
   '(deniedMcpServers; best-effort)'
 
-/** The card rule that names what a role loads as its instructions: its built and private files (02-GAPS-B2 N9). */
+/** The card rule naming what a role loads: the repo files its role.json names and its private instructions. */
 function loadsRule(id: string): string {
   return (
-    `Loads .cadre/${id}/CLAUDE.md and its private instructions ` +
-    `(<config dir>/cadre/<repo>-<hash8>/${id}/instructions/)`
+    `Loads the repo CLAUDE.md, rule and AGENTS.md files .cadre/${id}/role.json names, from their originals, ` +
+    `and its private instructions (<config dir>/cadre/<repo>-<hash8>/${id}/instructions/)`
   )
 }
 
@@ -86,8 +99,50 @@ function memoryLine(id: string): string {
   )
 }
 
+describe('the inbox rules on the card', () => {
+  test('every card has the inbox rule right after the infra rule: hard without Bash, best effort with Bash', () => {
+    const afterInfra = [templateRole('pm'), templateRole('be')].map(role => {
+      const rules = compileScope(role, context()).card.rules
+
+      return rules[rules.findIndex(found => found.text === AVAILABLE_RULE) + 1]
+    })
+
+    expect(afterInfra).toEqual([
+      { text: INBOX_RULE, enforcement: 'hard' },
+      { text: INBOX_RULE, enforcement: 'best-effort' },
+    ])
+  })
+
+  test('a bypass card has the held-messages note right after the inbox rule; no other card has it', () => {
+    const bypass = compileScope(templateRole('pm', { permissionMode: 'bypassPermissions' }), context()).card.rules
+    const others = [templateRole('pm'), templateRole('be')].map(role => compileScope(role, context()))
+
+    expect(bypass[bypass.findIndex(found => found.text === INBOX_RULE) + 1]).toEqual({
+      text: HELD_RULE,
+      enforcement: 'none',
+    })
+    expect(others.map(scope => ruleOf(scope, HELD_RULE))).toEqual([undefined, undefined])
+  })
+
+  test('the inbox rule is hard only without Bash and at a root a rule can hold, or with no root given', () => {
+    const enforcementOf = (role: RoleSpec, over: Partial<ScopeContext>): string | undefined =>
+      ruleOf(compileScope(role, context(over)), INBOX_RULE)?.enforcement
+    const roots: readonly Partial<ScopeContext>[] = [{ root: '/Users/me/My Projects/app' }, { root: '/repo' }, {}]
+
+    expect(roots.map(over => enforcementOf(templateRole('pm'), over))).toEqual(['best-effort', 'hard', 'hard'])
+    expect(roots.map(over => enforcementOf(templateRole('be'), over))).toEqual(roots.map(() => 'best-effort'))
+  })
+
+  test('every card of every role, framework, start and route has the inbox rule exactly once', () => {
+    const count = (scope: CompiledScope): number => scope.card.rules.filter(item => item.text === INBOX_RULE).length
+    const found = routeMatrix().filter(({ scope }) => count(scope) !== 1)
+
+    expect(found.map(({ where }) => where)).toEqual([])
+  })
+})
+
 describe('the loaded instructions on the card (02-GAPS-B2 N9)', () => {
-  test("every card names the role's built and private instructions as a none rule, after the Skills rule", () => {
+  test('every card names the repo files role.json gives and the private instructions, a none rule after Skills', () => {
     for (const role of [templateRole('pm'), templateRole('be')]) {
       const rules = compileScope(role, context()).card.rules
       const skills = rules.findIndex(found => found.text === 'Skills: only the listed skills are linked')
@@ -188,8 +243,10 @@ describe('scopeCardLines', () => {
       '    [best-effort] Skills: only the listed skills are linked',
       `    [none] ${loadsRule('pm')}`,
       '    [hard] Autopilot, agent-fleet and the handoff skills are always available',
+      `    [hard] ${INBOX_RULE}`,
       '    [hard] Permission mode: auto',
       `    [none] ${GSD_NO_BASH_RULE}`,
+      `    [none] ${ARTIFACT.cardAttendedAsk}`,
       `    [none] ${MERGED_ROUTE_RULE}`,
       '  decisions:',
       ...chainLines(['pm', 'tl']).map(line => `    ${line}`),
@@ -322,62 +379,212 @@ const START_SETUP: SetupScan = emptySetupScan({
 /** BE carrying the GSD secret read guard, the one hook a role carries (D-62). */
 const GUARDED_BE: RoleSpec = templateRole('be', { carry: { ...EMPTY_CARRY, hooks: ['gsd-secret-read-guard.js'] } })
 
+/** The start folder settings of a dir start as the scan read them, with these hooks and keys. */
+function readStart(hooks: readonly HookScript[], keys: readonly StartSettingsKey[] = []): StartSettings {
+  return { state: 'read', hooks, keys, warnings: [] }
+}
+
 /** The folder apps/web of the repo as a launch start (A2). */
 const APPS_WEB: LaunchStart = { kind: 'dir', path: 'apps/web' }
 
-/** The three none rules on the card of BE whose launcher starts in `folder` (D-122, D-127, D-113). */
+/** The none line a start folder's settings get on the card of a launcher that starts in `folder`. */
+function startSettingsLine(folder: string): string {
+  const loads = 'loads: its hooks run and its permission rules apply'
+  if (folder === HERE_FOLDER) return `.claude/settings.json of the folder the launcher is run from ${loads}`
+
+  return `${folder}/.claude/settings.json ${loads}`
+}
+
+/** The folder a here start names. */
+const HERE_FOLDER = 'the folder the launcher is run from'
+
+/** The four none rules on the card of BE whose launcher starts in `folder`. */
 function startNotes(folder: string): ScopeRule[] {
   return [
     `project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`,
+    startSettingsLine(folder),
     `Additional directory: <git root> (start folder is ${folder})`,
     `Handoffs (thoughts/shared/handoffs/be/) and GSD .planning/ follow the start folder (${folder})`,
   ].map((text): ScopeRule => ({ text, enforcement: 'none' }))
 }
 
+/** The none rules on the card of BE whose launcher starts where it is run. */
+function hereNotes(): ScopeRule[] {
+  const notes = startNotes(HERE_FOLDER)
+  const writable =
+    '.claude/settings.json and .claude/settings.local.json of the folder the launcher is run from are not ' +
+    'write-protected: a role that can edit there can change what the next launch loads'
+  const plugins =
+    'plugins that .claude/settings.json of the folder the launcher is run from enables are not switched off'
+
+  return [
+    ...notes.slice(0, 2),
+    { text: writable, enforcement: 'none' },
+    { text: plugins, enforcement: 'none' },
+    ...notes.slice(2),
+  ]
+}
+
+/** The project monitor warning for `script`. */
+function monitorWarning(script: string): string {
+  return (
+    `WARNING: ${script} is registered in project settings and loads in every role; ` +
+    'it conflicts with the autopilot handoff (D-62)'
+  )
+}
+
 describe('launch start card (D-122)', () => {
-  test('a dir start lists the project hook scripts as not loaded and none as loaded by project settings', () => {
+  test('a dir start with no start hook lists the project hooks as not loaded and none as loaded by project', () => {
     const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: START_SETUP })).card
 
     expect(card.hooks).toEqual({ loaded: ['gsd-secret-read-guard.js'], loadedByProject: [], notLoaded: ['lint.sh'] })
   })
 
-  test('a dir start ends the rules, right before the MCP route rule, with the three start notes labelled none', () => {
+  test('a dir start ends the rules, right before the MCP route rule, with the four start notes labelled none', () => {
     const rules = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: START_SETUP })).card.rules
 
-    expect(rules.slice(-4, -1)).toEqual(startNotes('<git root>/apps/web'))
+    expect(rules.slice(-5, -1)).toEqual(startNotes('<git root>/apps/web'))
     expect(rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
   })
 
-  test('a here start names the folder the launcher is run from in all three notes', () => {
-    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup: START_SETUP })).card
+  test('a dir start lists the start folder hooks as loaded by project settings, less the role\'s own', () => {
+    const folderHooks = [hook('guard.sh', 'project'), hook('gsd-secret-read-guard.js', 'project')]
+    const setup = { ...START_SETUP, startSettings: readStart(folderHooks) }
+    const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup })).card
 
-    expect(card.rules.slice(-4, -1)).toEqual(startNotes('the folder the launcher is run from'))
+    expect(card.hooks).toEqual({
+      loaded: ['gsd-secret-read-guard.js'],
+      loadedByProject: ['guard.sh'],
+      notLoaded: ['lint.sh'],
+    })
+    expect(scopeCardLines(card)).toContain('  hooks loaded by project settings: guard.sh')
+  })
+
+  test('a here start names the folder the launcher is run from in its start notes', () => {
+    const setup = { ...START_SETUP, startSettings: readStart([hook('guard.sh', 'project')]) }
+    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup })).card
+
+    expect(card.rules.slice(-7, -1)).toEqual(hereNotes())
     expect(card.rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
-    expect(card.hooks.loadedByProject).toEqual([])
+    expect(card.hooks.loadedByProject).toBeNull()
+    expect(scopeCardLines(card)).toContain('  hooks loaded by project settings: unknown')
   })
 
   test('a git-root start has no start note and lists the project hook scripts as loaded by project settings', () => {
-    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup: START_SETUP })).card
-    const notes = [...startNotes('<git root>/apps/web'), ...startNotes('the folder the launcher is run from')]
+    const setup = { ...START_SETUP, startSettings: readStart([hook('guard.sh', 'project')]) }
+    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup })).card
+    const plain = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup: START_SETUP })).card
+    const notes = [...startNotes('<git root>/apps/web'), ...startNotes(HERE_FOLDER), ...hereNotes()]
 
     expect(card.rules.filter(item => notes.some(note => note.text === item.text))).toEqual([])
     expect(card.rules.filter(item => item.text.includes('<git root>'))).toEqual([])
+    expect(card.rules.filter(item => item.text.includes('.claude/settings.json'))).toEqual([])
     expect(card.hooks).toEqual({ loaded: ['gsd-secret-read-guard.js'], loadedByProject: ['lint.sh'], notLoaded: [] })
+    expect(card).toEqual(plain)
   })
 
   test('a context monitor in project settings gets its warning for a git-root start only', () => {
     const setup = emptySetupScan({ hooks: [hook('gsd-context-monitor.js', 'project')] })
-    const warning =
-      'WARNING: gsd-context-monitor.js is registered in project settings and loads in every role; ' +
-      'it conflicts with the autopilot handoff (D-62)'
     const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, APPS_WEB]
     const labels = starts.map(launchStart => {
       const scope = compileScope(templateRole('be'), context({ launchStart, setup }))
 
-      return ruleOf(scope, warning)?.enforcement
+      return ruleOf(scope, monitorWarning('gsd-context-monitor.js'))?.enforcement
     })
 
     expect(labels).toEqual(['none', undefined, undefined])
+  })
+
+  test('a context monitor among the start folder hooks gets its warning for a dir start', () => {
+    const setup = emptySetupScan({ startSettings: readStart([hook('gsd-context-monitor.js', 'project')]) })
+    const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, APPS_WEB]
+    const labels = starts.map(launchStart => {
+      const scope = compileScope(templateRole('be'), context({ launchStart, setup }))
+
+      return ruleOf(scope, monitorWarning('gsd-context-monitor.js'))?.enforcement
+    })
+
+    expect(labels).toEqual([undefined, undefined, 'none'])
+  })
+
+  test('a dir start shows its project hooks as unknown when the start folder settings were not read', () => {
+    const unread: StartSettings = { state: 'unknown', hooks: [], keys: [], warnings: ['unread'] }
+    const absent: StartSettings = { state: 'absent', hooks: [], keys: [], warnings: [] }
+    const lines = [unread, absent, readStart([hook('guard.sh', 'project')])].map(startSettings => {
+      const setup = { ...START_SETUP, startSettings }
+      const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup })).card
+
+      return scopeCardLines(card).find(line => line.startsWith('  hooks loaded by project settings:'))
+    })
+
+    expect(lines).toEqual([
+      '  hooks loaded by project settings: unknown',
+      '  hooks loaded by project settings: none',
+      '  hooks loaded by project settings: guard.sh',
+    ])
+  })
+
+  test('a dir start whose start folder settings set unscanned keys warns right after its settings line', () => {
+    const rulesOf = (startSettings: StartSettings): readonly ScopeRule[] =>
+      compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: { ...START_SETUP, startSettings } })).card.rules
+    const withKeys = rulesOf(readStart([], ['permissions.allow', 'env']))
+    const at = withKeys.findIndex(item => item.text === startSettingsLine('<git root>/apps/web'))
+
+    expect(withKeys[at + 1]).toEqual({
+      text:
+        'WARNING: <git root>/apps/web/.claude/settings.json sets permissions.allow, env, which cadre does not scan; ' +
+        "the folder's own .claude/skills, .claude/agents and .claude/commands also load unscanned",
+      enforcement: 'none',
+    })
+    expect(rulesOf(readStart([])).filter(item => item.text.includes('which cadre does not scan'))).toEqual([])
+  })
+
+  test('the monitor warning of a dir start reads only the hooks of start folder settings that were read', () => {
+    const monitor = [hook('gsd-context-monitor.js', 'project')]
+    const unread: StartSettings = { state: 'unknown', hooks: monitor, keys: [], warnings: [] }
+    const setup = emptySetupScan({ startSettings: unread })
+    const scope = compileScope(templateRole('be'), context({ launchStart: APPS_WEB, setup }))
+
+    expect(ruleOf(scope, monitorWarning('gsd-context-monitor.js'))).toBeUndefined()
+  })
+
+  test('the plugins rule is best-effort on a here start and on a dir start whose start settings were not read', () => {
+    const unread: StartSettings = { state: 'unknown', hooks: [], keys: [], warnings: ['unread'] }
+    const absent: StartSettings = { state: 'absent', hooks: [], keys: [], warnings: [] }
+    const cases: readonly (readonly [LaunchStart, StartSettings])[] = [
+      [{ kind: 'here' }, readStart([])],
+      [APPS_WEB, unread],
+      [APPS_WEB, readStart([])],
+      [APPS_WEB, absent],
+      [{ kind: 'git-root' }, unread],
+    ]
+    const labels = cases.map(([launchStart, startSettings]) => {
+      const scope = compileScope(GUARDED_BE, context({ launchStart, setup: { ...START_SETUP, startSettings } }))
+
+      return ruleOf(scope, PLUGIN_RULE)?.enforcement
+    })
+
+    expect(labels).toEqual(['best-effort', 'best-effort', 'hard', 'hard', 'hard'])
+  })
+
+  test('a dir start folder no permission rule can hold gets a none note after its settings line; src gets none', () => {
+    const rulesOf = (path: string): readonly ScopeRule[] => {
+      const launchStart: LaunchStart = { kind: 'dir', path }
+
+      return compileScope(GUARDED_BE, context({ root: '/repo', launchStart, setup: START_SETUP })).card.rules
+    }
+    const folder = '<git root>/packages/@acme/web'
+    const scoped = rulesOf('packages/@acme/web')
+    const at = scoped.findIndex(item => item.text === startSettingsLine(folder))
+
+    expect(scoped[at + 1]).toEqual({
+      text:
+        `${folder}/.claude/settings.json, settings.local.json and its framework install folders are not ` +
+        'write-protected: no permission rule can hold the path, so a role that can edit there can change what the ' +
+        'next launch loads',
+      enforcement: 'none',
+    })
+    expect(rulesOf('src').filter(item => item.text.includes('not write-protected'))).toEqual([])
   })
 })
 
@@ -505,6 +712,13 @@ describe('probe checks (D-112)', () => {
     }
   })
 
+  test('the Skills rule carries SKILLS_RULE_ENFORCEMENT, best-effort, in every role', () => {
+    for (const role of [templateRole('pm'), templateRole('be')]) {
+      expect(ruleOf(compileScope(role, context()), ARTIFACT.cardSkills)?.enforcement).toBe(SKILLS_RULE_ENFORCEMENT)
+    }
+    expect(SKILLS_RULE_ENFORCEMENT).toBe('best-effort')
+  })
+
   test('the permission rule checks the mode, and manual as the engine reports it: default', () => {
     const auto = compileScope(templateRole('be'), context())
     const manual = compileScope(templateRole('be', { permissionMode: 'manual' }), context())
@@ -532,5 +746,183 @@ describe('safety net: mcpToolName (A8)', () => {
   test('mcpToolName: mcp__ and the server name, each character outside A-Z, a-z, 0-9, _ and - made _', () => {
     expect(mcpToolName('my.server name/x')).toBe('mcp__my_server_name_x')
     expect(mcpToolName('Jira_cloud-2')).toBe('mcp__Jira_cloud-2')
+  })
+})
+
+describe('every framework a role may run on the card', () => {
+  /** The card lines that say what else the role may run. */
+  function alsoRunsLines(scope: CompiledScope): string[] {
+    return scopeCardLines(scope.card).filter(line => line.startsWith('  also runs: '))
+  }
+
+  test('a role that may also run superpowers has the line naming it, right after its framework line', () => {
+    const be = templateRole('be')
+    const union = compileScope(be, context({ framework: 'gsd', alsoRuns: ['gsd', 'superpowers'] }))
+    const lines = scopeCardLines(union.card)
+
+    expect(alsoRunsLines(union)).toEqual(['  also runs: superpowers'])
+    expect(lines[lines.indexOf('  also runs: superpowers') - 1]?.startsWith('  framework: GSD;')).toBe(true)
+  })
+
+  test('a card with nothing else to run, or of a role on none, has no such line', () => {
+    const alone = compileScope(templateRole('be'), context({ framework: 'gsd' }))
+    const none = compileScope(templateRole('pm'), context({ framework: 'none', alsoRuns: ['gsd', 'superpowers'] }))
+
+    expect([alsoRunsLines(alone), alsoRunsLines(none)]).toEqual([[], []])
+  })
+
+  test("the start skills of every framework the role may run count as given, so none of them is 'not given'", () => {
+    const skills = [skillRef('gsd-plan-phase'), skillRef('gsd-execute-phase'), skillRef('mine')]
+    const setup = emptySetupScan({ skills })
+    const tl = templateRole('tl')
+    const union = compileScope(tl, context({ framework: 'superpowers', setup, alsoRuns: ['superpowers', 'gsd'] }))
+    const alone = compileScope(tl, context({ framework: 'superpowers', setup }))
+
+    expect(union.card.notGiven.skills).toEqual(['mine'])
+    expect(alone.card.notGiven.skills).toEqual(['gsd-execute-phase', 'gsd-plan-phase', 'mine'])
+  })
+
+  test('a role without Bash that may also run gsd carries the GSD Bash rule and is attended', () => {
+    const alsoRuns: FrameworkId[] = ['gsd', 'superpowers']
+    const noBash = templateRole('tl', { hasBash: false })
+    const union = compileScope(noBash, context({ framework: 'superpowers', alsoRuns }))
+    const alone = compileScope(noBash, context({ framework: 'superpowers' }))
+    const withBash = compileScope(templateRole('tl'), context({ framework: 'superpowers', alsoRuns }))
+
+    expect([ruleOf(union, GSD_NO_BASH_RULE) !== undefined, union.card.isAttended]).toEqual([true, true])
+    expect([ruleOf(alone, GSD_NO_BASH_RULE) !== undefined, alone.card.isAttended]).toEqual([false, false])
+    expect(ruleOf(withBash, GSD_NO_BASH_RULE)).toBeUndefined()
+  })
+})
+
+describe('a role started with --ask-user', () => {
+  /** Whether the card is attended, then whether it carries the rule that framework menus reach the person. */
+  function askMarks(scope: CompiledScope): boolean[] {
+    return [scope.card.isAttended, ruleOf(scope, ARTIFACT.cardAttendedAsk) !== undefined]
+  }
+
+  test('TL on GSD is attended and carries the ask rule', () => {
+    expect(askMarks(compileScope(templateRole('tl'), context({ framework: 'gsd' })))).toEqual([true, true])
+  })
+
+  test('TL on superpowers or none is neither, and TL on superpowers that may also run GSD is both', () => {
+    const tl = templateRole('tl')
+    const superpowers = compileScope(tl, context({ framework: 'superpowers' }))
+    const none = compileScope(tl, context({ framework: 'none' }))
+    const union = compileScope(tl, context({ framework: 'superpowers', alsoRuns: ['superpowers', 'gsd'] }))
+
+    expect([askMarks(superpowers), askMarks(none), askMarks(union)]).toEqual([
+      [false, false],
+      [false, false],
+      [true, true],
+    ])
+  })
+
+  test('TL started without --ask-user and BE on GSD are neither', () => {
+    const quiet = templateRole('tl', { autopilot: { ...templateRole('tl').autopilot, askUser: false } })
+    const scopes = [quiet, templateRole('be')].map(role => compileScope(role, context({ framework: 'gsd' })))
+
+    expect(scopes.map(askMarks)).toEqual([
+      [false, false],
+      [false, false],
+    ])
+  })
+})
+
+describe('the skills denied at call time on the card', () => {
+  /** A scan that holds the grill plugin and lists three of its skills. */
+  const MATT_SCAN = emptySetupScan({
+    plugins: [MATTPOCOCK_PLUGIN],
+    skills: ['grilling', 'grill-me', 'tdd'].map(name => skillRef(`mattpocock-skills:${name}`, MATTPOCOCK_PLUGIN)),
+  })
+
+  test('callDeniedLines gives one line per plugin with 12 bare names and then how many more', () => {
+    const names = Array.from({ length: 14 }, (_, index) => `m:s${String(index + 1).padStart(2, '0')}`)
+    const shownNames = names.slice(0, 12).map(name => name.slice('m:'.length))
+
+    expect(callDeniedLines(names)).toEqual([`  denied at call time (m, 14 skills): ${shownNames.join(', ')}, +2 more`])
+    expect(callDeniedLines([])).toEqual([])
+  })
+
+  test('PM given the grill skills shows tdd denied at call time after the not-given skills; BE shows none', () => {
+    const pm = compileScope(templateRole('pm', { skills: [...GRILL_SKILLS] }), context({ setup: MATT_SCAN })).card
+    const be = compileScope(templateRole('be'), context({ setup: MATT_SCAN })).card
+    const lines = scopeCardLines(pm)
+    const notGiven = lines.findIndex(line => line.startsWith('  not given skills:'))
+
+    expect(pm.callDenied).toEqual(['mattpocock-skills:tdd'])
+    expect(lines[notGiven + 1]).toBe('  denied at call time (mattpocock-skills, 1 skills): tdd')
+    expect(be.callDenied).toEqual([])
+  })
+})
+
+describe('the not-given plugin skills on the card', () => {
+  test('they are the not-given names whose scanned plugin is set, sorted, once each', () => {
+    const skills = [
+      skillRef('zeta:b', 'zeta@m'),
+      skillRef('zeta:b', 'zeta@m'),
+      skillRef('alpha:a', 'alpha@m'),
+      skillRef('mine'),
+      skillRef('x:y'),
+    ]
+    const card = compileScope(templateRole('be'), context({ setup: emptySetupScan({ skills }) })).card
+
+    expect(card.notGiven.skills).toEqual(['alpha:a', 'mine', 'x:y', 'zeta:b'])
+    expect(card.notGiven.pluginSkills).toEqual(['alpha:a', 'zeta:b'])
+  })
+})
+
+describe('the sandbox, docker and secrets rows of a card', () => {
+  /** The sandbox row of a role with Bash. */
+  const SANDBOX_ROW =
+    'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache, which tools run outside ' +
+    'the sandbox load from'
+
+  /** The docker row of BE, FE and QA in a repo whose one docker script runs through yarn. */
+  const DOCKER_ROW =
+    'These run outside the sandbox: docker, docker-compose, yarn docker:rspec. ' +
+    'Run each one alone, with no cd, pipe or redirect.'
+
+  /** The secrets row of a role without Bash. */
+  const SECRETS_ROW = 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied'
+
+  /** The secrets row of TL and Security: Bash is stopped through the sandbox. */
+  const SECRETS_SANDBOX_ROW =
+    'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the sandbox; ' +
+    'a command run outside the sandbox is not stopped'
+
+  /** The secrets row of BE, FE and QA: Bash is stopped through the sandbox, but for the env files git tracks. */
+  const SECRETS_CHECKS_ROW =
+    'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the sandbox, ' +
+    'except the env files git tracks, which Bash commands may read; a command run outside the sandbox is not stopped'
+
+  /** The card rules of a template role in a repo with one docker script that runs through yarn. */
+  function rulesOf(id: 'pm' | 'tl' | 'be'): readonly ScopeRule[] {
+    return compileScope(templateRole(id), context({ dockerScripts: ['yarn docker:rspec'] })).card.rules
+  }
+
+  test('BE has one docker row, labelled none, right after its sandbox row', () => {
+    const rules = rulesOf('be')
+    const sandbox = rules.findIndex(item => item.text === SANDBOX_ROW)
+
+    expect(rules[sandbox]).toEqual({ text: SANDBOX_ROW, enforcement: 'best-effort' })
+    expect(rules[sandbox + 1]).toEqual({ text: DOCKER_ROW, enforcement: 'none' })
+    expect(rules.filter(item => item.text.startsWith('These run outside the sandbox'))).toHaveLength(1)
+  })
+
+  test('TL and PM have no docker row', () => {
+    const docker = (id: 'pm' | 'tl'): readonly ScopeRule[] =>
+      rulesOf(id).filter(item => item.text.startsWith('These run outside the sandbox'))
+
+    expect([docker('tl'), docker('pm')]).toEqual([[], []])
+  })
+
+  test('the secrets row says what the sandbox stops for each role kind, every one best-effort', () => {
+    const secretsOf = (id: 'pm' | 'tl' | 'be'): ScopeRule | undefined =>
+      rulesOf(id).find(item => item.text.startsWith('Reads of .env'))
+
+    expect(secretsOf('pm')).toEqual({ text: SECRETS_ROW, enforcement: 'best-effort' })
+    expect(secretsOf('tl')).toEqual({ text: SECRETS_SANDBOX_ROW, enforcement: 'best-effort' })
+    expect(secretsOf('be')).toEqual({ text: SECRETS_CHECKS_ROW, enforcement: 'best-effort' })
   })
 })

@@ -4,11 +4,13 @@ import type { CadreState, HunkOp, LaunchStart, RoleSpec, ScopeContext } from '..
 import { stableJson } from './core/json'
 import { NOT_SET_TEXT } from './framework/gsd/hunks'
 import { cadreJsonText, roleJsonText } from './generate/docs'
+import { ARTIFACT } from './locales/artifact'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import type { Gathered } from './scan/gather'
 import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import {
+  compileAll,
   compileTeam,
   MCP_ROUTE,
   noStateReply,
@@ -19,12 +21,14 @@ import {
   regenNoRole,
   resolvedFramework,
   scopesFor,
+  teamFrameworks,
 } from './team'
 import {
   cardOf,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
   emptySetupScan,
+  entry,
   gitWorld,
   launcherEntry,
   launcherOf,
@@ -101,6 +105,19 @@ describe('repoGuard and readTeam', () => {
     })
   })
 
+  test('readTeam for /cadre frameworks takes a team with no default framework that regen still refuses', async () => {
+    const unframed = await teamWorld(team, { framework: null })
+    const frameworks = await readTeam(memIo(unframed, {}).io, '/repo', 'frameworks', null)
+    expect([frameworks.kind, frameworks.kind === 'ok' ? frameworks.value.roles.map(role => role.id) : []]).toEqual([
+      'ok',
+      ['be', 'pm'],
+    ])
+    expect(await readTeam(memIo(unframed, {}).io, '/repo', 'regen', null)).toEqual({
+      kind: 'refuse',
+      text: regenNeedsFramework('be'),
+    })
+  })
+
   test('readTeam gives the state, every listed role in cadre.json order and the text each was read from', async () => {
     const world = await teamWorld()
     const read = await readTeam(memIo(world, {}).io, '/repo', 'start', 'pm')
@@ -119,10 +136,63 @@ describe('repoGuard and readTeam', () => {
     const run = memIo(world, {})
     const state = stateOf(team, { launchStart: start, readUserMcp: true })
     const { gathered, scopes } = await compileTeam(run.io, DEFAULT_LOCATIONS, state, team)
-    expect(gathered).toEqual(await scansOf(world, true))
+    const scans = await scansOf(world, true)
+    const startSettings = { state: 'absent', hooks: [], keys: [], warnings: [] }
+    expect(gathered).toEqual({ ...scans, setup: { ...scans.setup, startSettings } })
     expect(run.reads.filter(path => path === '/home/u/.claude.json')).toHaveLength(1)
     expect(scopes).toEqual(scopesFor(team, 'none', gathered, [], start))
     expect(scopes).not.toEqual(scopesFor(team, 'none', gathered, [], { kind: 'git-root' }))
+  })
+
+  test('compileTeam of a dir start reads the start folder settings: the card names it and lists its hook', async () => {
+    const guard = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}}'
+    const world = gitWorld({
+      dirs: { '/repo/.git': [], '/repo/src': [entry('.claude', 'dir')], '/repo/src/.claude': [entry('settings.json')] },
+      files: { '/repo/src/.claude/settings.json': guard },
+    })
+    const state = stateOf(team, { launchStart: { kind: 'dir', path: 'src' } })
+    const { gathered, scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
+    const lines = scopeCardLines(cardOf(scopes, 'be'))
+
+    expect(gathered.setup.startSettings).toEqual({
+      state: 'read',
+      hooks: [{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }],
+      keys: [],
+      warnings: [],
+    })
+    expect(lines).toContain(
+      '    [none] <git root>/src/.claude/settings.json loads: its hooks run and its permission rules apply',
+    )
+    expect(lines).toContain('  hooks loaded by project settings: guard.sh')
+  })
+
+  test('compileTeam lets every role not on none run every framework cadre.json records', async () => {
+    const roles = [templateRole('pm'), templateRole('be'), withFramework(templateRole('tl'), 'superpowers')]
+    const state = stateOf(roles, { framework: 'gsd', frameworks: ['gsd', 'superpowers'] })
+    const { scopes } = await compileTeam(memIo(gitWorld(), {}).io, DEFAULT_LOCATIONS, state, roles)
+
+    const runs = roles.map(role => [role.id, cardOf(scopes, role.id).framework, cardOf(scopes, role.id).alsoRuns])
+
+    expect(runs).toEqual([
+      ['pm', 'none', []],
+      ['be', 'gsd', ['superpowers']],
+      ['tl', 'superpowers', ['gsd']],
+    ])
+  })
+
+  test('with no recorded frameworks cadre.json runs its stored framework only: no role gains superpowers', async () => {
+    const world = gitWorld({
+      settings: { user: { enabledPlugins: { 'superpowers@claude-plugins-official': true } }, project: {}, local: {} },
+    })
+    const state = stateOf(team, { framework: 'gsd' })
+    const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
+
+    for (const role of team) {
+      const scope = scopes.get(role.id)
+      const superpowers = scope?.settings.enabledPlugins['superpowers@claude-plugins-official']
+
+      expect([role.id, scope?.card.alsoRuns, superpowers]).toEqual([role.id, [], undefined])
+    }
   })
 
   test('compileTeam judges attended from the config on disk, as regen does (D-70, D-72)', async () => {
@@ -138,6 +208,31 @@ describe('repoGuard and readTeam', () => {
       const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
       // BE has Bash, so only the config decides; a GSD role without Bash, such as PM, is always attended.
       expect([text, cardOf(scopes, 'be').isAttended]).toEqual([text, isAttended])
+    }
+  })
+
+  test('the team frameworks are every framework a role may run, its own and the recorded ones, in id order', () => {
+    const roles = [withFramework(templateRole('be'), 'superpowers'), withFramework(templateRole('pm'), 'none')]
+
+    expect(teamFrameworks(roles, 'superpowers', ['gsd', 'superpowers'])).toEqual(['gsd', 'superpowers', 'none'])
+    expect(teamFrameworks(roles, 'superpowers', [])).toEqual(['superpowers', 'none'])
+  })
+
+  test('compileTeam judges attended over a framework a role only also runs, from its config on disk', async () => {
+    const config = '/repo/.planning/config.json'
+    const roles = [withFramework(templateRole('be'), 'superpowers')]
+    const state = stateOf(roles, { framework: 'superpowers', frameworks: ['gsd', 'superpowers'] })
+    const cases: readonly (readonly [string, boolean])[] = [
+      ['{"mode":"interactive"}', true],
+      ['{"mode":"yolo","workflow":{"text_mode":false}}', false],
+    ]
+    for (const [text, isAttended] of cases) {
+      const world = gitWorld({ files: { [config]: text } })
+      const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, roles)
+      const card = cardOf(scopes, 'be')
+      const hasRule = card.rules.some(rule => rule.text === ARTIFACT.cardAttendedSteps)
+
+      expect([text, card.isAttended, hasRule]).toEqual([text, isAttended, isAttended])
     }
   })
 })
@@ -256,5 +351,58 @@ describe('init plan', () => {
     expect(attended([gsdHunk({ isRunnable: false })])).toEqual([true, false])
     expect(attended([gsdHunk({ isRequired: false, isAccepted: false })])).toEqual([false, false])
     expect(attended([gsdHunk({ isAccepted: false, file: 'other/config.json' })])).toEqual([false, false])
+  })
+
+  test('a role is attended when any framework it may run is attended; a role on none never is', () => {
+    const team = [withFramework(templateRole('tl'), 'superpowers'), templateRole('pm')]
+    const start: LaunchStart = { kind: 'git-root' }
+    const union = compileAll(team, 'gsd', gathered, new Set(['gsd']), start, ['gsd', 'superpowers'])
+    const alone = compileAll(team, 'gsd', gathered, new Set(['gsd']), start)
+
+    expect([cardOf(union, 'tl').isAttended, cardOf(union, 'pm').isAttended]).toEqual([true, false])
+    expect(cardOf(alone, 'tl').isAttended).toBe(false)
+  })
+
+  test('compiled for a root no rule can hold, the inbox rule of PM is best effort', () => {
+    const team = [templateRole('pm'), templateRole('be')]
+    const start: LaunchStart = { kind: 'git-root' }
+    const scopes = compileAll(team, 'gsd', gathered, new Set(), start, ['gsd'], '/Users/me/My Projects/app')
+    const inbox = cardOf(scopes, 'pm').rules.find(rule => rule.text === ARTIFACT.cardInbox)
+
+    expect(inbox?.enforcement).toBe('best-effort')
+  })
+})
+
+describe('the docker scripts a team runs outside the sandbox', () => {
+  /** BE and PM on the repo default. */
+  const team = [templateRole('be'), templateRole('pm')]
+
+  /** A repo whose root package.json has these scripts and whose root has a yarn.lock. */
+  function packageWorld(scripts: Readonly<Record<string, string>>): MemWorld {
+    return gitWorld({
+      dirs: { '/repo/.git': [], '/repo': [entry('package.json'), entry('yarn.lock')] },
+      files: { '/repo/package.json': JSON.stringify({ name: 'x', scripts }) },
+    })
+  }
+
+  test('compileTeam takes the docker scripts cadre.json records, not those of the package.json now', async () => {
+    const world = packageWorld({ lint: 'eslint .' })
+    const recorded = stateOf(team, { dockerScripts: ['yarn docker:rspec'] })
+    const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, recorded, team)
+    const unrecorded = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, stateOf(team), team)
+
+    expect(scopes.get('be')?.settings.sandbox.excludedCommands).toEqual([
+      'docker *',
+      'docker-compose *',
+      'yarn docker:rspec *',
+    ])
+    expect(unrecorded.scopes.get('be')?.settings.sandbox.excludedCommands).toEqual(['docker *', 'docker-compose *'])
+  })
+
+  test('a docker script the package.json has now but cadre.json does not record stays in the sandbox', async () => {
+    const world = packageWorld({ 'docker:up': 'docker compose up' })
+    const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, stateOf(team), team)
+
+    expect(scopes.get('be')?.settings.sandbox.excludedCommands).toEqual(['docker *', 'docker-compose *'])
   })
 })

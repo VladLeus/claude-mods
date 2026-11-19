@@ -1,11 +1,14 @@
 /**
- * The plan side of init (PLAN-01, PLAN-03, PLAN-04, D-67, D-230, G-02-1f), a layer 10 module, its pure parts: the repo
- * parts each role was given (repoPartsOf), the role.json records regen compares against (withRepoRecords), what each
- * role is owed outside the repo (privatesOf), and PlanStepInput, what the plan of a draft is made from; init/run makes
- * the plan itself (planStep), which reads the disk. Pure: it imports apply, core, launch, records and the types, and
+ * The plan side of init, a layer 10 module, its pure parts: the repo parts each role was given (repoPartsOf), the
+ * role.json records regen compares against (withRepoRecords), what each role is owed outside the repo (privatesOf),
+ * PlanStepInput, what the plan of a draft is made from, the repo state a plan records (planState) and the scopes a
+ * draft compiles to (draftScopes); init/run makes the plan itself (planStep), which reads the disk, and the frameworks
+ * and sizing block both the review and the apply plan with (initFrameworks, initSizing). Pure: it imports
+ * apply/installs, the apply/run types, core, launch, messages/sizing, records, team, the draft type and the types, and
  * never imports init/machine or init/run.
  */
 import type {
+  CadreState,
   CompiledScope,
   FrameworkId,
   GitPolicy,
@@ -16,11 +19,18 @@ import type {
   LaunchStart,
   RepoScan,
   RoleSpec,
+  Sizing,
+  TeamStructure,
 } from '../../types'
+import { projectInstallOf, setupAfterInstalls } from '../apply/installs'
 import type { OwedPrivate } from '../apply/run'
+import { repoFrameworks } from '../core/framework-id'
 import { compareText } from '../core/text'
 import { isPartsFlowRole } from '../launch/links'
+import { defaultSizing } from '../messages/sizing'
 import { partRecord, withPartRecords } from '../records'
+import { scopesFor } from '../team'
+import type { Draft } from './draft'
 
 /**
  * The parts each role was given that were read from the repo, by role id (G-02-1f Storage split): for a parts
@@ -44,25 +54,18 @@ export function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, re
 }
 
 /**
- * The roles with the records regen compares against (G-02-1f Regen, AUTO-PICK #19 Q1): each parts-flow role
- * (isPartsFlowRole) records the repo parts `repoParts` gives it, and as not given every other repo part the read found
- * in the same files, both in read order, so its role.json names no global part and no memory (T-02-79); a role given
- * no repo part records none, and a whole-files role is left as it is.
+ * The roles with the records regen compares against: a parts-flow role records the whole repo files it was given, in
+ * read order, so its role.json names no global part and no memory; a whole-files role is left as it is.
  */
 export function withRepoRecords(
   roles: readonly RoleSpec[],
-  handout: InstructionHandout,
   repoParts: ReadonlyMap<string, readonly InstructionPart[]>,
 ): RoleSpec[] {
-  const read = handout.kind === 'parts' ? handout.scan.parts.filter(part => part.source === 'repo') : []
-
   return roles.map(role => {
     if (!isPartsFlowRole(role)) return role
     const given = repoParts.get(role.id) ?? []
-    const files = new Set(given.map(part => part.file))
-    const notGiven = read.filter(part => files.has(part.file) && !given.includes(part))
 
-    return withPartRecords(role, given.map(partRecord), notGiven.map(partRecord))
+    return withPartRecords(role, given.map(partRecord), [])
   })
 }
 
@@ -109,4 +112,103 @@ export type PlanStepInput = {
   readonly readUserMcp: boolean
   /** The parts each role was given, by role id (repoPartsOf); absent plans no built role file. */
   readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
+  /** The sizing block cadre.json records; absent leaves it out. */
+  readonly sizing?: Sizing
+  /** The frameworks cadre.json records as the person's answer; absent records none. */
+  readonly frameworks?: readonly FrameworkId[]
+  /** The structure cadre.json records as the person's answer; absent records none. */
+  readonly structure?: TeamStructure
+}
+
+/** The repo state a plan records in cadre.json: this cadre version and the team's answers, roles in their order. */
+export function planState(input: PlanStepInput, cadreVersion: string): CadreState {
+  return {
+    schema: 1,
+    cadreVersion,
+    framework: input.repoDefault,
+    gitPolicy: input.policy,
+    roles: input.roles.map(role => role.id),
+    launchStart: input.launchStart,
+    readUserMcp: input.readUserMcp,
+    ...(input.sizing === undefined ? {} : { sizing: input.sizing }),
+    ...(input.frameworks === undefined ? {} : { frameworks: input.frameworks }),
+    ...(input.repo.dockerScripts === undefined || input.repo.dockerScripts.length === 0
+      ? {}
+      : { dockerScripts: input.repo.dockerScripts }),
+    ...(input.structure === undefined ? {} : { structure: input.structure }),
+  }
+}
+
+/**
+ * The sizing block init records in cadre.json for the frameworks a run ends with: a stored block keeps its threshold
+ * and rubric, and its mapping while both of its frameworks are in the set, else takes the mapping of the default; with
+ * none stored, the default of the set.
+ */
+export function initSizing(stored: Sizing | undefined, frameworks: readonly FrameworkId[]): Sizing {
+  const sized = defaultSizing(frameworks)
+  if (stored === undefined) return sized
+  const { small, large } = stored.mapping
+  const isKept = frameworks.includes(small) && frameworks.includes(large)
+
+  return { ...stored, mapping: isKept ? stored.mapping : sized.mapping }
+}
+
+/**
+ * The frameworks and sizing block init records in cadre.json: the frameworks the run ends with are the set the person
+ * chose, else the supported ones installed, without those whose install failed; they are recorded only when the
+ * person chose the set, and the sizing block is that of those frameworks (initSizing). The review and the apply both
+ * plan with it, so the plan the person confirms holds the cadre.json apply writes when every install works.
+ */
+export function initFrameworks(
+  draft: Pick<Draft, 'frameworkSet' | 'installed' | 'gathered'>,
+  failed: readonly FrameworkId[],
+): { readonly frameworks?: readonly FrameworkId[]; readonly sizing: Sizing } {
+  const frameworks = (draft.frameworkSet ?? draft.installed).filter(id => id !== 'none' && !failed.includes(id))
+  const sizing = initSizing(draft.gathered.repo.cadre.state?.sizing, frameworks)
+
+  return draft.frameworkSet === undefined ? { sizing } : { frameworks, sizing }
+}
+
+/**
+ * The scopes a draft compiles to with these plugin keys counted as installed, and the frameworks and sizing block it
+ * records (initFrameworks), so a review shows what Confirm writes when every install works.
+ */
+export function draftScopes(
+  draft: Pick<
+    Draft,
+    'gathered' | 'roles' | 'repoDefault' | 'hunks' | 'launchStart' | 'locations' | 'frameworkSet' | 'installed'
+  >,
+  pluginKeys: readonly string[],
+): {
+  readonly scopes: ReadonlyMap<string, CompiledScope>
+  readonly recorded: { readonly frameworks?: readonly FrameworkId[]; readonly sizing: Sizing }
+} {
+  const setup = setupAfterInstalls(draft.gathered.setup, pluginKeys)
+  const gathered = { ...draft.gathered, setup }
+  const recorded = initFrameworks(draft, [])
+  const frameworks = repoFrameworks({ framework: draft.repoDefault, ...recorded })
+  const scopes = scopesFor(
+    draft.roles,
+    draft.repoDefault,
+    gathered,
+    draft.hunks,
+    draft.launchStart,
+    frameworks,
+    draft.locations.root,
+  )
+
+  return { scopes, recorded }
+}
+
+/** The plugin keys the consented framework installs add, so the review and the apply compile the same scopes. */
+export function consentedPluginKeys(
+  draft: Pick<Draft, 'frameworkInstalls'>,
+  failed: readonly FrameworkId[],
+): string[] {
+  return (draft.frameworkInstalls ?? []).flatMap(id => {
+    const install = projectInstallOf(id)
+    if (failed.includes(id) || install === null || !install.isPlugin) return []
+
+    return [install.id]
+  })
 }

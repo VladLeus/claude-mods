@@ -5,14 +5,21 @@
  */
 import type { FrameworkId, RoleSpec } from '../../types'
 import { adapterOf } from '../framework/registry'
-import { PROMPTS } from '../locales/prompts'
+import { IDLE_INBOX_WAIT, PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
+import { AUTOPILOT_WAIT_TOOL, CADRE_TOOLS } from '../roles/infra'
+import { standsFor } from '../roles/template'
 
 /**
  * The most characters the role line of a kickoff may have (D-79; 240 since the inbox sentence of D-114,
  * decisions #32/#39).
  */
 export const ROLE_LINE_MAX = 240
+
+/** The sentence that loads the deferred inbox and wait tools in one ToolSearch, last in every kickoff line. */
+export const KICKOFF_LOAD_TOOLS = fill(PROMPTS.kickoffLoadTools, {
+  tools: [...CADRE_TOOLS, AUTOPILOT_WAIT_TOOL].join(','),
+})
 
 /** What the role line drops: any character outside printable ASCII, and the quote and backtick characters. */
 const NOT_ROLE_LINE_CHAR = /[^\x20-\x7e]|["'`]/g
@@ -29,18 +36,23 @@ export function asciiLine(text: string, maxChars: number): string {
   return kept.replace(/ +/g, ' ').trim().slice(0, Math.max(0, maxChars)).trimEnd()
 }
 
-/** What the role line starts the session with: the GSD workflow, a superpowers skill, or the built-in plan file. */
-function startText(roleId: string, framework: FrameworkId): string {
-  return adapterOf(framework).roleStart(roleId)
+/**
+ * What the role line starts the session with: the How you work steps for a core team's PM, else the adapter's start,
+ * which may differ for a core team's TL.
+ */
+function startText(role: RoleSpec, framework: FrameworkId, isCoreTeam: boolean): string {
+  if (isCoreTeam && standsFor(role, 'pm')) return PROMPTS.kickoffPmStart
+
+  return adapterOf(framework).roleStart(role.id, isCoreTeam && standsFor(role, 'tl'))
 }
 
 /**
  * The role line around a title: the title goes in the sentence, the role id in every path (D-48). The role reads its
  * ROLE.md and checks its inbox before it starts (D-114: text only, no new command).
  */
-function roleSentence(role: RoleSpec, framework: FrameworkId, title: string): string {
+function roleSentence(role: RoleSpec, framework: FrameworkId, title: string, isCoreTeam: boolean): string {
   const intro = fill(PROMPTS.kickoffIntro, { title, id: role.id })
-  const next = fill(PROMPTS.kickoffNext, { id: role.id, start: startText(role.id, framework) })
+  const next = fill(PROMPTS.kickoffNext, { id: role.id, start: startText(role, framework, isCoreTeam) })
 
   return `${intro} ${next}`
 }
@@ -60,13 +72,14 @@ export function budgetedRoleLine(role: RoleSpec, sentence: (title: string) => st
 }
 
 /**
- * The short ASCII role line of a kickoff (D-79): who the role is, where its ROLE.md is, and what to start with. The
- * title is cut to what is left of ROLE_LINE_MAX once the fixed text is in, so a long title never cuts off the
- * instruction at the end, and a title with no ASCII character left gives way to the role id. The line has no quote or
- * backtick character, so it sits inside the quotes of the autopilot command.
+ * The short ASCII role line of a kickoff: who the role is, where its ROLE.md is and what it starts with, its title
+ * budgeted to ROLE_LINE_MAX, then the idle wait and the tool load sentences whole; it holds no quote or backtick, so it
+ * sits inside the quotes of the autopilot command.
  */
-export function kickoffRoleLine(role: RoleSpec, framework: FrameworkId): string {
-  return budgetedRoleLine(role, title => roleSentence(role, framework, title))
+export function kickoffRoleLine(role: RoleSpec, framework: FrameworkId, isCoreTeam = false): string {
+  const line = budgetedRoleLine(role, title => roleSentence(role, framework, title, isCoreTeam))
+
+  return `${line} ${IDLE_INBOX_WAIT} ${KICKOFF_LOAD_TOOLS}`
 }
 
 /**
@@ -84,9 +97,9 @@ export function autopilotCommand(duration: string, threshold: number, line: stri
  * "<role line>"`, with ` --ask-user` for a role that asks the person, and a newline. The role line is the only quoted
  * text, so autopilot reads the switch outside it.
  */
-export function kickoffText(role: RoleSpec, framework: FrameworkId): string {
+export function kickoffText(role: RoleSpec, framework: FrameworkId, isCoreTeam = false): string {
   const { duration, threshold, askUser } = role.autopilot
   const flag = askUser ? ' --ask-user' : ''
 
-  return autopilotCommand(duration, threshold, kickoffRoleLine(role, framework), flag)
+  return autopilotCommand(duration, threshold, kickoffRoleLine(role, framework, isCoreTeam), flag)
 }

@@ -16,6 +16,31 @@ describe('the epic record (D-164)', () => {
       expect([path, bad({ links: [path] }), bad({ copies: [path] })]).toEqual([path, null, null])
     }
   })
+
+  test('the walked folders read back; a record without them has no walked key; a bad list refuses the record', () => {
+    const walked: EpicRecord = { ...RECORD, copies: ['thoughts/shared'], walked: ['thoughts'] }
+    const bad = (value: unknown) => parseEpicRecord(JSON.stringify({ ...walked, walked: value }))
+
+    expect(parseEpicRecord(epicRecordText(walked))).toEqual(walked)
+    expect(Object.keys(parseEpicRecord(epicRecordText(RECORD)) ?? {})).not.toContain('walked')
+    for (const value of ['thoughts', null, [1], ['/etc'], ['a/../b']]) {
+      expect([value, bad(value)]).toEqual([value, null])
+    }
+  })
+
+  test('the copy times read back; none or an empty one gives no copiedAt key; a bad one refuses the record', () => {
+    const plain = { ...RECORD, copies: ['docs/local'] }
+    const copied = { ...plain, copiedAt: { 'docs/local': 2000 } }
+    const read = (value: unknown) => parseEpicRecord(JSON.stringify({ ...plain, copiedAt: value }))
+
+    expect(parseEpicRecord(epicRecordText(copied))).toEqual(copied)
+    expect(Object.keys(parseEpicRecord(epicRecordText(RECORD)) ?? {})).not.toContain('copiedAt')
+    expect(read({})).toEqual(plain)
+    expect(Object.keys(read({}) ?? {})).not.toContain('copiedAt')
+    for (const value of [['docs/local'], 'docs/local', { '../x': 1 }, { '/abs': 1 }, { 'docs/local': '5' }]) {
+      expect([value, read(value)]).toEqual([value, null])
+    }
+  })
 })
 
 describe('safety net: epic helpers (A8)', () => {

@@ -16,6 +16,7 @@ import { isObject } from '../core/json'
 import { compareText } from '../core/text'
 import { isSafeOpPath, planWithManifest } from '../plan/plan'
 import type { PlanInput } from '../plan/plan'
+import { isCoreTeam } from '../roles/template'
 import { infraViolations } from '../scope/lint'
 import {
   ABSOLUTE_PATH_MARKERS,
@@ -30,7 +31,15 @@ import {
   TEMPLATE_ROLES,
   templateRole,
 } from '../testkit'
-import { cadreJsonText, indexMdText, mcpText, roleClaudeMdText, roleJsonText, roleMdText, settingsText } from './docs'
+import {
+  cadreJsonText,
+  indexMdText,
+  mcpText,
+  roleJsonText,
+  roleMdText,
+  rubricText,
+  settingsText,
+} from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { kickoffText } from './kickoff'
@@ -75,6 +84,7 @@ const BE_PATHS: readonly string[] = [
   '.cadre/be/settings.json',
   '.cadre/bin/be',
   '.cadre/cadre.json',
+  '.cadre/sizing.md',
 ]
 
 /** The desired paths that belong to one role: its folder and its launcher. */
@@ -82,11 +92,11 @@ function pathsOfRole(files: readonly DesiredFile[], id: string): string[] {
   return files.map(file => file.path).filter(path => path.startsWith(`.cadre/${id}/`) || path === `.cadre/bin/${id}`)
 }
 
-/** The first line of the built CLAUDE.md of role `id`, as the plan writes it (G-02-1f, D-140). */
+/** The first line of the built CLAUDE.md of role `id`, as the plan writes it. */
 function builtHeader(id: string): string {
   return (
-    `<!-- cadre: instructions for role ${id}, built from this repo's CLAUDE.md files, rules and docs. ` +
-    `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
+    `<!-- cadre: instructions for role ${id}. The repo's CLAUDE.md files and rules given to this role load from ` +
+    `their originals; after you change them, run /cadre regen ${id}. -->`
   )
 }
 
@@ -113,7 +123,7 @@ function indexRowOf(index: string, id: string): string | undefined {
 }
 
 describe('desiredFiles', () => {
-  test('one role gives its five definition files, its launcher, the index and the repo state, sorted by path', () => {
+  test('one role gives its five definition files, launcher, index, repo state and rubric, sorted by path', () => {
     const files = desiredFiles(inputOf([templateRole('be')], 'gsd'))
 
     expect(files.map(file => file.path)).toEqual(BE_PATHS)
@@ -161,10 +171,10 @@ describe('desiredFiles', () => {
     expect(indexRowOf(contentOf(files, '.cadre/INDEX.md') ?? '', 'be')).toContain(' | superpowers | ')
   })
 
-  test('the six template roles give 36 role files, the index and the repo state, sorted and once each', () => {
+  test('the six template roles give 36 role files, the index, the repo state and the rubric, sorted, once each', () => {
     const paths = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd')).map(file => file.path)
 
-    expect(paths).toHaveLength(6 * 6 + 2)
+    expect(paths).toHaveLength(6 * 6 + 3)
     expect(paths).toEqual([...paths].sort(compareText))
     expect(new Set(paths).size).toBe(paths.length)
     expect(paths.filter(path => path.startsWith('.cadre/bin/'))).toEqual(
@@ -174,8 +184,17 @@ describe('desiredFiles', () => {
 
   test('with only a role id the set is that role, its launcher and the index, and no repo state (D-68)', () => {
     const files = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd', { only: 'be' }))
+    const repoFiles = ['.cadre/cadre.json', '.cadre/sizing.md']
 
-    expect(files.map(file => file.path)).toEqual(BE_PATHS.filter(path => path !== '.cadre/cadre.json'))
+    expect(files.map(file => file.path)).toEqual(BE_PATHS.filter(path => !repoFiles.includes(path)))
+  })
+
+  test('init gives the sizing rubric with the rubric text as a plain file; a regen of one role does not', () => {
+    const rubric = desiredFiles(inputOf([templateRole('be')], 'gsd')).find(file => file.path === '.cadre/sizing.md')
+    const regen = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd', { only: 'be' }))
+
+    expect(rubric).toEqual({ path: '.cadre/sizing.md', content: rubricText(), mode: 'file' })
+    expect(regen.map(file => file.path)).not.toContain('.cadre/sizing.md')
   })
 
   test('with only an id that is not on the team the set is the index alone', () => {
@@ -227,10 +246,54 @@ describe('desiredFiles', () => {
     expect(index).toBe(contentOf(all, '.cadre/INDEX.md'))
     expect(index.split('\n').filter(line => line.includes('| .cadre/bin/'))).toHaveLength(TEMPLATE_ROLES.length)
   })
+
+  test(
+    "a custom record changes no generated text, and a core record changes only the ROLE.md texts and PM's kickoff",
+    () => {
+      const input = inputOf(TEMPLATE_ROLES, 'gsd')
+      const core: CadreState = { ...input.state, structure: 'core' }
+      const team = { isCore: isCoreTeam(core), roles: TEMPLATE_ROLES }
+      const filesOf = (state: CadreState): DesiredFile[] =>
+        desiredFiles({ ...input, state }).filter(file => file.path !== '.cadre/cadre.json')
+      const notCoreText = (files: readonly DesiredFile[]): DesiredFile[] =>
+        files.filter(file => !file.path.endsWith('/ROLE.md') && file.path !== '.cadre/pm/kickoff.txt')
+      const unrecorded = filesOf(input.state)
+      const coreFiles = filesOf(core)
+
+      expect(filesOf({ ...input.state, structure: 'custom' })).toEqual(unrecorded)
+      expect(notCoreText(coreFiles)).toEqual(notCoreText(unrecorded))
+      expect(contentOf(coreFiles, '.cadre/tl/ROLE.md')).not.toBe(contentOf(unrecorded, '.cadre/tl/ROLE.md'))
+      for (const role of TEMPLATE_ROLES) {
+        const scope = scopeOf(role, 'gsd', TEMPLATE_ROLES)
+
+        expect(contentOf(coreFiles, `.cadre/${role.id}/ROLE.md`)).toBe(roleMdText(role, scope, team))
+      }
+    },
+  )
+
+  test('desiredFiles gives the core PM block and start only for a recorded core structure', () => {
+    const input = inputOf(TEMPLATE_ROLES, 'gsd')
+    const pm = templateRole('pm')
+    const pmFile = (state: CadreState, name: string): string =>
+      contentOf(desiredFiles({ ...input, state }), `.cadre/pm/${name}`) ?? ''
+    const core: CadreState = { ...input.state, structure: 'core' }
+    const others: readonly CadreState[] = [input.state, { ...input.state, structure: 'custom' }]
+    const intro = 'As PM you fetch the work, grill the user, brief TL, feed it the tickets and accept the reports'
+    const start = 'start with the How you work steps of your ROLE.md.'
+
+    expect(pmFile(core, 'ROLE.md')).toContain(`## How you work\n\n${intro}`)
+    expect(pmFile(core, 'kickoff.txt')).toBe(kickoffText(pm, 'gsd', true))
+    expect(pmFile(core, 'kickoff.txt')).toContain(start)
+    for (const state of others) {
+      expect(pmFile(state, 'ROLE.md')).not.toContain(intro)
+      expect(pmFile(state, 'kickoff.txt')).toBe(kickoffText(pm, 'gsd'))
+      expect(pmFile(state, 'kickoff.txt')).toContain('start with /gsd-autonomous.')
+    }
+  })
 })
 
 describe('a built file for every role (02-GAPS-B2 S1)', () => {
-  test('with repoParts set every role gets .cadre/<id>/CLAUDE.md, the header alone with no repo part', () => {
+  test('with repoParts set every role gets .cadre/<id>/CLAUDE.md, the header alone, a repo part or not', () => {
     const roles = [templateRole('pm'), templateRole('be'), templateRole('qa')]
     const repoParts = new Map([
       ['be', [RULES_PART]],
@@ -239,7 +302,7 @@ describe('a built file for every role (02-GAPS-B2 S1)', () => {
     const files = desiredFiles(inputOf(roles, 'gsd', { repoParts }))
 
     expect(files.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([
-      { path: '.cadre/be/CLAUDE.md', content: roleClaudeMdText('be', [RULES_PART]), mode: 'file' },
+      { path: '.cadre/be/CLAUDE.md', content: `${builtHeader('be')}\n`, mode: 'file' },
       { path: '.cadre/pm/CLAUDE.md', content: `${builtHeader('pm')}\n`, mode: 'file' },
       { path: '.cadre/qa/CLAUDE.md', content: `${builtHeader('qa')}\n`, mode: 'file' },
     ])
@@ -427,7 +490,7 @@ const settingsFilesCheck: FilesCheck = (input, files) =>
   })
 
 describe('generated file properties', () => {
-  test('the matrix is six roles, three frameworks, two assignments and two contexts of 38 files each', () => {
+  test('the matrix is six roles, three frameworks, two assignments and two contexts of 39 files each', () => {
     let runs = 0
     const sizes = new Set<number>()
     worldProblems((_input, files) => {
@@ -438,7 +501,7 @@ describe('generated file properties', () => {
     })
 
     expect(runs).toBe(3 * 2 * 2)
-    expect(Array.from(sizes)).toEqual([6 * 6 + 2])
+    expect(Array.from(sizes)).toEqual([6 * 6 + 3])
     expect(WORLD_ASSIGNMENTS.map(([label]) => label)).toEqual(['nothing assigned', 'everything assigned'])
   })
 

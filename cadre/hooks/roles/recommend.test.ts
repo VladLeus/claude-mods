@@ -25,8 +25,8 @@ import {
   templateRole,
 } from '../testkit'
 import { recommendationLines } from '../ui/blocks/recommendations'
-import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './infra'
-import { INSTALL_COMMANDS, missingSecurityPlugins, recommend } from './recommend'
+import { CLAUDE_SECURITY_PLUGIN, MATTPOCOCK_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './infra'
+import { INSTALL_COMMANDS, missingPmPlugins, missingSecurityPlugins, recommend } from './recommend'
 import { standsFor } from './template'
 
 /** A role with the fields recommend reads set and the rest defaults. */
@@ -87,6 +87,7 @@ const DEVTOOLS_WHY = 'the FE role cannot inspect the running page'
 const CLAUDE_SECURITY_WHY =
   "claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)"
 const GUIDANCE_WHY = 'no hooks warn the Security role about risky edits'
+const PM_GRILL_WHY = 'PM has no grill skill to sharpen each ticket with you before it goes to TL'
 
 const GSD_LINE: Recommendation = { tool: 'GSD', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.gsd }
 const SUPERPOWERS_LINE: Recommendation = {
@@ -116,8 +117,13 @@ function guidanceFor(roleId: string): Recommendation {
   return { tool: 'security-guidance', roleId, why: GUIDANCE_WHY, install: INSTALL_COMMANDS.securityGuidance }
 }
 
+/** The mattpocock-skills recommendation for the PM role `roleId`. */
+function pmGrillFor(roleId: string): Recommendation {
+  return { tool: 'mattpocock-skills', roleId, why: PM_GRILL_WHY, install: INSTALL_COMMANDS.mattpocock }
+}
+
 describe('recommend', () => {
-  test('INSTALL_COMMANDS holds the six printed commands word for word, and is frozen', () => {
+  test('INSTALL_COMMANDS holds the seven printed commands word for word, and is frozen', () => {
     expect(INSTALL_COMMANDS).toEqual({
       gsd: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
       superpowers: 'claude plugin install superpowers@claude-plugins-official',
@@ -125,6 +131,7 @@ describe('recommend', () => {
       devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
       claudeSecurity: 'claude plugin install claude-security@claude-plugins-official',
       securityGuidance: 'claude plugin install security-guidance@claude-plugins-official',
+      mattpocock: 'claude plugin install mattpocock-skills@claude-plugins-official --scope project',
     })
     expect(Object.isFrozen(INSTALL_COMMANDS)).toBe(true)
     expect(INSTALL_COMMANDS.claudeSecurity).toBe(pluginInstallArgv(CLAUDE_SECURITY_PLUGIN).join(' '))
@@ -137,6 +144,7 @@ describe('recommend', () => {
     expect(recommend({ roles, frameworks: allOn(roles, 'none'), scan: repoScan(), setup: emptySetupScan() })).toEqual([
       GSD_LINE,
       SUPERPOWERS_LINE,
+      pmGrillFor('pm'),
     ])
   })
 
@@ -150,7 +158,9 @@ describe('recommend', () => {
     ]
 
     for (const resolved of frameworks) {
-      expect(recommend({ roles, frameworks: resolved, scan: repoScan(), setup: emptySetupScan() })).toEqual([])
+      expect(recommend({ roles, frameworks: resolved, scan: repoScan(), setup: emptySetupScan() })).toEqual([
+        pmGrillFor('pm'),
+      ])
     }
   })
 
@@ -309,7 +319,7 @@ describe('recommend', () => {
     }
   })
 
-  test('a full team with nothing found gets the six lines in rule order', () => {
+  test('a full team with nothing found gets the seven lines in rule order', () => {
     const lines = recommend({
       roles: FULL_TEAM,
       frameworks: allOn(FULL_TEAM, 'none'),
@@ -320,6 +330,7 @@ describe('recommend', () => {
     expect(lines.map(line => [line.tool, line.roleId])).toEqual([
       ['GSD', null],
       ['superpowers', null],
+      ['mattpocock-skills', 'pm'],
       ['Playwright MCP', 'fe'],
       ['DevTools MCP', 'fe'],
       ['claude-security', 'security'],
@@ -327,12 +338,12 @@ describe('recommend', () => {
     ])
   })
 
-  test('with a framework, E2E, both MCP servers and both security plugins installed nothing is recommended', () => {
+  test('with a framework, E2E, both MCP servers, the security and the PM plugins installed nothing is offered', () => {
     const scan = repoScan({ findings: [E2E] })
     const setup = emptySetupScan({
       mcp: [session('playwright'), session('chrome-devtools')],
-      plugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN],
-      installedPlugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN],
+      plugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, MATTPOCOCK_PLUGIN],
+      installedPlugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, MATTPOCOCK_PLUGIN],
     })
 
     expect(recommend({ roles: FULL_TEAM, frameworks: allOn(FULL_TEAM, 'gsd'), scan, setup })).toEqual([])
@@ -346,7 +357,7 @@ describe('recommend', () => {
       setup: emptySetupScan(),
     })
 
-    expect(lines).toHaveLength(6)
+    expect(lines).toHaveLength(7)
     for (const line of lines) {
       expect(Object.keys(line).sort()).toEqual(['install', 'roleId', 'tool', 'why'])
       expect(typeof line.install).toBe('string')
@@ -381,6 +392,8 @@ describe('recommend', () => {
       '    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
       '- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop',
       '    run: claude plugin install superpowers@claude-plugins-official',
+      `- mattpocock-skills for PM: ${PM_GRILL_WHY}`,
+      '    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project',
       '- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser',
       '    run: claude mcp add playwright -- npx @playwright/mcp@latest',
       '- DevTools MCP for FE: the FE role cannot inspect the running page',
@@ -446,6 +459,7 @@ describe('recommend', () => {
     expect(lines.filter(line => line.startsWith('    run: '))).toEqual([
       `    run: ${INSTALL_COMMANDS.gsd}`,
       `    run: ${INSTALL_COMMANDS.superpowers}`,
+      `    run: ${INSTALL_COMMANDS.mattpocock}`,
       `    run: ${INSTALL_COMMANDS.playwright}`,
       `    run: ${INSTALL_COMMANDS.devtools}`,
     ])
@@ -498,5 +512,32 @@ describe('security plugin installs (decision #39)', () => {
     expect(missingSecurityPlugins(team, installed(lookalikes))).toEqual(SECURITY_KEYS)
     // A key that only a settings file enables, the repo's own included, is not installed (#69 A1).
     expect(missingSecurityPlugins(team, emptySetupScan({ plugins: SECURITY_KEYS }))).toEqual(SECURITY_KEYS)
+  })
+})
+
+describe('the PM grill plugin', () => {
+  test('missingPmPlugins names mattpocock-skills while a role stands for PM and its exact key is missing', () => {
+    const product = role('product', 'pm', 'Product')
+    const installed = (keys: readonly string[]): SetupScan => emptySetupScan({ installedPlugins: keys })
+
+    expect(missingPmPlugins([PM, TL], emptySetupScan())).toEqual([MATTPOCOCK_PLUGIN])
+    expect(missingPmPlugins([product], emptySetupScan())).toEqual([MATTPOCOCK_PLUGIN])
+    expect(missingPmPlugins([TL, BE], emptySetupScan())).toEqual([])
+    expect(missingPmPlugins([PM], installed([MATTPOCOCK_PLUGIN]))).toEqual([])
+    expect(missingPmPlugins([PM], installed(['mattpocock-skills@other-market']))).toEqual([MATTPOCOCK_PLUGIN])
+    expect(missingPmPlugins([PM], emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] }))).toEqual([MATTPOCOCK_PLUGIN])
+  })
+
+  test('the PM line follows the framework lines and names the project-scope command while it is missing', () => {
+    const roles = [PM, role('product', 'pm', 'Product'), FE]
+    const setup = emptySetupScan({ mcp: [session('playwright'), session('chrome-devtools')] })
+    const lines = recommend({ roles, frameworks: allOn(roles, 'none'), scan: repoScan(), setup })
+    const installed = emptySetupScan({ ...setup, installedPlugins: [MATTPOCOCK_PLUGIN] })
+
+    expect(lines).toEqual([GSD_LINE, SUPERPOWERS_LINE, pmGrillFor('pm'), pmGrillFor('product')])
+    expect(recommend({ roles, frameworks: allOn(roles, 'none'), scan: repoScan(), setup: installed })).toEqual([
+      GSD_LINE,
+      SUPERPOWERS_LINE,
+    ])
   })
 })

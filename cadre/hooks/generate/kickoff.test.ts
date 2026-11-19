@@ -46,6 +46,16 @@ const ROLE_LINE_CHARS = /^[\x20-\x7e]+$/
 /** The characters a role line may never hold: a quote of either kind and the backtick (D-79). */
 const QUOTE_CHARS = /["'`]/
 
+/** The idle wait sentence, spelled out so the specs pin its words. */
+const IDLE_WAIT =
+  'When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ' +
+  'when your task is finished, give the done answer autopilot asks for.'
+
+/** The tool load sentence, spelled out so the specs pin its words. */
+const LOAD_TOOLS =
+  'Load your tools first with one ToolSearch query: ' +
+  'select:mcp__cadre__inbox_send,mcp__cadre__inbox_read,mcp__cadre__inbox_mark,mcp__autopilot__wait_for.'
+
 /** Every way a kickoff of this role and framework breaks the contract with autopilot, as messages; empty when none. */
 function kickoffProblems(role: RoleSpec, framework: FrameworkId): string[] {
   const text = kickoffText(role, framework)
@@ -56,7 +66,11 @@ function kickoffProblems(role: RoleSpec, framework: FrameworkId): string[] {
   if (start.duration !== role.autopilot.duration) problems.push(`duration ${start.duration} is not the one of the role`)
   if (start.threshold !== 65) problems.push(`threshold ${start.threshold}`)
   if (!ROLE_LINE_CHARS.test(start.role) || QUOTE_CHARS.test(start.role)) problems.push('role line has a bad character')
-  if (start.role.length > ROLE_LINE_MAX) problems.push(`role line is ${start.role.length} characters`)
+  if (start.role.length > ROLE_LINE_MAX + 1 + IDLE_WAIT.length + 1 + LOAD_TOOLS.length) {
+    problems.push(`role line is ${start.role.length} characters`)
+  }
+  if (!start.role.endsWith(`${IDLE_WAIT} ${LOAD_TOOLS}`)) problems.push('the idle wait is not named')
+  if (!start.role.endsWith(LOAD_TOOLS)) problems.push('the tool load sentence is not named')
   if (text.endsWith(' --ask-user\n') !== role.autopilot.askUser) problems.push('--ask-user does not follow the role')
   if (text.split('\n').length !== 2) problems.push('kickoff is not one line and a newline')
 
@@ -90,16 +104,16 @@ describe('kickoff', () => {
     const be = templateRole('be')
 
     expect(kickoffRoleLine(be, 'gsd')).toBe(
-      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, then start with ' +
-        '/gsd-autonomous.',
+      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, read your inbox with inbox_read, ' +
+        `then start with /gsd-autonomous. ${IDLE_WAIT} ${LOAD_TOOLS}`,
     )
     expect(kickoffRoleLine(be, 'superpowers')).toBe(
-      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, then start with ' +
-        'superpowers:brainstorming.',
+      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, read your inbox with inbox_read, ' +
+        `then start with superpowers:brainstorming. ${IDLE_WAIT} ${LOAD_TOOLS}`,
     )
     expect(kickoffRoleLine(be, 'none')).toBe(
-      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, then start with ' +
-        'the plan in .cadre/be/.runtime/plan.md.',
+      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, read your inbox with inbox_read, ' +
+        `then start with the plan in .cadre/be/.runtime/plan.md. ${IDLE_WAIT} ${LOAD_TOOLS}`,
     )
   })
 
@@ -107,8 +121,8 @@ describe('kickoff', () => {
     const api = templateRole('be', { id: 'api', title: 'Backend API' })
 
     expect(kickoffRoleLine(api, 'gsd')).toBe(
-      'You are the Backend API role of this repo (cadre role api). Read .cadre/api/ROLE.md, check your inbox, ' +
-        'then start with /gsd-autonomous.',
+      'You are the Backend API role of this repo (cadre role api). Read .cadre/api/ROLE.md, ' +
+        `read your inbox with inbox_read, then start with /gsd-autonomous. ${IDLE_WAIT} ${LOAD_TOOLS}`,
     )
     expect(kickoffRoleLine(api, 'none')).toContain('start with the plan in .cadre/api/.runtime/plan.md.')
   })
@@ -118,24 +132,43 @@ describe('kickoff', () => {
     const role = templateRole('be', { id: 'design', title: cyrillic })
 
     expect(kickoffRoleLine(role, 'gsd')).toBe(
-      'You are the design role of this repo (cadre role design). Read .cadre/design/ROLE.md, check your inbox, ' +
-        'then start with /gsd-autonomous.',
+      'You are the design role of this repo (cadre role design). Read .cadre/design/ROLE.md, ' +
+        `read your inbox with inbox_read, then start with /gsd-autonomous. ${IDLE_WAIT} ${LOAD_TOOLS}`,
     )
   })
 
   test(
-    'a title of 300 characters gives a role line of at most ROLE_LINE_MAX that still ends with the instruction',
+    'a title of 300 characters gives a role line whose budgeted part stays within ROLE_LINE_MAX ' +
+      'and that ends with the idle wait and the tool load sentence',
     () => {
       const role = templateRole('be', { title: 'T'.repeat(300) })
 
       for (const framework of FRAMEWORKS) {
         const line = kickoffRoleLine(role, framework)
 
-        expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX)
+        expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX + 1 + IDLE_WAIT.length + 1 + LOAD_TOOLS.length)
         expect(line.startsWith('You are the TTTT')).toBe(true)
       }
-      const instruction = 'Read .cadre/be/ROLE.md, check your inbox, then start with /gsd-autonomous.'
-      expect(kickoffRoleLine(role, 'gsd').endsWith(instruction)).toBe(true)
+      const instruction = 'Read .cadre/be/ROLE.md, read your inbox with inbox_read, then start with /gsd-autonomous.'
+      expect(kickoffRoleLine(role, 'gsd').endsWith(`${instruction} ${IDLE_WAIT} ${LOAD_TOOLS}`)).toBe(true)
+    },
+  )
+
+  test(
+    'every template role line says to read the inbox with inbox_read and ends with the idle wait ' +
+      'and the tool load sentence',
+    () => {
+      const lines = TEMPLATE_ROLES.flatMap(role => FRAMEWORKS.map(framework => kickoffRoleLine(role, framework)))
+      const cap = ROLE_LINE_MAX + 1 + IDLE_WAIT.length + 1 + LOAD_TOOLS.length
+      const bad = lines.filter(
+        line =>
+          line.length > cap ||
+          !line.includes('read your inbox with inbox_read') ||
+          !line.endsWith(`${IDLE_WAIT} ${LOAD_TOOLS}`),
+      )
+
+      expect(bad).toEqual([])
+      expect(lines).toHaveLength(TEMPLATE_ROLES.length * FRAMEWORKS.length)
     },
   )
 
@@ -143,21 +176,61 @@ describe('kickoff', () => {
     const id = 'a'.repeat(24)
     const line = kickoffRoleLine(templateRole('be', { id, title: 'T'.repeat(40) }), 'none')
 
-    expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX)
-    expect(line.endsWith(`start with the plan in .cadre/${id}/.runtime/plan.md.`)).toBe(true)
+    expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX + 1 + IDLE_WAIT.length + 1 + LOAD_TOOLS.length)
+    expect(line.endsWith(`start with the plan in .cadre/${id}/.runtime/plan.md. ${IDLE_WAIT} ${LOAD_TOOLS}`)).toBe(true)
   })
 
   test('the kickoff of the PM is the autopilot command with the role line and --ask-user, then a newline', () => {
     expect(kickoffText(templateRole('pm'), 'gsd')).toBe(
-      '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md, check your inbox, ' +
-        'then start with /gsd-autonomous." --ask-user\n',
+      '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md, ' +
+        `read your inbox with inbox_read, then start with /gsd-autonomous. ${IDLE_WAIT} ${LOAD_TOOLS}" --ask-user\n`,
     )
+  })
+
+  test('the core PM starts with its How you work steps', () => {
+    const start = 'then start with the How you work steps of your ROLE.md.'
+    const product = templateRole('pm', { id: 'product', title: 'Product' })
+    const ownStartFrameworks: readonly FrameworkId[] = ['gsd', 'superpowers']
+
+    expect(kickoffText(templateRole('pm'), 'gsd', true)).toBe(
+      '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md, ' +
+        `read your inbox with inbox_read, ${start} ${IDLE_WAIT} ${LOAD_TOOLS}" --ask-user\n`,
+    )
+    for (const framework of FRAMEWORKS) {
+      expect(kickoffText(product, framework, true)).toContain(
+        `Read .cadre/product/ROLE.md, read your inbox with inbox_read, ${start}`,
+      )
+      expect(kickoffText(templateRole('pm'), framework)).not.toContain(start)
+    }
+    for (const framework of ownStartFrameworks) {
+      expect(kickoffText(templateRole('tl'), framework, true)).not.toContain(start)
+    }
+    expect(kickoffText(templateRole('pm'), 'none')).toContain('then start with the plan in .cadre/pm/.runtime/plan.md.')
+  })
+
+  test('a core TL on the built-in framework starts with its How you work steps; other starts stay', () => {
+    const start = 'then start with the How you work steps of your ROLE.md.'
+    const planOf = (id: string): string => `then start with the plan in .cadre/${id}/.runtime/plan.md.`
+    const gsd = 'then start with /gsd-autonomous.'
+    const superpowers = 'then start with superpowers:brainstorming.'
+    const tl = templateRole('tl')
+    const security = templateRole('security')
+
+    expect(kickoffText(tl, 'none', true)).toContain(start)
+    expect(kickoffText(templateRole('tl', { id: 'lead', title: 'Lead' }), 'none', true)).toContain(start)
+    expect(kickoffText(tl, 'gsd', true)).toContain(gsd)
+    expect(kickoffText(tl, 'superpowers', true)).toContain(superpowers)
+    expect(kickoffText(tl, 'none')).toContain(planOf('tl'))
+    expect(kickoffText(security, 'gsd', true)).toContain(gsd)
+    expect(kickoffText(security, 'superpowers', true)).toContain(superpowers)
+    expect(kickoffText(security, 'none', true)).toContain(planOf('security'))
+    expect(kickoffText(templateRole('be'), 'none', true)).toContain(planOf('be'))
   })
 
   test('the kickoff of the BE has no --ask-user', () => {
     expect(kickoffText(templateRole('be'), 'superpowers')).toBe(
-      '/autopilot 4h 65 "You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, ' +
-        'then start with superpowers:brainstorming."\n',
+      '/autopilot 4h 65 "You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, ' +
+        `read your inbox with inbox_read, then start with superpowers:brainstorming. ${IDLE_WAIT} ${LOAD_TOOLS}"\n`,
     )
   })
 
@@ -166,7 +239,7 @@ describe('kickoff', () => {
     const text = kickoffText(templateRole('be', { autopilot }), 'gsd')
 
     expect(text.startsWith('/autopilot 90m 40 "You are the BE role')).toBe(true)
-    expect(text.endsWith('/gsd-autonomous." --ask-user\n')).toBe(true)
+    expect(text.endsWith(`/gsd-autonomous. ${IDLE_WAIT} ${LOAD_TOOLS}" --ask-user\n`)).toBe(true)
   })
 
   test('the copy of the autopilot grammar refuses what autopilot refuses', () => {

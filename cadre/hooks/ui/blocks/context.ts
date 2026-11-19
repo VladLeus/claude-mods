@@ -3,8 +3,8 @@
  * new composition, from the line builders of today's pane blocks, and the lines those blocks share with their stages:
  * the roles proposal, the env heading and the security plugin notes. Each builder but the Review's gives its lines and
  * the structured rows the pane draws from the same values (D-313, D-323). Every value is cleaned and capped here
- * (D-222). It imports core, paths, the scans, the scope lint's plugin names, the built-file path of generate, the UNCUT
- * rule of ui/pane and the other block modules, so the init stages read it here.
+ * (D-222). It imports core, paths, the scans, the scope lint's plugin names, the UNCUT rule of ui/pane and the other
+ * block modules, so the init stages read it here.
  */
 import type {
   AskContext,
@@ -26,7 +26,6 @@ import { SUPPORTED_IDS } from '../../core/framework-id'
 import { redactedText } from '../../core/redact'
 import { cardList, clean, idsOrNone, pad, shown } from '../../core/text'
 import type { ListWords } from '../../core/text'
-import { builtClaudeMdPath } from '../../generate/launcher'
 import { keyLabel, SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { launcherPath, screenPath } from '../../paths'
 import { scanWarnings } from '../../scan/gather'
@@ -527,17 +526,17 @@ export function envContext(names: readonly string[]): AskContext {
 }
 
 /**
- * The context of the improver install question (D-236): each role given a built CLAUDE.md, with its path; its summary
- * counts those roles and names their ids (D-310).
+ * The context of the improver install question: each role given a private CLAUDE.md, with its path in the config
+ * folder; its summary counts those roles and names their ids.
  */
 export function improverInstallContext(roleIds: readonly string[]): AskContext {
   const rows = roleIds.map(id => t('ui.context.improverInstallContext', {
     id: shown(id),
-    builtClaudeMdPath: builtClaudeMdPath(shown(id)),
+    privateClaudeMdPath: t('ui.context.privateClaudeMdPath', { id: shown(id) }),
   }))
 
   const lines = [t('ui.context.improverInstallContext2'), ...rows]
-  const fields = roleIds.map(id => fieldRow(shown(id), builtClaudeMdPath(shown(id)), 2))
+  const fields = roleIds.map(id => fieldRow(shown(id), t('ui.context.privateClaudeMdPath', { id: shown(id) }), 2))
   const summary = tn('ui.summary.roles', roleIds.length, { count: roleIds.length, ids: roleIdsText(roleIds) })
 
   return {

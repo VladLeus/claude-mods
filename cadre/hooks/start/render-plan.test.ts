@@ -1,21 +1,25 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry, PortStat, ScopeContext } from '../../types'
+import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
-import { renderArgv } from '../host/steps'
+import { isStepDone, renderArgv } from '../host/steps'
 import type { RenderStep } from '../host/steps'
 import type { LaunchUser, OverlayLink } from '../launch/links'
 import { launchPlan } from '../launch/plan'
 import type { LaunchPlan } from '../launch/plan'
-import { RUNTIME_KICKOFF_FILE } from '../paths'
+import { t } from '../locales/t'
+import { inboxDirOf, inboxFolderLevels, inboxHomeOf, RUNTIME_KICKOFF_FILE } from '../paths'
 import { ignoreLines } from '../plan/gitignore'
 import { compileScope } from '../scope/compile'
-import { BIDI_OVERRIDE, emptySetupScan, entry, link, ROOT, templateRole } from '../testkit'
+import { BIDI_OVERRIDE, emptySetupScan, entry, hostWorld, link, memHost, ROOT, templateRole } from '../testkit'
+import { renderFailedReply } from './launcher-check'
 import {
+  inboxClearSteps,
   NO_MEMORY_LINKS,
   notReplacedText,
   notReplacedWarning,
-  privateLinkRefusal,
+  privateSkippedWarning,
   renderPaths,
   renderSteps,
   runtimeFolder,
@@ -29,6 +33,15 @@ const ROLE_DIR = '/repo/.cadre/be'
 
 /** The per-launch folder of the BE role (D-102). */
 const RUNTIME = '/repo/.cadre/be/.runtime'
+
+/** The inbox home of the repo root in the user config folder of the fixture user. */
+const INBOX_HOME = inboxHomeOf('/home/u/.claude', ROOT, await sha256Hex(ROOT))
+
+/** BE's inbox folder in that inbox home. */
+const INBOX_DIR = inboxDirOf(INBOX_HOME, 'be')
+
+/** BE's inbox in its inbox folder. */
+const INBOX = `${INBOX_DIR}/inbox.jsonl`
 
 /** The MCP config a render writes, as /cadre start passes it. */
 const MCP_TEXT = '{\n  "mcpServers": {}\n}\n'
@@ -56,6 +69,20 @@ const MEMORY_LINK: OverlayLink = {
   path: '/repo/.cadre/be/.runtime/instructions/memory/MEMORY.md',
   target: '/home/u/.claude/projects/-repo/memory/MEMORY.md',
 }
+
+/** BE's private instructions folder for the fixture user: `<role memory folder>/instructions`. */
+const PRIVATE_FOLDER = '/home/u/.claude/cadre/repo-1a2b3c4d/be/instructions'
+
+/** The levels of BE's role memory folder a render makes mode 700, from the top. */
+const PRIVATE_LEVELS: readonly string[] = [
+  '/home/u/.claude/cadre',
+  '/home/u/.claude/cadre/repo-1a2b3c4d',
+  '/home/u/.claude/cadre/repo-1a2b3c4d/be',
+  PRIVATE_FOLDER,
+]
+
+/** The copy of BE's private instructions in its .runtime, which its launcher adds. */
+const PRIVATE_COPY = `${RUNTIME}/private-instructions`
 
 /** The launching user of the fixtures: repo /repo, home /home/u, nothing to carry or link; `over` changes fields. */
 function user(over: Partial<LaunchUser> = {}): LaunchUser {
@@ -130,9 +157,14 @@ function input(over: Partial<RenderInput> = {}): RenderInput {
     stats: disk(),
     listings: new Map<string, readonly PortEntry[]>(),
     memories: NO_MEMORY_LINKS,
+    inboxDir: INBOX_DIR,
+    privateSource: PRIVATE_FOLDER,
     ...over,
   }
 }
+
+/** What /cadre start gives renderPaths for BE: its inbox folder and its private instructions folder. */
+const PATHS_OPTIONS = { inboxDir: INBOX_DIR, privateSource: PRIVATE_FOLDER }
 
 /** The writes of the settings, the MCP config and the probe expectations of a plan, in render order (D-102). */
 function fileWritesOf(plan: LaunchPlan): RenderStep[] {
@@ -143,8 +175,23 @@ function fileWritesOf(plan: LaunchPlan): RenderStep[] {
   ]
 }
 
-/** The write of an empty inbox (D-114). */
-const INBOX_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/inbox.md`, text: '' }
+/** The making of BE's inbox folder: its mkdir, then one chmod 700 per level of it from the top. */
+const INBOX_FOLDER_STEPS: readonly RenderStep[] = [
+  { kind: 'mkdir', path: INBOX_DIR },
+  ...inboxFolderLevels(INBOX_DIR).map((path): RenderStep => ({ kind: 'chmod', path })),
+]
+
+/** The making of BE's private instructions folder: its mkdir, then one chmod 700 per level from the top. */
+const PRIVATE_FOLDER_STEPS: readonly RenderStep[] = [
+  { kind: 'mkdir', path: PRIVATE_FOLDER },
+  ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
+]
+
+/** The chmod 700 of BE's private instructions copy, which a render makes after the links. */
+const COPY_CHMOD: RenderStep = { kind: 'chmod', path: PRIVATE_COPY }
+
+/** The create of an empty inbox: an append of nothing, which never truncates an inbox that is there. */
+const INBOX_CREATE: RenderStep = { kind: 'append', path: INBOX, text: '' }
 
 /** The write of the stamp, the last step of every render (LNCH-03). */
 const STAMP_WRITE: RenderStep = { kind: 'write', path: `${RUNTIME}/stamp`, text: STAMP_TEXT }
@@ -166,16 +213,18 @@ describe('runtime render (D-102)', () => {
   })
 
   test(
-    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the five files and DONE.md, ' +
-      'and lists .runtime, then the stale-link folders (#72 A2)',
+    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the four files, DONE.md, ' +
+      'the inbox in its folder, the private instructions folder and its copy, and lists .runtime, the stale-link ' +
+      'folders, the inbox folder, the copy and the private instructions folder (#72 A2)',
     () => {
       expect(BE_PLAN.links).toEqual([])
-      expect(renderPaths(ROOT, 'be', BE_PLAN)).toEqual({
+      expect(renderPaths(ROOT, 'be', BE_PLAN, PATHS_OPTIONS)).toEqual({
         stats: [
+          INBOX,
+          PRIVATE_FOLDER,
           ROLE_DIR,
           RUNTIME,
           `${RUNTIME}/DONE.md`,
-          `${RUNTIME}/inbox.md`,
           `${RUNTIME}/instructions`,
           `${RUNTIME}/instructions/global`,
           `${RUNTIME}/instructions/memory`,
@@ -184,6 +233,7 @@ describe('runtime render (D-102)', () => {
           `${RUNTIME}/overlay/.claude`,
           `${RUNTIME}/overlay/.claude/agents`,
           `${RUNTIME}/overlay/.claude/skills`,
+          PRIVATE_COPY,
           `${RUNTIME}/probe-expectations.json`,
           `${RUNTIME}/settings.json`,
           `${RUNTIME}/stamp`,
@@ -194,6 +244,9 @@ describe('runtime render (D-102)', () => {
           `${RUNTIME}/overlay/.claude/agents`,
           `${RUNTIME}/instructions/global`,
           `${RUNTIME}/instructions/memory`,
+          INBOX_DIR,
+          PRIVATE_COPY,
+          PRIVATE_FOLDER,
         ],
       })
     },
@@ -202,11 +255,12 @@ describe('runtime render (D-102)', () => {
   test('renderPaths also stats each folder from .runtime down to a link and each link path, sorted, once each', () => {
     const plan = { ...BE_PLAN, links: [MEMORY_LINK, SKILL_LINK, RESUME_LINK] }
 
-    expect(renderPaths(ROOT, 'be', plan).stats).toEqual([
+    expect(renderPaths(ROOT, 'be', plan, PATHS_OPTIONS).stats).toEqual([
+      INBOX,
+      PRIVATE_FOLDER,
       ROLE_DIR,
       RUNTIME,
       `${RUNTIME}/DONE.md`,
-      `${RUNTIME}/inbox.md`,
       `${RUNTIME}/instructions`,
       `${RUNTIME}/instructions/global`,
       `${RUNTIME}/instructions/memory`,
@@ -218,20 +272,25 @@ describe('runtime render (D-102)', () => {
       `${RUNTIME}/overlay/.claude/skills`,
       SKILL_LINK.path,
       RESUME_LINK.path,
+      PRIVATE_COPY,
       `${RUNTIME}/probe-expectations.json`,
       `${RUNTIME}/settings.json`,
       `${RUNTIME}/stamp`,
     ])
   })
 
-  test('a fresh role: .runtime, its overlay, three files, an empty inbox, the stamp last (D-102, D-114)', () => {
+  test('a fresh role: .runtime, its overlay, the copy folder, its folders, three files, an inbox, the stamp', () => {
     expect(BE_PLAN.links).toEqual([])
     expect(renderSteps(input())).toEqual({
       steps: [
         { kind: 'mkdir', path: RUNTIME },
         { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+        { kind: 'mkdir', path: PRIVATE_COPY },
+        ...PRIVATE_FOLDER_STEPS,
+        ...INBOX_FOLDER_STEPS,
+        COPY_CHMOD,
         ...fileWritesOf(BE_PLAN),
-        INBOX_WRITE,
+        INBOX_CREATE,
         STAMP_WRITE,
       ],
       warnings: [],
@@ -244,15 +303,37 @@ describe('runtime render (D-102)', () => {
   })
 
   test('an inbox that is already there is never written again, so a note in it is not lost (D-114, Pitfall 3)', () => {
-    const inbox = `${RUNTIME}/inbox.md`
-    const stats = disk({ [RUNTIME]: folder(RUNTIME), [inbox]: regular(inbox) })
+    const stats = disk({ [RUNTIME]: folder(RUNTIME), [INBOX]: regular(INBOX) })
 
     expect(renderSteps(input({ stats })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      ...PRIVATE_FOLDER_STEPS,
+      ...INBOX_FOLDER_STEPS,
+      COPY_CHMOD,
       ...fileWritesOf(BE_PLAN),
       STAMP_WRITE,
     ])
+  })
+
+  test('an epic seed is appended after a newline when there is no inbox, and never to an inbox that is there', () => {
+    const kept = disk({ [RUNTIME]: folder(RUNTIME), [INBOX]: regular(INBOX) })
+    const seeded = renderSteps(input({ inboxSeed: 'L\n' })).steps
+    const reused = renderSteps(input({ inboxSeed: 'L\n', stats: kept })).steps
+
+    expect(seeded.filter(step => step.path === INBOX)).toEqual([{ kind: 'append', path: INBOX, text: '\nL\n' }])
+    expect(reused.filter(step => step.path === INBOX)).toEqual([])
+  })
+
+  test('an inbox.md of an older setup is left alone, file or link, and the empty inbox.jsonl is created', () => {
+    const old = `${RUNTIME}/inbox.md`
+    for (const stat of [regular(old), DANGLING]) {
+      const steps = renderSteps(input({ stats: rendered({ [old]: stat }) })).steps
+
+      expect(steps.filter(step => step.path === old)).toEqual([])
+      expect(steps.filter(step => step.path === INBOX_CREATE.path)).toEqual([INBOX_CREATE])
+    }
   })
 
   test('renderArgv gives absolute argv and no shell; a write has none, since the host writes it', () => {
@@ -268,13 +349,39 @@ describe('runtime render (D-102)', () => {
       SKILL_LINK.path,
     ])
     expect(renderArgv({ kind: 'write', path: `${RUNTIME}/mcp.json`, text: MCP_TEXT })).toBeNull()
+    expect(renderArgv(INBOX_CREATE)).toEqual(['/usr/bin/tee', '-a', INBOX_CREATE.path])
+    expect(renderArgv({ kind: 'move', path: INBOX_CREATE.path, target: `${INBOX_DIR}/inbox-1000.jsonl` })).toEqual([
+      '/bin/mv',
+      '--',
+      INBOX_CREATE.path,
+      `${INBOX_DIR}/inbox-1000.jsonl`,
+    ])
   })
 
-  test('every step of a render lies in the .runtime folder of the role', () => {
+  test('an append step runs tee -a with its text as stdin, writes nothing, and fails on a non-zero exit', async () => {
+    const path = INBOX
+    const argv = ['/usr/bin/tee', '-a', path]
+    const done = memHost(hostWorld({}))
+    const failed = memHost(hostWorld({ runs: [{ argv, result: { exitCode: 1, stdout: '', stderr: '' } }] }))
+
+    expect(await isStepDone(done.io, { kind: 'append', path, text: 'x\n' })).toBe(true)
+    expect(done.calls).toEqual([{ argv, options: { stdin: 'x\n', timeoutMs: 10_000 } }])
+    expect(done.writes).toEqual([])
+    expect(await isStepDone(failed.io, { kind: 'append', path, text: '' })).toBe(false)
+  })
+
+  test('every step of a render lies in the .runtime folder of the role, but its private and inbox folders', () => {
     const paths = renderSteps(input()).steps.map(step => step.path)
 
     expect(paths.length).toBeGreaterThan(0)
-    expect(paths.filter(path => path !== RUNTIME && !path.startsWith(`${RUNTIME}/`))).toEqual([])
+    expect(paths.filter(path => path !== RUNTIME && !path.startsWith(`${RUNTIME}/`))).toEqual([
+      PRIVATE_FOLDER,
+      ...PRIVATE_LEVELS,
+      INBOX_DIR,
+      ...inboxFolderLevels(INBOX_DIR),
+      INBOX,
+    ])
+    expect(paths).not.toContain(`${RUNTIME}/inbox.jsonl`)
   })
 })
 
@@ -325,6 +432,39 @@ function listed(folders: Readonly<Record<string, readonly PortEntry[]>>): Readon
   return new Map(Object.entries(folders))
 }
 
+describe('the rotation of a large inbox', () => {
+  const rotation = { archive: `${INBOX_DIR}/inbox-1000.jsonl`, text: '{"v":1}\n' }
+  const stats = disk({ [RUNTIME]: folder(RUNTIME), [INBOX]: regular(INBOX) })
+
+  test('a rotation moves the inbox to its archive in its folder, then appends the fresh entry in its place', () => {
+    expect(renderSteps(input({ stats, rotation })).steps).toEqual([
+      { kind: 'mkdir', path: RUNTIME },
+      { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      ...PRIVATE_FOLDER_STEPS,
+      ...INBOX_FOLDER_STEPS,
+      COPY_CHMOD,
+      ...fileWritesOf(BE_PLAN),
+      { kind: 'move', path: INBOX, target: rotation.archive },
+      { kind: 'append', path: INBOX, text: `\n${rotation.text}` },
+      STAMP_WRITE,
+    ])
+  })
+
+  test('the fresh entry is appended, never written, so an entry another role added after the move is kept', () => {
+    const atInbox = renderSteps(input({ stats, rotation })).steps.filter(step => step.path === INBOX)
+
+    expect(atInbox.map(step => step.kind)).toEqual(['move', 'append'])
+  })
+
+  test('without a rotation a real inbox gets no step and a missing one is created', () => {
+    const real = renderSteps(input({ stats })).steps.filter(step => step.path === INBOX)
+    const missing = renderSteps(input()).steps.filter(step => step.path === INBOX)
+
+    expect([real, missing]).toEqual([[], [INBOX_CREATE]])
+  })
+})
+
 describe('runtime render links', () => {
   test('a planned link: .runtime, its overlay and the link folder are made, then the link, files and stamp', () => {
     expect(LINKED_PLAN.links).toEqual([SKILL_LINK])
@@ -333,9 +473,13 @@ describe('runtime render links', () => {
         { kind: 'mkdir', path: RUNTIME },
         { kind: 'mkdir', path: `${RUNTIME}/overlay` },
         { kind: 'mkdir', path: SKILLS },
+        { kind: 'mkdir', path: PRIVATE_COPY },
+        ...PRIVATE_FOLDER_STEPS,
+        ...INBOX_FOLDER_STEPS,
         { kind: 'link', path: SKILL_LINK.path, target: SKILL_LINK.target },
+        COPY_CHMOD,
         ...fileWritesOf(LINKED_PLAN),
-        INBOX_WRITE,
+        INBOX_CREATE,
         STAMP_WRITE,
       ],
       warnings: [],
@@ -346,15 +490,19 @@ describe('runtime render links', () => {
   test('the folders of links in several places are made sorted and once each, then the links in plan order', () => {
     const links = [MEMORY_LINK, SKILL_LINK, RESUME_LINK]
     const steps = renderSteps(input({ plan: { ...BE_PLAN, links } })).steps
+    const firstLink = 5 + PRIVATE_FOLDER_STEPS.length + INBOX_FOLDER_STEPS.length
 
     expect(steps.filter(step => step.kind === 'mkdir').map(step => step.path)).toEqual([
       RUNTIME,
       `${RUNTIME}/instructions/memory`,
       `${RUNTIME}/overlay`,
       SKILLS,
+      PRIVATE_COPY,
+      PRIVATE_FOLDER,
+      INBOX_DIR,
     ])
     expect(steps.filter(step => step.kind === 'link')).toEqual(links.map(item => ({ kind: 'link', ...item })))
-    expect(steps.findIndex(step => step.kind === 'link')).toBe(4)
+    expect(steps.findIndex(step => step.kind === 'link')).toBe(firstLink)
   })
 
   test('a link path that is already a link is removed once, before every mkdir, and then linked again', () => {
@@ -421,21 +569,16 @@ describe('runtime render links', () => {
     expect(steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: `${SKILLS}/old` }])
   })
 
-  test('a file the render writes that is a link is removed first; an inbox link becomes an empty inbox', () => {
+  test('a file the render writes that is a link is removed first, then written', () => {
     const settings = `${RUNTIME}/settings.json`
-    const inbox = `${RUNTIME}/inbox.md`
-    const steps = renderSteps(input({ stats: rendered({ [settings]: LINK_OUT, [inbox]: DANGLING }) })).steps
+    const steps = renderSteps(input({ stats: rendered({ [settings]: LINK_OUT }) })).steps
 
-    expect(steps.slice(0, 2)).toEqual([
-      { kind: 'remove', path: settings },
-      { kind: 'remove', path: inbox },
-    ])
+    expect(steps[0]).toEqual({ kind: 'remove', path: settings })
     expect(steps.filter(step => step.path === settings).map(step => step.kind)).toEqual(['remove', 'write'])
-    expect(steps.filter(step => step.path === inbox)).toEqual([{ kind: 'remove', path: inbox }, INBOX_WRITE])
   })
 
   test('a file the render writes that is a folder, or any kind but a file or a link, refuses with no step', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
     const results = names.flatMap(name => {
       const path = `${RUNTIME}/${name}`
       const other: PortStat = { kind: 'other', size: 0, isLink: false, realPath: path }
@@ -443,7 +586,7 @@ describe('runtime render links', () => {
       return [folder(path), other].map(stat => renderSteps(input({ stats: rendered({ [path]: stat }) })))
     })
 
-    expect(results).toHaveLength(10)
+    expect(results).toHaveLength(8)
     expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })))
   })
 
@@ -521,7 +664,7 @@ describe('runtime render links', () => {
   })
 
   test('a file a render writes that .runtime lists as a link, with no link in its stat, refuses (#72 A2)', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
     const results = names.map(name =>
       renderSteps(input({ stats: rendered(), listings: listed({ [RUNTIME]: [entry('notes'), link(name)] }) })),
     )
@@ -554,10 +697,11 @@ describe('runtime render links', () => {
   })
 
   test('no step removes a real file or folder but the old stamp, and nothing is removed with -r (T-03-20)', () => {
-    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
-    const files = Object.fromEntries(
-      names.map((name): [string, PortStat] => [`${RUNTIME}/${name}`, regular(`${RUNTIME}/${name}`)]),
-    )
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'stamp']
+    const files = Object.fromEntries([
+      ...names.map((name): [string, PortStat] => [`${RUNTIME}/${name}`, regular(`${RUNTIME}/${name}`)]),
+      [INBOX, regular(INBOX)],
+    ])
     const listings = new Map(
       STALE_LINK_FOLDERS.map((name): [string, readonly PortEntry[]] => [
         `${RUNTIME}/${name}`,
@@ -578,8 +722,12 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
     expect(renderSteps(input({ kickoff: 'X\n' })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      ...PRIVATE_FOLDER_STEPS,
+      ...INBOX_FOLDER_STEPS,
+      COPY_CHMOD,
       ...fileWritesOf(BE_PLAN),
-      INBOX_WRITE,
+      INBOX_CREATE,
       { kind: 'write', path: `${RUNTIME}/${RUNTIME_KICKOFF_FILE}`, text: 'X\n' },
       STAMP_WRITE,
     ])
@@ -594,7 +742,7 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
       const folderFile = renderSteps(input({ kickoff: 'X\n', stats: rendered({ [kickoff]: folder(kickoff) }) }))
       const start = renderSteps(input({ stats: rendered({ [kickoff]: LINK_OUT }) }))
 
-      expect(renderPaths(ROOT, 'be', BE_PLAN, { kickoff: true }).stats).toContain(kickoff)
+      expect(renderPaths(ROOT, 'be', BE_PLAN, { ...PATHS_OPTIONS, kickoff: true }).stats).toContain(kickoff)
       expect(linkedFile.steps[0]).toEqual({ kind: 'remove', path: kickoff })
       expect(linkedFile.steps.filter(step => step.path === kickoff).map(step => step.kind)).toEqual(['remove', 'write'])
       expect(folderFile).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
@@ -603,22 +751,77 @@ describe('the epic kickoff in .runtime (D-158, D-168)', () => {
   )
 })
 
-/** BE's private instructions folder for the fixture user: `<role memory folder>/instructions` (D-140 q1-b). */
-const PRIVATE_FOLDER = '/home/u/.claude/cadre/repo-1a2b3c4d/be/instructions'
+describe('the inbox in its private folder', () => {
+  /** The refusal of a render whose inbox is a link or not a regular file. */
+  const REFUSAL = t('start.renderPlan.inboxRefusal', { role: 'be', path: INBOX })
 
-/** The levels of BE's role memory folder a render makes mode 700, from the top (02-GAPS-B3 S7). */
-const PRIVATE_LEVELS: readonly string[] = [
-  '/home/u/.claude/cadre',
-  '/home/u/.claude/cadre/repo-1a2b3c4d',
-  '/home/u/.claude/cadre/repo-1a2b3c4d/be',
-  PRIVATE_FOLDER,
-]
+  test(
+    'an inbox that is a link, by its stat or by the listing of its folder while its stat shows none, refuses ' +
+      'with no step, so a link there is never removed',
+    () => {
+      const results = [
+        renderSteps(input({ stats: rendered({ [INBOX]: LINK_OUT }) })),
+        renderSteps(input({ stats: rendered({ [INBOX]: DANGLING }) })),
+        renderSteps(input({ stats: rendered(), listings: listed({ [INBOX_DIR]: [link('inbox.jsonl')] }) })),
+      ]
 
-/** The link in BE's .runtime to its private instructions folder, which its launcher adds (D-140 q1-b). */
-const PRIVATE_LINK: OverlayLink = { path: `${RUNTIME}/private-instructions`, target: PRIVATE_FOLDER }
+      expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: REFUSAL })))
+    },
+  )
 
-/** BE's plan with the private instructions link and no other link, as /cadre start renders it (D-140 q1-b). */
-const PRIVATE_PLAN: LaunchPlan = { ...BE_PLAN, links: [PRIVATE_LINK] }
+  test('an inbox that is a folder or any other kind but a file refuses with no step', () => {
+    const other: PortStat = { kind: 'other', size: 0, isLink: false, realPath: INBOX }
+    const results = [folder(INBOX), other].map(stat => renderSteps(input({ stats: rendered({ [INBOX]: stat }) })))
+
+    expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: REFUSAL })))
+  })
+
+  test('a link listed beside the inbox, or a real inbox file, refuses nothing', () => {
+    const beside = listed({ [INBOX_DIR]: [link('inbox-1000.jsonl'), entry('session.json')] })
+    const results = [
+      renderSteps(input({ stats: rendered(), listings: beside })),
+      renderSteps(input({ stats: rendered({ [INBOX]: regular(INBOX) }) })),
+    ]
+
+    expect(results.map(result => result.refusal)).toEqual([null, null])
+  })
+})
+
+describe('inboxClearSteps', () => {
+  test('each listed role folder gets the removal of its inbox, then of its session record, in listing order', () => {
+    expect(inboxClearSteps(INBOX_HOME, [entry('pm', 'dir'), entry('be', 'dir')])).toEqual([
+      { kind: 'remove', path: `${INBOX_HOME}/pm/inbox.jsonl` },
+      { kind: 'remove', path: `${INBOX_HOME}/pm/session.json` },
+      { kind: 'remove', path: `${INBOX_HOME}/be/inbox.jsonl` },
+      { kind: 'remove', path: `${INBOX_HOME}/be/session.json` },
+    ])
+  })
+
+  test('a link, a file, a name that is no plain entry or no role id, and an empty listing clear nothing', () => {
+    const entries = [
+      link('pm'),
+      entry('tl', 'dir', true),
+      entry('be'),
+      entry('.', 'dir'),
+      entry('..', 'dir'),
+      entry('qa/x', 'dir'),
+      entry('BE!', 'dir'),
+      entry('cadre', 'dir'),
+    ]
+
+    expect(inboxClearSteps(INBOX_HOME, entries)).toEqual([])
+    expect(inboxClearSteps(INBOX_HOME, [])).toEqual([])
+  })
+
+  test('a removal is rm -f of one file, never -r', () => {
+    const argv = inboxClearSteps(INBOX_HOME, [entry('pm', 'dir')]).map(renderArgv)
+
+    expect(argv).toEqual([
+      ['/bin/rm', '-f', '--', `${INBOX_HOME}/pm/inbox.jsonl`],
+      ['/bin/rm', '-f', '--', `${INBOX_HOME}/pm/session.json`],
+    ])
+  })
+})
 
 /**
  * A render step's path below BE's .runtime, as an ignore line names it: a folder a step makes ends in `/`, as the
@@ -631,8 +834,8 @@ function runtimeRelative(step: RenderStep): string {
 }
 
 /**
- * Whether a line of ignoreLines('all') covers a path below .runtime (02-GAPS-B2 M2): the line of `<name>` covers the
- * path equal to `<name>`, and, when `<name>` ends in `/`, every path that starts with it.
+ * Whether a line of ignoreLines('all') covers a path below .runtime as git matches it: a line `<name>/` covers every
+ * path that starts with it, and a line `<name>` covers that path and every path below it.
  */
 function isIgnoredUnderAll(path: string): boolean {
   const prefix = '.cadre/*/.runtime/'
@@ -641,47 +844,164 @@ function isIgnoredUnderAll(path: string): boolean {
     if (!line.startsWith(prefix)) return false
     const name = line.slice(prefix.length)
 
-    return name.endsWith('/') ? path.startsWith(name) : path === name
+    return name.endsWith('/') ? path.startsWith(name) : path === name || path.startsWith(`${name}/`)
   })
 }
 
 describe('built files reach the session (G-02-1f)', () => {
-  test('a render makes the private link folder after the .runtime folders, chmods its levels, then links (S7)', () => {
-    expect(renderSteps(input({ plan: PRIVATE_PLAN })).steps).toEqual([
-      { kind: 'mkdir', path: RUNTIME },
-      { kind: 'mkdir', path: `${RUNTIME}/overlay` },
-      { kind: 'mkdir', path: PRIVATE_FOLDER },
-      ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
-      { kind: 'link', path: PRIVATE_LINK.path, target: PRIVATE_FOLDER },
-      ...fileWritesOf(PRIVATE_PLAN),
-      INBOX_WRITE,
-      STAMP_WRITE,
-    ])
-  })
+  test('a render makes the copy folder, then after the links chmods it and copies each regular source file', () => {
+    const listings = listed({ [PRIVATE_FOLDER]: [entry('notes.md'), entry('sub', 'dir'), entry('CLAUDE.md')] })
+    const result = renderSteps(linked({ listings }))
 
-  test('an earlier link at .runtime/private-instructions is removed first; a real file or folder there refuses', () => {
-    const stale = renderSteps(input({ plan: PRIVATE_PLAN, stats: rendered({ [PRIVATE_LINK.path]: LINK_OUT }) }))
-    const atLink = stale.steps.filter(step => step.path === PRIVATE_LINK.path)
-
-    expect(atLink.map(step => step.kind)).toEqual(['remove', 'link'])
-    for (const stat of [folder(PRIVATE_LINK.path), regular(PRIVATE_LINK.path)]) {
-      const real = renderSteps(input({ plan: PRIVATE_PLAN, stats: rendered({ [PRIVATE_LINK.path]: stat }) }))
-
-      expect(real).toEqual({ steps: [], warnings: [], refusal: privateLinkRefusal('be') })
-    }
-    expect(privateLinkRefusal('be')).toBe(
-      '.cadre/be/.runtime/private-instructions is a real file or folder, not a link: ' +
-        'remove it and run /cadre start be again',
+    expect(result).toEqual({
+      steps: [
+        { kind: 'mkdir', path: RUNTIME },
+        { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+        { kind: 'mkdir', path: SKILLS },
+        { kind: 'mkdir', path: PRIVATE_COPY },
+        { kind: 'mkdir', path: PRIVATE_FOLDER },
+        ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
+        ...INBOX_FOLDER_STEPS,
+        { kind: 'link', path: SKILL_LINK.path, target: SKILL_LINK.target },
+        { kind: 'chmod', path: PRIVATE_COPY },
+        { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+        { kind: 'copy', source: `${PRIVATE_FOLDER}/notes.md`, path: `${PRIVATE_COPY}/notes.md` },
+        ...fileWritesOf(LINKED_PLAN),
+        INBOX_CREATE,
+        STAMP_WRITE,
+      ],
+      warnings: [privateSkippedWarning('be', 'sub')],
+      refusal: null,
+    })
+    expect(result.steps.filter(step => step.kind === 'link' && step.path === PRIVATE_COPY)).toEqual([])
+    expect(privateSkippedWarning('be', 'sub')).toBe(
+      "be's private instructions folder holds sub, which is not a regular file and is not copied to the role",
     )
   })
 
-  test('under commit all, every path a render makes below .runtime is git-ignored, the private link too (M2)', () => {
-    const plan: LaunchPlan = { ...BE_PLAN, links: [MEMORY_LINK, PRIVATE_LINK, SKILL_LINK] }
-    const below = renderSteps(input({ plan }))
+  test('a link at the copy path is removed after the planned links, before every mkdir; its listing is unused', () => {
+    const stats = rendered({ [SKILL_LINK.path]: LINK_OUT, [PRIVATE_COPY]: LINK_OUT })
+    const listings = listed({ [PRIVATE_COPY]: [entry('CLAUDE.md'), entry('old.md')] })
+    const steps = renderSteps(linked({ stats, listings })).steps
+    const removed = steps.findIndex(step => step.kind === 'remove' && step.path === PRIVATE_COPY)
+
+    expect(steps.filter(step => step.kind === 'remove')).toEqual([
+      { kind: 'remove', path: SKILL_LINK.path },
+      { kind: 'remove', path: PRIVATE_COPY },
+    ])
+    expect(steps.findIndex(step => step.kind === 'mkdir')).toBeGreaterThan(removed)
+  })
+
+  test('a dangling link .runtime lists at the copy path, with no stat, is removed the same way', () => {
+    const listings = listed({ [RUNTIME]: [link('private-instructions')] })
+    const result = renderSteps(input({ stats: rendered(), listings }))
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: PRIVATE_COPY }])
+  })
+
+  test('a copy folder is refreshed: after its chmod each entry in it is removed, then the source is copied', () => {
+    const stats = rendered({ [PRIVATE_COPY]: folder(PRIVATE_COPY), [PRIVATE_FOLDER]: folder(PRIVATE_FOLDER) })
+    const listings = listed({
+      [PRIVATE_COPY]: [entry('CLAUDE.md'), entry('old.md'), link('stale')],
+      [PRIVATE_FOLDER]: [entry('CLAUDE.md')],
+    })
+    const steps = renderSteps(input({ stats, listings })).steps
+
+    expect(steps.filter(step => step.path.startsWith(PRIVATE_COPY))).toEqual([
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      { kind: 'chmod', path: PRIVATE_COPY },
+      { kind: 'remove', path: `${PRIVATE_COPY}/CLAUDE.md` },
+      { kind: 'remove', path: `${PRIVATE_COPY}/old.md` },
+      { kind: 'remove', path: `${PRIVATE_COPY}/stale` },
+      { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+    ])
+  })
+
+  test('a link listed as a folder in the copy folder is removed, not refused', () => {
+    const stats = rendered({ [PRIVATE_COPY]: folder(PRIVATE_COPY), [PRIVATE_FOLDER]: folder(PRIVATE_FOLDER) })
+    const listings = listed({ [PRIVATE_COPY]: [entry('linked', 'dir', true)], [PRIVATE_FOLDER]: [entry('CLAUDE.md')] })
+    const result = renderSteps(input({ stats, listings }))
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.filter(step => step.path.startsWith(PRIVATE_COPY))).toEqual([
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      { kind: 'chmod', path: PRIVATE_COPY },
+      { kind: 'remove', path: `${PRIVATE_COPY}/linked` },
+      { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+    ])
+  })
+
+  test('with no source folder, its folder and the copy folder are made, and nothing is copied or refused', () => {
+    const result = renderSteps(input())
+    const at = result.steps.findIndex(step => step.kind === 'mkdir' && step.path === PRIVATE_FOLDER)
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.slice(at, at + 1 + PRIVATE_LEVELS.length)).toEqual([
+      { kind: 'mkdir', path: PRIVATE_FOLDER },
+      ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
+    ])
+    expect(result.steps.filter(step => step.path.startsWith(PRIVATE_COPY))).toEqual([
+      { kind: 'mkdir', path: PRIVATE_COPY },
+      { kind: 'chmod', path: PRIVATE_COPY },
+    ])
+  })
+
+  test('a real file at the copy path, a real folder in the copy, or a source that cannot be listed refuses', () => {
+    const asFile = renderSteps(input({ stats: rendered({ [PRIVATE_COPY]: regular(PRIVATE_COPY) }) }))
+    const nested = renderSteps(
+      input({
+        stats: rendered({ [PRIVATE_COPY]: folder(PRIVATE_COPY) }),
+        listings: listed({ [PRIVATE_COPY]: [entry('CLAUDE.md'), entry('drafts', 'dir')] }),
+      }),
+    )
+    const unlisted = renderSteps(input({ stats: rendered({ [PRIVATE_FOLDER]: folder(PRIVATE_FOLDER) }) }))
+
+    expect(asFile).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
+    expect(nested).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
+    expect(unlisted).toEqual({ steps: [], warnings: [], refusal: renderFailedReply('be', PRIVATE_FOLDER) })
+  })
+
+  test('a source entry that is not a regular file is not copied: one warning each, by name, after the others', () => {
+    const source = [
+      entry('d-dir', 'dir'),
+      entry('CLAUDE.md'),
+      link('c-link'),
+      entry('b-fifo', 'other'),
+      entry('a-file-link', 'file', true),
+    ]
+    const stats = rendered({ [SKILL_LINK.path]: folder(SKILL_LINK.path) })
+    const result = renderSteps(linked({ stats, listings: listed({ [PRIVATE_FOLDER]: source }) }))
+    const regularOnly = listed({ [PRIVATE_FOLDER]: [entry('CLAUDE.md'), entry('notes.md')] })
+
+    expect(result.refusal).toBeNull()
+    expect(result.steps.filter(step => step.kind === 'copy')).toEqual([
+      { kind: 'copy', source: `${PRIVATE_FOLDER}/CLAUDE.md`, path: `${PRIVATE_COPY}/CLAUDE.md` },
+    ])
+    expect(result.warnings).toEqual([
+      notReplacedWarning(ROOT, SKILL_LINK.path),
+      ...['a-file-link', 'b-fifo', 'c-link', 'd-dir'].map(name => privateSkippedWarning('be', name)),
+    ])
+    expect(renderSteps(input({ listings: regularOnly })).warnings).toEqual([])
+  })
+
+  test('renderPaths stats the private instructions folder and its copy, and lists both after the inbox folder', () => {
+    const paths = renderPaths(ROOT, 'be', BE_PLAN, PATHS_OPTIONS)
+
+    expect(paths.stats).toContain(PRIVATE_FOLDER)
+    expect(paths.stats).toContain(PRIVATE_COPY)
+    expect(paths.listings.slice(-3)).toEqual([INBOX_DIR, PRIVATE_COPY, PRIVATE_FOLDER])
+  })
+
+  test('under commit all, every path a render makes below .runtime is git-ignored, the private copy too (M2)', () => {
+    const plan: LaunchPlan = { ...BE_PLAN, links: [MEMORY_LINK, SKILL_LINK] }
+    const listings = listed({ [PRIVATE_FOLDER]: [entry('CLAUDE.md')] })
+    const below = renderSteps(input({ plan, listings }))
       .steps.filter(step => step.kind !== 'remove' && step.path.startsWith(`${RUNTIME}/`))
       .map(step => runtimeRelative(step))
 
-    expect(below).toContain('private-instructions')
+    expect(below).toContain('private-instructions/')
+    expect(below).toContain('private-instructions/CLAUDE.md')
     expect(below).toContain('overlay/')
     expect(below.filter(path => !isIgnoredUnderAll(path))).toEqual([])
   })

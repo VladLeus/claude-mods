@@ -73,7 +73,18 @@ describe('overlayLinks', () => {
         { path: `${OVERLAY}/skills/resume-handoff-doc`, target: '/home/u/.claude/skills/resume-handoff-doc' },
       ],
       warnings: [],
+      unlinkedSkills: [],
     })
+  })
+
+  test('unlinkedSkills names the skills not linked, not found or unsafe, sorted, and never an agent', () => {
+    const overlay = { skills: ['ok', 'missing', '../x'], agents: ['gone'] }
+    const result = overlayLinks('pm', overlay, user({ userSkills: ['ok', '../x'] }))
+    const owner = user({ userSkills: ['ok'], userAgents: ['b'] })
+    const linked = overlayLinks('pm', { skills: ['ok'], agents: ['b'] }, owner)
+
+    expect(result.unlinkedSkills).toEqual(['../x', 'missing'])
+    expect(linked.unlinkedSkills).toEqual([])
   })
 
   test('the targets lie in the config dir of the user, and the links under the role folder of the repo', () => {
@@ -105,6 +116,41 @@ describe('overlayLinks', () => {
 
     expect(result.links.map(link => link.path)).toEqual([`${OVERLAY}/agents/b.md`])
     expect(result.warnings).toEqual(['agent a was not found in your user agents: not linked'])
+  })
+
+  test('a name the launch root provides gets no link, no warning and is not an unlinked skill', () => {
+    const overlay = { skills: ['gsd-quick', 'missing'], agents: ['gsd-executor', 'gone'] }
+    const result = overlayLinks('pm', overlay, user({ repoSkills: ['gsd-quick'], repoAgents: ['gsd-executor'] }))
+
+    expect(result.links).toEqual([])
+    expect(result.warnings).toEqual([
+      'skill missing was not found in your user skills: not linked',
+      'agent gone was not found in your user agents: not linked',
+    ])
+    expect(result.unlinkedSkills).toEqual(['missing'])
+  })
+
+  test('a name the user has is linked from the user folder even when the launch root provides it too', () => {
+    const launcher = user({ userSkills: ['gsd-quick'], repoSkills: ['gsd-quick'], repoAgents: ['gsd-executor'] })
+    const result = overlayLinks('pm', { skills: ['gsd-quick'], agents: [] }, launcher)
+
+    expect(result).toEqual({
+      links: [{ path: `${OVERLAY}/skills/gsd-quick`, target: '/home/u/.claude/skills/gsd-quick' }],
+      warnings: [],
+      unlinkedSkills: [],
+    })
+  })
+
+  test('an unsafe name the launch root lists keeps its unsafe warning', () => {
+    const launcher = user({ repoSkills: ['../x'], repoAgents: ['a b'] })
+    const result = overlayLinks('pm', { skills: ['../x'], agents: ['a b'] }, launcher)
+
+    expect(result.links).toEqual([])
+    expect(result.warnings).toEqual([
+      'skill ../x has an unsafe name: not linked',
+      'agent a b has an unsafe name: not linked',
+    ])
+    expect(result.unlinkedSkills).toEqual(['../x'])
   })
 
   test('a name that is not a plain name is not linked and warns, even when the user lists it', () => {
@@ -172,9 +218,10 @@ describe('overlayLinks', () => {
 
   test('a name given twice is linked once, and an empty overlay plans nothing', () => {
     const twice = overlayLinks('pm', { skills: ['a', 'a'], agents: [] }, user({ userSkills: ['a'] }))
+    const empty = overlayLinks('pm', { skills: [], agents: [] }, user())
 
     expect(twice.links).toHaveLength(1)
-    expect(overlayLinks('pm', { skills: [], agents: [] }, user())).toEqual({ links: [], warnings: [] })
+    expect(empty).toEqual({ links: [], warnings: [], unlinkedSkills: [] })
   })
 
   test('launchPlan links the instructions and the overlay together, sorted by path, and warns in step order', () => {

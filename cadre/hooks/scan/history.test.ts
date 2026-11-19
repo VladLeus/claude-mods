@@ -9,6 +9,7 @@ import {
   NO_HISTORY_NOTE,
   UNLISTED_HISTORY_NOTE,
 } from '../init/stages/history'
+import { mangledProjectDir } from '../paths'
 import { entry, memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
 import {
@@ -156,6 +157,46 @@ describe('history scan', () => {
   test('listSessions gives null for a folder it cannot list, and no sessions for one that is not there', async () => {
     expect(await listSessions(memIo(memWorld({ unknownPaths: [DIR] }), {}).io, DIR)).toBeNull()
     expect(await listSessions(memIo(memWorld({}), {}).io, DIR)).toEqual({ sessions: [], total: 0 })
+  })
+
+  test('a session folder over 200 characters is listed by its full name, and no transcript is read', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const long = `/home/u/.claude/projects/${mangledProjectDir(root)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const world = memWorld({
+      dirs: { '/home/u/.claude/projects': [entry(name, 'dir')], [shortened]: [transcript('a.jsonl', 1)] },
+      files: { [`${shortened}/a.jsonl`]: `${JSON.stringify({ type: 'user', cwd: root })}\n` },
+    })
+    const run = memIo(world, {})
+    expect(await listSessions(run.io, long)).toEqual({ sessions: [], total: 0 })
+    expect([run.listed, run.reads.filter(path => path.endsWith('.jsonl'))]).toEqual([[long], []])
+  })
+
+  test('the consented scan reads only the sessions in the folder it is given, also over 200 characters', async () => {
+    const root = `/repo/${'w'.repeat(300)}`
+    const long = `/home/u/.claude/projects/${mangledProjectDir(root)}`
+    const name = `${mangledProjectDir(root).slice(0, 200)}-x1y2z3`
+    const shortened = `/home/u/.claude/projects/${name}`
+    const held = `${JSON.stringify({ type: 'user', cwd: root })}\n${commandLine('<command-name>/cadre</command-name>')}`
+    const world = memWorld({
+      dirs: {
+        '/home/u/.claude/projects': [entry(name, 'dir')],
+        [shortened]: [transcript('old.jsonl', 1), transcript('new.jsonl', 2)],
+      },
+      files: { [`${shortened}/old.jsonl`]: held, [`${shortened}/new.jsonl`]: held },
+    })
+    const run = memIo(world, {})
+    const scan = await scanHistory(run.io, long, [transcript('new.jsonl', 2), transcript('old.jsonl', 1)])
+    expect([run.listed, run.reads]).toEqual([[], [`${long}/new.jsonl`, `${long}/old.jsonl`]])
+    expect([scan.scanned, scan.skippedUnknown, scan.counts]).toEqual([0, 2, []])
+  })
+
+  test('a session folder of 200 characters or fewer is listed and read with no extra listing', async () => {
+    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), {})
+    const listed = await listSessions(run.io, DIR)
+    await scanHistory(run.io, DIR, listed?.sessions ?? [])
+    expect([run.listed, run.reads]).toEqual([[DIR], [`${DIR}/a.jsonl`]])
   })
 
   test('countNames keeps the slash commands and Skill calls of the example with counts, and nothing else', () => {

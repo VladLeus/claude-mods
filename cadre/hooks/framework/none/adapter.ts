@@ -73,26 +73,56 @@ function doneLine(folder: string): string {
   return fill(ARTIFACT.builtinDoneLine, { folder })
 }
 
+/** The intro template: a core team's TL and its Security each have their own, every other role the build loop one. */
+function introOf(
+  ctx: KickoffContext,
+): (typeof ARTIFACT)['builtinKickoffIntroLead' | 'builtinKickoffIntroReviewer' | 'builtinKickoffIntro'] {
+  if (ctx.isCoreLead === true) return ARTIFACT.builtinKickoffIntroLead
+  if (ctx.isCoreReviewer === true) return ARTIFACT.builtinKickoffIntroReviewer
+
+  return ARTIFACT.builtinKickoffIntro
+}
+
+/** A gate's kickoff: the question gate of a role that asks the person in an epic defers to its Hierarchy section. */
+function gateKickoff(gate: Gate, ctx: KickoffContext): string {
+  if (gate.id === 'role-questions' && ctx.asksInEpic === true) return ARTIFACT.builtinGateQuestionAsk
+
+  return gate.kickoff
+}
+
+/** One line per gate in BUILTIN_GATES order; a core lead writes no plan file, so it gets no ExitPlanMode gate. */
+function gateLines(ctx: KickoffContext): string[] {
+  const gates = BUILTIN_GATES.filter(gate => ctx.isCoreLead !== true || gate.id !== 'exit-plan-mode')
+
+  return gates.map(gate => fill(ARTIFACT.builtinGateLine, { where: gate.where, kickoff: gateKickoff(gate, ctx) }))
+}
+
 /**
- * The kickoff text a built-in role starts from: who the role is, its spec when it has one, the plan it writes before it
- * executes, how it verifies, one line per gate in BUILTIN_GATES order, and the DONE answer last. Lines are joined with
- * newlines and the text has no trailing newline. The sentence names the role by its display title, as given, cleaned
- * and capped; every path uses the role id, which is the folder only when it is a slug (D-48). The title and spec path
- * come from outside the adapter, so they are cleaned before they can add a line.
+ * The kickoff text of a built-in role: its intro, spec, plan and verify lines, the human gates and the DONE answer,
+ * joined with newlines. A core lead gets no plan, verify or ExitPlanMode line and a core reviewer no verify line.
  */
 export function builtinKickoffText(ctx: KickoffContext): string {
   const title = kickoffTitle(ctx)
   const folder = roleFolder(ctx.roleId)
+  const isCoreLead = ctx.isCoreLead === true
+  const planLines = isCoreLead ? [] : [fill(ARTIFACT.builtinKickoffPlan, { folder })]
+  const verifyLines = isCoreLead || ctx.isCoreReviewer === true ? [] : [ARTIFACT.builtinKickoffVerify]
 
   return [
-    fill(ARTIFACT.builtinKickoffIntro, { title }),
+    fill(introOf(ctx), { title }),
     ...specLines(ctx.specPath),
-    fill(ARTIFACT.builtinKickoffPlan, { folder }),
-    ARTIFACT.builtinKickoffVerify,
+    ...planLines,
+    ...verifyLines,
     ARTIFACT.builtinHumanGates,
-    ...BUILTIN_GATES.map(gate => fill(ARTIFACT.builtinGateLine, { where: gate.where, kickoff: gate.kickoff })),
+    ...gateLines(ctx),
     doneLine(folder),
   ].join('\n')
+}
+
+function builtinRoleStart(roleId: string, isCoreLead = false): string {
+  if (isCoreLead) return PROMPTS.kickoffPmStart
+
+  return fill(PROMPTS.builtinRoleStart, { roleId })
 }
 
 /**
@@ -105,6 +135,7 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   name: 'built-in',
   detectRule: t('framework.none.adapter.builtinAdapterDetectRule'),
   detect: detectBuiltin,
+  isInstalled: (): boolean => true,
   startWork: Object.freeze([
     t('framework.none.adapter.builtinAdapter'),
     t('framework.none.adapter.builtinAdapter2'),
@@ -130,8 +161,13 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   pluginsToEnable: Object.freeze([]),
   agentPrefix: null,
   needsBash: false,
-  /** The role's plan file, which the built-in kickoff asks the role to write first. */
-  roleStart: (roleId: string) => fill(PROMPTS.builtinRoleStart, { roleId }),
+  /**
+   * The role's plan file, which the built-in kickoff asks the role to write first; a core team's TL starts with the How
+   * you work steps of its ROLE.md instead.
+   */
+  roleStart: builtinRoleStart,
   install: null,
+  projectInstall: null,
   factsHeading: null,
+  roleWork: Object.freeze({ workstreamEnv: null, startSteps: () => Object.freeze([]) }),
 })

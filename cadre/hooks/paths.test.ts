@@ -1,11 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { sha256Hex } from './core/hash'
 import { t } from './locales/t'
+import { inboxLogPath, sessionFilePath } from './messages/record'
 import {
   cadreStatePath,
   claudeJsonPathOf,
   displayPath,
+  ENGINE_FOLDER_NAME_MAX_CHARS,
   handoffFolderOf,
+  INBOX_ARCHIVE_GLOB,
+  inboxArchiveFile,
+  inboxDirOf,
+  INBOX_FILE,
+  inboxFolderLevels,
+  inboxHomeOf,
+  INBOX_LOG_FILE,
+  inboxRootKey,
+  INBOX_TREE,
+  inboxTreeOf,
   isFileInsideRoot,
   isSafeConfigDir,
   isSafeRelativePath,
@@ -17,10 +30,17 @@ import {
   projectFolderOf,
   relativeTo,
   resolvedPath,
+  RUNTIME_RENDERED,
+  runtimeDirOf,
   screenPath,
+  SESSION_FILE,
+  shortenedProjectDirs,
+  shortenedProjectPrefixOf,
+  startCwdNeedle,
+  startSettingsPath,
   trimSlash,
 } from './paths'
-import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry } from './testkit'
+import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry, link } from './testkit'
 
 describe('isSafeConfigDir', () => {
   test('an absolute path with no .. segment is safe', () => {
@@ -133,6 +153,55 @@ describe('projectFolderOf', () => {
   test('projectFolderOf: <userDir>/projects/<the root mangled>, with the user folder as given (no trim)', () => {
     expect(projectFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo')
     expect(projectFolderOf('/cfg/', '/a b')).toBe('/cfg//projects/-a-b')
+  })
+})
+
+describe('shortenedProjectDirs', () => {
+  const long = `-repo-${'w'.repeat(300)}`
+  const prefix = long.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
+
+  test('a name of 200 characters or fewer has no candidate, whatever the listing holds', () => {
+    expect(ENGINE_FOLDER_NAME_MAX_CHARS).toBe(200)
+    const short = 'w'.repeat(200)
+    expect(shortenedProjectDirs(short, [entry(`${short}-x1`, 'dir')])).toEqual([])
+  })
+
+  test('a longer name has no candidate when its own folder is listed, even beside a shortened one', () => {
+    expect(shortenedProjectDirs(long, [entry(long, 'dir'), entry(`${prefix}-x1y2z3`, 'dir')])).toEqual([])
+  })
+
+  test('every folder that starts with the first 200 characters and is not the name is a candidate', () => {
+    const entries = [entry('-other', 'dir'), entry(`${prefix}-a`, 'dir'), entry(prefix.slice(0, 199), 'dir')]
+    expect(shortenedProjectDirs(long, entries)).toEqual([`${prefix}-a`])
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-a`, 'dir'), entry(`${prefix}-b`, 'dir')])).toEqual([
+      `${prefix}-a`,
+      `${prefix}-b`,
+    ])
+    expect(shortenedProjectDirs(long, [])).toEqual([])
+  })
+
+  test('a file or a link with the prefix is never a candidate', () => {
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-f`), link(`${prefix}-l`)])).toEqual([])
+    expect(shortenedProjectDirs(long, [entry(`${prefix}-d`, 'dir', true)])).toEqual([])
+  })
+
+  test('startCwdNeedle is the cwd field with the folder JSON-encoded, closing quote included', () => {
+    expect(startCwdNeedle('/a/b')).toBe('"cwd":"/a/b"')
+    expect(startCwdNeedle('/a/"q"')).toBe('"cwd":"/a/\\"q\\""')
+    expect('{"cwd":"/a/bc"}'.includes(startCwdNeedle('/a/b'))).toBe(false)
+  })
+})
+
+describe('shortenedProjectPrefixOf', () => {
+  test('a root whose encoded name has 200 characters or fewer keeps its full name: null', () => {
+    expect(shortenedProjectPrefixOf('/home/u/.claude', '/repo')).toBeNull()
+    expect(shortenedProjectPrefixOf('/home/u/.claude', `/${'a'.repeat(199)}`)).toBeNull()
+  })
+
+  test('a longer root gives the projects path and the first 200 characters of its encoded name', () => {
+    expect(shortenedProjectPrefixOf('/home/u/.claude', `/r/${'a'.repeat(250)}`)).toBe(
+      `/home/u/.claude/projects/-r-${'a'.repeat(197)}`,
+    )
   })
 })
 
@@ -256,6 +325,15 @@ describe('cadreStatePath', () => {
   })
 })
 
+describe('startSettingsPath', () => {
+  test('startSettingsPath is the repo-relative .claude/settings.json of a start folder', () => {
+    expect([startSettingsPath('src'), startSettingsPath('apps/web')]).toEqual([
+      'src/.claude/settings.json',
+      'apps/web/.claude/settings.json',
+    ])
+  })
+})
+
 describe('launcherPath', () => {
   test('launcherPath is the repo-relative launcher of a role, below .cadre/bin', () => {
     expect([launcherPath('be'), launcherPath('pm')]).toEqual(['.cadre/bin/be', '.cadre/bin/pm'])
@@ -265,5 +343,76 @@ describe('launcherPath', () => {
 describe('handoffFolderOf', () => {
   test('handoffFolderOf is the repo-relative handoff folder of a role, with no trailing slash', () => {
     expect(handoffFolderOf('be')).toBe('thoughts/shared/handoffs/be')
+  })
+})
+
+describe('the runtime inbox files', () => {
+  test('the inbox log and the session record have one name each, and both are rendered beside the old inbox', () => {
+    const names = [INBOX_LOG_FILE, SESSION_FILE, INBOX_FILE]
+
+    expect([INBOX_LOG_FILE, SESSION_FILE]).toEqual(['inbox.jsonl', 'session.json'])
+    expect(names.filter(name => RUNTIME_RENDERED.includes(name))).toEqual(names)
+  })
+
+  test('an inbox archive is named by its time, and the archive glob that matches it is rendered too', () => {
+    expect(inboxArchiveFile(1000)).toBe('inbox-1000.jsonl')
+    expect(INBOX_ARCHIVE_GLOB).toBe('inbox-*.jsonl')
+    expect(RUNTIME_RENDERED).toContain(INBOX_ARCHIVE_GLOB)
+  })
+})
+
+describe('the runtime path builder', () => {
+  test('runtimeDirOf is the runtime folder of a role', () => {
+    expect(runtimeDirOf('/repo', 'be')).toBe('/repo/.cadre/be/.runtime')
+  })
+})
+
+describe('the private inbox folder', () => {
+  test('the inbox tree lies in the cadre folder of the user folder', () => {
+    expect(INBOX_TREE).toBe('inboxes')
+    expect(inboxTreeOf('/home/u/.claude')).toBe('/home/u/.claude/cadre/inboxes')
+  })
+
+  test('a root key is the root folder name, a dash and the first 8 hex of the root hash, cleaned', async () => {
+    const hash = await sha256Hex('/w/my repo')
+
+    expect(inboxRootKey('/w/my repo', hash)).toBe(`my-repo-${hash.slice(0, 8)}`)
+  })
+
+  test('two roots with the same folder name and different hashes get two keys', async () => {
+    const [first, second] = [await sha256Hex('/w/app'), await sha256Hex('/x/app')]
+
+    expect(inboxRootKey('/w/app', first)).not.toBe(inboxRootKey('/x/app', second))
+  })
+
+  test('a root key holds only letters, digits, dot, underscore and dash', async () => {
+    const roots = ['/w/my repo', `/w/caf${String.fromCharCode(0xe9)} $x`, '/w/a:b*c`d', `/w/x${BACKSLASH}y`]
+    for (const root of roots) {
+      expect(inboxRootKey(root, await sha256Hex(root))).toMatch(/^[A-Za-z0-9._-]+$/)
+    }
+  })
+
+  test('the inbox home of a root lies in the inbox tree, and a role inbox folder in that home', async () => {
+    const hash = await sha256Hex('/w/app')
+    const home = inboxHomeOf('/home/u/.claude', '/w/app', hash)
+
+    expect(home).toBe(`/home/u/.claude/cadre/inboxes/app-${hash.slice(0, 8)}`)
+    expect(inboxDirOf(home, 'be')).toBe(`${home}/be`)
+  })
+
+  test('the inbox tools build the inbox log and the session record in the inbox folder of a role', async () => {
+    const home = inboxHomeOf('/home/u/.claude', '/repo', await sha256Hex('/repo'))
+
+    expect(inboxLogPath(home, 'be')).toBe(`${home}/be/inbox.jsonl`)
+    expect(sessionFilePath(home, 'be')).toBe(`${home}/be/session.json`)
+  })
+
+  test('the folder levels of a role inbox folder run from the cadre folder down to the role folder', () => {
+    expect(inboxFolderLevels('/home/u/.claude/cadre/inboxes/app-12345678/be')).toEqual([
+      '/home/u/.claude/cadre',
+      '/home/u/.claude/cadre/inboxes',
+      '/home/u/.claude/cadre/inboxes/app-12345678',
+      '/home/u/.claude/cadre/inboxes/app-12345678/be',
+    ])
   })
 })

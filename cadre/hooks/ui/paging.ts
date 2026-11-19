@@ -103,10 +103,11 @@ async function pagedAsk(
   columnsOf: () => number | null,
   isInline: () => boolean,
   maxRowsOf: () => number,
+  fitsPage: ((page: AskContext) => boolean) | undefined,
 ): Promise<string> {
   const { context } = spec
   if (context === undefined || context.rows === undefined || isInline()) return io.ask(question, spec)
-  const pages = contextPages(context, columnsOf(), maxRowsOf())
+  const pages = contextPages(context, columnsOf(), maxRowsOf(), fitsPage)
   if (pages.length < 2) return io.ask(question, spec)
   const pageOptions = spec.pageOptions ?? LAST_PAGE_ONLY
   const lastOnly = spec.options
@@ -142,13 +143,18 @@ async function pagedAsk(
  * or list, with its options on the last page only (D-335); every other ask, and every other member, is the port's
  * own. A seat whose dialog previews the whole context, which `isInline` reads at each ask (never when absent), is not
  * paged, as pages cannot change the preview (N-02, OC-04-I). A page holds at most the rows `maxRowsOf` reads at each
- * ask, MAX_PANE_FRAME_ROWS when absent (RF-05). A surface that does not page never calls it.
+ * ask, MAX_PANE_FRAME_ROWS when absent (RF-05). Given `fitsPage`, it alone decides what fits a page, in place of the
+ * frame caps (contextPages). A surface that does not page never calls it.
  */
 export function withPagedAsks(
   io: InitIo,
   columnsOf: () => number | null,
   isInline: () => boolean = () => false,
   maxRowsOf: () => number = () => MAX_PANE_FRAME_ROWS,
+  fitsPage?: (page: AskContext) => boolean,
 ): InitIo {
-  return { ...io, ask: async (question, spec) => pagedAsk(io, question, spec, columnsOf, isInline, maxRowsOf) }
+  return {
+    ...io,
+    ask: async (question, spec) => pagedAsk(io, question, spec, columnsOf, isInline, maxRowsOf, fitsPage),
+  }
 }

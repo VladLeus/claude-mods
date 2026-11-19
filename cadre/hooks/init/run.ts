@@ -7,19 +7,24 @@
  * import it, and no init module does.
  */
 import type {
-  CadreState,
+  CompiledScope,
   DesiredFile,
+  FrameworkId,
   HostIo,
+  HunkOp,
   InitFacts,
   InitIo,
   InitLocations,
-  InstructionPartRecord,
   InstructionScan,
   InstructionTopic,
+  LaunchStart,
   Manifest,
   ManifestEntry,
   PortRead,
+  ProjectInstall,
   RoleSpec,
+  SetupScan,
+  Sizing,
 } from '../../types'
 import {
   CONFLICT_OPTIONS,
@@ -29,30 +34,48 @@ import {
   parseConflictAnswer,
 } from '../apply/conflict'
 import type { ConflictChoice } from '../apply/conflict'
-import { hunkRuns, hunksAfterRuns } from '../apply/hunks'
+import { hunkNotRunLines, hunkRuns, hunksAfterRuns, hunksNotRun, hunksShown } from '../apply/hunks'
 import type { HunkRun } from '../apply/hunks'
 import { builtRoleFiles, IMPROVER_PROGRESS } from '../apply/improver'
-import { noHomeInstallText, setupAfterInstalls } from '../apply/installs'
+import {
+  frameworkFallbackText,
+  noHomeInstallText,
+  projectInstallFailureText,
+  projectInstallOf,
+  projectPluginInstall,
+  setupAfterInstalls,
+} from '../apply/installs'
 import type { ApplyInput } from '../apply/private'
-import { installPlugins, NOTHING_APPLIED, privatePlanOf, writeWithImprover } from '../apply/run'
+import {
+  installPlugins,
+  installProject,
+  NOTHING_APPLIED,
+  privatePlanOf,
+  writeSteps,
+  writeWithImprover,
+} from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
 import { applySteps, planMismatchProblem } from '../apply/steps'
+import { repoFrameworks } from '../core/framework-id'
 import { sha256Hex } from '../core/hash'
 import { needsGsdCheck, provenUserDir, withGsdIdentity } from '../framework/gsd/identity'
+import { adapterOf } from '../framework/registry'
+import { roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { trackedParts } from '../generate/gittrack'
-import { builtClaudeMdPath } from '../generate/launcher'
+import { epicWorktreeMain } from '../git/checkout'
 import { initGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
 import { t, tn } from '../locales/t'
-import { GITIGNORE_FILE, isRepoFolder, roleJsonPath } from '../paths'
+import { GITIGNORE_FILE, isRepoFolder, roleJsonPath, SIZING_RUBRIC_PATH } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
-import { planReadPaths, planWithManifest, recordedCadreVersion } from '../plan/plan'
-import { CLAUDE_MD_PLUGIN } from '../roles/infra'
+import { planReadPaths, planWithManifest, recordedCadreVersion, withRecordedHash } from '../plan/plan'
+import { CLAUDE_MD_PLUGIN, GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { parseRoleJson } from '../roles/rolejson'
 import { standsFor } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
-import { gatherScans } from '../scan/gather'
+import { gatherScans, withStartSettings } from '../scan/gather'
+import type { Gathered } from '../scan/gather'
 import { listSessions, scanHistory } from '../scan/history'
 import { readInstructionFiles, repoInstructionNames } from '../scan/instructions/read'
 import { readPaths, readRepoFile } from '../scan/port-read'
@@ -64,7 +87,7 @@ import { proposeFromText } from '../suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillsPrompt } from '../suggest/skills'
 import type { SkillsRecommendation } from '../suggest/skills'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from '../suggest/topics'
-import { attendedByConfig, compileAll, resolvedFramework } from '../team'
+import { attendedByConfig, compileAll, readTeam, teamFrameworks } from '../team'
 import {
   accepted,
   ASK_HEADERS,
@@ -80,14 +103,25 @@ import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
 import type { PaneSeat, SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
-import type { PlanResult, Reviewed } from './draft'
+import type { Draft, PlanResult, Reframed, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
-import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
+import { consentedPluginKeys, initFrameworks, planState, privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
-import { initialState, nextStage } from './machine'
-import { INIT_CANCELLED } from './replies'
-import { gsdCheckAsk } from './stages/frameworks'
-import type { Answer, Effect, InitStage, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
+import { frameworksState, initialState, nextStage } from './machine'
+import { cancelledText, frameworksInEpicReply } from './replies'
+import { FRAMEWORK_LABELS, gsdCheckAsk } from './stages/frameworks'
+import type {
+  Answer,
+  Applied,
+  Effect,
+  InitStage,
+  InitState,
+  IoCall,
+  IoResult,
+  ModelCall,
+  ModelResult,
+  Output,
+} from './state'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -126,6 +160,9 @@ export const APPLY_HUNKS_PROGRESS = t('init.status.applyHunks')
 /** The status line or pane loader while apply installs the plugins answered Install, once for all (D-284). */
 export const INSTALL_PROGRESS = t('init.status.installPlugins')
 
+/** The status line or pane loader while apply installs the frameworks consented to, once for all of them. */
+export const FRAMEWORK_INSTALL_PROGRESS = t('init.status.installFrameworks')
+
 /** The status line the TUI default shows while each model call of init runs, by its ModelCall id (D-232). */
 export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.freeze({
   'describe-roles': t('init.status.describeRoles'),
@@ -153,6 +190,7 @@ type CountWord =
   | 'sessions'
   | 'hunks'
   | 'plugins'
+  | 'frameworks'
   | 'files'
 
 /** A step summary of counts (D-301): each `<count> <word>`, in its one or other form (tn), joined with ', '. */
@@ -190,76 +228,22 @@ export function modelSummary(call: ModelCall): string {
 }
 
 /**
- * The manifest entries of the built files a re-init keeps as they are (02-GAPS-B3 S1): for each role whose built
- * `.cadre/<id>/CLAUDE.md` is desired, when its role.json as the disk holds it is text parseRoleJson takes, with the
- * same repo part records as the role, given and not given (compared by file, heading and hash), and the built file as
- * the disk holds it hashes to its entry in the last manifest, that entry; so an accepted improver text is neither
- * written over nor offered again while the role's parts are unchanged.
- */
-async function keptBuiltEntries(
-  roles: readonly RoleSpec[],
-  desired: readonly DesiredFile[],
-  disk: ReadonlyMap<string, PortRead>,
-  manifest: Manifest | null,
-): Promise<ManifestEntry[]> {
-  const desiredPaths = new Set(desired.map(file => file.path))
-  const recordsText = (records: readonly InstructionPartRecord[] | undefined): string =>
-    JSON.stringify((records ?? []).map(({ file, heading, hash }) => ({ file, heading, hash })))
-  const kept: ManifestEntry[] = []
-  for (const role of roles) {
-    const path = builtClaudeMdPath(role.id)
-    const entry = manifest?.files.find(file => file.path === path)
-    if (!desiredPaths.has(path) || entry === undefined) continue
-    const roleRead = disk.get(roleJsonPath(role.id))
-    const onDisk = roleRead?.state === 'text' ? parseRoleJson(roleRead.text) : null
-    if (onDisk === null) continue
-    if (recordsText(onDisk.instructionParts) !== recordsText(role.instructionParts)) continue
-    if (recordsText(onDisk.instructionPartsNotGiven) !== recordsText(role.instructionPartsNotGiven)) continue
-    const built = disk.get(path)
-    if (built?.state !== 'text' || (await sha256Hex(built.text)) !== entry.sha256) continue
-    kept.push(entry)
-  }
-
-  return kept
-}
-
-/**
- * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
- * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
- * desiredFiles gives every file from it, with the built `.cadre/<id>/CLAUDE.md` of each role from the repo parts
- * `repoParts` gives it (G-02-1f): whenever init passes repoParts every role gets its built file, the header alone with
- * no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). A role whose repo records and built
- * file are as the last apply left them keeps its built file and manifest entry, as regenPlan does, so an accepted
- * improver text is not overwritten or asked again (keptBuiltEntries, 02-GAPS-B3 S1): its path is dropped from the
- * desired files and its entry carried. The repo state also records the consent answer, so regen knows whether it may
- * read ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the manifest) and
- * the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never read.
- * planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the ignore
- * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
- * stands for Security, ends with the line for claude-security's report folders, decision #39) and the hunks.
- * The result also holds what apply writes the plan from: the desired files less the kept ones, the manifest the plan
- * records and the merged `.gitignore` text, which is null when the `.gitignore` cannot be read or its block cannot be
- * merged, since the plan then has no op for it. It writes nothing itself: apply writes the plan after Confirm
- * (applyConfirmed).
+ * The truthful file plan of init: the files desiredFiles gives from the repo state, every role's built CLAUDE.md
+ * included when init passes repoParts, classified by planWithManifest against the disk, the last manifest and the
+ * `.gitignore` block, and a sizing rubric already on disk never planned over (its entry carried). It reads only the
+ * paths planReadPaths names and the root `.gitignore`, through readRepoFile, and writes nothing.
  */
 export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanResult> {
-  const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations, readUserMcp, repoParts } = input
+  const { roles, policy, scopes, hunks, repo, locations, repoParts } = input
   const cadreVersion = recordedCadreVersion(await io.cadreVersion())
-  const state: CadreState = {
-    schema: 1,
-    cadreVersion,
-    framework: repoDefault,
-    gitPolicy: policy,
-    roles: roles.map(role => role.id),
-    launchStart,
-    readUserMcp,
-  }
+  const state = planState(input, cadreVersion)
   const parts = repoParts === undefined ? {} : { repoParts }
   const generated = desiredFiles({ roles, scopes, state, only: null, ...parts })
   const disk = await readPaths(io, locations.root, planReadPaths(generated))
-  const carried = await keptBuiltEntries(roles, generated, disk, repo.cadre.manifest)
-  const keptPaths = new Set(carried.map(entry => entry.path))
-  const desired = generated.filter(file => !keptPaths.has(file.path))
+  const isRubricThere = disk.get(SIZING_RUBRIC_PATH)?.state !== 'absent'
+  const rubricEntry = repo.cadre.manifest?.files.find(file => file.path === SIZING_RUBRIC_PATH)
+  const carried = isRubricThere && rubricEntry !== undefined ? [rubricEntry] : []
+  const desired = isRubricThere ? generated.filter(file => file.path !== SIZING_RUBRIC_PATH) : generated
   const ignoreRead = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
   const existing = ignoreRead.state === 'text' ? ignoreRead.text : null
   const lines = gitignoreLines(policy, existing, roles.some(role => standsFor(role, 'security')))
@@ -280,76 +264,141 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
 }
 
 /**
- * Writes the plan the person confirmed (D-105, LNCH-01), in this order:
- * 1. The Keep mine or Take new questions, the only questions after Confirm (D-105, D-67): one for each conflicted file
- *    of the confirmed plan (conflictPaths), in plan order, before any host call (conflictQuestion with
- *    CONFLICT_OPTIONS, parseConflictAnswer), each with the file's diff from the version on disk, read again through
- *    readRepoFile, to the new one as its own context (conflictContext, D-236), whose first line, how many lines Take
- *    new adds and removes, a pane surface asks in place of the context line (D-255); an answer that is neither is
- *    asked again with why on top (D-136). A dismissal cancels with CONFLICT_DISMISSED_REASON and MAX_ASKS answers that
- *    are neither with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
- * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
- *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
- *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
- *    exits non-zero is a failure, and apply goes on (D-106). Before the first run their one label is set
- *    (APPLY_HUNKS_PROGRESS, D-284).
- * 3. The hunks after their runs (hunksAfterRuns): a failed hunk is no longer runnable.
- * 4. The plugins the person answered Install for (draft.pluginInstalls: the security plugins, decision #39, and
- *    claude-md-management, D-141), installed in order from the home folder, never the repo (installPlugins,
- *    T-03-46): claude-security only after its Python check, and a failed install tried once more after the
- *    marketplace add. An install that fails or is skipped is a problem the
- *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
- *    a problem (noHomeInstallText). Before the installs their one label is set (INSTALL_PROGRESS, D-284).
- * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
- *    again from the disk (planStep, with the repo parts 5a keeps, which each parts-flow role's role.json records with
- *    the other parts of their files as not given: withRepoRecords, G-02-1f Regen), all from the setup with the
- *    plugins just installed (setupAfterInstalls), so ROLE.md is rendered and hashed after the hunks ran (D-120) and a
- *    Security role's settings enable claude-security once it is installed. The hunk runs above keep the setup of the
- *    scan.
- * 5a. Right before planStep, the repo parts of the draft (repoPartsOf) are checked against git (trackedParts,
- *    02-GAPS-B2 M3): `git ls-files` runs once at the repo root through the host, under every git policy, and only the
- *    parts of files git tracks are kept; a run that fails keeps none. Each left-out source file is a warning
- *    (untrackedParts). The dry run holds no host, so its plan may still list a built file whose untracked parts apply
- *    then leaves out.
- * 5b. Then the role memory folder of every role is named from the git common dir as /cadre start names it
- *    (privatePlanOf: `git rev-parse` runs once at the repo root, on every plain init), with the private files of every
- *    role of the team as the only paths outside the repo apply may write (T-02-72); each role gets both private files
- *    (privatesOf, 02-GAPS-B3 C1) unless its instructions.json already holds the record it would get (02-GAPS-B3 S1);
- *    with no folder known, nothing private is written and the reply names the roles (privateProblems).
- * 6. The steps of that fresh plan with the answers and the private files (applySteps), run through the host port by
- *    writeSteps: each write checked for links first, a launcher made executable only after its own write landed, then
- *    each role's private text file and hand-out record in its role memory folder, once the folder is made and made
- *    private (G-02-1f, D-140 q2-a, N13), and the manifest last. Take new overwrites the person's file and the manifest
- *    records its new hash; Keep mine keeps the file and writes its `.cadre-new` copy, as it does for a file that
- *    became a conflict after the questions. A fresh plan whose create or change ops and desired files disagree
- *    (planMismatchProblem) runs no step at all, not 6a either: the outcome is NOTHING_APPLIED with that refusal and
- *    the manifest skipped (D-272 edge #33, D-293).
- * 6a. When claude-md-management is installed, before init or by step 4 with no install problem (the setup made
- *    again from the installs), and a built role file holds a part (builtRoleFiles: the `.cadre/<id>/CLAUDE.md` of a
- *    role with a repo part 5a kept, watching the role's private files and guarded from its `.runtime` folder, and
- *    each private text file with a global part, never one of the header alone; 02-GAPS-B3 M1, C1), the improver pass
- *    runs between the file writes and the manifest (writeImproved, G-02-1f, D-141): one `claude -p` run per written
- *    built file, in its own folder, then its diff and the Accept or Keep original question; a kept file is written
- *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
- *    offered, its label is set before the writes and again before each improver run (IMPROVER_PROGRESS, D-284, S-02).
- * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
- *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
- *    (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and tally of 6a
- *    (improverWarnings, improved), which the reply prints, each failure with the command to run (D-106, decision
- *    #39).
- * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
+ * Each role's role.json against the disk, role.json being the input: `same` holds, at its disk hash, the entry of each
+ * one whose disk text reads back as the role it renders, and `changed` the disk hash of each other one read as text.
  */
-async function applyConfirmed(
+async function roleJsonSides(
+  roles: readonly RoleSpec[],
+  generated: readonly DesiredFile[],
+  disk: ReadonlyMap<string, PortRead>,
+): Promise<{ readonly same: readonly ManifestEntry[]; readonly changed: readonly ManifestEntry[] }> {
+  const same: ManifestEntry[] = []
+  const changed: ManifestEntry[] = []
+  for (const role of roles) {
+    const path = roleJsonPath(role.id)
+    const file = generated.find(desired => desired.path === path)
+    const read = disk.get(path)
+    if (file === undefined || read?.state !== 'text') continue
+    const entry: ManifestEntry = { path, sha256: await sha256Hex(read.text), mode: file.mode }
+    const onDisk = parseRoleJson(read.text)
+    if (onDisk !== null && roleJsonText(onDisk) === file.content) {
+      same.push(entry)
+      continue
+    }
+    changed.push(entry)
+  }
+
+  return { same, changed }
+}
+
+/**
+ * The file plan of /cadre frameworks: every role's files, cadre.json and the index, rendered from the roles as their
+ * role.json files give them and from the current scans, with no built CLAUDE.md, private file or `.gitignore` block. A
+ * role.json whose disk text reads back as the role it renders is not planned and keeps its disk hash; a changed one is
+ * planned against its disk hash as the last version, so it is a change, never a conflict. The sizing rubric is not
+ * planned over while it is on disk, and every last manifest entry the plan does not desire is carried, so none is
+ * left stale.
+ */
+export async function reframePlan(io: InitIo, input: PlanStepInput): Promise<PlanResult> {
+  const { roles, scopes, hunks, repo, locations } = input
+  const cadreVersion = recordedCadreVersion(await io.cadreVersion())
+  const state = planState(input, cadreVersion)
+  const generated = desiredFiles({ roles, scopes, state, only: null })
+  const disk = await readPaths(io, locations.root, planReadPaths(generated))
+  const { same, changed } = await roleJsonSides(roles, generated, disk)
+  const samePaths = new Set(same.map(entry => entry.path))
+  const isRubricThere = disk.get(SIZING_RUBRIC_PATH)?.state !== 'absent'
+  const unplanned = new Set([...samePaths, ...(isRubricThere ? [SIZING_RUBRIC_PATH] : [])])
+  const desired = generated.filter(file => !unplanned.has(file.path))
+  const desiredPaths = new Set(desired.map(file => file.path))
+  const last = repo.cadre.manifest
+  const lastKept = (last?.files ?? []).filter(entry => !desiredPaths.has(entry.path) && !samePaths.has(entry.path))
+  const recordAt = (manifest: Manifest, entry: ManifestEntry): Manifest =>
+    withRecordedHash(manifest, entry.path, entry.sha256)
+  const { plan, manifest } = await planWithManifest({
+    desired,
+    disk,
+    manifest: last === null ? null : changed.reduce(recordAt, last),
+    manifestState: repo.cadre.manifestState,
+    carried: [...same, ...lastKept],
+    gitignore: null,
+    hunks,
+    cadreVersion,
+  })
+
+  return { plan, state, desired, manifest, gitignore: null }
+}
+
+/**
+ * What a role or repo default on a framework whose install `failed` falls back to: the first framework of the set
+ * chosen, else of the installed ones, that did not fail, else none.
+ */
+function fallbackOf(draft: Pick<Draft, 'frameworkSet' | 'installed'>, failed: readonly FrameworkId[]): FrameworkId {
+  return (draft.frameworkSet ?? draft.installed).find(id => !failed.includes(id)) ?? 'none'
+}
+
+/** The roles and repo default once the consented framework installs ran, those on a failed one moved to fallbackOf. */
+function withoutFailedInstalls(
+  draft: Pick<Draft, 'roles' | 'repoDefault' | 'frameworkSet' | 'installed'>,
+  failed: readonly FrameworkId[],
+): Pick<Draft, 'roles' | 'repoDefault'> {
+  if (failed.length === 0) return { roles: draft.roles, repoDefault: draft.repoDefault }
+  const fallback = fallbackOf(draft, failed)
+  const kept = (framework: FrameworkId): FrameworkId => (failed.includes(framework) ? fallback : framework)
+  const roles = draft.roles.map(role =>
+    role.framework === undefined ? role : { ...role, framework: kept(role.framework) },
+  )
+
+  return { roles, repoDefault: draft.repoDefault === null ? null : kept(draft.repoDefault) }
+}
+
+/** The roles with the grill skills taken from every role standing for PM when mattpocock-skills did not install. */
+function withoutFailedGrill(roles: readonly RoleSpec[], failed: readonly ProjectInstall[]): readonly RoleSpec[] {
+  if (!failed.some(install => install.id === MATTPOCOCK_PLUGIN)) return roles
+
+  return roles.map(role =>
+    standsFor(role, 'pm') ? { ...role, skills: role.skills.filter(skill => !GRILL_SKILLS.includes(skill)) } : role,
+  )
+}
+
+/**
+ * One problem line per consented framework install that did not land, in `failed` order: the roles and the repo
+ * default on it, what they fell back to (fallbackOf), and the command to run.
+ */
+function fallbackProblems(
+  draft: Pick<Draft, 'roles' | 'repoDefault' | 'frameworkSet' | 'installed'>,
+  failed: readonly FrameworkId[],
+): string[] {
+  const fallback = FRAMEWORK_LABELS[fallbackOf(draft, failed)]
+
+  return failed.flatMap(id => {
+    const install = projectInstallOf(id)
+    if (install === null) return []
+    const fallen = {
+      name: FRAMEWORK_LABELS[id],
+      command: install.argv.join(' '),
+      roles: draft.roles.filter(role => role.framework === id).map(role => role.id),
+      isRepoDefault: draft.repoDefault === id,
+      fallback,
+    }
+
+    return [frameworkFallbackText(fallen)]
+  })
+}
+
+/**
+ * The Keep mine or Take new answer of each conflicted file of the confirmed plan, in plan order, each asked with the
+ * file's diff from the disk as its context; a dismissal or no usable answer cancels.
+ */
+async function askedConflicts(
   io: InitIo,
-  host: HostIo,
-  reviewed: Reviewed,
-): Promise<StepResult<{ readonly planned: PlanResult; readonly outcome: ApplyOutcome }>> {
-  const { draft } = reviewed
-  const { locations, gathered, roles, repoDefault, launchStart } = draft
+  root: string,
+  planned: Pick<PlanResult, 'plan' | 'desired'>,
+): Promise<StepResult<ReadonlyMap<string, ConflictChoice>>> {
   const choices = new Map<string, ConflictChoice>()
-  for (const path of conflictPaths(reviewed.planned.plan)) {
-    const disk = await readRepoFile(io, locations.root, path, MAX_READ_BYTES)
-    const desired = reviewed.planned.desired.find(file => file.path === path)
+  for (const path of conflictPaths(planned.plan)) {
+    const disk = await readRepoFile(io, root, path, MAX_READ_BYTES)
+    const desired = planned.desired.find(file => file.path === path)
     const diff = disk.state === 'text' && desired !== undefined ? lineDiff(disk.text, desired.content) : null
     const context = conflictContext(path, diff)
     const pane = paneQuestionOf(conflictQuestion(path), CONFLICT_CONTEXT, context.summary)
@@ -363,6 +412,74 @@ async function applyConfirmed(
     if (choice.kind === 'cancelled') return choice
     choices.set(path, choice.value)
   }
+
+  return accepted(choices)
+}
+
+/**
+ * Runs the consented framework installs, then the consented project plugin installs, in one project-scope call, and
+ * reads the facts again when a framework install ran, since only they tell whether it worked: `failed` holds the
+ * installs whose framework is still not installed once the facts are read again, and `landed` the others.
+ */
+async function projectInstalled(
+  io: InitIo,
+  host: HostIo,
+  draft: Pick<
+    Draft,
+    | 'locations'
+    | 'gathered'
+    | 'roles'
+    | 'repoDefault'
+    | 'frameworkSet'
+    | 'installed'
+    | 'frameworkInstalls'
+    | 'projectPluginInstalls'
+  >,
+): Promise<{
+  readonly scanned: Gathered
+  readonly failed: readonly FrameworkId[]
+  readonly landed: readonly FrameworkId[]
+  readonly roles: readonly RoleSpec[]
+  readonly repoDefault: FrameworkId | null
+  readonly landedPlugins: readonly ProjectInstall[]
+  readonly failedPlugins: readonly ProjectInstall[]
+}> {
+  const { locations, gathered } = draft
+  const frameworkInstalls = (draft.frameworkInstalls ?? []).flatMap(id => projectInstallOf(id) ?? [])
+  const pluginInstalls = (draft.projectPluginInstalls ?? []).map(projectPluginInstall)
+  if (frameworkInstalls.length > 0) {
+    await io.progress(FRAMEWORK_INSTALL_PROGRESS, countsText([['frameworks', frameworkInstalls.length]]))
+  }
+  if (frameworkInstalls.length === 0 && pluginInstalls.length > 0) {
+    await io.progress(INSTALL_PROGRESS, countsText([['plugins', pluginInstalls.length]]))
+  }
+  const projectInstalls = [...frameworkInstalls, ...pluginInstalls]
+  const projected = await installProject(host, locations.root, locations.home, projectInstalls)
+  const scanned = frameworkInstalls.length > 0 ? { ...gathered, facts: await io.facts(locations) } : gathered
+  const failed = (draft.frameworkInstalls ?? []).filter(id => !adapterOf(id).isInstalled(scanned.facts.facts))
+  const landed = (draft.frameworkInstalls ?? []).filter(id => !failed.includes(id))
+  const landedPlugins = pluginInstalls.filter(install => projected.installed.includes(install.id))
+  const failedPlugins = pluginInstalls.filter(install => !projected.installed.includes(install.id))
+  const fallen = withoutFailedInstalls(draft, failed)
+  const roles = withoutFailedGrill(fallen.roles, failedPlugins)
+
+  return { scanned, failed, landed, roles, repoDefault: fallen.repoDefault, landedPlugins, failedPlugins }
+}
+
+/**
+ * Runs each accepted hunk cadre can run, in hunk order from the repo root, through a proven user-level GSD only, and
+ * gives the failed runs, the hunks after them, a failed one no longer runnable, and the accepted hunks not run.
+ */
+async function hunksRan(
+  io: InitIo,
+  host: HostIo,
+  draft: Pick<Draft, 'locations' | 'gathered' | 'hunks'>,
+): Promise<{
+  readonly failures: readonly HunkRun[]
+  readonly hunks: readonly HunkOp[]
+  readonly notRun: readonly HunkOp[]
+}> {
+  const { locations, gathered } = draft
   const gsd = {
     userDir: provenUserDir(gathered.facts),
     home: locations.home,
@@ -377,40 +494,97 @@ async function applyConfirmed(
     if (hasRunFailed(result)) failures.push(run)
   }
   const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
+
+  return { failures, hunks, notRun: hunksNotRun(draft.hunks, runs) }
+}
+
+/** The scopes compiled again from the setup after the installs, with attended judged again from the config on disk. */
+async function compiledAfter(
+  io: InitIo,
+  after: {
+    readonly locations: InitLocations
+    readonly scanned: Gathered
+    readonly setup: SetupScan
+    readonly roles: readonly RoleSpec[]
+    readonly repoDefault: FrameworkId | null
+    readonly launchStart: LaunchStart
+    readonly recorded: { readonly frameworks?: readonly FrameworkId[]; readonly sizing: Sizing }
+  },
+): Promise<ReadonlyMap<string, CompiledScope>> {
+  const { locations, scanned, setup, roles, repoDefault, launchStart, recorded } = after
+  const frameworksRun = repoFrameworks({ framework: repoDefault, ...recorded })
+  const attended = await attendedByConfig(io, locations.root, teamFrameworks(roles, repoDefault, frameworksRun), setup)
+
+  return compileAll(
+    roles,
+    repoDefault,
+    { ...scanned, setup },
+    attended,
+    launchStart,
+    frameworksRun,
+    locations.root,
+  )
+}
+
+/**
+ * Writes the plan the person confirmed: the conflict questions first, then the framework and plugin installs and the
+ * hunk runs, the plan made again from the disk with the repo parts git tracks and each role's private files, and its
+ * steps through writeWithImprover, the improver on each private text file with a global part when claude-md-management
+ * is installed and the manifest last. Failed installs, hunk runs, untracked parts and private-file problems become
+ * reply lines; a dismissed conflict question cancels with nothing written or run.
+ */
+async function applyConfirmed(
+  io: InitIo,
+  host: HostIo,
+  reviewed: Reviewed,
+): Promise<StepResult<{ readonly planned: PlanResult; readonly outcome: ApplyOutcome }>> {
+  const { draft } = reviewed
+  const { locations, gathered, launchStart } = draft
+  const asked = await askedConflicts(io, locations.root, reviewed.planned)
+  if (asked.kind === 'cancelled') return asked
+  const choices = asked.value
+  const ran = await projectInstalled(io, host, draft)
+  const { scanned, failed, landed, roles, repoDefault, landedPlugins, failedPlugins } = ran
+  const { failures, hunks, notRun } = await hunksRan(io, host, draft)
+  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations, failed)
   const installCount = countsText([['plugins', draft.pluginInstalls.length]])
   if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
   const installs =
     locations.home === null
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
       : await installPlugins(host, locations.home, draft.pluginInstalls)
-  const setup = setupAfterInstalls(gathered.setup, installs.installed)
-  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
-  const attended = await attendedByConfig(io, locations.root, frameworks, setup)
-  const scopes = compileAll(roles, repoDefault, { ...gathered, setup }, attended, launchStart)
+  const landedKeys = landedPlugins.map(install => install.id)
+  const setup = setupAfterInstalls(gathered.setup, [
+    ...installs.installed,
+    ...consentedPluginKeys(draft, failed),
+    ...landedKeys,
+  ])
+  const recorded = initFrameworks(draft, failed)
+  const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
   const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
   const owed = privatesOf(draft.instructions, roles)
   const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })
   const planned = await planStep(io, {
-    roles: withRepoRecords(roles, draft.instructions, tracked.repoParts),
+    roles: withRepoRecords(roles, tracked.repoParts),
     repoDefault,
     policy: draft.policy,
     launchStart,
     scopes,
-    hunks,
+    hunks: shownHunks,
     repo: gathered.repo,
     locations,
     readUserMcp: draft.readUserMcp,
     repoParts: tracked.repoParts,
+    ...recorded,
+    ...(draft.structure === undefined ? {} : { structure: draft.structure }),
   })
   const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
   // A plan and desired files that disagree are refused before the first apply step: nothing is written (D-272 #33).
   const problem = planMismatchProblem(input.plan, input.desired)
   const steps = problem === null ? await applySteps(input) : []
-  const withParts = new Set(Array.from(tracked.repoParts).flatMap(([id, parts]) => (parts.length > 0 ? [id] : [])))
   const isImproverReady = setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
   const privateFolders = new Set(privatePlan.privates.flatMap(role => (role.parts.length > 0 ? [role.folder] : [])))
-  const filter = { repoIds: withParts, privateFolders, roleFolders: privatePlan.folders }
-  const offered = problem === null && isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
+  const offered = problem === null && isImproverReady ? builtRoleFiles(steps, { privateFolders }) : []
   const allowed = privatePlan.allowed
   if (offered.length > 0) await io.progress(IMPROVER_PROGRESS, countsText([['files', offered.length]]))
   const written =
@@ -421,11 +595,66 @@ async function applyConfirmed(
   const outcome: ApplyOutcome = {
     ...written,
     hunkFailures: failures,
+    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations, failed),
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
-    installed: installs.installed,
-    installProblems: installs.installProblems,
+    installed: [...landed.flatMap(id => projectInstallOf(id)?.id ?? []), ...landedKeys, ...installs.installed],
+    installProblems: [
+      ...fallbackProblems(draft, failed),
+      ...failedPlugins.map(projectInstallFailureText),
+      ...installs.installProblems,
+    ],
     untrackedParts: tracked.warnings,
     privateProblems: [...privatePlan.problems, ...written.privateProblems],
+  }
+
+  return accepted({ planned, outcome })
+}
+
+/**
+ * Writes the plan of /cadre frameworks the person confirmed, in this order: the Keep mine or Take new question of
+ * each conflicted file, the consented framework installs with the facts read again (a role or the repo default on one
+ * that failed falls back), the accepted hunks, the scopes compiled again from the setup after the installs, and the
+ * plan made again from the disk (reframePlan), written through the host with the manifest last; a plan whose ops and
+ * files disagree writes nothing. No private file is written, no improver and no git command runs.
+ */
+export async function reframeApplied(io: InitIo, host: HostIo, reframed: Reframed): Promise<StepResult<Applied>> {
+  const { draft } = reframed
+  const { locations, gathered, launchStart } = draft
+  const asked = await askedConflicts(io, locations.root, reframed.planned)
+  if (asked.kind === 'cancelled') return asked
+  const { scanned, failed, landed, roles, repoDefault } = await projectInstalled(io, host, draft)
+  const { failures, hunks, notRun } = await hunksRan(io, host, draft)
+  const shownHunks = hunksShown(hunks, notRun, gathered.setup, scanned.facts, locations, failed)
+  const setup = setupAfterInstalls(gathered.setup, consentedPluginKeys(draft, failed))
+  const recorded = initFrameworks(draft, failed)
+  const scopes = await compiledAfter(io, { locations, scanned, setup, roles, repoDefault, launchStart, recorded })
+  const planned = await reframePlan(io, {
+    roles,
+    repoDefault,
+    policy: draft.policy,
+    launchStart,
+    scopes,
+    hunks: shownHunks,
+    repo: gathered.repo,
+    locations,
+    readUserMcp: draft.readUserMcp,
+    ...recorded,
+    ...(draft.structure === undefined ? {} : { structure: draft.structure }),
+  })
+  const problem = planMismatchProblem(planned.plan, planned.desired)
+  const steps = problem === null ? await applySteps({ ...planned, choices: asked.value }) : []
+  const written =
+    problem === null
+      ? await writeSteps(io, host, locations, steps, new Set())
+      : { ...NOTHING_APPLIED, refused: [problem], manifestSkipped: true }
+  const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
+  const outcome: ApplyOutcome = {
+    ...written,
+    hunkFailures: failures,
+    notRunLines: hunkNotRunLines(notRun, gathered.setup, scanned.facts, locations, failed),
+    attended: failures.filter(run => required.has(run.key)).map(run => run.key),
+    installed: landed.flatMap(id => projectInstallOf(id)?.id ?? []),
+    installProblems: fallbackProblems(draft, failed),
   }
 
   return accepted({ planned, outcome })
@@ -474,7 +703,8 @@ function withToolsOnce(io: InitIo): InitIo {
  * session folder (listSessions), the history scan (scanHistory), the check of a typed launcher folder (isRepoFolder),
  * GSD's own check after the user said Yes (io.gsdIdentity, D-243, the only init caller of it), the review's plan
  * (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
- * hold, so it gives none there. The scans and the history scan first set their status line (D-232).
+ * hold, so it gives none there. The scans and the history scan first set their status line (D-232). The frameworks
+ * flow's plan (reframePlan) and its apply (reframeApplied) run the same way.
  */
 async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promise<IoResult> {
   switch (call.id) {
@@ -507,6 +737,13 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'plan', result: await planStep(io, call.input) }
     case 'apply':
       return { id: 'apply', result: options.dryRun ? null : await applyConfirmed(io, options.host, call.reviewed) }
+    case 'reframe-plan':
+      return { id: 'reframe-plan', result: await reframePlan(io, call.input) }
+    case 'reframe-apply': {
+      const result = options.dryRun ? null : await reframeApplied(io, options.host, call.reframed)
+
+      return { id: 'reframe-apply', result }
+    }
     default: {
       const unreachable: never = call
       return unreachable
@@ -702,9 +939,9 @@ export async function perform(
 }
 
 /**
- * Performs a state's effect, the runner's one way to do so (D-204, D-230, WD-S1): an ask asks `state.openQuestion`,
- * its question and spec, never the effect's copy; an ask with no open question, or the end, gives null, so the run
- * ends with INIT_CANCELLED (fail closed); a host operation or a model call goes through perform.
+ * Performs a state's effect, the runner's one way to do so: an ask asks `state.openQuestion`, its question and spec,
+ * never the effect's copy; an ask with no open question, or the end, gives null, so the run ends with the flow's
+ * cancel text (fail closed); a host operation or a model call goes through perform.
  */
 export async function performState(io: InitIo, options: InitOptions, state: InitState): Promise<Answer | null> {
   const { effect, openQuestion } = state
@@ -741,15 +978,51 @@ export async function performState(io: InitIo, options: InitOptions, state: Init
  * effect and feeds the answer back.
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
-  // Every question goes through the surface module's paged port: on a pane surface a context over the frame cap is
-  // asked a page at a time, at the width the run reads before each ask, and whole while the pane is seated inline
-  // (pagedPort, D-306, N-02, D-353).
-  const paged = (options.surface ?? PANE_DESKTOP).pagedPort(io, {
+  return runStates(pagedOf(io, options), options, initialState(options.dryRun, options.surface))
+}
+
+/**
+ * `/cadre frameworks`: the framework step of init again for a team init wrote. Before any question it refuses as
+ * initGuard does for this command (`claude -p`, the repo checks, an active autopilot run), in an epic worktree, found
+ * from its files so a --dry-run checks too, and as readTeam does (no cadre.json, a bad role.json; a team with no
+ * default framework runs). It then scans with the ~/.claude.json consent cadre.json stores, with the start folder's
+ * settings of a dir start (withStartSettings), and runs the frameworks flow from the stored team (frameworksState): the
+ * set question, each install offer, the mode questions and GSD's hunks, then the review of the files that change,
+ * which a --dry-run ends with the plan and a plain run writes after Confirm.
+ */
+export async function runFrameworks(io: InitIo, options: InitOptions): Promise<string> {
+  const paged = pagedOf(io, options)
+  const guard = await initGuard(paged, 'frameworks')
+  if (guard.kind === 'refuse') return guard.text
+  const { locations } = guard
+  const { root } = locations
+  const main = await epicWorktreeMain(paged, root)
+  if (main !== null) return frameworksInEpicReply(main)
+  const team = await readTeam(paged, root, 'frameworks', null)
+  if (team.kind === 'refuse') return team.text
+  await paged.progress(SCAN_PROGRESS, SCAN_SUMMARY)
+  const scanned = await gatherScans(paged, locations, team.value.state.readUserMcp)
+  const gathered = await withStartSettings(paged, scanned, locations.root, team.value.state.launchStart)
+  const first = frameworksState(options.dryRun, options.surface, { locations, gathered, team: team.value })
+
+  return runStates(paged, options, first)
+}
+
+/**
+ * The port every question of a run goes through, the surface module's paged port: on a pane surface a context over
+ * the frame cap is asked a page at a time at the width read before each ask, and whole while the pane is seated inline.
+ */
+function pagedOf(io: InitIo, options: InitOptions): InitIo {
+  return (options.surface ?? PANE_DESKTOP).pagedPort(io, {
     columns: () => options.pageColumns?.() ?? null,
     seat: () => options.paneSeat?.() ?? null,
     rows: () => options.pageRows?.() ?? null,
   })
-  let state = initialState(options.dryRun, options.surface)
+}
+
+/** Runs the stage machine from `first` until an end effect gives the reply. */
+async function runStates(paged: InitIo, options: InitOptions, first: InitState): Promise<string> {
+  let state = first
   // The folds the stages gave since the last ask, and those bound to the stage that asked first after them (D-302).
   let held: readonly Extract<Output, { readonly kind: 'fold' }>[] = []
   let boundStage: InitStage | null = null
@@ -771,7 +1044,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
     const folds = state.surface.foldsOf(bound)
     const open = openQuestion === null ? null : { ...openQuestion, spec: foldedSpec(openQuestion.spec, folds) }
     const answer = await performState(paged, options, { ...state, openQuestion: open })
-    if (answer === null) return INIT_CANCELLED
+    if (answer === null) return cancelledText(state.flow)
     state = nextStage({ ...state, outputs: [], pageColumns: options.pageColumns?.() ?? null }, answer)
   }
 }

@@ -19,6 +19,8 @@ export const USAGE_ROWS: readonly { command: string; text: string }[] = Object.f
   { command: t('command.usage.usageRows7'), text: t('command.usage.usageRows8') },
   { command: t('command.usage.usageRows9'), text: t('command.usage.usageRows10') },
   { command: t('command.usage.usageRows11'), text: t('command.usage.usageRows12') },
+  { command: t('command.usage.usageRowsFrameworks'), text: t('command.usage.usageRowsFrameworksText') },
+  { command: t('command.usage.usageRowsFrameworksDry'), text: t('command.usage.usageRowsFrameworksDryText') },
   { command: t('command.usage.usageRows13'), text: t('command.usage.usageRows14') },
   {
     command: t('command.usage.usageRowsCommand'),

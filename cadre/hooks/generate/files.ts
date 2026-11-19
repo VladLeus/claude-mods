@@ -1,12 +1,23 @@
 /**
  * The generated file set, a layer 6 module: every committed file init and regen would write, by path, with its content
- * and mode (PLAN-01, D-66, D-68). It imports the text builders of generate, paths, core and the types, so init, regen,
- * /cadre start and testkit get the file set here.
+ * and mode (PLAN-01, D-66, D-68). It imports the text builders of generate, paths, core, the role template and the
+ * types, so init, regen, /cadre start and testkit get the file set here.
  */
 import type { CadreState, CompiledScope, DesiredFile, InstructionPart, LaunchStart, RoleSpec } from '../../types'
 import { compareText } from '../core/text'
-import { cadreStatePath, launcherPath, roleJsonPath } from '../paths'
-import { cadreJsonText, indexMdText, mcpText, roleClaudeMdText, roleJsonText, roleMdText, settingsText } from './docs'
+import { cadreStatePath, launcherPath, roleJsonPath, SIZING_RUBRIC_PATH } from '../paths'
+import { isCoreTeam } from '../roles/template'
+import {
+  cadreJsonText,
+  indexMdText,
+  mcpText,
+  roleClaudeMdText,
+  roleJsonText,
+  roleMdText,
+  rubricText,
+  settingsText,
+} from './docs'
+import type { RoleMdTeam } from './docs'
 import { kickoffText } from './kickoff'
 import { builtClaudeMdPath, launcherText, rolePath } from './launcher'
 
@@ -24,11 +35,9 @@ export type GenerateInput = {
   /** The id of the one role regen re-renders; null for init, which generates every role and the repo state. */
   readonly only: string | null
   /**
-   * The instruction parts each role was given, by role id, in read order (G-02-1f Storage split): only those read from
-   * the repo go into the role's `.cadre/<id>/CLAUDE.md`. Whenever repoParts is passed every role gets its built
-   * file, the header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). Init
-   * always passes it and regen when the role's repo parts changed; absent (/cadre start, a regen that keeps the
-   * parts), no such file is built.
+   * The instruction parts each role was given, by role id, in read order. Whenever it is passed every role gets its
+   * built `.cadre/<id>/CLAUDE.md` (builtFiles), so a later hand-out always replaces stale content; init always passes
+   * it and regen when the role's repo parts changed, and absent no such file is built.
    */
   readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
 }
@@ -37,11 +46,9 @@ export type GenerateInput = {
 const INDEX_PATH = '.cadre/INDEX.md'
 
 /**
- * The built instructions of one role (G-02-1f Storage split): `.cadre/<id>/CLAUDE.md` from the parts it was given that
- * were read from the repo (roleClaudeMdText). Whenever repoParts is passed every role gets its built file, the
- * header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1); null parts, as
- * /cadre start and a regen that keeps the parts pass, give none. A part of the global CLAUDE.md is dropped here, so
- * it never reaches a file in the repo (T-02-69).
+ * The built `.cadre/<id>/CLAUDE.md` of one role: the header plus the AGENTS.md pointer when the role was given
+ * AGENTS.md (roleClaudeMdText), no part text; null parts give none. Only repo parts are passed on, so no global part
+ * reaches it.
  */
 function builtFiles(id: string, parts: readonly InstructionPart[] | null): DesiredFile[] {
   if (parts === null) return []
@@ -51,24 +58,27 @@ function builtFiles(id: string, parts: readonly InstructionPart[] | null): Desir
 }
 
 /**
- * The files of one role: the five in its folder, its built CLAUDE.md (builtFiles: whenever repoParts is passed every
- * role gets its built file, the header alone with no repo part, so a later hand-out always replaces stale content,
- * 02-GAPS-B2 S1; none for null parts), and its launcher, each with the framework its scope was compiled for, the
- * launcher starting where `start` says. A role with no scope gives none, so nothing is generated from a half-known
- * role.
+ * The files of one role: the five in its folder, ROLE.md and kickoff.txt given `team`, its built CLAUDE.md
+ * (builtFiles) and its launcher, each with the framework its scope was compiled for, the launcher starting where
+ * `start` says. A role with no scope gives none, so nothing is generated from a half-known role.
  */
 function roleFiles(
   role: RoleSpec,
   scope: CompiledScope | undefined,
   start: LaunchStart,
   parts: readonly InstructionPart[] | null,
+  team: RoleMdTeam,
 ): DesiredFile[] {
   if (scope === undefined) return []
 
   return [
     { path: roleJsonPath(role.id), content: roleJsonText(role), mode: 'file' },
-    { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope), mode: 'file' },
-    { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, scope.card.framework), mode: 'file' },
+    { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope, team), mode: 'file' },
+    {
+      path: rolePath(role.id, 'kickoff.txt'),
+      content: kickoffText(role, scope.card.framework, team.isCore),
+      mode: 'file',
+    },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
     ...builtFiles(role.id, parts),
@@ -80,7 +90,8 @@ function roleFiles(
  * Every committed file the plan wants (PLAN-01, D-66), sorted by path: for each role its role.json, ROLE.md,
  * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/`, its built `.cadre/<id>/CLAUDE.md` from the parts
  * `repoParts` gives it that were read from the repo (G-02-1f), and its launcher `.cadre/bin/<id>`, which starts where
- * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. Whenever repoParts is
+ * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json` and the sizing rubric
+ * `.cadre/sizing.md`. Whenever repoParts is
  * passed every role gets its built file, the header alone with no repo part, so a later hand-out always replaces
  * stale content (02-GAPS-B2 S1); with repoParts absent (/cadre start, a regen that keeps the parts) no role gets
  * one. With `only` set (regen, D-68) just that role's files and the index are given, since the index lists every
@@ -90,11 +101,19 @@ function roleFiles(
 export function desiredFiles(input: GenerateInput): DesiredFile[] {
   const { roles, scopes, state, only } = input
   const selected = roles.filter(role => only === null || role.id === only)
+  const team: RoleMdTeam = { isCore: isCoreTeam(state), roles }
   const partsOf = (id: string): readonly InstructionPart[] | null =>
     input.repoParts === undefined ? null : (input.repoParts.get(id) ?? [])
-  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), state.launchStart, partsOf(role.id)))
+  const files = selected.flatMap(role =>
+    roleFiles(role, scopes.get(role.id), state.launchStart, partsOf(role.id), team),
+  )
   files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
-  if (only === null) files.push({ path: cadreStatePath(), content: cadreJsonText(state), mode: 'file' })
+  if (only === null) {
+    files.push(
+      { path: cadreStatePath(), content: cadreJsonText(state), mode: 'file' },
+      { path: SIZING_RUBRIC_PATH, content: rubricText(), mode: 'file' },
+    )
+  }
 
   return files.sort((a, b) => compareText(a.path, b.path))
 }

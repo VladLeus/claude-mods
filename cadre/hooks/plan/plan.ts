@@ -322,6 +322,13 @@ export function recordedCadreVersion(version: string | null): string {
   return version ?? 'unknown'
 }
 
+/** The manifest with this path recorded at this hash in place of any entry it had for it. */
+export function withRecordedHash(manifest: Manifest, path: string, sha256: string): Manifest {
+  const others = manifest.files.filter(entry => entry.path !== path)
+
+  return { ...manifest, files: [...others, { path, sha256, mode: 'file' }] }
+}
+
 /** The file plan and the manifest it records, which apply writes last (LNCH-01). */
 export type PlannedFiles = { readonly plan: Plan; readonly manifest: Manifest }
 

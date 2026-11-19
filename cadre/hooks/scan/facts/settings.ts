@@ -118,7 +118,7 @@ export function hookScriptsMatching(value: unknown, source: SettingsSource, patt
  * only when its projectPath equals one of the root forms, as given or as resolved (trailing slashes ignored), and an
  * entry with any other scope never does. A root form that trims to nothing matches nothing.
  */
-function isEntryForRoot(entry: Record<string, unknown>, roots: readonly string[]): boolean {
+export function isEntryForRoot(entry: Record<string, unknown>, roots: readonly string[]): boolean {
   if (entry.scope === 'user') return true
   if (entry.scope !== 'project' && entry.scope !== 'local') return false
   const projectPath = entry.projectPath

@@ -1,13 +1,20 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun } from '../../types'
+import { MATTPOCOCK_PLUGIN } from '../roles/infra'
+import { INSTALL_COMMANDS } from '../roles/recommend'
 import { BIDI_OVERRIDE, emptySetupScan, GUIDANCE_KEY, SECURITY_KEY } from '../testkit'
 import {
+  frameworkFallbackText,
   installedLine,
   installFailureText,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   pluginInstallArgv,
+  PROJECT_INSTALL_TIMEOUT_MS,
+  projectInstallFailureText,
+  projectInstallOf,
+  projectPluginInstall,
   PYTHON_VERSION_ARGV,
   pythonProblem,
   setupAfterInstalls,
@@ -118,5 +125,90 @@ describe('install runs (decision #39)', () => {
     expect(installedLine([SECURITY_KEY, GUIDANCE_KEY])).toBe(
       `Installed ${SECURITY_KEY} and ${GUIDANCE_KEY}: run /reload-plugins to load them in this session.`,
     )
+  })
+})
+
+describe('project installs', () => {
+  test("projectInstallOf gives each adapter's install: GSD's npx, superpowers' plugin install, none for none", () => {
+    expect(projectInstallOf('gsd')).toEqual({
+      id: '@opengsd/gsd-core',
+      argv: ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local'],
+      timeoutMs: PROJECT_INSTALL_TIMEOUT_MS,
+      writes: [
+        '.claude/gsd-core',
+        '.claude/commands',
+        '.claude/agents',
+        '.claude/hooks',
+        '.claude/settings.local.json',
+        '.claude/scripts',
+        '.claude/gsd-file-manifest.json',
+        '.claude/gsd-install-state.json',
+      ],
+      runs: ['.claude/hooks', '.claude/gsd-core', '.claude/scripts'],
+      isPlugin: false,
+    })
+    expect(projectInstallOf('superpowers')).toEqual(projectPluginInstall('superpowers@claude-plugins-official'))
+    expect([projectInstallOf('none'), PROJECT_INSTALL_TIMEOUT_MS]).toEqual([null, 600_000])
+  })
+
+  test('projectPluginInstall installs the exact key at project scope and says what it writes, frozen', () => {
+    const install = projectPluginInstall(SECURITY_KEY)
+    expect(install).toEqual({
+      id: SECURITY_KEY,
+      argv: ['claude', 'plugin', 'install', SECURITY_KEY, '--scope', 'project'],
+      timeoutMs: 180_000,
+      writes: ['enabledPlugins in .claude/settings.json'],
+      runs: [],
+      isPlugin: true,
+    })
+    expect([install, install.argv, install.writes, install.runs].every(part => Object.isFrozen(part))).toBe(true)
+  })
+
+  test('the printed mattpocock-skills command is the argv the project install runs', () => {
+    expect(INSTALL_COMMANDS.mattpocock).toBe(projectPluginInstall(MATTPOCOCK_PLUGIN).argv.join(' '))
+  })
+
+  test('projectInstallFailureText gives the command to run from the repo root, with the id and command cleaned', () => {
+    const command = `claude plugin install ${GUIDANCE_KEY} --scope project`
+    const text = `could not install ${GUIDANCE_KEY}: run it yourself from the repo root: ${command}`
+    expect(projectInstallFailureText(projectPluginInstall(GUIDANCE_KEY))).toBe(text)
+    expect(projectInstallFailureText(projectPluginInstall(`evil${BIDI_OVERRIDE}@market`))).not.toContain(BIDI_OVERRIDE)
+  })
+})
+
+describe('the fallback line of a framework install', () => {
+  /** GSD's install command, as its install question names it. */
+  const COMMAND = 'npx -y @opengsd/gsd-core@latest --claude --local'
+  /** A GSD install of init that did not land, with no role and not the repo default on it. */
+  const FALLEN: Parameters<typeof frameworkFallbackText>[0] = {
+    name: 'GSD',
+    command: COMMAND,
+    roles: [],
+    isRepoDefault: false,
+    fallback: 'none (built-in)',
+  }
+  /** How every fallback line ends: the command to run, then /cadre frameworks again. */
+  const END = `: run ${COMMAND} from the repo root, then /cadre frameworks again`
+
+  test('it names the roles and the repo default that fell back, and to what, then the command to run', () => {
+    expect([
+      frameworkFallbackText({ ...FALLEN, roles: ['be'], isRepoDefault: true }),
+      frameworkFallbackText({ ...FALLEN, roles: ['be', 'fe'] }),
+      frameworkFallbackText({ ...FALLEN, isRepoDefault: true }),
+    ]).toEqual([
+      `GSD did not install, so role be and the repo default fell back to none (built-in)${END}`,
+      `GSD did not install, so roles be, fe fell back to none (built-in)${END}`,
+      `GSD did not install, so the repo default fell back to none (built-in)${END}`,
+    ])
+  })
+
+  test('with nothing on it the line says only that it did not install, then the command to run', () => {
+    expect(frameworkFallbackText(FALLEN)).toBe(`GSD did not install${END}`)
+  })
+
+  test('the command is cleaned as a report cell', () => {
+    const escape = String.fromCharCode(27)
+    const text = frameworkFallbackText({ ...FALLEN, command: `npx -y evil${escape}[2J` })
+    expect([text.includes(escape), text.includes('run npx -y evil[2J from the repo root')]).toEqual([false, true])
   })
 })

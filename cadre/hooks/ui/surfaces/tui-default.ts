@@ -1,17 +1,18 @@
 /**
- * The TUI default surface (D-353), a layer 8 module: the terminal main screen alone, where no side pane opens and the
- * dialog's option preview carries the open question's context (D-208). It owns the behaviour-map rows of this surface:
- * the status line cleared and an overflowing context printed above the dialog (row 5), the status line as progress
- * (row 6), every logged line in the transcript (row 7), the previewed dialog fitted to PREVIEW_LINE_ROWS (row 8), the
- * page columns of the preview (row 12), the Review pages at PREVIEW_ROWS (row 13), no folds (row 14) and the screen's
- * list words (row 15). The preview fit and the transcript entries (row 16) stay in ui/preview, which only this module
- * calls them from.
+ * The TUI default surface, a layer 8 module: the terminal main screen alone, where no side pane opens and the dialog's
+ * option preview carries the open question's context. It owns the behaviour-map rows of this surface: the status line
+ * cleared and a context the preview leaves lines out of printed above the dialog, never a paged one (row 5), the status
+ * line as progress (row 6), every logged line in the transcript (row 7), the previewed dialog fitted to
+ * PREVIEW_LINE_ROWS, a paged page's preview ending with its page marker (row 8), the page columns of the preview
+ * (row 12), the Review pages at PREVIEW_ROWS (row 13), no folds (row 14) and the screen's list words (row 15). The
+ * preview fit and the transcript entries (row 16) stay in ui/preview, which only this module calls them from.
  */
 import type { AskContext, InitIo, OpenQuestion } from '../../../types'
-import { SCREEN_LIST_WORDS } from '../../locales/t'
-import { PREVIEW_LINE_ROWS, PREVIEW_ROWS, previewedPlan, tuiTranscriptEntries } from '../preview'
+import { SCREEN_LIST_WORDS, t } from '../../locales/t'
+import { withPagedAsks } from '../paging'
+import { PREVIEW_LINE_ROWS, PREVIEW_ROWS, previewedPlan, previewFits, tuiTranscriptEntries } from '../preview'
 import type { DialogPlan } from '../preview'
-import type { PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
+import type { PageView, PaneSeat, ReviewPaging, SurfaceEffect, SurfaceModule } from './contract'
 
 /** The Review pages of the TUI default (D-233, ASKED #19): PREVIEW_ROWS rows, any number of code points. */
 const TUI_REVIEW_PAGING: ReviewPaging = Object.freeze({ rows: PREVIEW_ROWS, maxChars: Number.POSITIVE_INFINITY })
@@ -26,12 +27,28 @@ function tuiFolds<T>(_bound: readonly T[]): readonly T[] {
   return []
 }
 
+/** A paged context with its page marker as one last plain row: the TUI preview draws it and the page fit counts it. */
+function withPageMarker(context: AskContext): AskContext {
+  if (context.page === undefined || context.rows === undefined) return context
+  const text = t('ui.paging.marker', { number: context.page.index + 1, count: context.page.count })
+
+  return { ...context, rows: [...context.rows, { title: null, rows: [{ role: 'plain', text, indent: 0 }] }] }
+}
+
 /**
- * The TUI default pages no question, so a run asks through its port as it is: the preview carries the context, fitted
- * to its rows (D-228, D-306).
+ * The TUI default pages only the conflict question: a diff the preview does not show whole at the view's columns is
+ * asked a page at a time, each page as much as its preview shows whole with its page marker, so no line is cut or left
+ * out. Every other question is asked as given, its context fitted to the preview's rows.
  */
-function tuiPagedPort(io: InitIo): InitIo {
-  return io
+function tuiPagedPort(io: InitIo, view: PageView): InitIo {
+  const fitsPage = (page: AskContext): boolean => previewFits(withPageMarker(page), PREVIEW_LINE_ROWS, view.columns())
+  const paged = withPagedAsks(io, view.columns, () => false, () => PREVIEW_LINE_ROWS, fitsPage)
+
+  return {
+    ...io,
+    ask: async (question, spec) =>
+      spec.context?.kind === 'conflict-diff' ? paged.ask(question, spec) : io.ask(question, spec),
+  }
 }
 
 /** The columns a page is drawn at on the TUI default: the dialog preview's, whatever the seat (D-292, U-15). */
@@ -40,12 +57,13 @@ function tuiPageColumns(_seat: PaneSeat, preview: number | null): number | null 
 }
 
 /**
- * The previewed dialog the TUI default gives the open question's call, its context fitted to PREVIEW_LINE_ROWS
- * (previewedPlan, D3, D-203, D-228, D-234, A3, D-270, D-350): no pane opens here, so no seat and no change option
- * changes it.
+ * The previewed dialog the TUI default gives the open question's call, its context fitted to PREVIEW_LINE_ROWS and a
+ * paged page's preview ending with its marker; no pane opens here, so no seat and no change option changes it.
  */
 function tuiDialogPlan(raw: unknown, open: OpenQuestion, _seat: PaneSeat, columns: number | null): DialogPlan | null {
-  return previewedPlan(raw, open, columns, PREVIEW_LINE_ROWS)
+  const marked = open.context === null ? open : { ...open, context: withPageMarker(open.context) }
+
+  return previewedPlan(raw, marked, columns, PREVIEW_LINE_ROWS)
 }
 
 /** The TUI default opens no pane: the option preview carries each context (D-208). */
@@ -54,12 +72,9 @@ function tuiRunStartEffects(): readonly SurfaceEffect[] {
 }
 
 /**
- * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
- * the preview drawn at `columns` right above the dialog, one transcript entry per row, its title first, each line
- * cleaned and uncut, as the terminal draws no newline inside an entry (D-262), and records it as the context printed
- * last. It prints once per question: a question asked again with the context `printed` last prints nothing
- * (tuiTranscriptEntries, D-228, D-260, D-262, WD-S4); the preview ends with how many lines it left out. A context that
- * fits, and the Review, print nothing. Register ignores a status or log call the host throws on (D-271).
+ * What the TUI default does as a dialog opens: it clears the status line, then prints a context whose preview leaves
+ * lines out right above the dialog, one transcript entry per row, and records it as printed, so it prints once; a
+ * context the preview shows whole, a paged page included, and the Review print nothing.
  */
 function tuiDialogOpenEffects(
   context: AskContext | null,

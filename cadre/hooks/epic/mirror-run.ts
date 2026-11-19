@@ -4,7 +4,7 @@
  * git dir and points git at it, then runs each step through the HostIo port and stops at the first that fails, with
  * the replies of a failed listing, excludes setup or step and the warning of an unreadable global excludes file. It
  * imports core, git/argv, host/steps, scan and the epic modules below it; epic/create runs it, and epic/done reads its
- * listings.
+ * listings and its included paths.
  */
 import type { HostIo, InitIo, PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
@@ -12,16 +12,18 @@ import { GIT_TIMEOUT_MS } from '../git/argv'
 import { hasRunFailed } from '../host/steps'
 import { t } from '../locales/t'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
-import { EXCLUDES_FILE, excludesText, globalExcludesPath, untrackedEntries } from './excludes'
+import { EXCLUDES_FILE, excludesText, globalExcludesPath, includedEntries, untrackedEntries } from './excludes'
 import {
   EXCLUDES_CONFIG_ARGV,
   GLOBAL_EXCLUDES_ARGV,
+  INCLUDED_ARGV,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
   WORKTREE_CONFIG_ARGV,
+  WORKTREE_INCLUDE_FILE,
   XDG_ARGV,
 } from './git'
-import { epicStepArgv, isGitFile, MIRROR_STEP_TIMEOUT_MS, mirrorPaths, mirrorPlan } from './mirror'
+import { epicStepArgv, epicStepTimeoutMs, isHiddenCopy, mirrorPaths, mirrorPlan } from './mirror'
 import type { EpicStep } from './mirror'
 
 /**
@@ -50,11 +52,29 @@ export function epicExcludesFailedReply(key: string): string {
 }
 
 /**
- * The reply when a mirror step fails (D-147): the mirror stops at that step, named by its path below the worktree
- * root, cleaned. What ran before it stays and is recorded, and the next /cadre epic run of the key makes the rest.
+ * The reply when a mirror mkdir or link step fails: the mirror stops at that step, named by its path below the
+ * worktree root, cleaned. What ran before it stays and is recorded, and the next /cadre epic run of the key makes the
+ * rest.
  */
 export function epicStepFailedReply(path: string): string {
   return t('epic.mirrorRun.epicStepFailedReply', { path: reportText(path) })
+}
+
+/**
+ * The reply when a mirror copy, or the move that places it, fails: the mirror stops there, and the reply names the
+ * repo-relative path and its temporary sibling, cleaned, which the user removes before running /cadre epic again.
+ */
+export function epicCopyFailedReply(path: string, temp: string): string {
+  return t('epic.mirrorRun.epicCopyFailedReply', { path: reportText(path), temp: reportText(temp) })
+}
+
+/** The reply of a failed step: a copy or a move names the copied path and its temporary sibling, else the path. */
+function stepFailedReply(step: EpicStep, root: string, worktree: string): string {
+  const inWorktree = (path: string) => path.slice(worktree.length + 1)
+  if (step.kind === 'copy') return epicCopyFailedReply(step.source.slice(root.length + 1), inWorktree(step.path))
+  if (step.kind === 'move') return epicCopyFailedReply(inWorktree(step.path), inWorktree(step.source))
+
+  return epicStepFailedReply(inWorktree(step.path))
 }
 
 /** What the mirror stage of runEpic did: the reply it stopped with (else null), what it made, and its warnings. */
@@ -62,8 +82,10 @@ export type Mirrored = {
   readonly failure: string | null
   /** The repo-relative paths of the links whose step ran. */
   readonly links: readonly string[]
-  /** The repo-relative paths of the copies whose step ran. */
+  /** The repo-relative paths of the copies whose move into place ran. */
   readonly copies: readonly string[]
+  /** The repo-relative folders the plan walked whose mkdir step ran. */
+  readonly walked: readonly string[]
   readonly warnings: readonly string[]
 }
 
@@ -106,14 +128,36 @@ async function globalExcludesOf(
 }
 
 /**
- * The mirror of the main checkout at `root` into the worktree (D-147, D-148), whose git dir `gitDir` is absolute: the
- * two ls-files runs (a run that fails or cannot start stops it with epicListFailedReply), the folders mirrorPaths
- * names listed in both checkouts, and mirrorPlan. The excludes file is then written in the git dir: the user's global
- * excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, and each copy of a
- * GIT_FILE_NAMES file, recorded (`recordedCopies`) or planned, once each (D-163, 03.1 S1). The worktree is pointed at
- * it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are idempotent: a write or run that
- * fails stops it with epicExcludesFailedReply, before any step. Each step then runs with its epicStepArgv, and the
- * first one that fails stops it with epicStepFailedReply. What ran before the stop is in the result.
+ * The paths of the main checkout at `root` that its WORKTREE_INCLUDE_FILE names and git ignores (includedEntries over
+ * the INCLUDED_ARGV run and `ignored`, the LS_IGNORED_ARGV output): [] with no such file, null when the run fails. The
+ * mirror copies these paths, and epic done copies back only the recorded copies among them.
+ */
+export async function includedOf(
+  io: InitIo,
+  host: HostIo,
+  root: string,
+  ignored: string,
+): Promise<readonly string[] | null> {
+  const include = await io.read(`${root}/${WORKTREE_INCLUDE_FILE}`, MAX_READ_BYTES)
+  if (include.state === 'absent') return []
+  const named = await host.run(INCLUDED_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
+  if (named === null || named.exitCode !== 0) return null
+
+  return includedEntries(named.stdout, ignored)
+}
+
+/**
+ * The mirror of the main checkout at `root` into the worktree, whose git dir `gitDir` is absolute: the two ls-files
+ * runs and, when the main checkout has a WORKTREE_INCLUDE_FILE, a third that lists the paths it names, which the mirror
+ * copies (includedOf); a run that fails or cannot start stops it with epicListFailedReply. Then the folders
+ * mirrorPaths names listed in both checkouts, and mirrorPlan. The excludes file is then written in the git dir: the
+ * user's global excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, and each hidden
+ * copy (isHiddenCopy: a copy of a git file or of the sizing rubric), recorded (`recordedCopies`) or planned, once each.
+ * The worktree is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are
+ * idempotent: a write or run that fails stops it with epicExcludesFailedReply, before any step. Each step then runs
+ * with its epicStepArgv and epicStepTimeoutMs, and the first one that fails stops it: epicCopyFailedReply for a copy
+ * or its move, else epicStepFailedReply. What ran before the stop is in the result, a copy only once its move ran and
+ * a walked folder once its mkdir ran.
  */
 export async function mirrorSteps(
   io: InitIo,
@@ -130,23 +174,31 @@ export async function mirrorSteps(
   },
 ): Promise<Mirrored> {
   const { root, worktree, key } = input
-  const listFailed: Mirrored = { failure: epicListFailedReply(key), links: [], copies: [], warnings: [] }
+  const listFailed: Mirrored = { failure: epicListFailedReply(key), links: [], copies: [], walked: [], warnings: [] }
   const others = await host.run(LS_OTHERS_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
   if (others === null || others.exitCode !== 0) return listFailed
   const ignored = await host.run(LS_IGNORED_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
   if (ignored === null || ignored.exitCode !== 0) return listFailed
+  const included = await includedOf(io, host, root, ignored.stdout)
+  if (included === null) return listFailed
   const entries = untrackedEntries(others.stdout, ignored.stdout)
-  const paths = mirrorPaths(entries, input.roleIds)
+  const paths = mirrorPaths(entries, input.roleIds, included)
   const main = await listingsOf(io, root, paths.main)
   const tree = await listingsOf(io, worktree, paths.tree)
-  const plan = mirrorPlan({ root, worktree, entries, roleIds: input.roleIds, main, tree })
+  const plan = mirrorPlan({ root, worktree, entries, roleIds: input.roleIds, main, tree, included })
   const global = await globalExcludesOf(io, host, root, input.home)
   const warnings = [...plan.warnings, ...global.warnings]
 
   const file = `${input.gitDir}/${EXCLUDES_FILE}`
-  const excludesFailed: Mirrored = { failure: epicExcludesFailedReply(key), links: [], copies: [], warnings }
-  const gitFileCopies = [...input.recordedCopies, ...plan.copies].filter(isGitFile)
-  const hidden = sortedUnique([...input.recorded, ...plan.links, ...gitFileCopies])
+  const excludesFailed: Mirrored = {
+    failure: epicExcludesFailedReply(key),
+    links: [],
+    copies: [],
+    walked: [],
+    warnings,
+  }
+  const hiddenCopies = [...input.recordedCopies, ...plan.copies].filter(isHiddenCopy)
+  const hidden = sortedUnique([...input.recorded, ...plan.links, ...hiddenCopies])
   if (!(await host.write(file, excludesText(global.text, hidden)))) return excludesFailed
   for (const argv of [WORKTREE_CONFIG_ARGV(root), EXCLUDES_CONFIG_ARGV(worktree, file)]) {
     const configured = await host.run(argv, { timeoutMs: GIT_TIMEOUT_MS })
@@ -156,15 +208,16 @@ export async function mirrorSteps(
   const ran: EpicStep[] = []
   const made = (kind: EpicStep['kind']) =>
     ran.filter(step => step.kind === kind).map(step => step.path.slice(worktree.length + 1))
+  const walked = () => plan.walked.filter(folder => made('mkdir').includes(folder))
   for (const step of plan.steps) {
-    const done = await host.run(epicStepArgv(step), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
+    const done = await host.run(epicStepArgv(step), { timeoutMs: epicStepTimeoutMs(step) })
     if (hasRunFailed(done)) {
-      const failure = epicStepFailedReply(step.path.slice(worktree.length + 1))
+      const failure = stepFailedReply(step, root, worktree)
 
-      return { failure, links: made('link'), copies: made('copy'), warnings }
+      return { failure, links: made('link'), copies: made('move'), walked: walked(), warnings }
     }
     ran.push(step)
   }
 
-  return { failure: null, links: made('link'), copies: made('copy'), warnings }
+  return { failure: null, links: made('link'), copies: made('move'), walked: walked(), warnings }
 }

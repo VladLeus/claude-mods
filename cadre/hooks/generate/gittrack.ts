@@ -1,22 +1,21 @@
 /**
  * The git tracking check, a layer 6 module: which instruction files git tracks, asked once with `git ls-files -z`
- * through the host at the repo root, so only the parts of tracked files reach a built role file, and a run git cannot
- * answer keeps no repo part (02-GAPS-B2 M3). It imports core and the types, so init and regen check the repo parts
- * here.
+ * through the host at the repo root, so a role is given only files git tracks, and a run git cannot answer gives no
+ * repo file. It imports core and the types, so init and regen check the repo parts here.
  */
 import type { HostIo, InstructionPart } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
 
 /**
- * The argv that asks git which of these repo-relative files it tracks (02-GAPS-B2 M3): `git ls-files -z`, with
+ * The argv that asks git which of these repo-relative files it tracks: `git ls-files -z`, with
  * `--literal-pathspecs` so a name is never a pattern and `--` before the names; it runs at the repo root.
  */
 export function gitTrackedArgv(files: readonly string[]): readonly string[] {
   return ['git', '--literal-pathspecs', 'ls-files', '-z', '--', ...files]
 }
 
-/** The source file of every repo part the roles were given, sorted, once each (02-GAPS-B2 M3): what git is asked. */
+/** The source file of every repo part the roles were given, sorted, once each: what git is asked. */
 export function repoPartFiles(repoParts: ReadonlyMap<string, readonly InstructionPart[]>): string[] {
   const parts = Array.from(repoParts.values()).flat()
 
@@ -24,9 +23,8 @@ export function repoPartFiles(repoParts: ReadonlyMap<string, readonly Instructio
 }
 
 /**
- * The repo parts a built role file may hold (02-GAPS-B2 M3): the same keys, each keeping only the repo parts whose
- * source file is in `tracked`; null, when git could not be asked, keeps none, so a file git does not track never
- * reaches a committed file.
+ * The repo parts a role may be given: the same keys, each keeping only the repo parts whose source file is in
+ * `tracked`; null, when git could not be asked, keeps none.
  */
 export function trackedRepoParts(
   repoParts: ReadonlyMap<string, readonly InstructionPart[]>,
@@ -37,24 +35,21 @@ export function trackedRepoParts(
   return new Map(Array.from(repoParts, ([id, parts]): [string, InstructionPart[]] => [id, parts.filter(isTracked)]))
 }
 
-/**
- * The warning for a source file whose repo parts were left out of the built role files because git does not track it
- * (02-GAPS-B2 M3).
- */
+/** The warning for a source file no role is given because git does not track it. */
 export function untrackedPartsWarning(file: string): string {
   return t('generate.gittrack.untrackedPartsWarning', { file: reportText(file) })
 }
 
 /**
- * The warning when git could not be asked which instruction files it tracks (02-GAPS-B2 M3): no repo part is written,
- * so the check fails closed.
+ * The warning when git could not be asked which instruction files it tracks: no role is given a repo file, so the
+ * check fails closed.
  */
 export const GIT_TRACKING_UNKNOWN_WARNING = t('generate.gittrack.gitTrackingUnknownWarning')
 
 /** The character `git ls-files -z` ends each name with, built at run time. */
 const NUL = String.fromCharCode(0)
 
-/** The files `git ls-files -z` named (02-GAPS-B2 M3): its NUL-separated names, an empty name skipped. */
+/** The files `git ls-files -z` named: its NUL-separated names, an empty name skipped. */
 export function trackedFilesOf(stdout: string): ReadonlySet<string> {
   return new Set(stdout.split(NUL).filter(name => name !== ''))
 }

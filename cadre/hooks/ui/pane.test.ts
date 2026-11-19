@@ -349,7 +349,7 @@ function stateOf(open: OpenQuestion | null, loader: PaneState['loader'] = null):
 describe('paneBlockOf (D-299, D-301, D-303)', () => {
   const lines = ['Source: session', 'Tools: none listed']
   const context: AskContext = { title: 'MCP: sentry', lines, kind: 'mcp-server', summary: 'Recommended: none' }
-  const loader = { label: 'cadre: scanning the repo…', summary: null }
+  const loader = { label: 'Scanning the repo…', summary: null }
 
   test('the idle state, no question open and no step running, draws nothing: the empty frame', () => {
     expect(paneBlockOf(stateOf(null))).toBe(null)
@@ -389,7 +389,7 @@ describe('paneBlockOf (D-299, D-301, D-303)', () => {
   })
 
   test('with no question open a running step draws its loader alone: its label as the title (D-301)', () => {
-    const block = { title: 'cadre: scanning the repo…', summary: null, rows: null, lines: [] }
+    const block = { title: 'Scanning the repo…', summary: null, rows: null, lines: [] }
     expect(paneBlockOf(stateOf(null, loader))).toEqual(block)
   })
 
@@ -698,6 +698,25 @@ describe('contextPages (D-305, D-306, D-308)', () => {
   test('a context whose whole frame fits is one page of all its sections', () => {
     const sections = [{ title: 'Skills', rows: itemsOf(2, 3) }]
     expect(contextPages(contextOf(sections), null)).toEqual([sections])
+  })
+
+  test('a given page fit decides the pages in place of both caps, the whole context checked first with no page', () => {
+    const rows = itemsOf(40, 3)
+    const context = contextOf([{ title: 'Skills', rows }])
+    const checked: AskContext[] = []
+    const fitsPage = (page: AskContext): boolean => {
+      checked.push(page)
+
+      return (page.rows ?? []).every(section => section.rows.length <= 30)
+    }
+    const pages = contextPages(context, null, MAX_PANE_FRAME_ROWS, fitsPage)
+    expect(pages.map(page => page.flatMap(section => section.rows).length)).toEqual([30, 30, 30, 30])
+    expect([checked[0]?.rows, checked[0]?.page, checked.at(-1)?.page]).toEqual([
+      context.rows,
+      undefined,
+      { index: 39, count: 40 },
+    ])
+    expect(contextPages(context, null, MAX_PANE_FRAME_ROWS, () => true)).toEqual([context.rows])
   })
 
   test('a context over the row cap is pages that fit both caps with their marker, every row on one in order', () => {

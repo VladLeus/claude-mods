@@ -11,7 +11,7 @@ import { runEpic } from '../epic/create'
 import { runEpicDone } from '../epic/done'
 import { desiredFiles } from '../generate/files'
 import type { GenerateInput } from '../generate/files'
-import { runInit } from '../init/run'
+import { runFrameworks, runInit } from '../init/run'
 import { MANIFEST_PATH } from '../plan/classify'
 import { runRegen } from '../regen/run'
 import { normalizeFacts } from '../scan/facts/normalize'
@@ -354,4 +354,24 @@ export async function captureTimelineApply(
   await runInit(io, { dryRun: false, host: timelineHost(memHost(host), events) })
 
   return events
+}
+
+/**
+ * The golden of `/cadre frameworks` over `world`, each question answered by its longest prefix in `answers`: with
+ * `dryRun` the run as captureInit gives it (a dry run holds no host); else, through a fake host over `host`, the run,
+ * every write and host run and the manifest text, as captureApply gives them.
+ */
+export async function captureFrameworks(
+  world: MemWorld,
+  answers: Readonly<Record<string, string>>,
+  options: { readonly dryRun: true } | { readonly dryRun: false; readonly host: HostWorld },
+): Promise<GoldenRun | GoldenApply> {
+  const run = memIo(world, answers)
+  if (options.dryRun) return captureRun(run, await runFrameworks(run.io, { dryRun: true }))
+  const port = memHost(options.host)
+  const reply = await runFrameworks(run.io, { dryRun: false, host: port.io })
+  const { writes, calls } = await captureCommand(reply, port)
+  const manifest = port.writes.find(write => write.path.endsWith(`/${MANIFEST_PATH}`))
+
+  return { run: await captureRun(run, reply), writes, calls, manifest: manifest?.text.split('\n') ?? [] }
 }

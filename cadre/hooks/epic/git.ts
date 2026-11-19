@@ -71,6 +71,19 @@ export function LS_IGNORED_ARGV(root: string): readonly string[] {
   return ['git', '-C', root, 'ls-files', '-z', '--others', '--ignored', '--directory', '--exclude-standard']
 }
 
+/** Claude Code's file at a repo root that names the ignored files a worktree gets as copies. */
+export const WORKTREE_INCLUDE_FILE = '.worktreeinclude'
+
+/**
+ * The argv that lists what the main checkout at `root` does not track that its WORKTREE_INCLUDE_FILE names, matched by
+ * git with gitignore rules, NUL-ended as LS_OTHERS_ARGV lists.
+ */
+export function INCLUDED_ARGV(root: string): readonly string[] {
+  const from = `--exclude-from=${root}/${WORKTREE_INCLUDE_FILE}`
+
+  return ['git', '-C', root, 'ls-files', '-z', '--others', '--ignored', '--directory', from]
+}
+
 /**
  * The argv that names the user's global excludes file (D-147): git's `core.excludesFile` as a path, with `~` expanded;
  * it exits 1 with no output when the key is not set. The global config is the same everywhere, so `-C <root>` only

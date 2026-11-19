@@ -252,7 +252,8 @@ function historyAnswer(state: InitState, answer: Answer): InitState {
  */
 export const historyStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
-    if (state.draft.locations === undefined) return stageFailed(state)
+    const { locations } = state.draft
+    if (locations === undefined) return stageFailed(state)
     const dir = historyDirOf(state)
     if (dir === null) return skippedWith(state, NO_HISTORY_NOTE)
 

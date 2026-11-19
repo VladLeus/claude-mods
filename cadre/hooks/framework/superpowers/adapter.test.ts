@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, RepoEntry } from '../../../types'
+import type { Detection, PluginFlag, RepoEntry } from '../../../types'
 import { parseEnabledPlugins } from '../../scan/facts/settings'
 import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 import { isDecisionType } from '../contract'
@@ -148,27 +148,49 @@ describe('detectSuperpowers', () => {
   })
 
   test('a project-sourced enablement shows its source in the evidence', () => {
-    const flags = [{ key: OFFICIAL_KEY, source: 'project' as const, value: true }]
+    const flags: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'project', value: true }]
 
     expect(detectSuperpowers(facts({ enabledPlugins: flags }))).toEqual({
       id: 'superpowers',
       name: 'superpowers',
-      status: 'installed',
+      status: 'not-found',
       version: null,
-      evidence: ['enabledPlugins["superpowers@claude-plugins-official"]=true (project)'],
+      evidence: [
+        'no docs/superpowers/ or .superpowers/',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (project), not installed for this repo',
+      ],
     })
   })
 
   test('the version comes only from the entry for the same key', () => {
-    const flags = [{ key: OFFICIAL_KEY, source: 'user' as const, value: true }]
+    const flags: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: true }]
     const versions = [{ key: 'superpowers@local-dev', version: '9.9.9' }]
 
     expect(detectSuperpowers(facts({ enabledPlugins: flags, superpowersVersions: versions }))).toEqual({
       id: 'superpowers',
       name: 'superpowers',
-      status: 'installed',
+      status: 'not-found',
       version: null,
-      evidence: ['enabledPlugins["superpowers@claude-plugins-official"]=true (user)'],
+      evidence: [
+        'no docs/superpowers/ or .superpowers/',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (user), not installed for this repo',
+      ],
+    })
+  })
+
+  test('docs/superpowers/ with an enabled key that has no installed entry is in use, the key not installed', () => {
+    const docs: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
+    const flags: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'project', value: true }]
+
+    expect(detectSuperpowers(facts({ docsEntries: [docs], enabledPlugins: flags }))).toEqual({
+      id: 'superpowers',
+      name: 'superpowers',
+      status: 'in-use',
+      version: null,
+      evidence: [
+        'docs/superpowers/',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (project), not installed for this repo',
+      ],
     })
   })
 
@@ -195,13 +217,22 @@ describe('detectSuperpowers', () => {
   })
 
   test('the version is the first enabled key that has a recorded version', () => {
-    const flags = [
-      { key: OFFICIAL_KEY, source: 'user' as const, value: true },
-      { key: 'superpowers@local-dev', source: 'local' as const, value: true },
+    const flags: PluginFlag[] = [
+      { key: OFFICIAL_KEY, source: 'user', value: true },
+      { key: 'superpowers@local-dev', source: 'local', value: true },
     ]
     const versions = [{ key: 'superpowers@local-dev', version: '5.0.0' }]
 
-    expect(detectSuperpowers(facts({ enabledPlugins: flags, superpowersVersions: versions })).version).toBe('5.0.0')
+    expect(detectSuperpowers(facts({ enabledPlugins: flags, superpowersVersions: versions }))).toEqual({
+      id: 'superpowers',
+      name: 'superpowers',
+      status: 'installed',
+      version: '5.0.0',
+      evidence: [
+        'enabledPlugins["superpowers@local-dev"]=true (local)',
+        'enabledPlugins["superpowers@claude-plugins-official"]=true (user), not installed for this repo',
+      ],
+    })
   })
 })
 
@@ -428,6 +459,14 @@ describe('superpowersKickoffText', () => {
       expect(specLines[specLines.length - 1]).toContain('AUTOPILOT_DONE')
     }
   })
+
+  test('a core lead and a core reviewer get the text of any role, since no verify line is rendered', () => {
+    const ctx = { title: 'Security', roleId: 'security', specPath: null }
+    const today = superpowersKickoffText(ctx)
+
+    expect(superpowersKickoffText({ ...ctx, isCoreReviewer: true })).toBe(today)
+    expect(superpowersKickoffText({ ...ctx, isCoreLead: true })).toBe(today)
+  })
 })
 
 describe('SUPERPOWERS_ADAPTER', () => {
@@ -455,7 +494,8 @@ describe('SUPERPOWERS_ADAPTER', () => {
     expect(SUPERPOWERS_ADAPTER.name).toBe('superpowers')
     expect(SUPERPOWERS_ADAPTER.detectRule).toBe(
       'in use: docs/superpowers/ or .superpowers/ at the repo root; ' +
-        'installed: an enabledPlugins key starting superpowers@ set to true',
+        'installed: an enabledPlugins key starting superpowers@ set to true ' +
+        'that has an installed_plugins entry for this repo',
     )
     expect(SUPERPOWERS_ADAPTER.startWork).toEqual([
       'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
@@ -516,5 +556,55 @@ describe('SUPERPOWERS_ADAPTER', () => {
     expect(SUPERPOWERS_ADAPTER.factsHeading).toBeNull()
     const lists = [SUPERPOWERS_ADAPTER.startSkills, SUPERPOWERS_ADAPTER.pluginsToEnable]
     expect(lists.every(list => Object.isFrozen(list))).toBe(true)
+  })
+
+  test('a core TL starts with superpowers:brainstorming like every role', () => {
+    expect(SUPERPOWERS_ADAPTER.roleStart('tl', true)).toBe('superpowers:brainstorming')
+  })
+})
+
+describe('the superpowers start steps of a role', () => {
+  test('a worker plans in its role-named file and executes it subagent-driven, never asking for the method', () => {
+    const steps = SUPERPOWERS_ADAPTER.roleWork.startSteps({ roleId: 'be', isLead: false })
+    const text = steps.join('\n')
+
+    expect(text).toContain('docs/superpowers/plans/be-<ticket>.md')
+    expect(text).toContain('superpowers:subagent-driven-development')
+    expect(/never ask/i.test(text)).toBe(true)
+    expect(text).not.toContain('docs/superpowers/specs/')
+    expect([Object.isFrozen(steps), steps.every(step => /^[\x20-\x7e]+$/.test(step))]).toEqual([true, true])
+  })
+
+  test('the lead also writes the spec to docs/superpowers/specs/tl-<ticket>.md, then its own plan', () => {
+    const text = SUPERPOWERS_ADAPTER.roleWork.startSteps({ roleId: 'tl', isLead: true }).join('\n')
+
+    expect(text).toContain('docs/superpowers/specs/tl-<ticket>.md')
+    expect(text).toContain('docs/superpowers/plans/tl-<ticket>.md')
+    expect(text).toContain('superpowers:subagent-driven-development')
+  })
+})
+
+describe('SUPERPOWERS_ADAPTER.isInstalled', () => {
+  test('is true only with an enabled superpowers@ key that has an installed entry for this repo', () => {
+    const docs: RepoEntry = { name: 'superpowers', kind: 'dir', isLink: false }
+    const enabled: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: true }]
+    const disabled: PluginFlag[] = [{ key: OFFICIAL_KEY, source: 'user', value: false }]
+    const entry = [{ key: OFFICIAL_KEY, version: '6.4.1' }]
+    const otherEntry = [{ key: 'superpowers@x', version: '6.4.1' }]
+    const cases = [
+      facts({ enabledPlugins: enabled, superpowersVersions: entry }),
+      facts({ docsEntries: [docs], enabledPlugins: enabled, superpowersVersions: entry }),
+      facts({ enabledPlugins: enabled }),
+      facts({ enabledPlugins: enabled, superpowersVersions: otherEntry }),
+      facts({ enabledPlugins: disabled, superpowersVersions: entry }),
+      facts({ docsEntries: [docs] }),
+      facts({}),
+    ]
+    const installedLine = /^enabledPlugins\["[^"]+"\]=true \([a-z]+\)$/
+
+    expect(cases.map(SUPERPOWERS_ADAPTER.isInstalled)).toEqual([true, true, false, false, false, false, false])
+    expect(cases.map(item => detectSuperpowers(item).evidence.some(line => installedLine.test(line)))).toEqual(
+      cases.map(SUPERPOWERS_ADAPTER.isInstalled),
+    )
   })
 })

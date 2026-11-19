@@ -69,8 +69,12 @@ describe('role ids', () => {
 
   test('bin is reserved: it is the launcher folder', () => {
     expect(validateRoleId('bin')).toBe('role id "bin" is reserved: it is the launcher folder .cadre/bin/')
-    expect(RESERVED_ROLE_IDS).toEqual(['bin', 'all', 'none'])
+    expect(RESERVED_ROLE_IDS).toEqual(['bin', 'all', 'none', 'cadre'])
     expect(Object.isFrozen(RESERVED_ROLE_IDS)).toBe(true)
+  })
+
+  test('cadre is reserved: cadre signs its own inbox entries with it', () => {
+    expect(validateRoleId('cadre')).toBe('role id "cadre" is reserved: cadre signs its own inbox entries with it')
   })
 
   test('all and none are reserved: they are the answer words of the role questions', () => {

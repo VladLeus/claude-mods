@@ -40,9 +40,22 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe my own structure"
     ],
     "previews": [
-      "**Roles**\n```\nRepo scan (read-only):\n  stack: none; frontend: none; backend: none\n  tests: none; E2E: none\n  existing .cadre/: none\nUser setup (names only):\n  plugins: 1 (superpowers@claude-plugins-official)\n  skills: 0; agents: 0; MCP servers: none\n  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none\nwarning: could not list docs/superpowers (treated as unknown)\n\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nRepo scan (read-only):\n  stack: none; frontend: none; backend: none\n  tests: none; E2E: none\n  existing .cadre/: none\nUser setup (names only):\n  plugins: 1 (superpowers@claude-plugins-official)\n  skills: 0; agents: 0; MCP servers: none\n  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none\nwarning: could not list docs/superpowers (treated as unknown)\n\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nRepo scan (read-only):\n  stack: none; frontend: none; backend: none\n  tests: none; E2E: none\n  existing .cadre/: none\nUser setup (names only):\n  plugins: 1 (superpowers@claude-plugins-official)\n  skills: 0; agents: 0; MCP servers: none\n  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none\nwarning: could not list docs/superpowers (treated as unknown)\n\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      "**Roles**\n```\nRepo scan (read-only):\n  stack: none; frontend: none; backend: none\n  tests: none; E2E: none\n  existing .cadre/: none\nUser setup (names only):\n  plugins: 1 (superpowers@claude-plugins-official)\n  skills: 0; agents: 0; MCP servers: none\n  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none\nwarning: could not list docs/superpowers (treated as unknown)\n\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nRepo scan (read-only):\n  stack: none; frontend: none; backend: none\n  tests: none; E2E: none\n  existing .cadre/: none\nUser setup (names only):\n  plugins: 1 (superpowers@claude-plugins-official)\n  skills: 0; agents: 0; MCP servers: none\n  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none\nwarning: could not list docs/superpowers (treated as unknown)\n\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nRepo scan (read-only):\n  stack: none; frontend: none; backend: none\n  tests: none; E2E: none\n  existing .cadre/: none\nUser setup (names only):\n  plugins: 1 (superpowers@claude-plugins-official)\n  skills: 0; agents: 0; MCP servers: none\n  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none\nwarning: could not list docs/superpowers (treated as unknown)\n\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+    ]
+  },
+  {
+    "header": "Framework",
+    "options": [
+      "Keep GSD and superpowers (Recommended)",
+      "None (built-in)",
+      "Describe your own"
+    ],
+    "previews": [
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
     ]
   },
   {
@@ -78,8 +91,8 @@ export const GOLDEN_PREVIEWS: readonly {
       "Not now"
     ],
     "previews": [
-      "**Security plugins**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```",
-      "**Security plugins**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```"
+      "**Security plugins**\n```\nRecommendations (print-only; init asks before it installs any):\n- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL\n    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```",
+      "**Security plugins**\n```\nRecommendations (print-only; init asks before it installs any):\n- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL\n    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```"
     ]
   },
   {
@@ -91,10 +104,10 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe your own"
     ],
     "previews": [
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
     ]
   },
   {
@@ -104,8 +117,8 @@ export const GOLDEN_PREVIEWS: readonly {
       "Per role"
     ],
     "previews": [
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
     ]
   },
   {
@@ -117,10 +130,21 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe your own"
     ],
     "previews": [
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+    ]
+  },
+  {
+    "header": "Skills",
+    "options": [
+      "No",
+      "Yes, install it"
+    ],
+    "previews": [
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
     ]
   },
   {
@@ -179,9 +203,9 @@ export const GOLDEN_PREVIEWS: readonly {
       "Change something…"
     ],
     "previews": [
-      "**Review (page 1 of 7)**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: none\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied\n```",
-      "**Review (page 1 of 7)**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: none\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied\n```",
-      "**Review (page 1 of 7)**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: none\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied\n```"
+      "**Review (page 1 of 8)**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: built-in; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: none\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied\n```",
+      "**Review (page 1 of 8)**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: built-in; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: none\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied\n```",
+      "**Review (page 1 of 8)**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: built-in; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: none\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied\n```"
     ]
   }
 ]
@@ -198,7 +222,7 @@ export const GOLDEN_PANE_ROWS: {
 } = {
   "inline": [
     [
-      "Review (page 1 of 7)"
+      "Review (page 1 of 8)"
     ],
     [
       "Roles:"
@@ -218,10 +242,10 @@ export const GOLDEN_PANE_ROWS: {
       "PM (pm)"
     ],
     [
-      "  framework: GSD; model: opus + medium; permission mode:"
+      "  framework: built-in; model: opus + medium; permission"
     ],
     [
-      "auto"
+      "mode: auto"
     ],
     [
       "  skills: none"
@@ -290,7 +314,7 @@ export const GOLDEN_PANE_ROWS: {
   ],
   "dock": [
     [
-      "Review (page 1 of 7)"
+      "Review (page 1 of 8)"
     ],
     [
       "Roles:"
@@ -310,10 +334,10 @@ export const GOLDEN_PANE_ROWS: {
       "PM (pm)"
     ],
     [
-      "  framework: GSD; model: opus + medium; permission mode:"
+      "  framework: built-in; model: opus + medium; permission"
     ],
     [
-      "auto"
+      "mode: auto"
     ],
     [
       "  skills: none"

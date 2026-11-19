@@ -62,7 +62,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -140,7 +140,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -188,6 +188,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
           "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
           "    run: claude plugin install superpowers@claude-plugins-official",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
           "    run: claude plugin install claude-security@claude-plugins-official",
           "- security-guidance for Security: no hooks warn the Security role about risky edits",
@@ -225,6 +227,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "    run: claude plugin install superpowers@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -281,7 +293,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -306,7 +318,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -351,7 +363,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -376,7 +388,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -421,7 +433,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -446,7 +458,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -483,6 +495,76 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  dropped be: no source code found",
+          "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+          "  dropped qa: no tests or E2E setup found"
+        ],
+        "kind": "roles",
+        "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n3 roles: pm, tl, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Git policy",
@@ -568,7 +650,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 7)",
+        "title": "Review (page 1 of 8)",
         "lines": [
           "Roles:",
           "  PM (pm)",
@@ -591,10 +673,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
         ],
         "kind": "review",
-        "summary": "25 files, 3 roles",
+        "summary": "26 files, 3 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n25 files, 3 roles\nReview (page 1 of 7)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n26 files, 3 roles\nReview (page 1 of 8)"
         }
       },
       "acceptsTyped": false
@@ -645,7 +727,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -718,7 +800,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -762,11 +844,49 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "acceptsTyped": false
     },
     {
+      "header": "Framework",
+      "context": {
+        "title": "Frameworks",
+        "lines": [
+          "GSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)",
+          "superpowers: not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)"
+        ],
+        "kind": "detection",
+        "summary": "1 framework found: gsd",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Which frameworks does this team use? Found: GSD. Adding one installs it at project scope after Confirm.\nRoles: pm, tl, be, fe, qa, security.",
+          "text": "Which frameworks does this team use? Found: GSD. Adding one installs it at project scope after Confirm.\n1 framework found: gsd"
+        }
+      },
+      "acceptsTyped": true
+    },
+    {
       "header": "Security",
       "context": {
         "title": "Security plugins",
         "lines": [
           "Recommendations (print-only; init asks before it installs any):",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
           "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
           "- DevTools MCP for FE: the FE role cannot inspect the running page",
@@ -788,6 +908,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -864,7 +994,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -890,7 +1020,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -940,7 +1070,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -966,7 +1096,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1016,7 +1146,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1042,7 +1172,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1084,6 +1214,82 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+          "  BE (be)                 Implements the backend and core code.",
+          "  FE (fe)                 Implements the frontend.",
+          "  QA (qa)                 Owns tests and end-to-end checks.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  kept be: source code found (TypeScript), no backend framework (package.json)"
+        ],
+        "kind": "roles",
+        "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n6 roles: pm, tl, be, fe, qa, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Hunk 1 of 2",
@@ -1263,7 +1469,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 13)",
+        "title": "Review (page 1 of 14)",
         "lines": [
           "Roles:",
           "  PM (pm)",
@@ -1273,7 +1479,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  QA (qa)",
           "  Security (security)",
           "Scope card: PM (pm)",
-          "  framework: GSD; model: opus + medium; permission mode: auto",
+          "  framework: built-in; model: opus + medium; permission mode: auto",
           "  skills: none",
           "  MCP servers: none",
           "  not given skills: none",
@@ -1286,10 +1492,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [hard] No Bash tool (denied)"
         ],
         "kind": "review",
-        "summary": "46 files, 6 roles",
+        "summary": "47 files, 6 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 46 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n46 files, 6 roles\nReview (page 1 of 13)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 47 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 14)"
         }
       },
       "acceptsTyped": false
@@ -1340,7 +1546,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1413,7 +1619,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1457,11 +1663,89 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "acceptsTyped": false
     },
     {
+      "header": "Framework",
+      "context": {
+        "title": "Frameworks",
+        "lines": [
+          "GSD: not found (no .planning/; no gsd-core install proven)",
+          "superpowers: in use (docs/superpowers/)"
+        ],
+        "kind": "detection",
+        "summary": "1 framework found: superpowers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "not found (no .planning/; no gsd-core install proven)",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "in use (docs/superpowers/)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Which frameworks does this team use? Found: superpowers. Adding one installs it at project scope after Confirm.\nRoles: pm, tl, be, fe, qa, security.",
+          "text": "Which frameworks does this team use? Found: superpowers. Adding one installs it at project scope after Confirm.\n1 framework found: superpowers"
+        }
+      },
+      "acceptsTyped": true
+    },
+    {
+      "header": "Framework",
+      "context": {
+        "title": "Install superpowers",
+        "lines": [
+          "superpowers is in use here (docs/superpowers/) but not installed",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "It writes enabledPlugins in .claude/settings.json."
+        ],
+        "kind": "consent",
+        "summary": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+        "pane": {
+          "asked": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "text": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "superpowers is in use here (docs/superpowers/) but not installed",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "It writes enabledPlugins in .claude/settings.json.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
+      },
+      "acceptsTyped": false
+    },
+    {
       "header": "Security",
       "context": {
         "title": "Security plugins",
         "lines": [
           "Recommendations (print-only; init asks before it installs any):",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
           "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
           "- DevTools MCP for FE: the FE role cannot inspect the running page",
@@ -1483,6 +1767,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -1559,7 +1853,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1585,7 +1879,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1635,7 +1929,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1661,7 +1955,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1711,7 +2005,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  BE (be)                 Implements the backend and core code.",
           "  FE (fe)                 Implements the frontend.",
           "  QA (qa)                 Owns tests and end-to-end checks.",
@@ -1737,7 +2031,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -1779,6 +2073,82 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+          "  BE (be)                 Implements the backend and core code.",
+          "  FE (fe)                 Implements the frontend.",
+          "  QA (qa)                 Owns tests and end-to-end checks.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  kept be: source code found (TypeScript), no backend framework (package.json)"
+        ],
+        "kind": "roles",
+        "summary": "6 roles: pm, tl, be, fe, qa, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "BE (be)                 Implements the backend and core code.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "FE (fe)                 Implements the frontend.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "QA (qa)                 Owns tests and end-to-end checks.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  kept be: source code found (TypeScript), no backend framework (package.json)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n6 roles: pm, tl, be, fe, qa, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Git policy",
@@ -1864,7 +2234,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 13)",
+        "title": "Review (page 1 of 14)",
         "lines": [
           "Roles:",
           "  PM (pm)",
@@ -1874,7 +2244,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  QA (qa)",
           "  Security (security)",
           "Scope card: PM (pm)",
-          "  framework: superpowers; model: opus + medium; permission mode: auto",
+          "  framework: built-in; model: opus + medium; permission mode: auto",
           "  skills: none",
           "  MCP servers: none",
           "  not given skills: none",
@@ -1887,10 +2257,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [hard] No Bash tool (denied)"
         ],
         "kind": "review",
-        "summary": "46 files, 6 roles",
+        "summary": "47 files, 6 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 46 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n46 files, 6 roles\nReview (page 1 of 13)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 47 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n47 files, 6 roles\nReview (page 1 of 14)"
         }
       },
       "acceptsTyped": false
@@ -1943,7 +2313,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2027,7 +2397,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2062,6 +2432,122 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.",
           "text": "Use these roles?\n3 roles: pm, tl, security"
         }
+      },
+      "acceptsTyped": false
+    },
+    {
+      "header": "Framework",
+      "context": {
+        "title": "Frameworks",
+        "lines": [
+          "GSD: in use (.planning/ (dir))",
+          "superpowers: in use (docs/superpowers/)"
+        ],
+        "kind": "detection",
+        "summary": "2 frameworks found: gsd, superpowers",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "field",
+                "label": "GSD",
+                "text": "in use (.planning/ (dir))",
+                "indent": 0
+              },
+              {
+                "role": "field",
+                "label": "superpowers",
+                "text": "in use (docs/superpowers/)",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.\nRoles: pm, tl, security.",
+          "text": "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.\n2 frameworks found: gsd, superpowers"
+        }
+      },
+      "acceptsTyped": true
+    },
+    {
+      "header": "Framework",
+      "context": {
+        "title": "Install GSD",
+        "lines": [
+          "GSD is in use here (.planning/ (dir)) but not installed",
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, .claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json."
+        ],
+        "kind": "consent",
+        "summary": "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+        "pane": {
+          "asked": "Install GSD for this repo?\ncadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "text": "Install GSD for this repo?\ncadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "GSD is in use here (.planning/ (dir)) but not installed",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "It writes .claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, .claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
+      },
+      "acceptsTyped": false
+    },
+    {
+      "header": "Framework",
+      "context": {
+        "title": "Install superpowers",
+        "lines": [
+          "superpowers is in use here (docs/superpowers/) but not installed",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "It writes enabledPlugins in .claude/settings.json."
+        ],
+        "kind": "consent",
+        "summary": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+        "pane": {
+          "asked": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+          "text": "Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        },
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "plain",
+                "text": "superpowers is in use here (docs/superpowers/) but not installed",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from.",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "It writes enabledPlugins in .claude/settings.json.",
+                "indent": 0
+              }
+            ]
+          }
+        ]
       },
       "acceptsTyped": false
     },
@@ -2143,6 +2629,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "title": "Security plugins",
         "lines": [
           "Recommendations (print-only; init asks before it installs any):",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
           "    run: claude plugin install claude-security@claude-plugins-official",
           "- security-guidance for Security: no hooks warn the Security role about risky edits",
@@ -2160,6 +2648,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "Recommendations (print-only; init asks before it installs any):",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -2216,7 +2714,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2241,7 +2739,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2286,7 +2784,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2311,7 +2809,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2356,7 +2854,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -2381,7 +2879,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -2517,6 +3015,76 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  dropped be: no source code found",
+          "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+          "  dropped qa: no tests or E2E setup found"
+        ],
+        "kind": "roles",
+        "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n3 roles: pm, tl, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Instructions",
@@ -2926,7 +3494,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  Team Lead (tl)",
           "  Security (security)",
           "Scope card: PM (pm)",
-          "  framework: GSD; model: opus + medium; permission mode: auto",
+          "  framework: built-in; model: opus + medium; permission mode: auto",
           "  skills: none",
           "  MCP servers: none",
           "  not given skills: codex:rescue",
@@ -2942,10 +3510,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [best-effort] Denied servers: tools removed and the whole server denied (deniedMcpServers; best-effort)"
         ],
         "kind": "review",
-        "summary": "25 files, 3 roles",
+        "summary": "26 files, 3 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n25 files, 3 roles\nReview (page 1 of 8)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n26 files, 3 roles\nReview (page 1 of 8)"
         }
       },
       "acceptsTyped": false
@@ -2997,7 +3565,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3075,7 +3643,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3123,6 +3691,8 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
           "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
           "    run: claude plugin install superpowers@claude-plugins-official",
+          "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+          "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
           "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
           "    run: claude plugin install claude-security@claude-plugins-official",
           "- security-guidance for Security: no hooks warn the Security role about risky edits",
@@ -3160,6 +3730,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               {
                 "role": "plain",
                 "text": "    run: claude plugin install superpowers@claude-plugins-official",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "- mattpocock-skills for PM: PM has no grill skill to sharpen each ticket with you before it goes to TL",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "    run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
                 "indent": 0
               },
               {
@@ -3216,7 +3796,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3241,7 +3821,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3286,7 +3866,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3311,7 +3891,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3356,7 +3936,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
-          "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
           "  Security (security)     Owns security decisions and reviews.",
           "Changes from the scan:",
           "  dropped be: no source code found",
@@ -3381,7 +3961,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
               },
               {
                 "role": "plain",
-                "text": "Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
                 "indent": 2
               },
               {
@@ -3418,6 +3998,76 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         }
       },
       "acceptsTyped": true
+    },
+    {
+      "header": "Skills",
+      "context": {
+        "title": "Roles",
+        "lines": [
+          "Proposed roles:",
+          "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+          "  Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+          "  Security (security)     Owns security decisions and reviews.",
+          "Changes from the scan:",
+          "  dropped be: no source code found",
+          "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+          "  dropped qa: no tests or E2E setup found"
+        ],
+        "kind": "roles",
+        "summary": "3 roles: pm, tl, security",
+        "rows": [
+          {
+            "title": null,
+            "rows": [
+              {
+                "role": "heading",
+                "text": "Proposed roles:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Team Lead (tl)          Owns architecture and high-level decisions; briefs the implementers.",
+                "indent": 2
+              },
+              {
+                "role": "plain",
+                "text": "Security (security)     Owns security decisions and reviews.",
+                "indent": 2
+              },
+              {
+                "role": "heading",
+                "text": "Changes from the scan:",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped be: no source code found",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
+                "indent": 0
+              },
+              {
+                "role": "plain",
+                "text": "  dropped qa: no tests or E2E setup found",
+                "indent": 0
+              }
+            ]
+          }
+        ],
+        "pane": {
+          "asked": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\nIt runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project",
+          "text": "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.\n3 roles: pm, tl, security"
+        }
+      },
+      "acceptsTyped": false
     },
     {
       "header": "Instructions",
@@ -3576,9 +4226,9 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Improver install",
         "lines": [
-          "Built CLAUDE.md files it would tidy:",
-          "  tl: .cadre/tl/CLAUDE.md",
-          "  security: .cadre/security/CLAUDE.md"
+          "Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:",
+          "  tl: <config dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md",
+          "  security: <config dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md"
         ],
         "kind": "improver-install",
         "summary": "2 roles: tl, security",
@@ -3588,27 +4238,27 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
             "rows": [
               {
                 "role": "heading",
-                "text": "Built CLAUDE.md files it would tidy:",
+                "text": "Private CLAUDE.md files it would tidy, built from your global CLAUDE.md:",
                 "indent": 0
               },
               {
                 "role": "field",
                 "label": "tl",
-                "text": ".cadre/tl/CLAUDE.md",
+                "text": "<config dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md",
                 "indent": 2
               },
               {
                 "role": "field",
                 "label": "security",
-                "text": ".cadre/security/CLAUDE.md",
+                "text": "<config dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md",
                 "indent": 2
               }
             ]
           }
         ],
         "pane": {
-          "asked": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\nWithout it the built files stay as cadre wrote them; a --dry-run installs nothing.",
-          "text": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\n2 roles: tl, security"
+          "asked": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.\nWithout it the private CLAUDE.md files stay as cadre wrote them; a --dry-run installs nothing.",
+          "text": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.\n2 roles: tl, security"
         }
       },
       "acceptsTyped": false
@@ -3720,10 +4370,10 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
         ],
         "kind": "review",
-        "summary": "25 files, 3 roles",
+        "summary": "26 files, 3 roles",
         "pane": {
-          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
-          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n25 files, 3 roles\nReview (page 1 of 8)"
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n26 files, 3 roles\nReview (page 1 of 8)"
         }
       },
       "acceptsTyped": false

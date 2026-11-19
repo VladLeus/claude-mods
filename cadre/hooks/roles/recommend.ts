@@ -7,14 +7,15 @@
 import type { FrameworkId, Recommendation, RepoScan, RoleSpec, SetupScan, TemplateRoleId } from '../../types'
 import { adapterOf } from '../framework/registry'
 import { t } from '../locales/t'
-import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './infra'
+import { CLAUDE_SECURITY_PLUGIN, MATTPOCOCK_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './infra'
 import { standsFor } from './template'
 
 /**
  * The commands printed for the person to run (D-96 as reworded by decision #39), each defined once and used wherever
  * it is shown. The recommendation lines run none of them (ROLE-03, D-28). Init itself offers to run the two security
  * ones, `claudeSecurity` and `securityGuidance`, after Confirm, and only on an explicit Install (decision #39); each is
- * the argv of pluginInstallArgv for its key, joined with spaces.
+ * the argv of pluginInstallArgv for its key, joined with spaces. `mattpocock` is PM's grill plugin at project scope:
+ * the argv projectPluginInstall gives for MATTPOCOCK_PLUGIN, joined with spaces.
  */
 export const INSTALL_COMMANDS: Readonly<{
   gsd: string | null
@@ -23,6 +24,7 @@ export const INSTALL_COMMANDS: Readonly<{
   devtools: string
   claudeSecurity: string
   securityGuidance: string
+  mattpocock: string
 }> = Object.freeze({
   gsd: adapterOf('gsd').install,
   superpowers: adapterOf('superpowers').install,
@@ -30,6 +32,7 @@ export const INSTALL_COMMANDS: Readonly<{
   devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
   claudeSecurity: 'claude plugin install claude-security@claude-plugins-official',
   securityGuidance: 'claude plugin install security-guidance@claude-plugins-official',
+  mattpocock: 'claude plugin install mattpocock-skills@claude-plugins-official --scope project',
 })
 
 /** Why GSD and superpowers are recommended: no role of the team uses a framework (D-17, D-74). */
@@ -75,7 +78,8 @@ function hasMcp(setup: SetupScan, pattern: RegExp): boolean {
 
 /**
  * The tools to recommend for a team (ROLE-03, D-74 as reworded by decision #39), in this order: GSD and superpowers
- * when no role uses a framework; Playwright MCP for each FE role when the scan found no E2E setup and no playwright MCP
+ * when no role uses a framework; mattpocock-skills for each PM role while missingPmPlugins names it; Playwright MCP for
+ * each FE role when the scan found no E2E setup and no playwright MCP
  * server exists; DevTools MCP for each FE role when no devtools MCP server exists; claude-security and then
  * security-guidance for each Security role when missingSecurityPlugins names it, so the Security lines name exactly the
  * plugins init offers to install (T-03-46, decision #69 A1), and a scanned security-review skill removes no line. A
@@ -93,6 +97,11 @@ export function recommend(input: {
 
   return [
     ...frameworkRecommendations(frameworks),
+    ...forTemplateRole(roles, 'pm', missingPmPlugins(roles, setup).includes(MATTPOCOCK_PLUGIN), {
+      tool: 'mattpocock-skills',
+      why: t('roles.recommend.pmGrillWhy'),
+      install: INSTALL_COMMANDS.mattpocock,
+    }),
     ...forTemplateRole(roles, 'fe', !hasE2e(scan) && !hasMcp(setup, PLAYWRIGHT_NAME), {
       tool: t('roles.recommend.recommendTool'),
       why: t('roles.recommend.recommendWhy'),
@@ -127,4 +136,15 @@ export function missingSecurityPlugins(roles: readonly RoleSpec[], setup: SetupS
   if (!roles.some(role => standsFor(role, 'security'))) return []
 
   return SECURITY_PLUGINS.filter(key => !setup.installedPlugins.includes(key))
+}
+
+/**
+ * The plugins init offers to install for PM: MATTPOCOCK_PLUGIN while a role stands for PM and `setup.installedPlugins`
+ * does not hold that exact key, so a key that only a settings file enables or a lookalike of another marketplace does
+ * not hide the offer.
+ */
+export function missingPmPlugins(roles: readonly RoleSpec[], setup: SetupScan): string[] {
+  if (!roles.some(role => standsFor(role, 'pm'))) return []
+
+  return setup.installedPlugins.includes(MATTPOCOCK_PLUGIN) ? [] : [MATTPOCOCK_PLUGIN]
 }

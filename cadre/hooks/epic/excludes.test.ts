@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun } from '../../types'
-import { excludesText, globalExcludesPath, untrackedEntries } from './excludes'
+import { excludesText, globalExcludesPath, includedEntries, untrackedEntries } from './excludes'
 
 describe('mirroring the main checkout into the epic worktree (D-147, D-148)', () => {
   test('untrackedEntries reads both NUL-ended listings: each entry once, sorted, without its trailing /', () => {
@@ -38,5 +38,21 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
     expect(globalExcludesPath(unset, unset, '/home/u')).toBe('/home/u/.config/git/ignore')
     expect(globalExcludesPath(unset, unset, null)).toBeNull()
     expect(globalExcludesPath(run(0, 'relative/ignore\n'), null, '/home/u')).toBe('/home/u/.config/git/ignore')
+  })
+})
+
+describe('copying what .worktreeinclude names into the epic worktree', () => {
+  test('includedEntries keeps a named entry git ignores too, or one below a folder git ignores', () => {
+    expect(includedEntries('thoughts/\0', 'thoughts/\0node_modules/\0')).toEqual(['thoughts'])
+    expect(includedEntries('thoughts/shared/\0', 'thoughts/\0')).toEqual(['thoughts/shared'])
+  })
+
+  test('includedEntries gives the ignored entries below a named folder broader than them', () => {
+    expect(includedEntries('docs/\0', 'dist/\0docs/a.md\0docs/b.md\0')).toEqual(['docs/a.md', 'docs/b.md'])
+  })
+
+  test('includedEntries drops what git does not ignore and empty names, and gives each name once, sorted', () => {
+    expect(includedEntries('notes/\0thoughts2/\0', 'thoughts/\0')).toEqual([])
+    expect(includedEntries('b/\0\0a/\0a/\0', 'a/\0b/\0')).toEqual(['a', 'b'])
   })
 })

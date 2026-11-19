@@ -19,24 +19,27 @@ import type {
   InitLocations,
   InstructionGroup,
   InstructionPart,
+  LaunchStart,
+  ManifestEntry,
   MemoryItem,
   Plan,
+  PluginFlag,
   PortEntry,
   RawGsdCandidate,
+  RepoEntry,
   RoleSpec,
   SetupScan,
+  Sizing,
   TemplateRoleId,
 } from '../../types'
 import { CONFLICT_OPTIONS, conflictQuestion } from '../apply/conflict'
+import { IMPROVER_PROGRESS, improverArgv, improverLine, otherChangesWarning } from '../apply/improver'
 import {
-  IMPROVER_PROGRESS,
-  improverArgv,
-  improverGuardFlags,
-  improverLine,
-  improverNoChangeNote,
-  otherChangesWarning,
-} from '../apply/improver'
-import { installedLine, installFailureText, MARKETPLACE_ADD_ARGV } from '../apply/installs'
+  installedLine,
+  installFailureText,
+  MARKETPLACE_ADD_ARGV,
+  projectInstallOf,
+} from '../apply/installs'
 import {
   instructionsRecordPath,
   instructionsRecordText,
@@ -53,7 +56,7 @@ import {
 import { sha256Hex } from '../core/hash'
 import { compareText } from '../core/text'
 import { attendedNote, NOT_SET_TEXT } from '../framework/gsd/hunks'
-import { roleClaudeMdText } from '../generate/docs'
+import { roleClaudeMdText, roleJsonText, rubricText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
@@ -64,22 +67,26 @@ import {
   manyNamesWorld,
   oversizeGroupWorld,
   oversizeWorld,
+  regenWorld,
   tableMatchWorld,
 } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
+import { notGitRepoReply } from '../guards/repo'
 import { isPartsFlowRole } from '../launch/links'
 import { PANE_LIST_WORDS, t } from '../locales/t'
+import { SIZING_RUBRIC_PATH } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { runRegen } from '../regen/run'
 import type { RegenOptions } from '../regen/run'
-import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL } from '../roles/infra'
+import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL, GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { proposeRoles } from '../roles/propose'
 import { recommend } from '../roles/recommend'
 import { parseRoleJson } from '../roles/rolejson'
 import { AUTOPILOT_THRESHOLD } from '../roles/template'
 import { gatherScans, scanWarnings } from '../scan/gather'
+import { autopilotReply } from '../scan/autopilot'
 import { scanRepo } from '../scan/repo'
 import { scanSetup } from '../scan/setup/setup'
 import { scopeCardLines } from '../scope/card'
@@ -90,7 +97,7 @@ import { MCP_SYSTEM } from '../suggest/mcp'
 import type { McpPromptServer } from '../suggest/mcp'
 import { SKILLS_SYSTEM } from '../suggest/skills'
 import { TOPICS_SYSTEM } from '../suggest/topics'
-import { resolvedFramework, scopesFor } from '../team'
+import { noStateReply, regenBadRole, resolvedFramework, scopesFor } from '../team'
 import {
   ABSOLUTE_PATH_MARKERS,
   ancestor,
@@ -107,6 +114,7 @@ import {
   FRAMEWORKS,
   FULL_DIRS,
   FULL_FILES,
+  GIT_SECTION,
   gitWorld,
   GLOBAL_CLAUDE_MD,
   GLOBAL_SENTENCE,
@@ -139,6 +147,7 @@ import {
   regenPartsWorld,
   REPO_SENTENCE,
   repoScan,
+  rootPart,
   RULES_SECTION,
   scansOf,
   SECRET_FIXTURES,
@@ -146,6 +155,7 @@ import {
   SECURITY_KEY,
   SECURITY_KEYS,
   session,
+  SHA_A,
   skillRef,
   SOURCE_SCAN,
   stageStep,
@@ -181,8 +191,11 @@ import type { SurfaceModule } from '../ui/surfaces/contract'
 import { PANE_DESKTOP } from '../ui/surfaces/pane-desktop'
 import { PANE_FULLSCREEN } from '../ui/surfaces/pane-fullscreen'
 import { TUI_DEFAULT } from '../ui/surfaces/tui-default'
+import type { Draft, PlanResult, ReframeDraft, Reframed } from './draft'
 import { CONFLICT_CONTEXT } from './initapply'
-import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
+import { consentedPluginKeys, initFrameworks, initSizing } from './initplan'
+import type { PlanStepInput } from './initplan'
+import { cancelledReply, frameworksInEpicReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
   APPLY_HUNKS_PROGRESS,
   consentedGsdCheck,
@@ -193,6 +206,9 @@ import {
   perform,
   performState,
   planStep,
+  reframeApplied,
+  reframePlan,
+  runFrameworks,
   runInit,
   SCAN_PROGRESS,
   SCAN_SUMMARY,
@@ -240,6 +256,7 @@ import {
 import { MEMORY_DISMISSED_REASON } from './stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStage } from './stages/model'
 import { ASSIGNMENT_DISMISSED_REASON } from './stages/own-skills'
+import { PM_PLUGIN_QUESTION } from './stages/pm-plugin'
 import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine, policyStage } from './stages/policy'
 import {
   cardLines,
@@ -264,7 +281,7 @@ import {
   rolesStage,
 } from './stages/roles'
 import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityStage } from './stages/security'
-import type { Answer, Effect, InitState } from './state'
+import type { Answer, Applied, Effect, InitState } from './state'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -728,21 +745,21 @@ describe('runInit framework and recommendations', () => {
       facts: {
         ...EMPTY_FACTS,
         enabledPlugins: [{ key: 'superpowers@claude-plugins-official', source: 'user', value: true }],
+        superpowersVersions: [{ key: 'superpowers@claude-plugins-official', version: '6.4.1' }],
         gsd: [unproven],
       },
       gsdUserDir: '/home/u/.claude/gsd-core',
     }
     const check = "ask Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)"
-    const framework =
-      'ask Which framework do the roles use? (asked because none is in use here, but some are installed for you)'
     const cases: readonly (readonly [string, number])[] = [['No, skip the check', 0], ['Yes, run the check', 1]]
     for (const [answer, runs] of cases) {
       const run = memIo(gitWorld({ facts }), { ...INIT_ANSWERS, "Run GSD's own check": answer })
       const { io, events } = withEvents(run)
       await runInit(io, { dryRun: true })
       const checkAt = events.indexOf(check)
+      const setAt = events.findIndex(event => event.startsWith(`ask ${SET_QUESTION_START}`))
 
-      const order = [checkAt >= 0, checkAt < events.indexOf(framework)]
+      const order = [checkAt >= 0, checkAt < setAt]
       expect([...order, run.gsdIdentityCalls.length]).toEqual([true, true, runs])
     }
   })
@@ -753,6 +770,7 @@ describe('runInit framework and recommendations', () => {
       'No, skip it',
       'Adjust them',
       'framework security superpowers',
+      'No',
       'Done adjusting',
       'Use these roles',
       'Commit definitions (default)',
@@ -761,9 +779,24 @@ describe('runInit framework and recommendations', () => {
     await runInit(run.io, { dryRun: true })
     const refusal =
       'Cannot set security to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
-      'security keeps its framework.'
+      'security keeps its framework. To install it, run from the repo root: ' +
+      'claude plugin install superpowers@claude-plugins-official --scope project'
     expect(run.asked.some(question => question.startsWith(`${refusal}\n${ADJUST_QUESTION}\n`))).toBe(true)
     expect(run.logged).not.toContain(refusal)
+  })
+
+  test('GSD in use, not installed: Keep GSD and Yes put its install command in the review', async () => {
+    const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+    const run = memIo(gitWorld({ facts: { facts: gsdOnly, gsdUserDir: null } }), {
+      ...INIT_ANSWERS,
+      'Install GSD for this repo?': 'Yes, install it',
+    })
+    await runInit(pagedIo(run), { dryRun: true })
+    const command = 'npx -y @opengsd/gsd-core@latest --claude --local'
+    const installAt = run.asked.findIndex(question => question.startsWith('Install GSD for this repo?'))
+    const reviewAt = run.asked.findIndex(question => question.startsWith('Review the plan'))
+    expect([installAt >= 0, installAt < reviewAt]).toEqual([true, true])
+    expect(lastReview(run).some(line => line.startsWith('Framework install') && line.includes(command))).toBe(true)
   })
 
   test('a dismissed framework question cancels init and prints why (A1)', async () => {
@@ -1059,18 +1092,18 @@ describe('progress lines (D-232)', () => {
   })
 
   test('the status texts name what init waits for, one per model call (D-232, DECIDED #22)', () => {
-    expect([SCAN_PROGRESS, HISTORY_PROGRESS]).toEqual(['cadre: scanning the repo…', 'cadre: reading session history…'])
+    expect([SCAN_PROGRESS, HISTORY_PROGRESS]).toEqual(['Scanning the repo…', 'Reading session history…'])
     expect([APPLY_HUNKS_PROGRESS, INSTALL_PROGRESS, IMPROVER_PROGRESS]).toEqual([
-      'cadre: running the accepted changes…',
-      'cadre: installing plugins…',
-      'cadre: running the improver…',
+      'Running the accepted changes…',
+      'Installing plugins…',
+      'Running the improver…',
     ])
     expect(MODEL_PROGRESS).toEqual({
-      'describe-roles': 'cadre: reading your structure…',
-      mcp: 'cadre: recommending MCP servers…',
-      skills: 'cadre: recommending skills…',
-      topics: 'cadre: grouping instructions…',
-      parts: 'cadre: recommending instruction parts…',
+      'describe-roles': 'Reading your structure…',
+      mcp: 'Recommending MCP servers…',
+      skills: 'Recommending skills…',
+      topics: 'Grouping instructions…',
+      parts: 'Recommending instruction parts…',
     })
   })
 })
@@ -1587,8 +1620,8 @@ describe('instruction parts (G-02-1f)', () => {
     // The plan also reads the path of each built role file, to classify it against the disk (G-02-1f, PLAN-04).
     const instructionReads = run.reads.filter(path => path.endsWith('CLAUDE.md') && !path.includes('/.cadre/'))
     expect(instructionReads).toEqual([GLOBAL_CLAUDE_MD, '/repo/CLAUDE.md'])
-    expect(run.prompts[0]).toContain('P2 | CLAUDE.md | Rules | # Rules')
-    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: CLAUDE.md > Rules')
+    expect(run.prompts[0]).toContain('P2 | CLAUDE.md | (top of file) | # Rules')
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: CLAUDE.md')
   })
 
   test('the content consent counts the global file and the chain files the scan found', async () => {
@@ -1692,11 +1725,11 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
   test('after a yes the rule file is a part offered to the grouping call and shown by its location', async () => {
     const run = memIo(rulesWorld(), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.prompts[0]).toContain('P1 | .claude/rules/security.md | Secrets | # Secrets')
+    expect(run.prompts[0]).toContain('P1 | .claude/rules/security.md | (top of file) | # Secrets')
     expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual([
       READ_HEADING_ROW,
       '  Secrets: How secrets are kept.',
-      '    from: .claude/rules/security.md > Secrets',
+      '    from: .claude/rules/security.md',
       '    recommended: security',
     ])
   })
@@ -1740,7 +1773,22 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
       'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md yes, 0 memories. ' +
       'No keeps the whole-file questions.'
     expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
-    expect(run.prompts[0]).toContain('P1 | AGENTS.md | Agents | # Agents')
+    expect(run.prompts[0]).toContain('P1 | AGENTS.md | (top of file) | # Agents')
+  })
+
+  test('a repo with a root CLAUDE.md does not offer AGENTS.md', async () => {
+    const world = chainWorld({
+      files: {
+        [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+        '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\n`,
+        '/repo/AGENTS.md': '# Agents\nWork in small steps.\n',
+      },
+    })
+    const run = memIo(world, PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.reads).not.toContain('/repo/AGENTS.md')
+    expect(run.prompts[0]).not.toContain(' | AGENTS.md | ')
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION).filter(line => line.includes('AGENTS.md'))).toEqual([])
   })
 
   test('a rules folder that cannot be listed counts 0, and its warning shows in the block after a yes', async () => {
@@ -1751,35 +1799,28 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain(warning)
   })
 
-  test('a doc the repo CLAUDE.md links to is read as a repo part after the chain', async () => {
-    const topics = [
-      { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
-      { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2', 'P3'] },
-    ]
+  test('a doc the repo CLAUDE.md links to is never read or offered', async () => {
     const world = chainWorld({
       files: {
         [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
         '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\nSee [the guide](docs/guide.md).\n`,
         '/repo/docs/guide.md': `# Guide\n${DOC_SENTENCE}.\n`,
       },
-      replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'],
     })
     const run = memIo(world, PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.prompts[0]).toContain('P3 | docs/guide.md | Guide | # Guide')
-    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: docs/guide.md > Guide')
+    expect(run.reads).not.toContain('/repo/docs/guide.md')
+    expect(run.prompts[0]).not.toContain(' | docs/guide.md | ')
+    expect(leaks(run.prompts.join('\n'), [DOC_SENTENCE])).toEqual([])
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION).filter(line => line.includes('docs/guide.md'))).toEqual([])
   })
 
-  test('rule and doc text never reaches a question, a log line, the pane or the reply (T-02-61)', async () => {
+  test('rule text never reaches a question, a log line, the pane or the reply; a linked doc is not read', async () => {
     const world = rulesWorld({
       files: {
         [`${RULES_DIR}/security.md`]: `# Secrets\n${RULE_SENTENCE}.\nSee [the guide](../../docs/guide.md).\n`,
         '/repo/docs/guide.md': `# Guide\n${DOC_SENTENCE}.\n`,
       },
-      replies: [
-        '{"topics":[{"title":"Secrets","summary":"How secrets are kept.","parts":["P1","P2"]}]}',
-        '{"topics":{"T1":["security"]},"memories":{}}',
-      ],
     })
     const run = memIo(world, { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part' })
     const reply = await runInit(run.io, { dryRun: true })
@@ -1793,7 +1834,8 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
       reply,
     ].join('\n')
     expect(leaks(shown, [RULE_SENTENCE, DOC_SENTENCE])).toEqual([])
-    expect(leaks(run.prompts[0] ?? '', [RULE_SENTENCE, DOC_SENTENCE])).toEqual([RULE_SENTENCE, DOC_SENTENCE])
+    expect(leaks(run.prompts[0] ?? '', [RULE_SENTENCE, DOC_SENTENCE])).toEqual([RULE_SENTENCE])
+    expect(run.reads).not.toContain('/repo/docs/guide.md')
   })
 
   test('a plain init on a repo with only rule files lists them before the consent and asks it', async () => {
@@ -1943,9 +1985,10 @@ describe('memories one by one (G-02-1f)', () => {
 })
 
 /**
- * A git repo with every instruction source (02-GAPS-B2 N5): the global CLAUDE.md, the repo CLAUDE.md of the chain,
- * which links docs/guide.md, a top-level and a nested rule file, AGENTS.md, and the memory folder with MEMORY.md and
- * one memory. The model gives no usable reply, so each file is one topic and nothing is recommended.
+ * A git repo with every instruction source: the global CLAUDE.md, the repo CLAUDE.md of the chain, which links
+ * docs/guide.md (never read), a top-level and a nested rule file, and the memory folder with MEMORY.md and one memory;
+ * its AGENTS.md is not read beside the root CLAUDE.md. The model gives no usable reply, so each file is one topic and
+ * nothing is recommended.
  */
 function everySourceWorld(): MemWorld {
   return gitWorld({
@@ -1970,14 +2013,12 @@ function everySourceWorld(): MemWorld {
   })
 }
 
-/** Each instruction source file of everySourceWorld, as the port reads it. */
+/** Each instruction source file of everySourceWorld that the read takes, as the port reads it. */
 const EVERY_SOURCE: readonly string[] = [
   GLOBAL_CLAUDE_MD,
   '/repo/CLAUDE.md',
   `${RULES_DIR}/a.md`,
   `${RULES_DIR}/frontend/react.md`,
-  '/repo/AGENTS.md',
-  '/repo/docs/guide.md',
   `${MEMORY_DIR}/MEMORY.md`,
   `${MEMORY_DIR}/squad.md`,
 ]
@@ -1992,19 +2033,14 @@ describe('the read order over every instruction source (T-02-60, 02-GAPS-B2 N5)'
       const readAt = events.indexOf(`read ${path}`)
       expect([path, consentAt > 0, readAt > consentAt]).toEqual([path, true, true])
     }
+    expect(events.filter(event => event === 'read /repo/docs/guide.md' || event === 'read /repo/AGENTS.md')).toEqual([])
   })
 })
 
-/** BE's built CLAUDE.md in builtWorld: the header line, then the Rules part of the root CLAUDE.md (D-140). */
-const BUILT_BE = [
-  "<!-- cadre: instructions for role be, built from this repo's CLAUDE.md files, rules and docs. " +
-    'Edit the originals and run /cadre regen be; this file is rebuilt. -->',
-  '',
-  '<!-- from CLAUDE.md > Rules -->',
-  '# Rules',
-  BUILT_RULE,
-  '',
-].join('\n')
+/** BE's built CLAUDE.md in builtWorld: the header line alone, since its repo files load from their originals. */
+const BUILT_BE =
+  "<!-- cadre: instructions for role be. The repo's CLAUDE.md files and rules given to this role load from " +
+  'their originals; after you change them, run /cadre regen be. -->\n'
 
 /** The file plan row of BE's built CLAUDE.md on a disk that does not have it. */
 const BUILT_BE_ROW = '  create    .cadre/be/CLAUDE.md'
@@ -2027,18 +2063,18 @@ function repoWrites(host: MemHost): HostWrite[] {
   return host.writes.filter(write => write.path.startsWith('/repo/'))
 }
 
-/** A sentence of a local note the root CLAUDE.md imports, which git does not track in the M3 cases. */
+/** A sentence of the local rule file .claude/rules/local.md, which git does not track in the M3 cases. */
 const LOCAL_NOTE = 'LOCAL-NOTE-SENTENCE stays out of the repo'
 
-/** The git run of the M3 cases: which of CLAUDE.md and notes/local.md git tracks (02-GAPS-B2 M3). */
+/** The git run of the M3 cases: which of the local rule file and CLAUDE.md git tracks. */
 const LOCAL_GIT_ARGV: readonly string[] = [
   'git',
   '--literal-pathspecs',
   'ls-files',
   '-z',
   '--',
+  '.claude/rules/local.md',
   'CLAUDE.md',
-  'notes/local.md',
 ]
 
 /** A git ls-files run that exits 0 and names these files, each ended by NUL. */
@@ -2071,8 +2107,8 @@ function launcherIds(host: MemHost): string[] {
 const TEAM_SENTENCE = 'TEAM-WIDE-SENTENCE stays private'
 
 /**
- * builtWorld whose root CLAUDE.md also imports notes/local.md, which holds `local`; the model groups the global
- * Security section into T1, for security, and the two repo parts into T2 'Repo rules', for be (02-GAPS-B2 M3).
+ * builtWorld with the rule file .claude/rules/local.md, which holds `local`; the model groups the global Security
+ * section into T1, for security, and the root CLAUDE.md and the rule file into T2 'Repo rules', for be.
  */
 function localNoteWorld(local = `# Local\n${LOCAL_NOTE}.\n`): MemWorld {
   const topics = [
@@ -2081,11 +2117,12 @@ function localNoteWorld(local = `# Local\n${LOCAL_NOTE}.\n`): MemWorld {
   ]
 
   return builtWorld({
+    dirs: { '/repo/.git': [], ...USER_DIR_LISTED, ...FULL_DIRS, [RULES_DIR]: [entry('local.md')] },
     files: {
       ...FULL_FILES,
       [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
-      '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n@notes/local.md\n`,
-      '/repo/notes/local.md': local,
+      '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n`,
+      [`${RULES_DIR}/local.md`]: local,
     },
     replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["be"]},"memories":{}}'],
   })
@@ -2151,7 +2188,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const reply = await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
     expect(built.map(write => write.path)).toEqual(builtPaths(['pm', 'security', 'tl']))
-    expect(built.find(write => write.path === '/repo/.cadre/tl/CLAUDE.md')?.text).toContain(BUILT_RULE)
+    expect(built.find(write => write.path === '/repo/.cadre/tl/CLAUDE.md')?.text).toBe(roleClaudeMdText('tl', []))
     const shown = [reply, ...repoWrites(host).map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
     // Every role gets both private files (02-GAPS-B3 C1); only tl's hold the global text and the memory.
@@ -2160,16 +2197,16 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(homeWrites(host).map(write => write.path)).toEqual(both)
   })
 
-  test('only the parts of files git tracks are written: untracked notes/local.md stays out (M3)', async () => {
+  test('only the parts of files git tracks are written: an untracked rule file stays out (M3)', async () => {
     const host = memHost(hostWorld({ runs: [{ argv: LOCAL_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }] }))
     const reply = await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
     expect(built.map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
-    expect(built[0]?.text).toContain(BUILT_RULE)
+    expect(built[0]?.text).toBe(BUILT_BE)
     expect(host.writes.filter(write => write.text.includes(LOCAL_NOTE))).toEqual([])
-    const untracked = 'warning: notes/local.md is not tracked by git: its parts are not written to .cadre/'
+    const untracked = 'warning: .claude/rules/local.md is not tracked by git: no role is given it'
     expect(reply.split('\n').filter(line => line.includes('not tracked by git'))).toEqual([untracked])
-    expect(untracked).toBe(`warning: ${untrackedPartsWarning('notes/local.md')}`)
+    expect(untracked).toBe(`warning: ${untrackedPartsWarning('.claude/rules/local.md')}`)
     expect(gitCalls(host)).toEqual([{ argv: LOCAL_GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
   })
 
@@ -2183,7 +2220,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
       expect(reply.split('\n').filter(line => line === `warning: ${GIT_TRACKING_UNKNOWN_WARNING}`)).toHaveLength(1)
     }
     expect(GIT_TRACKING_UNKNOWN_WARNING).toBe(
-      'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+      'could not ask git which instruction files it tracks: no role is given them',
     )
   })
 
@@ -2231,7 +2268,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(run.reads).toContain('/home/u/work/CLAUDE.md')
     expect(run.prompts[0]).toContain('P2 | ~/work/CLAUDE.md | Team | # Team')
     expect(repoWrites(host).filter(write => write.text.includes(TEAM_SENTENCE))).toEqual([])
-    expect(builtWrites(host).find(write => write.path === '/repo/.cadre/be/CLAUDE.md')?.text).toContain(BUILT_RULE)
+    expect(builtWrites(host).find(write => write.path === '/repo/.cadre/be/CLAUDE.md')?.text).toBe(BUILT_BE)
     const holding = host.writes.filter(write => write.text.includes(TEAM_SENTENCE)).map(write => write.path)
     expect(holding).toEqual([privateClaudeMdPath(await memoryFolder('be'))])
   })
@@ -2439,14 +2476,18 @@ describe('private role files (G-02-1f)', () => {
   })
 })
 
-/** BE's built CLAUDE.md in builtWorld as the improver leaves it: its rule reworded and one line added (D-141). */
-const BUILT_BE_IMPROVED = BUILT_BE.replace(BUILT_RULE, `${BUILT_RULE} Keep them green.\nKeep commits small.`)
-
 /** The absolute path of BE's built CLAUDE.md in the fixture repo. */
 const BE_CLAUDE_MD = '/repo/.cadre/be/CLAUDE.md'
 
-/** The improver run of BE's built CLAUDE.md: guarded from its .runtime folder and from Bash (02-GAPS-B3 M1). */
-const BE_IMPROVER_ARGV: readonly string[] = improverArgv(BE_CLAUDE_MD, improverGuardFlags('/repo', 'be') ?? [])
+/** The line an improver run adds to the private text file it runs on (D-141). */
+const IMPROVED_LINE = 'Keep keys in the vault.\n'
+
+/** Security's private text file in builtWorld as init writes it: its header, then the global Security part. */
+async function builtSecurityText(): Promise<string> {
+  const part = await partsGlobalPart('P1', 'Security', `# Security\n${GLOBAL_SENTENCE}.\n`)
+
+  return privateClaudeMdText('security', 'repo', [part])
+}
 
 /** BE's built CLAUDE.md, repo-relative, as a file plan names it. */
 const BE_CLAUDE_MD_PATH = '.cadre/be/CLAUDE.md'
@@ -2474,10 +2515,9 @@ function builtFilesRecord(isInstalled = true): Record<string, string> {
 
 /**
  * The host of a plain init over builtWorld with `files` as its files, recording its writes and runs in one list: each
- * write that lands is put in `files`, as a disk holds it, so the improver finds each built file as apply wrote it
- * (02-GAPS-B3 M1); the rules `runs` first, then git tracks the root CLAUDE.md and names the common dir, and once the
- * improver ran for BE's built CLAUDE.md, `files` holds BUILT_BE_IMPROVED there, as that run would leave it (G-02-1f,
- * D-141).
+ * write that lands is put in `files`, as a disk holds it, so the improver finds each built file as apply wrote it; the
+ * rules `runs` first, then git tracks the root CLAUDE.md and names the common dir, and the improver run of security's
+ * private text file adds IMPROVED_LINE to it, as that run would leave it.
  */
 function improvingHost(
   files: Record<string, string>,
@@ -2499,7 +2539,8 @@ function improvingHost(
     },
     run: async (argv, options) => {
       const result = await logged.io.run(argv, options)
-      if (argv.join(' ') === BE_IMPROVER_ARGV.join(' ')) files[BE_CLAUDE_MD] = BUILT_BE_IMPROVED
+      const text = privateClaudeMdPath(await memoryFolder('security'))
+      if (argv.join(' ') === improverArgv(text).join(' ')) files[text] = `${files[text] ?? ''}${IMPROVED_LINE}`
 
       return result
     },
@@ -2519,7 +2560,7 @@ function writtenManifestText(host: MemHost): string {
 }
 
 describe('improver in init (G-02-1f)', () => {
-  test('after Confirm each built file with a part gets one run, after the writes and before the manifest', async () => {
+  test('a private text file with a global part gets one run after the writes and before the manifest', async () => {
     const files = builtFilesRecord()
     const { io, host, events } = improvingHost(files)
     const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
@@ -2527,37 +2568,36 @@ describe('improver in init (G-02-1f)', () => {
     const security = await memoryFolder('security')
     const text = privateClaudeMdPath(security)
     expect(improverCalls(host)).toEqual([
-      { argv: BE_IMPROVER_ARGV, options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
       { argv: improverArgv(text), options: { cwd: `${security}/instructions`, timeoutMs: 300_000 } },
     ])
     const firstRun = events.findIndex(event => event.startsWith('run claude -p'))
     const lastRun = events.findLastIndex(event => event.startsWith('run claude -p'))
     expect(events[firstRun - 1]).toBe(`write ${instructionsRecordPath(await memoryFolder('tl'))}`)
     expect(events.slice(lastRun + 1)).toEqual(['write /repo/.cadre/manifest.json'])
-    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE_IMPROVED))
-    expect(writtenManifestText(host)).not.toContain(await sha256Hex(BUILT_BE))
-    expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 2 }), NEXT_STEP_NOTE])
+    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE))
+    expect(files[text]).toBe(`${await builtSecurityText()}${IMPROVED_LINE}`)
+    expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 1 }), NEXT_STEP_NOTE])
     expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([])
     const shownText = `~/.claude/cadre/${security.split('/').at(-2) ?? ''}/security/instructions/CLAUDE.md`
-    expect(run.logged).toContain(improverNoChangeNote(shownText))
     const improved = run.specs.filter(spec => spec.context?.kind === 'improver')
-    expect(improved.map(spec => spec.context?.lines[0])).toEqual(['.cadre/be/CLAUDE.md: 2 lines added, 1 removed'])
+    expect(improved.map(spec => spec.context?.lines[0])).toEqual([`${shownText}: 1 line added, 0 removed`])
   })
 
-  test('Keep original writes the built text back after the runs; the manifest records the built text', async () => {
+  test('Keep original writes the private text back as built after the run; the manifest comes last', async () => {
     const files = builtFilesRecord()
     const { io, host } = improvingHost(files)
     const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Keep original' })
     const reply = await runInit(run.io, { dryRun: false, host: io })
-    const beWrites = host.writes.filter(write => write.path === BE_CLAUDE_MD)
-    expect(beWrites.map(write => [write.text, write.isWritten])).toEqual([
-      [BUILT_BE, true],
-      [BUILT_BE, true],
+    const text = privateClaudeMdPath(await memoryFolder('security'))
+    const built = await builtSecurityText()
+    const textWrites = host.writes.filter(write => write.path === text)
+    expect(textWrites.map(write => [write.text, write.isWritten])).toEqual([
+      [built, true],
+      [built, true],
     ])
-    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE))
-    expect(writtenManifestText(host)).not.toContain(await sha256Hex(BUILT_BE_IMPROVED))
+    expect(files[text]).toBe(built)
     expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
-    expect(reply.split('\n').at(-2)).toBe('Improver: 0 of 2 built files changed and accepted.')
+    expect(reply.split('\n').at(-2)).toBe('Improver: 0 of 1 built files changed and accepted.')
   })
 
   test('a header-only built file gets no run, and a plain init with no built part runs none at all', async () => {
@@ -2567,32 +2607,34 @@ describe('improver in init (G-02-1f)', () => {
     expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
   })
 
-  test('another file the improver changed is named in the reply, neither undone nor recorded (D-141)', async () => {
+  test('another file the improver changed in its folder is named in the reply and never undone (D-141)', async () => {
     const files = builtFilesRecord()
     const dirs: Record<string, readonly PortEntry[]> = { '/repo/.git': [], ...USER_DIR_LISTED, ...FULL_DIRS }
-    const edited = '{"id":"be","edited":true}\n'
+    const security = await memoryFolder('security')
+    const folder = `${security}/instructions`
+    const privateRun = improverArgv(privateClaudeMdPath(security))
     const { io: improving, host } = improvingHost(files)
     const io: HostIo = {
       ...improving,
       run: async (argv, options) => {
         const result = await improving.run(argv, options)
-        if (argv.join(' ') !== BE_IMPROVER_ARGV.join(' ')) return result
-        files['/repo/.cadre/be/role.json'] = edited
-        dirs['/repo/.cadre/be'] = [entry('CLAUDE.md'), entry('role.json')]
+        if (argv.join(' ') !== privateRun.join(' ')) return result
+        files[`${folder}/notes.md`] = 'Notes.\n'
+        dirs[folder] = [entry('CLAUDE.md'), entry('notes.md')]
 
         return result
       },
     }
     const run = memIo(builtWorld({ files, dirs }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
     const reply = await runInit(run.io, { dryRun: false, host: io })
-    const warning = otherChangesWarning('.cadre/be', ['.cadre/be/role.json'])
+    expect(improverCalls(host).map(call => call.argv)).toEqual([privateRun])
+    const shownFolder = `~/.claude/cadre/${security.split('/').at(-2) ?? ''}/security/instructions`
+    const warning = otherChangesWarning(shownFolder, [`${shownFolder}/notes.md`])
     expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([`warning: ${warning}`])
-    const roleWrites = host.writes.filter(write => write.path === '/repo/.cadre/be/role.json')
-    expect(roleWrites).toHaveLength(1)
-    expect(writtenManifestText(host)).toContain(await sha256Hex(roleWrites[0]?.text ?? ''))
-    expect(writtenManifestText(host)).not.toContain(await sha256Hex(edited))
+    expect(files[`${folder}/notes.md`]).toBe('Notes.\n')
+    expect(writtenManifestText(host)).not.toContain('notes.md')
     const improved = run.specs.filter(spec => spec.context?.kind === 'improver')
-    expect(improved.at(-1)?.context?.lines).toContain('  .cadre/be/role.json')
+    expect(improved.at(-1)?.context?.lines).toContain(`  ${shownFolder}/notes.md`)
   })
 
   test('a dry run holds no host: it runs no improver and asks, shows and replies nothing of it', async () => {
@@ -2656,15 +2698,15 @@ describe('improver install offer (G-02-1f)', () => {
     const { io, host } = improvingHost(files)
     const run = memIo(builtWorld({ files }), improverOffer('Install'))
     const reply = await runInit(pagedIo(run), { dryRun: false, host: io })
-    expect(lastReview(run).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
+    expect(lastReview(run).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(1)])
     const install = host.calls.findIndex(call => call.argv.join(' ') === `claude plugin install ${CLAUDE_MD_PLUGIN}`)
     expect(install).toBeGreaterThanOrEqual(0)
     expect(host.calls[install]?.options).toEqual({ cwd: '/home/u', timeoutMs: 180_000 })
     expect(host.calls.findIndex(call => call.argv[1] === '-p')).toBeGreaterThan(install)
-    expect(improverCalls(host)).toHaveLength(2)
+    expect(improverCalls(host)).toHaveLength(1)
     expect(reply.split('\n').slice(-3)).toEqual([
       installedLine([CLAUDE_MD_PLUGIN]),
-      improverLine({ changed: 1, total: 2 }),
+      improverLine({ changed: 1, total: 1 }),
       NEXT_STEP_NOTE,
     ])
   })
@@ -2700,7 +2742,7 @@ describe('improver install offer (G-02-1f)', () => {
     await runInit(pagedIo(run), { dryRun: false, host: io })
     expect(firstLines(run.asked)).not.toContain(IMPROVER_INSTALL_QUESTION)
     expect(host.calls.filter(call => call.argv[1] === 'plugin')).toEqual([])
-    expect(improverCalls(host)).toHaveLength(2)
+    expect(improverCalls(host)).toHaveLength(1)
     expect(lastReview(run).filter(line => line.startsWith('Plugins to install'))).toEqual([])
   })
 
@@ -2712,7 +2754,7 @@ describe('improver install offer (G-02-1f)', () => {
     expect([host.writes, host.calls]).toEqual([[], []])
     const dry = memIo(builtWorld(), improverOffer('Install'))
     const dryReply = await runInit(pagedIo(dry), { dryRun: true })
-    expect(lastReview(dry).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
+    expect(lastReview(dry).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(1)])
     expect(dryReply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
   })
 })
@@ -2818,36 +2860,30 @@ describe('an unchanged re-init (02-GAPS-B3 S1)', () => {
     ])
   })
 
-  test('an accepted improver text is kept with its manifest entry while the records are unchanged', async () => {
+  test('a re-init rewrites a built file that hashes to its manifest entry but differs from the render', async () => {
     const files = builtFilesRecord()
-    const first = improvingHost(files)
     const answers = { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }
-    await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: first.io })
-    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE_IMPROVED)
-    const manifest = files['/repo/.cadre/manifest.json'] ?? ''
-    expect(manifest).toContain(await sha256Hex(BUILT_BE_IMPROVED))
-    const again = improvingHost(files)
-    const run = memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers)
-    const reply = await runInit(pagedIo(run), { dryRun: false, host: again.io })
-    expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
-    expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
-    expect(opKinds(reply).get('.cadre/be/role.json')).toBe('leave')
-    expect([improverCalls(again.host), again.host.writes]).toEqual([[], []])
-    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE_IMPROVED)
-    expect(files['/repo/.cadre/manifest.json']).toBe(manifest)
-    expect(lastReview(run).filter(line => line.endsWith(BE_CLAUDE_MD_PATH))).toEqual([])
+    await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: improvingHost(files).io })
+    const stale = `${BUILT_BE}Keep commits small.\n`
+    const written = files['/repo/.cadre/manifest.json'] ?? ''
+    files[BE_CLAUDE_MD] = stale
+    files['/repo/.cadre/manifest.json'] = written.replace(await sha256Hex(BUILT_BE), await sha256Hex(stale))
     const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
-    expect(opKinds(dry).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
+    expect([opKinds(dry).get(BE_CLAUDE_MD_PATH), opKinds(dry).get('.cadre/be/role.json')]).toEqual(['change', 'leave'])
+    const again = improvingHost(files)
+    await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: false, host: again.io })
+    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE)
+    expect(files['/repo/.cadre/manifest.json']).toContain(await sha256Hex(BUILT_BE))
   })
 
-  test('a role whose records changed plans a change of its built file', async () => {
+  test('a role whose records changed plans a change of its role.json and leaves its built file', async () => {
     const files = builtFilesRecord()
     const answers = { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }
     await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: improvingHost(files).io })
     files['/repo/CLAUDE.md'] = `# Rules\n${BUILT_RULE} Always.\n`
     const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
     expect([opKinds(dry).get(BE_CLAUDE_MD_PATH), opKinds(dry).get('.cadre/be/role.json')]).toEqual([
-      'change',
+      'leave',
       'change',
     ])
   })
@@ -2869,7 +2905,7 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
   test('with claude-md-management in, the review ends with the improver line; without it, it has none', async () => {
     const installed = memIo(builtWorld({ files: builtFilesRecord() }), PARTS_ANSWERS)
     await runInit(pagedIo(installed), { dryRun: true })
-    expect(lastReview(installed).at(-1)).toBe(improverRunLine(2))
+    expect(lastReview(installed).at(-1)).toBe(improverRunLine(1))
     const notNow = memIo(builtWorld({ files: builtFilesRecord(false) }), improverOffer('Not now'))
     await runInit(pagedIo(notNow), { dryRun: true })
     expect(lastReview(notNow).filter(line => line.startsWith('After Confirm, claude-md-improver'))).toEqual([])
@@ -2885,7 +2921,7 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
     expect(dry.slice(at + 1)).toEqual([
       PRIVATE_FILES_HEADING,
       ...ids.map(privateFilesRow),
-      improverRunLine(2),
+      improverRunLine(1),
       DRY_RUN_NOTE,
     ])
     const files = builtFilesRecord()
@@ -2907,17 +2943,18 @@ describe('carryStep', () => {
     await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const modelAt = asked.indexOf('Model and effort for all roles?')
-    expect(asked.slice(modelAt + 1, modelAt + 9)).toEqual([
+    expect(asked.slice(modelAt + 1, modelAt + 10)).toEqual([
       'Which roles get the MCP servers (1)? Pick how to hand them out.',
       'Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      PM_PLUGIN_QUESTION,
       CONTENT_QUESTION,
       'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)',
       'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)',
       'Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)',
       ENV_QUESTION,
     ])
-    expect(asked[modelAt + 9]).toBe(GIT_POLICY_QUESTION)
+    expect(asked[modelAt + 10]).toBe(GIT_POLICY_QUESTION)
   })
 
   test('the instruction consent context names the repo by its folder name, not <repo> (D-226)', async () => {
@@ -2939,7 +2976,7 @@ describe('carryStep', () => {
 
 describe('hunkStep', () => {
   test('init asks the hunks of GSD roles after the carried settings, right before the git policy', async () => {
-    const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, PARTS_DECLINED)
+    const run = memIo(everyStepWorld(), PARTS_DECLINED)
     const reply = await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const policyAt = asked.indexOf(GIT_POLICY_QUESTION)
@@ -2955,7 +2992,7 @@ describe('hunkStep', () => {
     expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
     const proven = memIo({ ...secretWorld(), facts: PROVEN_FACTS }, PARTS_DECLINED)
     const provenReply = await runInit(proven.io, { dryRun: true })
-    expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(3)
+    expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(0)
     const provenText = [
       ...proven.asked,
       ...proven.logged,
@@ -2971,7 +3008,10 @@ describe('hunkStep', () => {
     await runInit(plain.io, { dryRun: true })
     expect(plain.asked.some(question => question.startsWith('.planning/config.json:'))).toBe(false)
     expect(plain.logged.some(text => text.startsWith('attended:'))).toBe(false)
-    const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
+    const world = gitWorld({
+      facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null },
+      files: { '/repo/.planning/config.json': '{}' },
+    })
     const dismissed = memIo(world, answersWithout('.planning/config.json:'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(HUNK_DISMISSED_REASON))
     expect(dismissed.logged).not.toContain(HUNK_DISMISSED_REASON)
@@ -3023,6 +3063,62 @@ describe('launchStartStep', () => {
   })
 })
 
+/** A start folder settings file whose one hook runs guard.sh. */
+const GUARD_SETTINGS = JSON.stringify({
+  hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node .claude/hooks/guard.sh' }] }] },
+})
+
+/** A repo with code in src/ and a src/.claude/settings.json holding the guard.sh hook. */
+function startSettingsWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return gitWorld({
+    dirs: {
+      '/repo/.git': [],
+      '/repo': [entry('src', 'dir')],
+      '/repo/src': [entry('a.ts'), entry('.claude', 'dir')],
+      '/repo/src/.claude': [entry('settings.json')],
+    },
+    files: { '/repo/src/.claude/settings.json': GUARD_SETTINGS },
+    ...over,
+  })
+}
+
+describe('the start folder settings of a dir start', () => {
+  const answers = {
+    ...INIT_ANSWERS,
+    'Where should the role launchers start': 'Another folder in this repo',
+    'Type the folder the launchers start in': 'src',
+  }
+  const settingsLine =
+    '    [none] <git root>/src/.claude/settings.json loads: its hooks run and its permission rules apply'
+
+  test('the init review card of a dir start names the start folder settings and lists its hook', async () => {
+    const run = memIo(startSettingsWorld(), answers)
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
+    const at = review.indexOf('Scope card: BE (be)')
+    const card = review.slice(at, review.indexOf('  decisions:', at))
+
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(run.reads).toContain('/repo/src/.claude/settings.json')
+    expect(card).toContain(settingsLine)
+    expect(card).toContain('  hooks loaded by project settings: guard.sh')
+  })
+
+  test('the ROLE.md a plain init writes for a dir start is the one /cadre regen be would write', async () => {
+    const world = startSettingsWorld()
+    const host = memHost(hostWorld({}))
+    await runInit(memIo(world, answers).io, { dryRun: false, host: host.io })
+    const written = Object.fromEntries(host.writes.map(write => [write.path, write.text]))
+    const role = written['/repo/.cadre/be/ROLE.md'] ?? ''
+    const applied = { ...world, dirs: { ...world.dirs, '/repo/.cadre': [] }, files: { ...world.files, ...written } }
+    const regen = await runRegen(memIo(applied, {}).io, { id: 'be', dryRun: true })
+
+    expect(role).toContain(settingsLine)
+    expect(role).toContain('guard.sh')
+    expect(opKinds(regen).get('.cadre/be/ROLE.md')).toBe('leave')
+  })
+})
+
 /** One init step a dismissal cancels: the world and answers that dismiss it, its question and its reason. */
 type CancelCase = {
   readonly world: MemWorld
@@ -3038,7 +3134,10 @@ function dismissedAt(world: MemWorld, prefix: string, question: string, reason: 
 
 describe('runInit cancel reasons (A1)', () => {
   test('a dismissal at each of the twelve steps cancels init and prints its reason once, in the reply', async () => {
-    const gsd = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
+    const gsd = gitWorld({
+      facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null },
+      files: { '/repo/.planning/config.json': '{}' },
+    })
     const sentryNone = { 'Which roles get all the MCP servers': 'None', 'Which roles get codex': 'None' }
     const memory: CancelCase = {
       world: secretWorld(),
@@ -3124,8 +3223,18 @@ describe('refusal re-ask (G-02-6b)', () => {
         '"No, skip it", "Yes, read names only"',
       ],
       [
-        'framework mode',
+        'framework set',
         () => driven(frameworksStage.enter(stateAt('frameworks', frameworksDraft)), ['zzz']).asked,
+        '"Keep GSD and superpowers (Recommended)", "None (built-in)", ' +
+          'or the frameworks by name: GSD, superpowers, none',
+      ],
+      [
+        'framework mode',
+        () => {
+          const entered = frameworksStage.enter(stateAt('frameworks', frameworksDraft))
+
+          return driven(entered, [KEEP_BOTH, 'No', 'No', 'zzz']).asked.slice(3)
+        },
         '"Same for all roles", "Per role"',
       ],
       [
@@ -3269,7 +3378,8 @@ async function questionRuns(): Promise<QuestionRuns> {
   const improver = memIo(builtWorld({ files: improverFiles }), improverOffer('Install'))
   await runInit(improver.io, { dryRun: false, host: improvingHost(improverFiles).io })
   const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
-  const regen = memIo(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+  const given = [await rootPart('P1', '', `${RULES_SECTION}${GIT_SECTION}`)]
+  const regen = memIo(await regenPartsWorld({ ...changed, given, notGiven: [] }), { [REGEN_PART_PREFIX]: 'Yes' })
   await runRegen(regen.io, { id: 'be', dryRun: true })
 
   return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills, improver, regen }
@@ -3309,7 +3419,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.adjusted, 'Adjust the roles', 'Adjust'],
       [runs.adjusted, 'Describe your role structure', 'Describe'],
       [runs.perRole, 'Which framework do the roles use', 'Framework'],
-      [runs.perRole, 'Framework for PM (pm)?', 'Framework'],
+      [runs.perRole, 'Framework for Team Lead (tl)?', 'Framework'],
       [runs.security, 'Install from claude-plugins-official', 'Security'],
       [runs.plain, 'Autopilot duration', 'Duration'],
       [runs.plain, 'Model and effort: same', 'Model'],
@@ -3336,7 +3446,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.conflict, ROLE_QUESTION, 'Conflict'],
       [runs.improver, IMPROVER_INSTALL_PREFIX, 'Improver'],
       [runs.improver, IMPROVER_PREFIX, 'Improver'],
-      [runs.regen, 'Should be get "Git" from CLAUDE.md?', 'Regen 1/1'],
+      [runs.regen, 'Should be get CLAUDE.md?', 'Regen 1/1'],
     ]
     for (const [run, start, chip] of cases) expect([start, specOf(run, start).header]).toEqual([start, chip])
   })
@@ -3413,7 +3523,7 @@ describe('question context lines (G-02-1)', () => {
         'For example: a PM, one full-stack developer, and a QA who also covers security.',
       ],
       [runs.perRole, FRAMEWORK_QUESTION_PREFIX, `Roles: ${TEAM}.`],
-      [runs.perRole, 'Framework for PM (pm)?', `Roles: ${TEAM}.`],
+      [runs.perRole, 'Framework for Team Lead (tl)?', `Roles: ${TEAM}.`],
       [
         runs.security,
         SECURITY_INSTALL_PREFIX,
@@ -3507,11 +3617,25 @@ async function initFiles(
   roles: readonly RoleSpec[],
   over: Partial<CadreState> = {},
 ): Promise<DesiredFile[]> {
-  return plannedFiles(world, initRecorded(roles), over)
+  return plannedFiles(world, initRecorded(roles), { structure: 'core', ...over })
 }
 
 /** The default team of the git fixture world has a Security role, so its ignore block holds the reports line. */
 const GIT_TEAM_HAS_SECURITY = true
+
+/** The sizing block init records in the fixture worlds of these specs: none of them has a framework installed. */
+const NO_FRAMEWORK_SIZING: Sizing = initSizing(undefined, [])
+
+/** How the framework set question starts, whichever frameworks it found. */
+const SET_QUESTION_START = 'Which frameworks does this team use?'
+
+/** The answer that keeps both frameworks found. */
+const KEEP_BOTH = 'Keep GSD and superpowers (Recommended)'
+
+/** The op a re-run with unchanged answers gives a planned file: leave, and none for the rubric on disk. */
+function reRunKind(path: string): string | undefined {
+  return path === SIZING_RUBRIC_PATH ? undefined : 'leave'
+}
 
 /** The kind of the op of each path in the file plan of a reply. */
 function opKinds(reply: string): Map<string, string> {
@@ -3605,7 +3729,7 @@ describe('init plan', () => {
   )
 
   test('a re-run over the planned files, manifest and .gitignore plans only leave ops (PLAN-04)', async () => {
-    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
     const disk = {
       ...onDisk(files),
       '/repo/.cadre/manifest.json': await manifestOf(files),
@@ -3614,9 +3738,9 @@ describe('init plan', () => {
     const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: true })
     const kinds = opKinds(reply)
-    // Each built CLAUDE.md as the last apply left it gets no op: its manifest entry is kept (02-GAPS-B3 S1).
+    // The sizing rubric gets no op: a re-run never plans over it.
     const built = files.filter(file => file.path.endsWith('/CLAUDE.md')).length
-    const left = files.length + 2 - built
+    const left = files.length + 2 - 1
     expect([built, kinds.size]).toEqual([3, left])
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
     expect(reply.split('\n')).toContain(`Summary: 0 create, 0 change, ${left} leave, 0 conflict, 0 hunks`)
@@ -3624,7 +3748,11 @@ describe('init plan', () => {
 
   test('init stores the consent answer: over a stored yes, yes leaves cadre.json and no changes it (A1)', async () => {
     const team = await defaultRoles(gitWorld())
-    const files = await plannedFiles(gitWorld(), team, { readUserMcp: true })
+    const files = await plannedFiles(gitWorld(), team, {
+      readUserMcp: true,
+      sizing: NO_FRAMEWORK_SIZING,
+      structure: 'core',
+    })
     const world = gitWorld({
       dirs: { '/repo/.git': [], '/repo/.cadre': [] },
       files: { ...onDisk(files), '/repo/.cadre/manifest.json': await manifestOf(files) },
@@ -3641,7 +3769,7 @@ describe('init plan', () => {
   })
 
   test('a file edited since the last run is a conflict, with the new version planned beside it (D-67)', async () => {
-    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
     const disk = {
       ...onDisk(files),
       '/repo/.cadre/manifest.json': await manifestOf(files),
@@ -3702,10 +3830,12 @@ describe('init plan', () => {
         carry,
       }
     })
-    const files = await plannedFiles(world, roles)
+    const files = await plannedFiles(world, roles, { sizing: NO_FRAMEWORK_SIZING, structure: 'core' })
     const run = memIo({ ...world, files: { ...world.files, ...onDisk(files) } }, answers)
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    expect(files.map(file => [file.path, kinds.get(file.path)])).toEqual(files.map(file => [file.path, 'leave']))
+    expect(files.map(file => [file.path, kinds.get(file.path)])).toEqual(
+      files.map(file => [file.path, reRunKind(file.path)]),
+    )
     const text = (path: string): string => files.find(file => file.path === path)?.content ?? ''
     const index = text('.cadre/INDEX.md').split('\n')
     for (const [id, model, effort] of picks) {
@@ -3800,7 +3930,13 @@ function between(asked: readonly string[], question: string): string[] {
 
 /** A world where every per-role step asks: two frameworks in use, the secret world's names, GSD hunks to answer. */
 function everyStepWorld(): MemWorld {
-  return { ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }
+  const world = secretWorld()
+
+  return {
+    ...world,
+    files: { ...world.files, '/repo/.planning/config.json': '{}' },
+    facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null },
+  }
 }
 
 /**
@@ -3942,7 +4078,7 @@ describe('reviewStep', () => {
     const first = memIo(world, INIT_ANSWERS)
     await runInit(first.io, { dryRun: true })
     const reviewAt = firstLines(first.asked).indexOf(REVIEW_QUESTION)
-    expect(first.specs[reviewAt]).toEqual(firstPageSpec(expected, first.asked[reviewAt], '46 files, 6 roles'))
+    expect(first.specs[reviewAt]).toEqual(firstPageSpec(expected, first.asked[reviewAt], '47 files, 6 roles'))
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3974,6 +4110,7 @@ describe('reviewStep', () => {
     const files = await initFiles(
       gitWorld(),
       team.map((role): RoleSpec => ({ ...role, model: 'sonnet', effort: 'high' })),
+      { sizing: NO_FRAMEWORK_SIZING },
     )
     const run = queuedIo(withDisk(gitWorld(), files), {
       ...INIT_ANSWERS,
@@ -3982,7 +4119,7 @@ describe('reviewStep', () => {
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
-    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
+    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(file => reRunKind(file.path)))
   })
 
   test('duration re-asks only the duration, and every role takes it', async () => {
@@ -3990,6 +4127,7 @@ describe('reviewStep', () => {
     const files = await initFiles(
       gitWorld(),
       team.map((role): RoleSpec => ({ ...role, autopilot: { ...role.autopilot, duration: '90m' } })),
+      { sizing: NO_FRAMEWORK_SIZING },
     )
     const run = queuedIo(withDisk(gitWorld(), files), {
       ...INIT_ANSWERS,
@@ -3998,7 +4136,7 @@ describe('reviewStep', () => {
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([DURATION_QUESTION])
-    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
+    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(file => reRunKind(file.path)))
   })
 
   test('each typed item re-asks only its own questions, in the order init first asked them', async () => {
@@ -4039,7 +4177,15 @@ describe('reviewStep', () => {
     expect(firstPass).toContain(DURATION_QUESTION)
     expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
     expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
-    expect(between(run.asked, REVIEW_QUESTION)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
+    expect(firstPass.some(question => question.startsWith(SET_QUESTION_START))).toBe(true)
+    // The set the team keeps and its install answers stay in the draft across the go-back, so only its per-role
+    // questions come again.
+    const isAskedAgain = (question: string): boolean =>
+      question !== DURATION_QUESTION &&
+      !question.startsWith(SET_QUESTION_START) &&
+      !/^Install (GSD|superpowers) for this repo\?$/.test(question)
+    const again = firstPass.filter(isAskedAgain)
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual(again)
     const folded = run.specs.filter(spec => spec.context?.lines[0] === t('ui.recommendations.recommendationsHeading'))
     expect(folded).toHaveLength(2)
     expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
@@ -4156,15 +4302,18 @@ describe('reviewStep', () => {
       ...INIT_ANSWERS,
       'Use these roles?': ['Use these roles', 'Adjust them', 'Use these roles', 'Adjust them', 'Use these roles'],
       'Adjust the roles': 'framework pm gsd',
+      'Install GSD for this repo?': 'No',
       'Cannot set pm to gsd': 'Done adjusting',
       'Review the plan': ['Change roles', 'Change roles', 'Confirm'],
     })
     const reply = await runInit(run.io, { dryRun: true })
     const checks = run.asked.filter(question => question.startsWith("Run GSD's own check"))
+    const installs = run.asked.filter(question => question.startsWith('Install GSD for this repo?'))
     const refusals = run.asked.filter(question => question.startsWith('Cannot set pm to gsd'))
-    const ends = [reply.startsWith(INIT_CANCELLED), checks.length, refusals.length, run.gsdIdentityCalls.length]
+    const asks = [checks.length, installs.length, refusals.length]
+    const ends = [reply.startsWith(INIT_CANCELLED), ...asks, run.gsdIdentityCalls.length]
 
-    expect(ends).toEqual([false, 1, 2, 0])
+    expect(ends).toEqual([false, 1, 2, 2, 0])
   })
 
   test('Change launcher start, or typing launcher start, re-asks where launchers start (A2)', async () => {
@@ -4226,22 +4375,28 @@ describe('reviewStep', () => {
     expect(run.logged).not.toContain(MODEL_DISMISSED_REASON)
   })
 
-  test('one answer script gives init and --dry-run one plan but the first line, private files and end', async () => {
-    const answers = {
-      ...PARTS_DECLINED,
-      'Review the plan': ['git policy', 'Confirm'],
-      'Git policy': ['Commit all', 'Ignore all of .cadre/'],
-    }
-    const dry = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: true })).split('\n')
-    const host = memHost(hostWorld({}))
-    const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false, host: host.io })).split('\n')
-    const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
-    const confirmAt = dry.indexOf(PRIVATE_FILES_HEADING)
-    expect([appliedAt > 0, confirmAt > 0]).toEqual([true, true])
-    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, confirmAt))
-    expect(dry.slice(1, confirmAt)).toContain('File plan:')
-    expect(dry.slice(1, confirmAt)).toContain(policyLine('ignore'))
-  })
+  test(
+    'one answer script gives init and --dry-run one plan but the first line, the rows of the hunks not run, ' +
+      'private files and end',
+    async () => {
+      const answers = {
+        ...PARTS_DECLINED,
+        'Review the plan': ['git policy', 'Confirm'],
+        'Git policy': ['Commit all', 'Ignore all of .cadre/'],
+      }
+      const dry = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: true })).split('\n')
+      const host = memHost(hostWorld({}))
+      const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false, host: host.io })).split('\n')
+      const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
+      const confirmAt = dry.indexOf(PRIVATE_FILES_HEADING)
+      const waits = (line: string): string =>
+        line.trimStart().startsWith('run: ') ? `${line.slice(0, line.indexOf('run: '))}run: ${GSD_WAIT_COMMAND}` : line
+      expect([appliedAt > 0, confirmAt > 0]).toEqual([true, true])
+      expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, confirmAt).map(waits))
+      expect(dry.slice(1, confirmAt)).toContain('File plan:')
+      expect(dry.slice(1, confirmAt)).toContain(policyLine('ignore'))
+    },
+  )
 
   test('a cancelled run keeps nothing: the next run on the same port starts fresh (D-45, D-82)', async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': [null, 'Confirm'] })
@@ -4331,7 +4486,7 @@ describe('review question hint (G-02-7)', () => {
     const paged = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(pagedIo(paged), { dryRun: true })
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    const summary = '25 files, 3 roles'
+    const summary = '26 files, 3 roles'
     expect(run.specs[reviewAt]).toEqual(firstPageSpec(lastReview(paged), run.asked[reviewAt], summary))
   })
 
@@ -4445,7 +4600,7 @@ describe('init apply (D-105)', () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const host = memHost(hostWorld({}))
     await runInit(run.io, { dryRun: false, host: host.io })
-    const desired = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const desired = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
     const ignore = mergeIgnoreBlock(null, gitignoreLines('definitions', null, true))
     expect(host.writes).toEqual([
       ...desired.map(file => ({ path: `/repo/${file.path}`, text: file.content, isWritten: true })),
@@ -4489,7 +4644,7 @@ describe('init apply (D-105)', () => {
     const first = memHost(hostWorld({}))
     await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: first.io })
     const again = memHost(hostWorld({}))
-    const world = withWrites(gitWorld(), first.writes)
+    const world = withWrites(gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] } }), first.writes)
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: false, host: again.io })
     expect(reply.split('\n').slice(-3)).toEqual([APPLIED_NONE_NOTE, DEFAULT_FOLDERS_UNKNOWN, NEXT_STEP_NOTE])
     expect([again.writes, again.calls]).toEqual([[], [COMMON_DIR_CALL]])
@@ -4650,7 +4805,7 @@ type EditedRole = {
  * manifest records the hash of an older cadre text for it, so init plans it as the one conflict (D-67).
  */
 async function editedRoleWorld(): Promise<EditedRole> {
-  const files = await initFiles(fullWorld(), await defaultRoles(fullWorld()))
+  const files = await initFiles(fullWorld(), await defaultRoles(fullWorld()), { sizing: NO_FRAMEWORK_SIZING })
   const role = files.find(file => file.path === '.cadre/be/ROLE.md')?.content ?? ''
   const older = files.map(file =>
     file.path === '.cadre/be/ROLE.md' ? { ...file, content: 'older cadre text\n' } : file,
@@ -4696,9 +4851,12 @@ describe('init apply conflicts (D-67)', () => {
     await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
     expect(reviewAt).toBeGreaterThan(0)
-    expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_ASKED])
-    expect(run.specs[reviewAt + 1]?.options).toEqual(CONFLICT_OPTIONS)
-    expect(run.specs[reviewAt + 1]?.header).toBe('Conflict')
+    // The diff is over the frame cap, so the question is asked a page at a time, its answers on the last page.
+    const after = run.asked.slice(reviewAt + 1)
+    expect(after.length).toBeGreaterThan(0)
+    expect(after.filter(question => question !== ROLE_ASKED)).toEqual([])
+    expect(run.specs[run.asked.length - 1]?.options).toEqual(['Previous page', ...CONFLICT_OPTIONS])
+    expect(run.specs[run.asked.length - 1]?.header).toBe('Conflict')
   })
 
   test('the conflict question carries the diff of that file from the version on disk to the new (D-236)', async () => {
@@ -4710,14 +4868,18 @@ describe('init apply conflicts (D-67)', () => {
     const at = run.asked.indexOf(ROLE_ASKED)
     // Its summary, which a pane surface asks under the question, is how many lines Take new adds and removes (D-310).
     const [sentence = ''] = ROLE_ASKED.split('\n')
-    expect(run.specs[at]?.context).toEqual({
-      title: 'Conflict: .cadre/be/ROLE.md',
-      lines: [counts, ...diffLines(diff)],
-      kind: 'conflict-diff',
-      summary: counts,
-      pane: { asked: ROLE_ASKED, text: withContext(sentence, counts) },
-      rows: [{ title: null, rows: [counts, ...diffLines(diff)].map(text => ({ role: 'plain', text, indent: 0 })) }],
-    })
+    // The diff is over the frame cap, so each page keeps the whole diff in its lines and its share of the rows.
+    const pages = run.specs.slice(at).flatMap(spec => (spec.context === undefined ? [] : [spec.context]))
+    const lines = [counts, ...diffLines(diff)]
+    expect(pages.map(({ title, kind, summary }) => ({ title, kind, summary }))).toEqual(
+      pages.map(() => ({ title: 'Conflict: .cadre/be/ROLE.md', kind: 'conflict-diff', summary: counts })),
+    )
+    expect(pages.filter(page => page.lines.join('\n') !== lines.join('\n'))).toEqual([])
+    expect(pages.flatMap(page => page.rows ?? []).flatMap(section => section.rows)).toEqual(
+      lines.map(text => ({ role: 'plain', text, indent: 0 })),
+    )
+    expect(pages[0]?.pane?.asked).toBe(ROLE_ASKED)
+    expect(pages[0]?.pane?.text.startsWith(withContext(sentence, counts))).toBe(true)
   })
 
   test('Take new writes the desired ROLE.md and no copy, and the manifest records its new hash', async () => {
@@ -4820,6 +4982,35 @@ const MODE_DISPLAY = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode 
 /** The line apply prints when the `mode` hunk failed (D-106). */
 const MODE_FAILED = `warning: the .planning/config.json change mode failed: run it yourself: ${MODE_DISPLAY}`
 
+/** What the not-run line of a required hunk ends with: the next step once the person ran its command. */
+const REQUIRED_NEXT_STEP = ', then /cadre regen; the GSD roles stay attended until then'
+
+/** The line apply prints for the accepted `mode` hunk it did not run, as a repo-local GSD gives its command. */
+const MODE_NOT_RUN =
+  'warning: the .planning/config.json change mode was not run by cadre: run this yourself: ' +
+  `node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo${REQUIRED_NEXT_STEP}`
+
+/** The line apply prints for the accepted `mode` hunk it did not run, as an unproven user-level GSD shows it. */
+const MODE_NOT_RUN_USER =
+  'warning: the .planning/config.json change mode was not run by cadre: run this yourself: ' +
+  `${MODE_DISPLAY}${REQUIRED_NEXT_STEP}`
+
+/** The line apply prints for the accepted `mode` hunk when no GSD is known for the repo after the installs. */
+const MODE_WAITS =
+  'warning: GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+
+/** What the plan row of an accepted hunk not run shows in place of a command when no GSD is known for the repo. */
+const GSD_WAIT_COMMAND = 'waits for GSD (not installed for this repo)'
+
+function runRows(lines: readonly string[]): string[] {
+  return lines.filter(line => line.trimStart().startsWith('run: ')).map(line => line.trim())
+}
+
+/** The fallback line of a GSD install that did not land, with the whole team on GSD. */
+const GSD_FALLBACK_DEFAULT =
+  'warning: GSD did not install, so the repo default fell back to none (built-in): run ' +
+  'npx -y @opengsd/gsd-core@latest --claude --local from the repo root, then /cadre frameworks again'
+
 /** The banner ROLE.md carries under the framework line of an attended role. */
 const ATTENDED_BANNER =
   'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.'
@@ -4873,9 +5064,10 @@ describe('init apply hunks (D-120)', () => {
       ])
       expect(reply).not.toContain('denied')
       expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
-      for (const id of ['pm', 'security', 'tl']) {
+      const attended: readonly (readonly [string, boolean])[] = [['pm', false], ['security', true], ['tl', true]]
+      for (const [id, isAttended] of attended) {
         const role = host.writes.find(write => write.path === `/repo/.cadre/${id}/ROLE.md`)?.text ?? ''
-        expect([id, role.includes(ATTENDED_BANNER)]).toEqual([id, true])
+        expect([id, role.includes(ATTENDED_BANNER)]).toEqual([id, isAttended])
       }
     },
   )
@@ -4910,6 +5102,141 @@ describe('init apply hunks (D-120)', () => {
     const lines = reply.split('\n').map(line => line.trim())
     expect(lines).toContain('run: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo')
     expect(reply).not.toContain('failed: run it yourself')
+  })
+
+  test('a landed project GSD install with no proven user-level GSD names the hunk as not run', async () => {
+    const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+    const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+    const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+    const host = memHost(hostWorld({}))
+    const isInstalled = (): boolean => host.calls.some(call => call.argv.join(' ') === install.join(' '))
+    const projectGsd: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    const run = memIo(world, answers)
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        const read = await run.io.facts(locations)
+        if (!isInstalled()) return read
+
+        return { ...read, facts: { ...read.facts, gsd: [...read.facts.gsd, projectGsd] } }
+      },
+    }
+    const reply = await runInit(io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect(lines).toContain(MODE_NOT_RUN)
+    expect(lines).toContain(installedLine([projectInstallOf('gsd')?.id ?? '']))
+    expect(reply).not.toContain('could not install')
+  })
+
+  test(
+    'after a project GSD install that does not land, the accepted hunks wait for GSD in one line ' +
+      'after the fallback line',
+    async () => {
+      const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+      const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
+      const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+      const host = memHost(hostWorld({}))
+      const reply = await runInit(memIo(world, answers).io, { dryRun: false, host: host.io })
+      const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+      const lines = reply.split('\n')
+      const at = lines.indexOf(GSD_FALLBACK_DEFAULT)
+      expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+      expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+      expect([at > 0, lines.slice(at, at + 2)]).toEqual([true, [GSD_FALLBACK_DEFAULT, MODE_WAITS]])
+      expect(runRows(lines)).toEqual([`run: ${GSD_WAIT_COMMAND}`])
+      expect(reply).not.toContain('node .claude/gsd-core')
+    },
+  )
+
+  test('after a GSD install that does not land, a found GSD still gives the wait line and row', async () => {
+    const facts: Facts = {
+      ...EMPTY_FACTS,
+      repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }],
+      gsd: [UNPROVEN],
+    }
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'Yes, install it' }
+    const install = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+    const partialCopy: GsdFact = { ...UNPROVEN, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    const cases: readonly (readonly [string, readonly GsdFact[]])[] = [
+      ['facts unchanged', []],
+      ['a partial repo copy', [partialCopy]],
+    ]
+    for (const [name, added] of cases) {
+      const host = memHost(hostWorld({}))
+      const isInstalled = (): boolean => host.calls.some(call => call.argv.join(' ') === install.join(' '))
+      const run = memIo(modeWorld({ facts: { facts, gsdUserDir: '/home/u/.claude/gsd-core' } }), answers)
+      const io: InitIo = {
+        ...run.io,
+        facts: async locations => {
+          const read = await run.io.facts(locations)
+          if (!isInstalled()) return read
+
+          return { ...read, facts: { ...read.facts, gsd: [...read.facts.gsd, ...added] } }
+        },
+      }
+      const reply = await runInit(io, { dryRun: false, host: host.io })
+      const lines = reply.split('\n')
+      const at = lines.indexOf(GSD_FALLBACK_DEFAULT)
+      expect(host.calls.filter(call => call.argv.join(' ') === install.join(' ')).length).toBe(1)
+      expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+      expect([name, at > 0, lines.slice(at, at + 2)]).toEqual([name, true, [GSD_FALLBACK_DEFAULT, MODE_WAITS]])
+      expect(reply).not.toContain(REQUIRED_NEXT_STEP)
+      expect(reply).not.toContain('node .claude/gsd-core')
+      expect(reply).not.toContain('node ~/.claude/gsd-core')
+      expect(runRows(lines)).toEqual([`run: ${GSD_WAIT_COMMAND}`])
+    }
+  })
+
+  test('with GSD in use but not installed and its install declined, the accepted hunks wait for GSD', async () => {
+    const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+    const world = modeWorld({ facts: { facts: gsdOnly, gsdUserDir: null } })
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'No' }
+    const host = memHost(hostWorld({}))
+    const run = memIo(world, answers)
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(run.asked.filter(question => question.startsWith('Install GSD for this repo?')).length).toBe(1)
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect(lines).toContain(MODE_WAITS)
+    expect(runRows(lines)).toEqual([`run: ${GSD_WAIT_COMMAND}`])
+    expect(reply).not.toContain('node .claude/gsd-core')
+  })
+
+  test('with an unproven user-level GSD, its check and install declined, the hunk shows the ~/ command', async () => {
+    const facts: Facts = {
+      ...EMPTY_FACTS,
+      repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }],
+      gsd: [UNPROVEN],
+    }
+    const world = modeWorld({ facts: { facts, gsdUserDir: '/home/u/.claude/gsd-core' } })
+    const answers = { ...INIT_ANSWERS, 'Install GSD for this repo?': 'No' }
+    const host = memHost(hostWorld({}))
+    const run = memIo(world, answers)
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    const asked = (start: string): number => run.asked.filter(question => question.startsWith(start)).length
+    expect([asked("Run GSD's own check"), asked('Install GSD for this repo?')]).toEqual([1, 1])
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect(lines).toContain(MODE_NOT_RUN_USER)
+    expect(runRows(lines)).toEqual([`run: ${MODE_DISPLAY}`])
+    expect(reply).not.toContain('node .claude/gsd-core')
+  })
+
+  test('a hunk cadre ran, one that failed and one declined get no not-run line', async () => {
+    const failed = { exitCode: 1, stdout: '', stderr: 'denied' }
+    const cases: readonly (readonly [Readonly<Record<string, string>>, readonly HostRunRule[]])[] = [
+      [INIT_ANSWERS, []],
+      [INIT_ANSWERS, [{ argv: MODE_RUN, result: failed }]],
+      [{ ...INIT_ANSWERS, '.planning/config.json:': 'Decline' }, []],
+    ]
+    for (const [answers, runs] of cases) {
+      const host = memHost(hostWorld({ runs }))
+      const reply = await runInit(memIo(modeWorld(), answers).io, { dryRun: false, host: host.io })
+      expect(reply).not.toContain('was not run by cadre')
+    }
   })
 
   test(
@@ -4997,6 +5324,480 @@ function installedWorld(keys: readonly string[]): MemWorld {
 
   return gitWorld({ files: { [INSTALLED_PLUGINS_PATH]: JSON.stringify({ plugins }) } })
 }
+
+/** The run that installs superpowers at project scope, as its adapter declares it. */
+const SUPERPOWERS_PROJECT_INSTALL = [
+  'claude',
+  'plugin',
+  'install',
+  'superpowers@claude-plugins-official',
+  '--scope',
+  'project',
+]
+
+/** The run that installs GSD at project scope, as its adapter declares it. */
+const GSD_PROJECT_INSTALL = ['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']
+
+describe('a consented framework install after Confirm', () => {
+  /** superpowers enabled for the project, as its install leaves it. */
+  const SUPERPOWERS_ENABLED: PluginFlag = { key: 'superpowers@claude-plugins-official', source: 'project', value: true }
+  /** GSD proven in the repo, as its install leaves it. */
+  const GSD_PROVEN: GsdFact = {
+    location: 'project',
+    dir: '<repo>/.claude/gsd-core',
+    version: '1.16.0',
+    identity: 'proven',
+    runtimeIdentityTried: false,
+  }
+  /** An install run that exited 1. */
+  const FAILED_INSTALL: HostRun = { exitCode: 1, stdout: '', stderr: 'npm ERR! network' }
+  /** What GSD's fallback line ends with: its command, then /cadre frameworks again. */
+  const GSD_FALLBACK_END = `: run ${GSD_PROJECT_INSTALL.join(' ')} from the repo root, then /cadre frameworks again`
+  /** The problem line of a GSD install that did not land, with be alone on GSD. */
+  const GSD_FALLBACK_BE = `GSD did not install, so role be fell back to none (built-in)${GSD_FALLBACK_END}`
+  /** The review line of the superpowers install. */
+  const SUPERPOWERS_REVIEW_LINE =
+    "Framework install from the repo root after Confirm (a --dry-run installs nothing; the repo's own settings for " +
+    'the command, such as its .npmrc for npx, decide where it fetches from): ' +
+    `${SUPERPOWERS_PROJECT_INSTALL.join(' ')}; it writes enabledPlugins in .claude/settings.json`
+  /** The answers of an init that sets be to superpowers through Adjust and answers Yes to its install. */
+  const ADJUST_SUPERPOWERS_YES = {
+    ...INIT_ANSWERS,
+    'Use these roles?': ['Adjust them', 'Use these roles'],
+    'Adjust the roles': ['framework be superpowers', 'Done adjusting'],
+    'Install superpowers for this repo?': 'Yes, install it',
+  }
+
+  /** The installed_plugins entry of superpowers for this repo, as its install leaves it. */
+  const SUPERPOWERS_ENTRY = { key: 'superpowers@claude-plugins-official', version: '6.4.1' }
+
+  /** The facts with these frameworks shown installed, as init reads them again once their installs worked. */
+  function showing(initFacts: InitFacts, ids: readonly FrameworkId[]): InitFacts {
+    const { facts } = initFacts
+    const isSuperpowers = ids.includes('superpowers')
+    const enabledPlugins = [...facts.enabledPlugins, ...(isSuperpowers ? [SUPERPOWERS_ENABLED] : [])]
+    const superpowersVersions = [...facts.superpowersVersions, ...(isSuperpowers ? [SUPERPOWERS_ENTRY] : [])]
+    const gsd = [...facts.gsd, ...(ids.includes('gsd') ? [GSD_PROVEN] : [])]
+
+    return { ...initFacts, facts: { ...facts, enabledPlugins, superpowersVersions, gsd } }
+  }
+
+  /** A draft of be alone on superpowers, GSD and superpowers taken as installed, with these installs consented. */
+  function superpowersDraft(installs: readonly FrameworkId[] | null): Draft {
+    const draft = wholeDraft({
+      roles: [withFramework(templateRole('be'), 'superpowers')],
+      installed: ['gsd', 'superpowers', 'none'],
+    })
+
+    return installs === null ? draft : { ...draft, frameworkInstalls: installs }
+  }
+
+  /** A draft of be on gsd and tl on the repo default, with these frameworks installed and GSD's install consented. */
+  function gsdDraft(installed: readonly FrameworkId[], repoDefault: FrameworkId = 'none'): Draft {
+    const roles = [withFramework(templateRole('be'), 'gsd'), templateRole('tl')]
+
+    return wholeDraft({ roles, installed, repoDefault, frameworkInstalls: ['gsd'] })
+  }
+
+  /** The framework line the apply wrote into the ROLE.md of a role; '' when it wrote none. */
+  function frameworkLineOf(host: MemHost, id: string): string {
+    const text = host.writes.find(write => write.path === `/repo/.cadre/${id}/ROLE.md`)?.text ?? ''
+
+    return /Framework: [^.]+\./.exec(text)?.[0] ?? ''
+  }
+
+  /** The plan the review made of the draft: planStep over the git world. */
+  async function plannedOf(draft: Draft): Promise<PlanResult> {
+    const scans = await scansOf(gitWorld())
+
+    return planStep(memIo(gitWorld(), {}).io, {
+      roles: draft.roles,
+      repoDefault: draft.repoDefault,
+      policy: draft.policy,
+      launchStart: draft.launchStart,
+      scopes: scopesFor(draft.roles, draft.repoDefault, scans, [], draft.launchStart),
+      hunks: [],
+      repo: scans.repo,
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+    })
+  }
+
+  /** `.planning/` at the repo root, which puts GSD in use. */
+  const PLANNING: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+
+  /**
+   * The apply of the confirmed draft, each host run and write and each facts read recorded in one list, in order; the
+   * facts read after the installs show the frameworks `found` and the repo-root entries `inUse`.
+   */
+  async function applied(
+    draft: Draft,
+    runs: readonly HostRunRule[] = [],
+    found: readonly FrameworkId[] = [],
+    inUse: readonly RepoEntry[] = [],
+  ): Promise<{
+    readonly host: MemHost
+    readonly events: string[]
+    readonly problems: readonly string[]
+    readonly installed: readonly string[]
+  }> {
+    const host = memHost(hostWorld({ runs }))
+    const recorded = withHostEvents(host)
+    const run = memIo(gitWorld(), {})
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        recorded.events.push('facts')
+        const shown = showing(await run.io.facts(locations), found)
+        const repoEntries = [...shown.facts.repoEntries, ...inUse]
+
+        return { ...shown, facts: { ...shown.facts, repoEntries } }
+      },
+    }
+    const reviewed = { draft, planned: await plannedOf(draft) }
+    const effect: Parameters<typeof perform>[2] = { kind: 'io', call: { id: 'apply', reviewed } }
+    const answer = await perform(io, { dryRun: false, host: recorded.io }, effect)
+    const result = answer.kind === 'io' && answer.result.id === 'apply' ? answer.result.result : null
+    const problems = result?.kind === 'accepted' ? result.value.outcome.installProblems : []
+    const installed = result?.kind === 'accepted' ? result.value.outcome.installed : []
+
+    return { host, events: recorded.events, problems, installed }
+  }
+
+  test('superpowers installs from the repo root before any other run or write, then the facts are read', async () => {
+    const { host, events } = await applied(superpowersDraft(['superpowers']), [], ['superpowers'])
+    const installAt = events.indexOf(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const factsAt = events.indexOf('facts')
+    const firstWriteAt = events.findIndex(event => event.startsWith('write '))
+    const role = host.writes.find(write => write.path === '/repo/.cadre/be/ROLE.md')?.text ?? ''
+
+    expect(host.calls[0]).toEqual({ argv: SUPERPOWERS_PROJECT_INSTALL, options: { cwd: '/repo', timeoutMs: 180_000 } })
+    expect([installAt, installAt < factsAt, factsAt < firstWriteAt]).toEqual([0, true, true])
+    expect(role).toContain('Framework: superpowers.')
+  })
+
+  test('with no install consented the apply runs no project install and reads no facts', async () => {
+    const { host, events } = await applied(superpowersDraft(null))
+
+    expect(host.calls.filter(call => call.argv.includes('--scope'))).toEqual([])
+    expect(events).not.toContain('facts')
+  })
+
+  test('an Adjust to superpowers answered Yes installs it from the repo root, before any write', async () => {
+    const run = queuedIo(fullWorld(), ADJUST_SUPERPOWERS_YES)
+    const host = memHost(hostWorld({}))
+    const recorded = withHostEvents(host)
+    const isInstalled = (): boolean => recorded.events.includes(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => showing(await run.io.facts(locations), isInstalled() ? ['superpowers'] : []),
+    }
+    await runInit(io, { dryRun: false, host: recorded.io })
+    const installAt = recorded.events.indexOf(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const firstWriteAt = recorded.events.findIndex(event => event.startsWith('write '))
+    const role = host.writes.find(write => write.path === '/repo/.cadre/be/ROLE.md')?.text ?? ''
+
+    expect(host.calls[0]).toEqual({ argv: SUPERPOWERS_PROJECT_INSTALL, options: { cwd: '/repo', timeoutMs: 180_000 } })
+    expect([installAt, installAt < firstWriteAt, role.includes('Framework: superpowers.')]).toEqual([0, true, true])
+  })
+
+  /** docs/superpowers/ in use with only the enabled project key of superpowers: no installed entry for this repo. */
+  const KEY_ONLY: Facts = {
+    ...EMPTY_FACTS,
+    repoEntries: [{ name: 'docs', kind: 'dir', isLink: false }],
+    docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
+    enabledPlugins: [SUPERPOWERS_ENABLED],
+  }
+
+  /**
+   * The reply and host of an init over KEY_ONLY that keeps superpowers and answers Yes to its install; once the install
+   * ran, the facts are read again through `rescan`.
+   */
+  async function keptSuperpowersInstall(
+    rescan: (initFacts: InitFacts) => InitFacts,
+  ): Promise<{ readonly reply: string; readonly host: MemHost }> {
+    const answers = { ...INIT_ANSWERS, 'Install superpowers for this repo?': 'Yes, install it' }
+    const run = queuedIo(gitWorld({ facts: { facts: KEY_ONLY, gsdUserDir: null } }), answers)
+    const host = memHost(hostWorld({}))
+    const recorded = withHostEvents(host)
+    const isInstalled = (): boolean => recorded.events.includes(`run ${SUPERPOWERS_PROJECT_INSTALL.join(' ')}`)
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        const read = await run.io.facts(locations)
+
+        return isInstalled() ? rescan(read) : read
+      },
+    }
+    const reply = await runInit(io, { dryRun: false, host: recorded.io })
+
+    return { reply, host }
+  }
+
+  test('a kept superpowers with only its enabled key asks its install; an entry on the re-scan lists it', async () => {
+    const { reply, host } = await keptSuperpowersInstall(read => showing(read, ['superpowers']))
+
+    expect(host.calls.map(call => call.argv.join(' '))).toContain(SUPERPOWERS_PROJECT_INSTALL.join(' '))
+    expect(reply).toContain('Installed superpowers@claude-plugins-official')
+  })
+
+  test('a kept superpowers with only its enabled key whose re-scan adds only the key falls back', async () => {
+    const { reply, host } = await keptSuperpowersInstall(read => {
+      const enabledPlugins = [...read.facts.enabledPlugins, SUPERPOWERS_ENABLED]
+
+      return { ...read, facts: { ...read.facts, enabledPlugins } }
+    })
+
+    expect(host.calls.map(call => call.argv.join(' '))).toContain(SUPERPOWERS_PROJECT_INSTALL.join(' '))
+    expect(reply).toContain('superpowers did not install, so')
+  })
+
+  test('a GSD install that exits 1 or is rejected gives its command, runs once, and be falls back', async () => {
+    for (const result of [FAILED_INSTALL, null]) {
+      const { host, problems } = await applied(gsdDraft(['gsd', 'none']), [{ argv: GSD_PROJECT_INSTALL, result }])
+      const runs = host.calls.filter(call => call.argv[0] === 'npx')
+      const after = [runs.length, problems, frameworkLineOf(host, 'be')]
+      expect(after).toEqual([1, [GSD_FALLBACK_BE], 'Framework: built-in.'])
+    }
+    const installed = await applied(gsdDraft(['gsd', 'none']), [], ['gsd'])
+    expect([installed.problems, frameworkLineOf(installed.host, 'be')]).toEqual([[], 'Framework: GSD.'])
+  })
+
+  test('re-read facts decide, not the exit code: exit 0 unseen falls back, exit 1 shown is installed', async () => {
+    const unseen = await applied(gsdDraft(['gsd', 'none']))
+    const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const shown = await applied(gsdDraft(['gsd', 'none']), failing, ['gsd'])
+
+    expect([unseen.problems, frameworkLineOf(unseen.host, 'be')]).toEqual([[GSD_FALLBACK_BE], 'Framework: built-in.'])
+    expect([shown.problems, frameworkLineOf(shown.host, 'be'), shown.installed[0]]).toEqual([
+      [],
+      'Framework: GSD.',
+      '@opengsd/gsd-core',
+    ])
+  })
+
+  test('a kept GSD in use whose install did not land falls back, be and the default with it', async () => {
+    const { host, problems, installed } = await applied(gsdDraft(['gsd', 'none'], 'gsd'), [], [], [PLANNING])
+    const line = `GSD did not install, so role be and the repo default fell back to none (built-in)${GSD_FALLBACK_END}`
+    expect([problems, installed]).toEqual([[line], []])
+    expect(['be', 'tl'].map(id => frameworkLineOf(host, id))).toEqual(['Framework: built-in.', 'Framework: built-in.'])
+  })
+
+  test('a kept superpowers in use whose install did not land falls back and drops its plugin key', async () => {
+    const inUse: RepoEntry = { name: '.superpowers', kind: 'dir', isLink: false }
+    const key = 'superpowers@claude-plugins-official'
+    const draft: Draft = { ...superpowersDraft(['superpowers']), frameworkSet: ['superpowers'] }
+    const { host, problems, installed } = await applied(draft, [], [], [inUse])
+    const command = SUPERPOWERS_PROJECT_INSTALL.join(' ')
+    const line =
+      `superpowers did not install, so role be fell back to none (built-in): run ${command} ` +
+      'from the repo root, then /cadre frameworks again'
+    const settings = host.writes.find(write => write.path === '/repo/.cadre/be/settings.json')?.text ?? ''
+    const json = cadreJsonOf(host)
+    const frameworks = typeof json === 'object' && json !== null && 'frameworks' in json ? json.frameworks : undefined
+    expect([problems, installed, frameworkLineOf(host, 'be')]).toEqual([[line], [], 'Framework: built-in.'])
+    expect(settings.length).toBeGreaterThan(0)
+    expect(settings).not.toContain(key)
+    expect(frameworks).toEqual([])
+  })
+
+  test('a kept GSD in use whose install landed is named among the installed, with no problem line', async () => {
+    const { problems, installed } = await applied(gsdDraft(['gsd', 'none'], 'gsd'), [], ['gsd'], [PLANNING])
+    expect([problems, installed]).toEqual([[], ['@opengsd/gsd-core']])
+  })
+
+  test('the fallback line names the role and the repo default on it, and what they fell back to', async () => {
+    const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const { problems } = await applied(gsdDraft(['gsd', 'superpowers', 'none'], 'gsd'), failing)
+    const line = `GSD did not install, so role be and the repo default fell back to superpowers${GSD_FALLBACK_END}`
+
+    expect(problems).toEqual([line])
+  })
+
+  test('a framework install that landed is named among the installed, with no problem line', async () => {
+    const { problems, installed } = await applied(superpowersDraft(['superpowers']), [], ['superpowers'])
+
+    expect([problems, installed]).toEqual([[], ['superpowers@claude-plugins-official']])
+  })
+
+  test('consentedPluginKeys gives the plugin installs consented, less those that failed', () => {
+    const keys = [
+      consentedPluginKeys({ frameworkInstalls: ['superpowers'] }, []),
+      consentedPluginKeys({ frameworkInstalls: ['gsd'] }, []),
+      consentedPluginKeys({ frameworkInstalls: ['superpowers'] }, ['superpowers']),
+      consentedPluginKeys({}, []),
+    ]
+    expect(keys).toEqual([['superpowers@claude-plugins-official'], [], [], []])
+  })
+
+  test('a consented plugin install that landed is enabled for its role, whatever its exit code', async () => {
+    const draft = superpowersDraft(['superpowers'])
+    const key = 'superpowers@claude-plugins-official'
+    const failing = [{ argv: SUPERPOWERS_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const detected = await applied(draft, failing, ['superpowers'])
+    const unseen = await applied(draft)
+    const settingsOf = (host: MemHost): string =>
+      host.writes.find(write => write.path === '/repo/.cadre/be/settings.json')?.text ?? ''
+
+    expect(settingsOf(detected.host)).toContain(`"${key}": true`)
+    expect([settingsOf(unseen.host).includes(key), frameworkLineOf(unseen.host, 'be')]).toEqual([
+      false,
+      'Framework: GSD.',
+    ])
+  })
+
+  test('roles and a repo default on a failed install fall back to the first framework left, else none', async () => {
+    const failing = [{ argv: GSD_PROJECT_INSTALL, result: FAILED_INSTALL }]
+    const left = await applied(gsdDraft(['gsd', 'superpowers', 'none'], 'gsd'), failing)
+    const none = await applied(gsdDraft(['gsd', 'none'], 'gsd'), failing)
+    const lines = (host: MemHost): string[] => ['be', 'tl'].map(id => frameworkLineOf(host, id))
+
+    expect(lines(left.host)).toEqual(['Framework: superpowers.', 'Framework: superpowers.'])
+    expect(lines(none.host)).toEqual(['Framework: built-in.', 'Framework: built-in.'])
+  })
+
+  /**
+   * A draft of be on the repo default gsd with GSD and superpowers installed, this set chosen, these installs consented
+   * and, when given, this sizing block stored in the cadre.json the scan read.
+   */
+  function setDraft(set: readonly FrameworkId[], installs: readonly FrameworkId[], sizing?: Sizing): Draft {
+    const roles = [templateRole('be')]
+    const draft = wholeDraft({ roles, installed: ['gsd', 'superpowers', 'none'], repoDefault: 'gsd' })
+    const chosen = { ...draft, frameworkSet: set, frameworkInstalls: installs }
+    if (sizing === undefined) return chosen
+    const state: CadreState = {
+      schema: 1,
+      cadreVersion: '0.4.11',
+      framework: 'gsd',
+      gitPolicy: 'definitions',
+      roles: ['be'],
+      launchStart: { kind: 'git-root' },
+      readUserMcp: false,
+      sizing,
+    }
+    const repo = { ...draft.gathered.repo, cadre: { ...draft.gathered.repo.cadre, state } }
+
+    return { ...chosen, gathered: { ...draft.gathered, repo } }
+  }
+
+  /** The text of the cadre.json the apply wrote, parsed; null when it wrote none. */
+  function cadreJsonOf(host: MemHost): unknown {
+    const text = host.writes.find(write => write.path === '/repo/.cadre/cadre.json')?.text
+
+    return text === undefined ? null : JSON.parse(text)
+  }
+
+  test('cadre.json stores the set without a framework whose install failed, with the sizing of that set', async () => {
+    const draft = setDraft(['gsd', 'superpowers'], ['superpowers'])
+    const failed = await applied(draft, [{ argv: SUPERPOWERS_PROJECT_INSTALL, result: FAILED_INSTALL }])
+    const installed = await applied(draft, [], ['superpowers'])
+    const gsdOnly = { threshold: 0.5, mapping: { small: 'gsd', large: 'gsd' }, rubric: '.cadre/sizing.md' }
+
+    expect(cadreJsonOf(failed.host)).toMatchObject({ frameworks: ['gsd'], sizing: gsdOnly })
+    expect(cadreJsonOf(installed.host)).toMatchObject({
+      frameworks: ['gsd', 'superpowers'],
+      sizing: { ...gsdOnly, mapping: { small: 'superpowers', large: 'gsd' } },
+    })
+  })
+
+  test('a re-init keeps a stored threshold 0.7, and its mapping while both of its frameworks stay', async () => {
+    const mapping: Sizing['mapping'] = { small: 'superpowers', large: 'gsd' }
+    const stored: Sizing = { threshold: 0.7, mapping, rubric: '.cadre/sizing.md' }
+    const both = await applied(setDraft(['gsd', 'superpowers'], [], stored))
+    const gsd = await applied(setDraft(['gsd'], [], stored))
+    const fresh = await applied(setDraft(['gsd'], []))
+    const gsdMapping = { small: 'gsd', large: 'gsd' }
+
+    expect(cadreJsonOf(both.host)).toMatchObject({ sizing: stored })
+    expect(cadreJsonOf(gsd.host)).toMatchObject({ sizing: { ...stored, mapping: gsdMapping } })
+    expect(cadreJsonOf(fresh.host)).toMatchObject({ sizing: { ...stored, threshold: 0.5, mapping: gsdMapping } })
+  })
+
+  /** The run that installs mattpocock-skills at project scope. */
+  const GRILL_INSTALL = ['claude', 'plugin', 'install', MATTPOCOCK_PLUGIN, '--scope', 'project']
+
+  /** A draft of PM given the grill skills and be on superpowers, PM's plugin and these frameworks consented. */
+  function grillDraft(frameworkInstalls: readonly FrameworkId[] = []): Draft {
+    const draft = superpowersDraft(frameworkInstalls)
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS] })
+
+    return { ...draft, roles: [pm, ...draft.roles], projectPluginInstalls: [MATTPOCOCK_PLUGIN] }
+  }
+
+  test('the grill plugin installs from the repo root after Confirm, after the framework installs', async () => {
+    const { host, installed } = await applied(grillDraft(['superpowers']), [], ['superpowers'])
+    const options = { cwd: '/repo', timeoutMs: 180_000 }
+    const settings = host.writes.find(write => write.path === '/repo/.cadre/pm/settings.json')?.text ?? ''
+
+    expect(host.calls.filter(call => call.argv.includes('--scope'))).toEqual([
+      { argv: SUPERPOWERS_PROJECT_INSTALL, options },
+      { argv: GRILL_INSTALL, options },
+    ])
+    expect(installed).toEqual(['superpowers@claude-plugins-official', MATTPOCOCK_PLUGIN])
+    expect(settings).toContain(`"${MATTPOCOCK_PLUGIN}": true`)
+  })
+
+  test('a failed grill plugin install prints its command and leaves PM without the grill skills', async () => {
+    const { host, problems } = await applied(grillDraft(), [{ argv: GRILL_INSTALL, result: FAILED_INSTALL }])
+    const role = host.writes.find(write => write.path === '/repo/.cadre/pm/role.json')?.text ?? ''
+    const command = GRILL_INSTALL.join(' ')
+
+    expect(problems).toEqual([`could not install ${MATTPOCOCK_PLUGIN}: run it yourself from the repo root: ${command}`])
+    expect([role.includes('"pm"'), GRILL_SKILLS.filter(skill => role.includes(skill))]).toEqual([true, []])
+  })
+
+  test('a --dry-run answered Yes to the grill plugin names its install in the review and runs nothing', async () => {
+    const run = memIo(gitWorld(), { ...INIT_ANSWERS, 'Install mattpocock-skills': 'Yes, install it' })
+    const host = memHost(hostWorld({}))
+    await runInit(pagedIo(run), { dryRun: true })
+    const line =
+      'Plugin install from the repo root after Confirm (a --dry-run installs nothing): ' +
+      `${GRILL_INSTALL.join(' ')}; it writes enabledPlugins in .claude/settings.json`
+
+    expect([lastReview(run).includes(line), host.calls, host.writes]).toEqual([true, [], []])
+  })
+
+  test('Yes, then Change roles, then No leaves PM without the grill skills and plans no plugin install', async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Install mattpocock-skills': ['Yes, install it', 'No'],
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
+    const card = review.slice(review.indexOf('Scope card: PM (pm)'))
+
+    expect(run.asked.filter(question => question.startsWith('Install mattpocock-skills'))).toHaveLength(2)
+    expect(review).toContain('Scope card: PM (pm)')
+    expect(card.find(line => line.startsWith('  skills:'))).toBe('  skills: none')
+    expect(review.some(line => line.startsWith('Plugin install from the repo root after Confirm'))).toBe(false)
+  })
+
+  test('a --dry-run review names the install, and its Confirm runs nothing and reads the facts no more', async () => {
+    const run = queuedIo(fullWorld(), ADJUST_SUPERPOWERS_YES)
+    const paged = pagedIo(run)
+    const events: string[] = []
+    const io: InitIo = {
+      ...paged,
+      facts: async locations => {
+        events.push('facts')
+
+        return paged.facts(locations)
+      },
+      ask: async (question, spec) => {
+        events.push(spec.context?.kind === 'review' ? 'review' : 'ask')
+
+        return paged.ask(question, spec)
+      },
+    }
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(io, { dryRun: true })
+    const [review = []] = reviewsOf(run)
+
+    expect([review.includes(SUPERPOWERS_REVIEW_LINE), reply.startsWith('cadre init --dry-run')]).toEqual([true, true])
+    expect([events.lastIndexOf('facts') < events.indexOf('review'), host.calls, host.writes]).toEqual([true, [], []])
+  })
+})
 
 describe('security plugin installs (decision #39)', () => {
   test('init asks it after the recommendations, before the duration; a dry run answered Install plans it', async () => {
@@ -5407,9 +6208,9 @@ describe('install checks (decision #39)', () => {
 describe('apply step labels (D-284, edge #13)', () => {
   /** The one label of each apply step kind, as the status line or the pane's loader shows it (D-284). */
   const LABELS = {
-    hunks: 'cadre: running the accepted changes…',
-    installs: 'cadre: installing plugins…',
-    improver: 'cadre: running the improver…',
+    hunks: 'Running the accepted changes…',
+    installs: 'Installing plugins…',
+    improver: 'Running the improver…',
   }
 
   /**
@@ -5487,7 +6288,7 @@ describe('apply step labels (D-284, edge #13)', () => {
     const summaryOf = (run: MemRun, label: string): string | null | undefined =>
       run.progressSummaries[run.progress.indexOf(label)]
     const summaries = [summaryOf(hunks, LABELS.hunks), summaryOf(installs, LABELS.installs)]
-    expect([...summaries, summaryOf(improver, LABELS.improver)]).toEqual(['1 hunk', '2 plugins', '2 files'])
+    expect([...summaries, summaryOf(improver, LABELS.improver)]).toEqual(['1 hunk', '2 plugins', '1 file'])
   })
 
   test('a plain init with no hunk, install or improver run sets none of the three labels', async () => {
@@ -5593,11 +6394,11 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     const firstWrite = events.findIndex(event => event.startsWith('write '))
     const repoStats = events.slice(0, firstWrite).filter(event => event.startsWith('stat '))
     expect([repoStats.at(0), repoStats.at(-1)]).toEqual(['stat /repo/.cadre', 'stat /repo/.gitignore'])
-    expect(repoStats).toHaveLength(53)
+    expect(repoStats).toHaveLength(54)
     expect(repoStats).toEqual([...new Set(repoStats)].sort(compareText))
     const repoWrites = events.filter(event => event.startsWith('write /repo/'))
     const firstPass = repoWrites.slice(0, repoWrites.indexOf('write /repo/.gitignore') + 1)
-    expect(firstPass).toHaveLength(45)
+    expect(firstPass).toHaveLength(46)
     expect(firstPass).toEqual([...new Set(firstPass)].sort(compareText))
     for (const id of BUILT_TEAM) {
       const at = events.indexOf(`write /repo/.cadre/bin/${id}`)
@@ -5605,37 +6406,44 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     }
     expect(events.filter(event => event.startsWith('run /bin/chmod 755 '))).toHaveLength(BUILT_TEAM.length)
     const lastRun = events.findLastIndex(event => event.startsWith('run claude -p'))
+    const [slug, security] = [await slugFolder(), await memoryFolder('security')]
+    const text = privateClaudeMdPath(security)
     expect(events.slice(lastRun + 1)).toEqual([
       'stat /repo/.cadre',
-      'stat /repo/.cadre/be',
-      'stat /repo/.cadre/be/CLAUDE.md',
       'stat /repo/.cadre/manifest.json',
-      'write /repo/.cadre/be/CLAUDE.md',
+      'stat /home/u/.claude/cadre',
+      `stat ${slug}`,
+      `stat ${security}`,
+      `stat ${security}/instructions`,
+      `stat ${text}`,
+      `run /bin/mkdir -p -- ${security}/instructions`,
+      'run /bin/chmod 700 /home/u/.claude/cadre',
+      `run /bin/chmod 700 ${slug}`,
+      `run /bin/chmod 700 ${security}`,
+      `run /bin/chmod 700 ${security}/instructions`,
+      `write ${text}`,
       'write /repo/.cadre/manifest.json',
     ])
   })
 
-  test('writeImproved: the improved text stays only on Accept; the private text file gets its own run', async () => {
+  test('writeImproved: the improved private text stays only on Accept; the built repo file gets no run', async () => {
     const security = await memoryFolder('security')
-    const beRun = { argv: BE_IMPROVER_ARGV, options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } }
-    const privateRun = {
-      argv: improverArgv(privateClaudeMdPath(security)),
-      options: { cwd: `${security}/instructions`, timeoutMs: 300_000 },
-    }
+    const text = privateClaudeMdPath(security)
+    const privateRun = { argv: improverArgv(text), options: { cwd: `${security}/instructions`, timeoutMs: 300_000 } }
+    const built = await builtSecurityText()
     const seen: unknown[] = []
     for (const answer of ['Accept', 'Keep original']) {
       const files = builtFilesRecord()
       const { io, host } = improvingHost(files)
       const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: answer })
       await runInit(run.io, { dryRun: false, host: io })
-      expect(improverCalls(host)).toEqual([beRun, privateRun])
-      const beTexts = host.writes.filter(write => write.path === BE_CLAUDE_MD).map(write => write.text)
-      const isImprovedRecorded = writtenManifestText(host).includes(await sha256Hex(BUILT_BE_IMPROVED))
-      seen.push([answer, beTexts, files[BE_CLAUDE_MD], isImprovedRecorded])
+      expect(improverCalls(host)).toEqual([privateRun])
+      const texts = host.writes.filter(write => write.path === text).map(write => write.text)
+      seen.push([answer, texts, files[text]])
     }
     expect(seen).toEqual([
-      ['Accept', [BUILT_BE], BUILT_BE_IMPROVED, true],
-      ['Keep original', [BUILT_BE, BUILT_BE], BUILT_BE, false],
+      ['Accept', [built], `${built}${IMPROVED_LINE}`],
+      ['Keep original', [built, built], built],
     ])
   })
 
@@ -5657,7 +6465,7 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     const declined = improvingHost(declinedFiles, INSTALLS_OK)
     const run = memIo(builtWorld({ files: declinedFiles }), improverOffer('Not now'))
     await runInit(run.io, { dryRun: false, host: declined.io })
-    expect(firstLines(run.asked).filter(question => question.startsWith('Install'))).toHaveLength(2)
+    expect(firstLines(run.asked).filter(question => question.startsWith('Install'))).toHaveLength(3)
     expect(installRuns(declined.host)).toEqual([])
   })
 
@@ -5667,13 +6475,14 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     const { io, events } = withHostEvents(host)
     const reply = (await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: io })).split('\n')
     expect(reply).toContain('Git policy: commit definitions (.cadre/*/.runtime/ ignored)')
-    expect(LOCAL_GIT_ARGV.slice(LOCAL_GIT_ARGV.indexOf('--') + 1)).toEqual(['CLAUDE.md', 'notes/local.md'])
+    expect(LOCAL_GIT_ARGV.slice(LOCAL_GIT_ARGV.indexOf('--') + 1)).toEqual(['.claude/rules/local.md', 'CLAUDE.md'])
     expect(gitCalls(host)).toEqual([{ argv: LOCAL_GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
     expect(events[0]).toBe(`run ${LOCAL_GIT_ARGV.join(' ')}`)
     const untracked = reply.filter(line => line.includes('not tracked by git'))
-    expect(untracked).toEqual([`warning: ${untrackedPartsWarning('notes/local.md')}`])
-    const be = host.writes.find(write => write.path === BE_CLAUDE_MD)?.text ?? ''
-    expect([be.includes(BUILT_RULE), be.includes(LOCAL_NOTE)]).toEqual([true, false])
+    expect(untracked).toEqual([`warning: ${untrackedPartsWarning('.claude/rules/local.md')}`])
+    const roleJson = host.writes.find(write => write.path === '/repo/.cadre/be/role.json')?.text ?? ''
+    const files = parseRoleJson(roleJson)?.instructionParts?.map(record => record.file)
+    expect([files, host.writes.filter(write => write.text.includes(LOCAL_NOTE))]).toEqual([['CLAUDE.md'], []])
   })
 
   test('privatePlanOf: a two-role team gets a private step per role, skips an unchanged record, or warns', async () => {
@@ -5706,18 +6515,18 @@ describe('safety net: init apply privates through runInit (A8)', () => {
     expect(reply.split('\n')).toContain(`warning: ${privateFoldersUnknownWarning(['pm', 'tl'])}`)
   })
 
-  test('keptBuiltEntries: a built CLAUDE.md whose records and disk hash match is kept with no op', async () => {
+  test('a re-init over the built files as written leaves each one, and one edited on disk is a conflict', async () => {
     const first = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     await runInit(memIo(builtWorld(), PARTS_ANSWERS).io, { dryRun: false, host: first.io })
     const kept = withWrites(builtWorld({ dirs: builtAfterDirs() }), first.writes)
     const again = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     const reply = await runInit(memIo(kept, PARTS_ANSWERS).io, { dryRun: false, host: again.io })
     const kinds = opKinds(reply)
-    expect(BUILT_TEAM.map(id => kinds.get(`.cadre/${id}/CLAUDE.md`) ?? 'no op')).toEqual(BUILT_TEAM.map(() => 'no op'))
+    expect(BUILT_TEAM.map(id => kinds.get(`.cadre/${id}/CLAUDE.md`))).toEqual(BUILT_TEAM.map(() => 'leave'))
     expect(kinds.get('.cadre/be/role.json')).toBe('leave')
     expect(again.writes).toEqual([])
     expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
-    // Edited on disk, the file no longer hashes to its manifest entry: it is planned as a conflict again.
+    // Edited on disk, the file no longer hashes to its manifest entry: it is planned as a conflict.
     const edited = withWrites(kept, [{ path: BE_CLAUDE_MD, text: `${BUILT_BE}mine\n`, isWritten: true }])
     expect(opKinds(await runInit(memIo(edited, PARTS_ANSWERS).io, { dryRun: true })).get(BE_CLAUDE_MD_PATH)).toBe(
       'conflict',
@@ -5847,6 +6656,119 @@ describe('init plan', () => {
   })
 })
 
+describe('the sizing rubric and the sizing block at init', () => {
+  /** planStep's input for the default team of the git fixture world over `world`, with `over` added. */
+  async function rubricInput(
+    world: MemWorld,
+    over: Partial<Parameters<typeof planStep>[1]> = {},
+  ): Promise<Parameters<typeof planStep>[1]> {
+    const team = await defaultRoles(gitWorld())
+    const scans = await scansOf(world)
+
+    return {
+      roles: team,
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes: scopesFor(team, 'none', scans, [], { kind: 'git-root' }),
+      hunks: [],
+      repo: scans.repo,
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+      ...over,
+    }
+  }
+
+  /** The kinds of the ops a plan has for the sizing rubric: none when it is not planned. */
+  function rubricOps(plan: Plan): string[] {
+    return plan.ops.flatMap(op => (op.kind !== 'hunk' && op.path === SIZING_RUBRIC_PATH ? [op.kind] : []))
+  }
+
+  /** The repo as an init with the INIT_ANSWERS defaults left it, a listed `.cadre/`, with these files on top. */
+  async function afterInit(edited: Readonly<Record<string, string>> = {}): Promise<MemWorld> {
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()), { sizing: NO_FRAMEWORK_SIZING })
+    const disk = {
+      ...onDisk(files),
+      '/repo/.cadre/manifest.json': await manifestOf(files),
+      '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null, true)) ?? '',
+      ...edited,
+    }
+
+    return gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
+  }
+
+  test('the planned cadre.json records the default sizing of the installed frameworks, none left out', async () => {
+    const input = await rubricInput(gitWorld(), { sizing: NO_FRAMEWORK_SIZING })
+    const sized = await planStep(memIo(gitWorld(), {}).io, input)
+    const unsized = await planStep(memIo(gitWorld(), {}).io, await rubricInput(gitWorld()))
+    const cadreJson = sized.desired.find(file => file.path === '.cadre/cadre.json')?.content ?? ''
+
+    const installed = wholeDraft({ installed: ['gsd', 'superpowers', 'none'] })
+    expect(initFrameworks(installed, []).sizing.mapping).toEqual({ small: 'superpowers', large: 'gsd' })
+    expect(NO_FRAMEWORK_SIZING.mapping).toEqual({ small: 'none', large: 'none' })
+    expect([sized.state.sizing, parseCadreState(cadreJson)?.sizing]).toEqual([NO_FRAMEWORK_SIZING, NO_FRAMEWORK_SIZING])
+    expect(Object.keys(unsized.state)).not.toContain('sizing')
+  })
+
+  test('over a fresh repo the plan creates .cadre/sizing.md with the rubric text', async () => {
+    const result = await planStep(memIo(gitWorld(), {}).io, await rubricInput(gitWorld()))
+
+    expect(rubricOps(result.plan)).toEqual(['create'])
+    expect(result.desired.find(file => file.path === SIZING_RUBRIC_PATH)).toEqual({
+      path: SIZING_RUBRIC_PATH,
+      content: rubricText(),
+      mode: 'file',
+    })
+  })
+
+  test('an edited rubric whose manifest entry holds the default text gets no op and keeps that entry', async () => {
+    const world = await afterInit({ '/repo/.cadre/sizing.md': 'my own anchors\n' })
+    const result = await planStep(memIo(world, {}).io, await rubricInput(world, { sizing: NO_FRAMEWORK_SIZING }))
+    const entry = result.manifest.files.find(file => file.path === SIZING_RUBRIC_PATH)
+
+    expect(rubricOps(result.plan)).toEqual([])
+    expect(result.desired.map(file => file.path)).not.toContain(SIZING_RUBRIC_PATH)
+    expect(entry).toEqual({ path: SIZING_RUBRIC_PATH, sha256: await sha256Hex(rubricText()), mode: 'file' })
+  })
+
+  test('a rubric on disk that no manifest records gets no op either, and the manifest does not list it', async () => {
+    const world = gitWorld({ files: { '/repo/.cadre/sizing.md': 'my own anchors\n' } })
+    const result = await planStep(memIo(world, {}).io, await rubricInput(world))
+
+    expect(rubricOps(result.plan)).toEqual([])
+    expect(result.manifest.files.map(file => file.path)).not.toContain(SIZING_RUBRIC_PATH)
+  })
+
+  test('apply over an edited rubric asks nothing about it and never writes it', async () => {
+    const run = memIo(await afterInit({ '/repo/.cadre/sizing.md': 'my own anchors\n' }), INIT_ANSWERS)
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const asked = firstLines(run.asked)
+
+    expect(opKinds(reply).get(SIZING_RUBRIC_PATH)).toBeUndefined()
+    expect(host.writes.map(write => write.path)).not.toContain(`/repo/${SIZING_RUBRIC_PATH}`)
+    expect(asked.slice(asked.indexOf(REVIEW_QUESTION) + 1)).toEqual([])
+  })
+
+  test('the review plans the cadre.json apply writes: a setup with no sizing block sees it change', async () => {
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const world = gitWorld({
+      dirs: { '/repo/.git': [], '/repo/.cadre': [] },
+      files: {
+        ...onDisk(files),
+        '/repo/.cadre/manifest.json': await manifestOf(files),
+        '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null, true)) ?? '',
+      },
+    })
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    const written = host.writes.find(write => write.path === '/repo/.cadre/cadre.json')?.text ?? ''
+
+    expect(opKinds(reply).get('.cadre/cadre.json')).toBe('change')
+    expect(parseCadreState(written)?.sizing).toEqual(NO_FRAMEWORK_SIZING)
+  })
+})
+
 describe('question contexts (D-211, D-236)', () => {
   test("the MCP server question's context lists the tools the session gave, never a description (D-211)", async () => {
     const tools = [{ name: 'mcp__sentry__issues', description: 'SENTRY-DESCRIPTION', mcp: true }]
@@ -5896,7 +6818,10 @@ describe('performState (WD-S1)', () => {
   })
 
   test('a host operation or a model call gives what perform gives', async () => {
-    const listing = { kind: 'io', call: { id: 'list-sessions', dir: '/repo/sessions' } } satisfies Effect
+    const listing = {
+      kind: 'io',
+      call: { id: 'list-sessions', dir: '/repo/sessions' },
+    } satisfies Effect
     const scan = { parts: [], files: [], memories: [], warnings: [] }
     const grouping = { kind: 'model', call: { id: 'topics', scan } } satisfies Effect
     for (const effect of [listing, grouping]) {
@@ -6459,5 +7384,412 @@ describe('an oversize plugin group on a pane surface (D-328)', () => {
       const groups = paged.specs.filter((_, at) => (paged.asked[at] ?? '').startsWith(prefix))
       expect(groups.map(spec => spec.options)).toEqual([['Next page', 'Go one by one']])
     }
+  })
+})
+
+describe('the file plan and apply of /cadre frameworks', () => {
+  /** BE with one repo part recorded, as the role.json of a parts-flow role holds it. */
+  const BE = templateRole('be', { instructionParts: [{ file: 'CLAUDE.md', heading: 'Rules', hash: SHA_A }] })
+  /** PM as the template has it. */
+  const PM = templateRole('pm')
+  /** BE and PM, in the order cadre.json lists them. */
+  const TEAM: readonly RoleSpec[] = [BE, PM]
+  /** Where every launcher starts. */
+  const GIT_ROOT: LaunchStart = { kind: 'git-root' }
+  /** BE's role.json on disk. */
+  const BE_ROLE_JSON = '/repo/.cadre/be/role.json'
+
+  /** `world` with these files added or replaced. */
+  function withFiles(world: MemWorld, files: Readonly<Record<string, string>>): MemWorld {
+    return { ...world, files: { ...world.files, ...files } }
+  }
+
+  /** The plan input of `roles` in `world`, its scopes compiled from the scans as the fixtures compile them. */
+  async function inputOf(
+    world: MemWorld,
+    roles: readonly RoleSpec[],
+    over: Partial<PlanStepInput> = {},
+  ): Promise<PlanStepInput> {
+    const readUserMcp = over.readUserMcp ?? false
+    const repoDefault = over.repoDefault ?? 'none'
+    const gathered = await scansOf(world, readUserMcp)
+
+    return {
+      roles,
+      repoDefault,
+      policy: 'definitions',
+      launchStart: GIT_ROOT,
+      scopes: scopesFor(roles, repoDefault, gathered, [], GIT_ROOT),
+      hunks: [],
+      repo: gathered.repo,
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp,
+      ...over,
+    }
+  }
+
+  /** The frameworks plan of `roles` in `world`. */
+  async function planOf(
+    world: MemWorld,
+    roles: readonly RoleSpec[],
+    over: Partial<PlanStepInput> = {},
+  ): Promise<PlanResult> {
+    return reframePlan(memIo(world, {}).io, await inputOf(world, roles, over))
+  }
+
+  /** The kind of the op a plan has for `path`; undefined when it has none. */
+  function kindAt(planned: PlanResult, path: string): string | undefined {
+    return planned.plan.ops.find(op => op.kind !== 'hunk' && op.path === path)?.kind
+  }
+
+  /** The draft the frameworks flow confirms for `roles` in `world`: GSD kept as the default; `over` wins. */
+  async function draftOf(
+    world: MemWorld,
+    roles: readonly RoleSpec[],
+    over: Partial<ReframeDraft> = {},
+  ): Promise<ReframeDraft> {
+    return {
+      locations: DEFAULT_LOCATIONS,
+      gathered: await scansOf(world),
+      readUserMcp: false,
+      installed: ['gsd', 'none'],
+      roles,
+      repoDefault: 'gsd',
+      hunks: [],
+      policy: 'definitions',
+      launchStart: GIT_ROOT,
+      frameworkSet: ['gsd'],
+      ...over,
+    }
+  }
+
+  /** What the review confirmed: the draft and the plan reframePlan made of it. */
+  async function reframedOf(world: MemWorld, draft: ReframeDraft): Promise<Reframed> {
+    const recorded = initFrameworks(draft, [])
+    const input = await inputOf(world, draft.roles, { repoDefault: draft.repoDefault, hunks: draft.hunks, ...recorded })
+
+    return { draft, planned: await reframePlan(memIo(world, {}).io, input) }
+  }
+
+  /** The apply of `reframed` in `world`, with each question's first line, facts read, run and write in one list. */
+  async function appliedIn(
+    world: MemWorld,
+    reframed: Reframed,
+    answers: Readonly<Record<string, string>> = {},
+  ): Promise<{ readonly host: MemHost; readonly events: readonly string[]; readonly result: StepResult<Applied> }> {
+    const host = memHost(hostWorld({}))
+    const recorded = withHostEvents(host)
+    const run = memIo(world, answers)
+    const io: InitIo = {
+      ...run.io,
+      ask: async (question, spec) => {
+        recorded.events.push(`ask ${firstLines([question]).join('')}`)
+
+        return run.io.ask(question, spec)
+      },
+      facts: async locations => {
+        recorded.events.push('facts')
+
+        return run.io.facts(locations)
+      },
+    }
+    const result = await reframeApplied(io, recorded.io, reframed)
+
+    return { host, events: recorded.events, result }
+  }
+
+  test('an unchanged team plans no op and carries the built CLAUDE.md and sizing.md entries', async () => {
+    const world = await regenWorld(TEAM)
+    const planned = await planOf(world, TEAM)
+    const last = (await scansOf(world)).repo.cadre.manifest?.files ?? []
+    const carried = ['.cadre/be/CLAUDE.md', '.cadre/pm/CLAUDE.md', '.cadre/sizing.md']
+    const entriesIn = (files: readonly ManifestEntry[]): (ManifestEntry | undefined)[] =>
+      carried.map(path => files.find(entry => entry.path === path))
+    expect(planned.plan.ops.filter(op => op.kind !== 'leave' || op.note !== null)).toEqual([])
+    expect(entriesIn(planned.manifest.files)).toEqual(entriesIn(last))
+    expect(entriesIn(last).includes(undefined)).toBe(false)
+  })
+
+  test('the plan has no .gitignore op and no file outside .cadre/', async () => {
+    const planned = await planOf(await regenWorld(TEAM), [withFramework(BE, 'gsd'), PM])
+    const outside = planned.desired.filter(file => !file.path.startsWith('.cadre/'))
+    expect([kindAt(planned, '.gitignore'), planned.gitignore, outside]).toEqual([undefined, null, []])
+  })
+
+  test('a role.json that reads differently on disk but holds the same role gets no op, at its disk hash', async () => {
+    const world = await regenWorld(TEAM)
+    const text = `${JSON.stringify(JSON.parse(world.files[BE_ROLE_JSON] ?? '{}'), null, 4)}\n`
+    const planned = await planOf(withFiles(world, { [BE_ROLE_JSON]: text }), TEAM)
+    const entry = planned.manifest.files.find(file => file.path === '.cadre/be/role.json')
+    expect([kindAt(planned, '.cadre/be/role.json'), entry?.sha256]).toEqual([undefined, await sha256Hex(text)])
+  })
+
+  test('a role whose framework changed gets a change op on its role.json, also after a hand edit of it', async () => {
+    const world = await regenWorld(TEAM)
+    const titled = { ...BE, title: 'Backend developer' }
+    const edited = withFiles(world, { [BE_ROLE_JSON]: roleJsonText(titled) })
+    const plain = await planOf(world, [withFramework(BE, 'gsd'), PM])
+    const handEdited = await planOf(edited, [withFramework(titled, 'gsd'), PM])
+    const kinds = [kindAt(plain, '.cadre/be/role.json'), kindAt(handEdited, '.cadre/be/role.json')]
+    expect(kinds).toEqual(['change', 'change'])
+  })
+
+  test('a new user MCP server in the scan shows as a change of every role, with no framework change', async () => {
+    const world = await regenWorld(TEAM, { readUserMcp: true })
+    const later = withFiles(world, { '/home/u/.claude.json': '{"mcpServers":{"linear":{"command":"x"}}}' })
+    const planned = await planOf(later, TEAM, { readUserMcp: true })
+    const settings = ['.cadre/be/settings.json', '.cadre/pm/settings.json'].map(path => kindAt(planned, path))
+    expect(settings).toEqual(['change', 'change'])
+  })
+
+  test('cadre.json holds the new frameworks and sizing and keeps the policy, start, consent and order', async () => {
+    const roles = [PM, BE]
+    const world = await regenWorld(roles, { gitPolicy: 'all', readUserMcp: true })
+    const sizing = initSizing(undefined, ['gsd'])
+    const planned = await planOf(world, roles, {
+      repoDefault: 'gsd',
+      frameworks: ['gsd'],
+      sizing,
+      policy: 'all',
+      readUserMcp: true,
+    })
+    const text = planned.desired.find(file => file.path === '.cadre/cadre.json')?.content ?? ''
+    expect(parseCadreState(text)).toEqual({
+      schema: 1,
+      cadreVersion: '0.2.0',
+      framework: 'gsd',
+      gitPolicy: 'all',
+      roles: ['pm', 'be'],
+      launchStart: GIT_ROOT,
+      readUserMcp: true,
+      sizing,
+      frameworks: ['gsd'],
+    })
+  })
+
+  test('Confirm asks the conflict first, then installs, reads the facts, runs the hunk and writes', async () => {
+    const world = withFiles(await regenWorld(TEAM, {}, modeWorld()), { '/repo/.cadre/be/ROLE.md': EDITED_ROLE })
+    const draft = await draftOf(world, TEAM, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const reframed = await reframedOf(world, draft)
+    const { host, events, result } = await appliedIn(world, reframed, { [ROLE_QUESTION]: 'Take new' })
+    const at = (start: string): number => events.findIndex(event => event.startsWith(start))
+    const order = [`ask ${ROLE_QUESTION}`, `run ${GSD_PROJECT_INSTALL.join(' ')}`, 'facts', `run ${MODE_RUN.join(' ')}`]
+    const writes = events.filter(event => event.startsWith('write '))
+    expect([...order.map(at), at('write ')]).toEqual([0, 1, 2, 3, 4])
+    expect([writes.at(-1), result.kind]).toEqual(['write /repo/.cadre/manifest.json', 'accepted'])
+    expect(host.writes.filter(write => !write.path.startsWith('/repo/.cadre/'))).toEqual([])
+    expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
+  })
+
+  test('a hunk with no proven user-level GSD is not run and is in the outcome as not run', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const ops = result.kind === 'accepted' ? result.value.planned.plan.ops : []
+    const waits = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [waits]])
+    expect(ops.flatMap(op => (op.kind === 'hunk' ? [op.command] : []))).toEqual([GSD_WAIT_COMMAND])
+  })
+
+  test('a hunk after a GSD install that does not land, with a found user-level GSD, waits for GSD', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning], gsd: [UNPROVEN] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: '/home/u/.claude/gsd-core' } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [gsdHunk()] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const ops = result.kind === 'accepted' ? result.value.planned.plan.ops : []
+    const waits = 'GSD is not installed for this repo, so the accepted .planning/config.json changes wait for it: mode'
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [waits]])
+    expect(ops.flatMap(op => (op.kind === 'hunk' ? [op.command] : []))).toEqual([GSD_WAIT_COMMAND])
+  })
+
+  test('a hunk after a project GSD install that lands, with no proven user-level GSD, is not run', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const hunk = gsdHunk({ command: 'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo' })
+    const draft = await draftOf(world, roles, { frameworkInstalls: ['gsd'], hunks: [hunk] })
+    const reframed = await reframedOf(world, draft)
+    const host = memHost(hostWorld({}))
+    const run = memIo(world, {})
+    const projectGsd: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    const io: InitIo = {
+      ...run.io,
+      facts: async locations => {
+        const read = await run.io.facts(locations)
+
+        return { ...read, facts: { ...read.facts, gsd: [...read.facts.gsd, projectGsd] } }
+      },
+    }
+    const result = await reframeApplied(io, host.io, reframed)
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const ops = result.kind === 'accepted' ? result.value.planned.plan.ops : []
+    expect(host.calls.filter(call => call.argv.includes('config-set'))).toEqual([])
+    const line =
+      `the .planning/config.json change mode was not run by cadre: run this yourself: ${hunk.command}` +
+      REQUIRED_NEXT_STEP
+    expect([outcome?.installed, outcome?.installProblems]).toEqual([[projectInstallOf('gsd')?.id], []])
+    expect([outcome?.hunkFailures, outcome?.notRunLines]).toEqual([[], [line]])
+    expect(ops.flatMap(op => (op.kind === 'hunk' ? [op.command] : []))).toEqual([hunk.command])
+  })
+
+  test('a parts-flow role whose role.json is written again keeps its instructionParts', async () => {
+    const world = await regenWorld([withFramework(BE, 'superpowers'), PM], {}, modeWorld())
+    const { host } = await appliedIn(world, await reframedOf(world, await draftOf(world, TEAM)))
+    const written = host.writes.find(write => write.path === BE_ROLE_JSON)?.text ?? ''
+    expect([isPartsFlowRole(BE), parseRoleJson(written)?.instructionParts]).toEqual([true, BE.instructionParts])
+  })
+
+  test('a failed install moves its roles to the fallback, and its line names /cadre frameworks', async () => {
+    const world = await regenWorld(TEAM)
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { repoDefault: 'none', installed: ['none'], frameworkInstalls: ['gsd'] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const problems = result.kind === 'accepted' ? result.value.outcome.installProblems : []
+    const written = host.writes.find(write => write.path === BE_ROLE_JSON)?.text ?? ''
+    expect(problems).toEqual([
+      `GSD did not install, so role be fell back to none (built-in): run ${GSD_PROJECT_INSTALL.join(' ')} ` +
+        'from the repo root, then /cadre frameworks again',
+    ])
+    expect(parseRoleJson(written)?.framework).toBe('none')
+  })
+
+  test('a kept GSD in use whose install did not land falls back, its line naming /cadre frameworks', async () => {
+    const planning: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }
+    const facts = { ...EMPTY_FACTS, repoEntries: [planning] }
+    const world = await regenWorld(TEAM, {}, gitWorld({ facts: { facts, gsdUserDir: null } }))
+    const roles = [withFramework(BE, 'gsd'), PM]
+    const draft = await draftOf(world, roles, { repoDefault: 'none', frameworkInstalls: ['gsd'] })
+    const { host, result } = await appliedIn(world, await reframedOf(world, draft))
+    const outcome = result.kind === 'accepted' ? result.value.outcome : null
+    const written = host.writes.find(write => write.path === BE_ROLE_JSON)?.text ?? ''
+    expect(outcome?.installProblems).toEqual([
+      `GSD did not install, so role be fell back to none (built-in): run ${GSD_PROJECT_INSTALL.join(' ')} ` +
+        'from the repo root, then /cadre frameworks again',
+    ])
+    expect([outcome?.installed, parseRoleJson(written)?.framework]).toEqual([[], 'none'])
+  })
+})
+
+describe('runFrameworks', () => {
+  /** BE and PM as the stored team lists them. */
+  const TEAM: readonly RoleSpec[] = [templateRole('be'), templateRole('pm')]
+  /** The facts of a repo whose GSD is proven and in use. */
+  const GSD_IN_USE: InitFacts = {
+    ...PROVEN_FACTS,
+    facts: { ...PROVEN_FACTS.facts, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] },
+  }
+  /** The set question of a repo with GSD found. */
+  const SET_QUESTION = t('init.frameworks.setQuestion', { found: 'GSD' })
+  /** The answers of a run that keeps GSD, accepts its hunks and confirms the review. */
+  const ANSWERS = {
+    [SET_QUESTION]: 'Keep GSD (Recommended)',
+    '.planning/config.json:': 'Accept',
+    [t('frameworks.review.question')]: 'Confirm',
+  }
+
+  /** `world` with these files added or replaced. */
+  function withFiles(world: MemWorld, files: Readonly<Record<string, string>>): MemWorld {
+    return { ...world, files: { ...world.files, ...files } }
+  }
+
+  /** An applied team that stores None while GSD is in use; `over` changes its cadre.json. */
+  async function storedNoneWorld(over: Partial<CadreState> = {}): Promise<MemWorld> {
+    const base = gitWorld({ facts: GSD_IN_USE, files: { '/repo/.planning/config.json': '{}' } })
+
+    return regenWorld(TEAM, { framework: 'none', frameworks: [], ...over }, base)
+  }
+
+  /** An epic worktree of the main checkout /m as /cadre epic made it: its .git file and the epic record. */
+  function epicWorld(): MemWorld {
+    const root = '/m/.claude/worktrees/k'
+    const files = { [`${root}/.git`]: 'gitdir: /m/.git/worktrees/k\n', '/m/.git/worktrees/k/cadre-epic.json': '{}' }
+
+    return gitWorld({ locations: { ...DEFAULT_LOCATIONS, root, givenRoot: root }, files })
+  }
+
+  test('it refuses in order before asking: claude -p, the repo, autopilot, an epic worktree, the team', async () => {
+    const epic = epicWorld()
+    const active = '{"isOn":true,"phase":"running","beat":1000000}'
+    const badRole = withFiles(await storedNoneWorld(), { '/repo/.cadre/be/role.json': 'not json' })
+    const cases: readonly (readonly [MemWorld, string | null])[] = [
+      [{ ...epic, interactive: false }, t('frameworks.notInteractive')],
+      [memWorld({}), notGitRepoReply('frameworks')],
+      [withFiles(epic, { [STATUS_PATH]: active }), autopilotReply('active', 'frameworks')],
+      [epic, frameworksInEpicReply('/m')],
+      [gitWorld(), noStateReply('frameworks')],
+      [badRole, regenBadRole('be')],
+    ]
+    for (const [world, text] of cases) {
+      const run = memIo(world, ANSWERS)
+      expect([await runFrameworks(run.io, { dryRun: true }), run.asked]).toEqual([text, []])
+    }
+    const host = memHost(hostWorld({}))
+    const plain = await runFrameworks(memIo(epic, ANSWERS).io, { dryRun: false, host: host.io })
+    expect([plain, host.calls, host.writes]).toEqual([frameworksInEpicReply('/m'), [], []])
+  })
+
+  test('a team with no default framework while a role has none is not refused: it asks the set question', async () => {
+    const run = memIo(await storedNoneWorld({ framework: null }), {})
+    await runFrameworks(run.io, { dryRun: true })
+    expect(firstLines(run.asked)).toEqual([SET_QUESTION])
+  })
+
+  test('a dry run asks every question but the ~/.claude.json one, shows the review, replies the plan', async () => {
+    const run = memIo(await storedNoneWorld(), ANSWERS)
+    const lines = (await runFrameworks(run.io, { dryRun: true })).split('\n')
+    const asked = firstLines(run.asked)
+    expect([asked[0], asked.at(-1), asked.includes(CLAUDE_JSON_QUESTION)]).toEqual([
+      SET_QUESTION,
+      t('frameworks.review.question'),
+      false,
+    ])
+    expect(asked.some(question => question.startsWith('.planning/config.json:'))).toBe(true)
+    expect([lines[0], lines.at(-1)]).toEqual([t('frameworks.reply.headDry'), DRY_RUN_NOTE])
+  })
+
+  test('a plain run answered Confirm writes, the manifest last, runs no git and says what it did', async () => {
+    const host = memHost(hostWorld({}))
+    const reply = await runFrameworks(memIo(await storedNoneWorld(), ANSWERS).io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect([lines[0], host.writes.at(-1)?.path]).toEqual([t('frameworks.reply.head'), '/repo/.cadre/manifest.json'])
+    expect(lines.some(line => line.startsWith('Applied: wrote '))).toBe(true)
+    expect(host.calls.filter(call => call.argv[0] === 'git')).toEqual([])
+  })
+
+  test('a dir start team reads the start folder settings, as regen does, and its hooks reach ROLE.md', async () => {
+    const base = startSettingsWorld({ facts: GSD_IN_USE })
+    const stored: Partial<CadreState> = { framework: 'none', frameworks: [], launchStart: { kind: 'dir', path: 'src' } }
+    const world = await regenWorld(TEAM, stored, base)
+    const run = memIo(world, ANSWERS)
+    const host = memHost(hostWorld({}))
+    await runFrameworks(run.io, { dryRun: false, host: host.io })
+    const role = host.writes.find(write => write.path === '/repo/.cadre/be/ROLE.md')?.text ?? ''
+
+    expect(run.reads).toContain('/repo/src/.claude/settings.json')
+    expect(role).toContain(
+      '    [none] <git root>/src/.claude/settings.json loads: its hooks run and its permission rules apply',
+    )
+    expect(role).toContain('guard.sh')
+  })
+
+  test('a dismissal at the set question or at the review replies with the frameworks cancel text', async () => {
+    const world = await storedNoneWorld()
+    const beforeReview = { [SET_QUESTION]: 'Keep GSD (Recommended)', '.planning/config.json:': 'Accept' }
+    const atSet = await runFrameworks(memIo(world, {}).io, { dryRun: true })
+    const atReview = await runFrameworks(memIo(world, beforeReview).io, { dryRun: true })
+    expect([atSet, atReview]).toEqual([
+      cancelledReply(FRAMEWORK_DISMISSED_REASON, 'frameworks'),
+      cancelledReply(REVIEW_DISMISSED_REASON, 'frameworks'),
+    ])
   })
 })

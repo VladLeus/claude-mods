@@ -1,8 +1,8 @@
 /**
  * The draft of an init run (D-43, D-45, D-82, D-105), a layer 10 module: Draft, what one run holds in memory while the
  * person reviews the plan, with its part DraftBase (what the scans fix for the whole run); and Reviewed, the confirmed
- * draft with its plan (PlanResult, what planStep gives). It holds types only and imports the types the draft is made
- * of; init.ts reads it.
+ * draft with its plan (PlanResult, what planStep gives), with ReframeDraft and Reframed, the same for the frameworks
+ * flow. It holds types only and imports the types the draft is made of; init.ts reads it.
  */
 import type {
   CadreState,
@@ -19,6 +19,7 @@ import type {
   RoleChange,
   RoleProposal,
   RoleSpec,
+  TeamStructure,
 } from '../../types'
 import type { Gathered } from '../scan/gather'
 
@@ -55,6 +56,7 @@ export type Draft = {
   readonly roles: readonly RoleSpec[]
   /** The scan changes shown with the accepted roles: the template's, or none for a described structure (A6). */
   readonly changes: readonly RoleChange[]
+  readonly structure?: TeamStructure
   readonly repoDefault: FrameworkId | null
   readonly hunks: readonly HunkOp[]
   /**
@@ -76,11 +78,40 @@ export type Draft = {
    * an Adjust that names gsd still asks the check (D-295, edge #35).
    */
   readonly gsdCheck?: 'declined' | 'run' | 'skipped'
+  /** The frameworks the person chose for this team; absent when no choice was asked. */
+  readonly frameworkSet?: readonly FrameworkId[]
+  /** The frameworks the person answered Install for; installed at project scope only after Confirm. */
+  readonly frameworkInstalls?: readonly FrameworkId[]
+  /** The plugin keys the person consented to install at project scope; installed after Confirm, never in --dry-run. */
+  readonly projectPluginInstalls?: readonly string[]
 }
 
 /** What the person confirmed in the review (D-43, D-105): the draft the plan was built from, and that plan. */
 export type Reviewed = {
   readonly draft: Draft
+  readonly planned: PlanResult
+}
+
+/** The parts of a draft the frameworks flow holds: the stored team, the scans and the framework answers. */
+export type ReframeDraft = Pick<
+  Draft,
+  | 'locations'
+  | 'gathered'
+  | 'readUserMcp'
+  | 'installed'
+  | 'roles'
+  | 'structure'
+  | 'repoDefault'
+  | 'hunks'
+  | 'policy'
+  | 'launchStart'
+  | 'frameworkSet'
+  | 'frameworkInstalls'
+>
+
+/** What the person confirmed in the review of the frameworks flow: its draft and the plan made of it. */
+export type Reframed = {
+  readonly draft: ReframeDraft
   readonly planned: PlanResult
 }
 

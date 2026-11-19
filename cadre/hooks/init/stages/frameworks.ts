@@ -1,25 +1,38 @@
 /**
  * The framework stage of init (DET-03, D-07, D-17, D-73, D-86, D-136, D-230), a layer 10 module: the framework labels
- * and questions, why each question is asked (frameworkReason), and frameworksStage, the pure stage that asks nothing
- * when exactly one framework is in use, else asks once for every role or per role, with the team's role ids on the
- * question's second line, and gives each role the framework it picked (withFramework). Before that it asks the GSD
+ * and questions, why each question is asked (frameworkReason), and frameworksStage, the pure stage that asks which
+ * frameworks the team keeps whenever one is found (the set question, frameworkSetAsk; adding a missing one asks its
+ * install question first), makes one kept framework the repo default, and with two asks once for every role or per
+ * role, with the team's role ids on the question's second line, giving each role the framework it picked
+ * (withFramework). Before that it asks the GSD
  * check when a user-level GSD is found but not proven (D-243, ASKED #20), only when the check can run and its answer
  * can change something (isGsdCheckUseful, D-269); its result reads again the choice and the frameworks installed for
- * the repo (installedFrameworks), which the roles stage's Adjust loop offers (withGsdIdentityChecked, edge #30). Pure:
- * it gives states and never performs an effect, imports core, detect, framework, ui/ask, init/state and
+ * the repo (installedFrameworks), which the roles stage's Adjust loop offers (withGsdIdentityChecked, edge #30). The
+ * install question offers a framework the repo does not have (frameworkInstallAsk). A role standing for PM on none
+ * keeps none: the answer for all roles skips it and the per-role question does not ask it. Pure: it gives states and
+ * never performs an effect, imports apply/installs, core, detect, framework, roles/template, ui/ask, init/state and
  * init/stages/model (the answer modes and teamContextLine), and never imports init/machine or init/run.
  */
 import type { AskContext, Choice, ContextRow, Detection, Facts, FrameworkId, GsdFact, RoleSpec } from '../../../types'
-import { SUPPORTED_IDS } from '../../core/framework-id'
+import { projectInstallOf } from '../../apply/installs'
+import { FRAMEWORK_IDS, SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { chooseFramework } from '../../framework/contract'
 import { needsGsdCheck, withGsdIdentity } from '../../framework/gsd/identity'
-import { detectAll } from '../../framework/registry'
+import { adapterOf, detectAll } from '../../framework/registry'
 import { t } from '../../locales/t'
-import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels, withContext } from '../../ui/ask'
+import { standsFor } from '../../roles/template'
+import {
+  ASK_HEADERS,
+  choiceAnswer,
+  NO_USABLE_ANSWER_REASON,
+  paneQuestionOf,
+  quotedLabels,
+  withContext,
+} from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { detectionContext, screenFacts } from '../../ui/blocks/context'
 import { askedWithContext, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
@@ -77,6 +90,11 @@ function parseFramework(answer: string, allowed: readonly FrameworkId[]): Framew
 /** The role with its framework set. */
 function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
   return { ...role, framework }
+}
+
+/** Whether a role stands for PM and runs on none: the framework questions leave it on none. */
+function isPmOnNone(role: RoleSpec): boolean {
+  return standsFor(role, 'pm') && role.framework === 'none'
 }
 
 /** Why init cancels when a framework question is dismissed or not answered (A1, D-45). */
@@ -164,25 +182,274 @@ function framedDone(state: InitState, roles: readonly RoleSpec[], repoDefault: F
   return stageDone({ ...state, draft: { ...state.draft, roles, repoDefault } })
 }
 
-/** The framework question of the role at `index`, asked `tries` times so far, with the roles framed before it. */
+/**
+ * The framework question of the role at `index`, asked `tries` times so far, with the roles framed before it; a PM on
+ * none is framed as it is and not asked.
+ */
 function roleAsked(state: InitState, choice: AskedChoice, roles: readonly RoleSpec[], cursor: EachCursor): InitState {
   const role = roles[cursor.index]
   if (role === undefined) return framedDone(state, cursor.done, null)
+  if (isPmOnNone(role)) {
+    return roleAsked(state, choice, roles, { ...cursor, index: cursor.index + 1, done: [...cursor.done, role] })
+  }
 
   return asked(state, { kind: 'each', ...cursor }, frameworkAsk(choice, frameworkRoleQuestion(role), roles), null)
 }
 
+/** The frameworks a choice names as in use or installed; none for an unsupported choice or none. */
+function namedIds(choice: Choice): readonly FrameworkId[] {
+  if (choice.kind === 'chosen') return [choice.id]
+  if (choice.kind === 'ambiguous' || choice.kind === 'installed-only') return choice.ids
+
+  return []
+}
+
 /**
- * The answer to the open framework question (choiceAnswer): the mode question goes on to the question for all roles
- * or to the question of each role in role order; every role stores the framework it was given and there is no repo
- * default. An answer that is not offered is asked again with why on top; a dismissal cancels with
- * FRAMEWORK_DISMISSED_REASON and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON, never a choice (A1).
+ * The supported frameworks found for the repo, in SUPPORTED_IDS order: those the choice names and those installed, a
+ * framework an Adjust consented to install included; and the supported ones missing.
+ */
+function foundOf(choice: Choice, installed: readonly FrameworkId[]): { found: FrameworkId[]; missing: FrameworkId[] } {
+  const found = SUPPORTED_IDS.filter(id => namedIds(choice).includes(id) || installed.includes(id))
+
+  return { found, missing: SUPPORTED_IDS.filter(id => !found.includes(id)) }
+}
+
+/** Framework labels as the set question names them: `GSD and superpowers`. */
+function namesOf(ids: readonly FrameworkId[]): string {
+  return ids.map(id => FRAMEWORK_LABELS[id]).join(t('init.frameworks.setNamesJoin'))
+}
+
+/** Whether a typed word names the framework: its id or its label, in any case. */
+function isWordOf(word: string, id: FrameworkId): boolean {
+  return word === id || word === FRAMEWORK_LABELS[id].toLowerCase()
+}
+
+/**
+ * The frameworks a typed answer names, its words split on spaces and commas and read by id or label in any case, in
+ * SUPPORTED_IDS order (none names no framework); null when a word names no framework or nothing is typed.
+ */
+function typedFrameworks(answer: string): FrameworkId[] | null {
+  const words = answer.trim().toLowerCase().split(/[\s,]+/).filter(word => word !== '')
+  const isKnown = (word: string): boolean => FRAMEWORK_IDS.some(id => isWordOf(word, id))
+  if (words.length === 0 || !words.every(isKnown)) return null
+
+  return SUPPORTED_IDS.filter(id => words.some(word => isWordOf(word, id)))
+}
+
+/**
+ * The set question: which frameworks the team keeps, naming those found and that adding one installs it at project
+ * scope after Confirm, with the team's role ids on its second line. Keep the found ones (recommended) comes first,
+ * then Add for each missing one, then None; the frameworks may also be typed by name (typedFrameworks), and an answer
+ * it cannot read is refused with the answers and the names it takes. With none found, which only the frameworks flow
+ * asks, the question says so and offers each Add and None, with no Keep.
+ */
+function frameworkSetAsk(
+  found: readonly FrameworkId[],
+  missing: readonly FrameworkId[],
+  roles: readonly RoleSpec[],
+): FrameworkAsk<readonly FrameworkId[]> {
+  const isNoneFound = found.length === 0
+  const keep = isNoneFound ? [] : [{ label: t('init.frameworks.setKeep', { names: namesOf(found) }), value: found }]
+  const addLabel = (name: string): string =>
+    isNoneFound ? t('init.frameworks.setAddOnly', { name }) : t('init.frameworks.setAdd', { name })
+  const choices: readonly Labelled<readonly FrameworkId[]>[] = [
+    ...keep,
+    ...missing.map(id => ({ label: addLabel(FRAMEWORK_LABELS[id]), value: [...found, id] })),
+    { label: t('init.frameworks.setNone'), value: [] },
+  ]
+  const options = choices.map(choice => choice.label)
+  const sentence = isNoneFound
+    ? t('init.frameworks.setQuestionNoneFound')
+    : t('init.frameworks.setQuestion', { found: namesOf(found) })
+  const contextLine = teamContextLine(roles)
+  const words = FRAMEWORK_IDS.map(id => FRAMEWORK_WORDS[id]).join(', ')
+
+  return {
+    question: withContext(sentence, contextLine),
+    spec: { options, header: ASK_HEADERS.framework, acceptsTyped: true },
+    parse: (answer: string): readonly FrameworkId[] | null => labelled(choices, answer) ?? typedFrameworks(answer),
+    accepts: t('init.frameworks.setAccepts', { labels: quotedLabels(options), words }),
+    dismissedReason: FRAMEWORK_DISMISSED_REASON,
+    sentence,
+    contextLine,
+  }
+}
+
+/** The set question of the draft and the frameworks it found; null while the draft lacks the choice or the roles. */
+function setAskOf(state: InitState): { ask: FrameworkAsk<readonly FrameworkId[]>; found: FrameworkId[] } | null {
+  const { choice, roles, installed = [] } = state.draft
+  if (choice === undefined || roles === undefined) return null
+  const { found, missing } = foundOf(choice, installed)
+
+  return { ask: frameworkSetAsk(found, missing, roles), found }
+}
+
+/**
+ * Whether `set` holds every framework the person consented to install in this run and every supported framework a
+ * role of the draft is set to.
+ */
+function keepsNeeded(draft: InitState['draft'], set: readonly FrameworkId[]): boolean {
+  const { frameworkInstalls = [], roles = [] } = draft
+  const roleFrameworks = roles.flatMap(role => role.framework ?? []).filter(id => SUPPORTED_IDS.includes(id))
+
+  return [...frameworkInstalls, ...roleFrameworks].every(id => set.includes(id))
+}
+
+/**
+ * The set cadre.json stores for the repo, kept without asking while every framework in it is still installed and it
+ * holds every framework the draft needs (keepsNeeded); null when none is stored or it fails either. A stored None is
+ * kept while no role is set to a supported framework.
+ */
+function storedSet(state: InitState): readonly FrameworkId[] | null {
+  const stored = state.draft.gathered?.repo.cadre.state?.frameworks
+  const { installed } = state.draft
+  if (stored === undefined || installed === undefined) return null
+  if (!keepsNeeded(state.draft, stored)) return null
+
+  return stored.every(id => installed.includes(id)) ? stored : null
+}
+
+/** The set question asked `tries` times so far; `question` is its text after a refusal. */
+function setAsked(state: InitState, tries: number, question: string | null): InitState {
+  const set = setAskOf(state)
+  if (set === null) return stageFailed(state)
+
+  return asked(state, { kind: 'set', tries }, set.ask, question)
+}
+
+/**
+ * The framework step for a set of frameworks: none frames every role on none, one is the repo default, and two ask
+ * the mode question as two frameworks in use do.
+ */
+function framedSet(state: InitState, set: readonly FrameworkId[]): InitState {
+  const { roles } = state.draft
+  if (roles === undefined) return stageFailed(state)
+  const [only = 'none'] = set
+  if (set.length < 2) return framedDone(state, roles, only)
+
+  return asked(state, { kind: 'mode', tries: 1 }, modeAsk({ kind: 'ambiguous', ids: set }, roles), null)
+}
+
+/** The set answered: kept in the draft in SUPPORTED_IDS order, then framed (framedSet). */
+function setChosen(state: InitState, set: readonly FrameworkId[]): InitState {
+  const frameworkSet = SUPPORTED_IDS.filter(id => set.includes(id))
+
+  return framedSet({ ...state, draft: { ...state.draft, frameworkSet } }, frameworkSet)
+}
+
+/** Where the install question a set answer asked is: the question out, with its framework and the set so far. */
+type SetInstall = Extract<InitState['sub'], { readonly kind: 'set-install' }>
+
+/**
+ * The install question of `framework` for a set answer, asked `tries` times so far, with the set so far and the
+ * frameworks still to ask about; a kept framework's question says why it is asked (inUseReason).
+ */
+function setInstallAsked(
+  state: InitState,
+  pending: SetInstall['pending'],
+  framework: FrameworkId,
+  tries: number,
+  question: string | null,
+): InitState {
+  const ask = frameworkInstallAsk(framework, pending.set.includes(framework) ? inUseReason(state, framework) : null)
+  const sub: InitState['sub'] = { kind: 'set-install', tries, framework, pending }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/** Why a kept framework's install is asked: it is in use here, by the first line of its detection; null otherwise. */
+function inUseReason(state: InitState, framework: FrameworkId): string | null {
+  const facts = state.draft.gathered?.facts.facts
+  if (facts === undefined) return null
+  const found = detectAll(facts).find(detection => detection.id === framework)
+  if (found?.status !== 'in-use') return null
+  const [where] = found.evidence
+  if (where === undefined) return null
+
+  return t('init.frameworks.installReasonInUse', { name: FRAMEWORK_LABELS[framework], where })
+}
+
+/** The next missing framework of a set answer asked about, in order; with none left, the set is the answer. */
+function setInstallNext(state: InitState, set: readonly FrameworkId[], rest: readonly FrameworkId[]): InitState {
+  const [framework] = rest
+  if (framework === undefined) return setChosen(state, set)
+
+  return setInstallAsked(state, { set, rest: rest.slice(1) }, framework, 1, null)
+}
+
+/** The kept frameworks, in order, not installed for the repo, with a project install not yet consented to. */
+function uninstalledKept(state: InitState, kept: readonly FrameworkId[]): FrameworkId[] {
+  const facts = state.draft.gathered?.facts.facts
+  if (facts === undefined) return []
+  const { frameworkInstalls = [] } = state.draft
+
+  return kept.filter(
+    id => !adapterOf(id).isInstalled(facts) && projectInstallOf(id) !== null && !frameworkInstalls.includes(id),
+  )
+}
+
+/**
+ * The answer to the set question (choiceAnswer): the frameworks found that it keeps, then each kept one that is not
+ * installed (uninstalledKept) and each missing one it names asked about (setInstallNext). An answer it cannot read is
+ * asked again with why on top; a dismissal cancels with FRAMEWORK_DISMISSED_REASON and MAX_ASKS answers it cannot
+ * read with NO_USABLE_ANSWER_REASON (A1).
+ */
+function afterSet(state: InitState, sub: { readonly tries: number }, answer: string | null): InitState {
+  const set = setAskOf(state)
+  if (set === null) return stageFailed(state)
+  const next = choiceAnswer(set.ask, sub, answer)
+  if (next.kind === 'again') return setAsked(state, next.sub.tries, next.question)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  const kept = next.value.filter(id => set.found.includes(id))
+  const added = next.value.filter(id => !set.found.includes(id))
+
+  return setInstallNext(state, kept, [...uninstalledKept(state, kept), ...added])
+}
+
+/**
+ * The answer to the install question a set answer asked: Yes adds the framework to the set when it is not there yet,
+ * to the frameworks to install and, before none, to the installed ones; No or a dismissal records no install and
+ * leaves the set as it is, so a kept framework stays in it. An answer
+ * that is neither is asked again with why on top.
+ */
+function afterSetInstall(state: InitState, sub: SetInstall, answer: string | null): InitState {
+  const { set, rest } = sub.pending
+  if (answer === null) return setInstallNext(state, set, rest)
+  // A dismissal declined above, so choiceAnswer cancels only after MAX_ASKS answers it cannot read.
+  const ask = { ...frameworkInstallAsk(sub.framework), dismissedReason: NO_USABLE_ANSWER_REASON }
+  const next = choiceAnswer(ask, sub, answer)
+  if (next.kind === 'again') return setInstallAsked(state, sub.pending, sub.framework, next.sub.tries, next.question)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (!next.value) return setInstallNext(state, set, rest)
+  const draft = withConsentedInstall(state.draft, sub.framework)
+  const grown = set.includes(sub.framework) ? set : [...set, sub.framework]
+
+  return setInstallNext({ ...state, draft }, grown, rest)
+}
+
+/** The choice the mode questions ask about: the two or more frameworks the set keeps; null with fewer. */
+function askedChoiceOf(state: InitState): AskedChoice | null {
+  const { frameworkSet } = state.draft
+  if (frameworkSet === undefined || frameworkSet.length < 2) return null
+
+  return { kind: 'ambiguous', ids: frameworkSet }
+}
+
+/**
+ * The answer to the open framework question (choiceAnswer): the set question and its install questions (afterSet,
+ * afterSetInstall); the mode question goes on to the question for all roles or to the question of each role in role
+ * order; every role stores the framework it was given and there is no repo default. An answer that is not offered is
+ * asked again with why on top; a dismissal cancels with FRAMEWORK_DISMISSED_REASON and MAX_ASKS answers it cannot
+ * read with NO_USABLE_ANSWER_REASON, never a choice (A1).
  */
 function frameworkAnswer(state: InitState, answer: Answer): InitState {
-  const { choice, roles } = state.draft
-  if (answer.kind !== 'answer' || roles === undefined || choice === undefined) return stageFailed(state)
-  if (choice.kind !== 'ambiguous' && choice.kind !== 'installed-only') return stageFailed(state)
+  const { roles } = state.draft
   const { sub } = state
+  if (answer.kind !== 'answer' || roles === undefined) return stageFailed(state)
+  if (sub.kind === 'set') return afterSet(state, sub, answer.text)
+  if (sub.kind === 'set-install') return afterSetInstall(state, sub, answer.text)
+  const choice = askedChoiceOf(state)
+  if (choice === null) return stageFailed(state)
   switch (sub.kind) {
     case 'mode': {
       const ask = modeAsk(choice, roles)
@@ -199,8 +466,9 @@ function frameworkAnswer(state: InitState, answer: Answer): InitState {
       const next = choiceAnswer(ask, sub, answer.text)
       if (next.kind === 'again') return asked(state, { kind: 'all', tries: next.sub.tries }, ask, next.question)
       if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+      const framed = roles.map(role => (isPmOnNone(role) ? role : withFramework(role, next.value)))
 
-      return framedDone(state, roles.map(role => withFramework(role, next.value)), null)
+      return framedDone(state, framed, null)
     }
     case 'each': {
       const role = roles[sub.index]
@@ -227,6 +495,57 @@ export function installedFrameworks(detections: readonly Detection[]): Framework
     detections.some(found => found.id === id && (found.status === 'in-use' || found.status === 'installed'))
 
   return [...SUPPORTED_IDS.filter(isThere), 'none']
+}
+
+/** The installed frameworks with `fw` among them once: as they are when they hold it, else with it just before none. */
+function withInstalled(installed: readonly FrameworkId[], fw: FrameworkId): FrameworkId[] {
+  if (installed.includes(fw)) return [...installed]
+
+  return [...installed.filter(id => id !== 'none'), fw, 'none']
+}
+
+/** A framework the person consented to install, kept once in the installed ones and once in the installs. */
+export function withConsentedInstall(draft: InitState['draft'], fw: FrameworkId): InitState['draft'] {
+  const { installed = [], frameworkInstalls = [] } = draft
+  const installs = frameworkInstalls.includes(fw) ? frameworkInstalls : [...frameworkInstalls, fw]
+
+  return { ...draft, installed: withInstalled(installed, fw), frameworkInstalls: installs }
+}
+
+/** Each answer to a framework install question with whether it installs, the declining one first. */
+const FRAMEWORK_INSTALL_ANSWERS: readonly Labelled<boolean>[] = Object.freeze([
+  { label: t('init.frameworks.installNo'), value: false },
+  { label: t('init.frameworks.installYes'), value: true },
+])
+
+/** Whether an answer to a framework install question installs; null when it names neither answer. */
+export function parseFrameworkInstall(answer: string): boolean | null {
+  return labelled(FRAMEWORK_INSTALL_ANSWERS, answer)
+}
+
+/**
+ * The question that offers to install a framework the repo does not have, No first: its context names the exact
+ * command, run from the repo root after Confirm, and what the installer writes, after `reason` when one is given.
+ */
+export function frameworkInstallAsk(fw: FrameworkId, reason: string | null = null): ChoiceAsk<boolean> {
+  const install = projectInstallOf(fw)
+  const name = FRAMEWORK_LABELS[fw]
+  const sentence = t('init.frameworks.installQuestion', { name })
+  const command = t('init.frameworks.installCommand', { command: (install?.argv ?? []).join(' ') })
+  const writes = t('init.frameworks.installWrites', { writes: (install?.writes ?? []).join(', ') })
+  const lines = [...(reason === null ? [] : [reason]), command, writes]
+  const pane = paneQuestionOf(sentence, command, command)
+  const rows = lines.map((line): ContextRow => ({ role: 'plain', text: line, indent: 0 }))
+  const title = t('init.frameworks.installTitle', { name })
+  const context: AskContext = { title, lines, kind: 'consent', summary: command, pane, rows: [{ title: null, rows }] }
+  const options = FRAMEWORK_INSTALL_ANSWERS.map(answer => answer.label)
+
+  return {
+    question: pane.asked,
+    spec: { options, header: ASK_HEADERS.framework, context },
+    parse: parseFrameworkInstall,
+    accepts: quotedLabels(options),
+  }
 }
 
 /** The GSD check question (D-243): it names the command it runs, before anything runs. */
@@ -285,16 +604,18 @@ function choiceIds(choice: Choice): string {
 }
 
 /**
- * Whether GSD's own check can change anything (D-269, edge #36, OC-05-U): some role names gsd as its framework, or the
- * framework choice with every user-level GSD found but not proven counted as proven differs, by its kind and its
- * chosen or found ids, from the choice as found.
+ * Whether GSD's own check can change anything: some role names gsd as its framework, GSD is in use (a proven GSD
+ * decides its install offer), or the framework choice with every user-level GSD found but not proven counted as proven
+ * differs, by its kind and its chosen or found ids, from the choice as found.
  */
 export function isGsdCheckUseful(facts: Facts, roles: readonly RoleSpec[]): boolean {
   if (roles.some(role => role.framework === 'gsd')) return true
+  const detections = detectAll(facts)
+  if (detections.some(detection => detection.id === 'gsd' && detection.status === 'in-use')) return true
   const gsd = facts.gsd.map((fact): GsdFact =>
     fact.location === 'user' && fact.identity === 'unknown' ? { ...fact, identity: 'proven' } : fact,
   )
-  const found = chooseFramework(detectAll(facts), null)
+  const found = chooseFramework(detections, null)
   const proven = chooseFramework(detectAll({ ...facts, gsd }), null)
 
   return choiceIds(proven) !== choiceIds(found)
@@ -310,29 +631,30 @@ function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: 
 }
 
 /**
- * The framework step once the GSD check, if any, is behind it. With exactly one framework in use nothing is asked: the
- * roles keep `framework` absent (an Adjust override stays) and that framework is the repo default. An ambiguous or
- * installed-only choice is asked (frameworkAnswer), so every role stores its framework and there is no repo default.
- * Unsupported and none ask nothing and give the built-in default; unsupported notes what was found.
+ * The framework step once the GSD check, if any, is behind it. A set kept in the draft is framed again while it holds
+ * what the draft needs (keepsNeeded). With a framework found, init keeps the set cadre.json stores (storedSet), with
+ * one note naming /cadre frameworks for a kept None or for kept frameworks not installed for the repo, else asks the
+ * set question; none found gives the built-in default. The frameworks flow asks the set question whatever is stored.
  */
 function frameworkStep(state: InitState): InitState {
-  const { choice, roles } = state.draft
+  const { choice, roles, frameworkSet, installed = [] } = state.draft
   if (choice === undefined || roles === undefined) return stageFailed(state)
-  switch (choice.kind) {
-    case 'chosen':
-      return framedDone(state, roles, choice.id)
-    case 'ambiguous':
-    case 'installed-only':
-      return asked(state, { kind: 'mode', tries: 1 }, modeAsk(choice, roles), null)
-    case 'unsupported':
-      return framedDone(withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]), roles, 'none')
-    case 'none':
-      return framedDone(state, roles, 'none')
-    default: {
-      const unreachable: never = choice
-      return unreachable
-    }
-  }
+  if (frameworkSet !== undefined && keepsNeeded(state.draft, frameworkSet)) return framedSet(state, frameworkSet)
+  const noted =
+    choice.kind === 'unsupported' ? withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]) : state
+  const isReframe = state.flow === 'frameworks'
+  const { found } = foundOf(choice, installed)
+  if (found.length === 0 && !isReframe) return framedDone(noted, roles, 'none')
+  const stored = isReframe ? null : storedSet(noted)
+  if (stored === null) return setAsked(noted, 1, null)
+  const missing = stored.length > 0 ? uninstalledKept(noted, stored) : []
+  if (stored.length > 0 && missing.length === 0) return setChosen(noted, stored)
+  const line =
+    stored.length > 0
+      ? t('init.frameworks.storedUninstalledNote', { names: namesOf(missing) })
+      : t('init.frameworks.storedNoneNote', { found: namesOf(found) })
+
+  return setChosen(withOutputs(noted, [{ kind: 'note', line }]), stored)
 }
 
 /**
@@ -358,9 +680,9 @@ function gsdCheckAnswer(state: InitState, answer: Answer): InitState {
 
 /**
  * The state with GSD's own check merged into the facts (withGsdIdentity) and `installed` and `choice` read again from
- * the merged facts (D-243, D-269, edge #30), so a GSD install the check proved counts for the framework question and
- * for a later Adjust; null when the result is not a gsd-identity result or the draft has no gathered facts or
- * locations.
+ * the merged facts, so a GSD install the check proved counts for the framework question and for a later Adjust; the
+ * frameworks consented to install stay installed. Null when the result is not a gsd-identity result or the draft has
+ * no gathered facts or locations.
  */
 export function withGsdIdentityChecked(state: InitState, result: IoResult): InitState | null {
   const { gathered, locations } = state.draft
@@ -370,7 +692,7 @@ export function withGsdIdentityChecked(state: InitState, result: IoResult): Init
   const draft = {
     ...state.draft,
     gathered: { ...gathered, facts },
-    installed: installedFrameworks(detections),
+    installed: (state.draft.frameworkInstalls ?? []).reduce(withInstalled, installedFrameworks(detections)),
     choice: chooseFramework(detections, null),
   }
 
@@ -390,11 +712,10 @@ function gsdChecked(state: InitState, result: IoResult): InitState {
 }
 
 /**
- * The framework stage (DET-03, D-73, D-17, D-230): the GSD check first when the scan found a user-level GSD that is not
- * proven (D-243, ASKED #20) and whose runtime is built (needsGsdCheck, D-269, edge #31), then the framework step
- * (frameworkStep, frameworkAnswer). A check whose answer cannot change anything (isGsdCheckUseful, edge #36) is not
- * asked: the draft keeps `skipped`, which gives the facts, warnings and choice of a No (D-295). The GSD check is asked
- * at most once per run: its answer stays in the draft, so a review go-back goes straight to the framework step (WF-S2).
+ * The framework stage: the GSD check first when the scan found a user-level GSD that is not proven and whose runtime is
+ * built (needsGsdCheck) and its answer can change something (isGsdCheckUseful), else `skipped`, which gives the facts,
+ * warnings and choice of a No; then the framework step. The check is asked at most once per run: its answer stays in
+ * the draft, so a review go-back goes straight to the framework step.
  */
 export const frameworksStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {

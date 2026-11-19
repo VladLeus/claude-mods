@@ -47,7 +47,6 @@ describe('regenApply (D-347)', () => {
         warnings: [],
         untracked: [],
         isSession: true,
-        folder: null,
       }
       const run = memIo(memWorld({}), {})
       const host = memHost(hostWorld({}))

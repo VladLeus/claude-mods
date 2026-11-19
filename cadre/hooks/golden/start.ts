@@ -12,7 +12,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
   "render": {
     "reply": [
       "cadre start be",
-      "Rendered .cadre/be/.runtime/ (1 link).",
+      "Rendered .cadre/be/.runtime/ (0 links).",
       "warning: could not list the repo root (treated as unknown)",
       "warning: .cadre/bin/be is not the launcher this cadre writes today (written by an older cadre or for another setup): run /cadre regen be to update it",
       "warning: skill create-handoff-doc was not found in your user skills: not linked",
@@ -24,7 +24,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
     "writes": [
       {
         "path": "/repo/.cadre/be/.runtime/settings.json",
-        "sha256": "8b9afaf08c9c854fcc5368465a80b2e49dd5f7312019402fa6169723b4b781dd",
+        "sha256": "f478d76d3be95ee4ca99656394aa8e99064e135f17a0afc3f6f9347598d3fa34",
         "isWritten": true
       },
       {
@@ -34,12 +34,7 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.cadre/be/.runtime/probe-expectations.json",
-        "sha256": "d77ca02f4bb5851151e866fefd969dba402d886148ab453fd4373442dad16c99",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.cadre/be/.runtime/inbox.md",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "5afa942d55d06de1ce141803c9b1ad6faa8dc50c504dcb6bccf8d5c1132051fc",
         "isWritten": true
       },
       {
@@ -51,14 +46,22 @@ export const GOLDEN_START: Readonly<Record<string, GoldenCommand>> = {
     "calls": [
       "claude --version @ /home/u",
       "git rev-parse --path-format=absolute --git-common-dir @ /repo",
+      "git -C /repo ls-files -z -s -- :(glob)**/.env :(glob)**/.env.* @ -",
       "/bin/mkdir -p -- /repo/.cadre/be/.runtime @ -",
       "/bin/mkdir -p -- /repo/.cadre/be/.runtime/overlay @ -",
+      "/bin/mkdir -p -- /repo/.cadre/be/.runtime/private-instructions @ -",
       "/bin/mkdir -p -- /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
       "/bin/chmod 700 /home/u/.claude/cadre @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
-      "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.cadre/be/.runtime/private-instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/repo-816fc349/be @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/repo-816fc349 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/repo-816fc349/be @ -",
+      "/bin/chmod 700 /repo/.cadre/be/.runtime/private-instructions @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/repo-816fc349/be/inbox.jsonl @ -",
       "/usr/bin/pbcopy @ -"
     ]
   },

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo } from '../../types'
 import { INIT_CANCELLED } from '../init/replies'
+import { t } from '../locales/t'
 import { autopilotReply } from '../scan/autopilot'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
@@ -24,6 +25,25 @@ describe('initGuard', () => {
       expect(run.reads).toEqual([])
       expect(stats).toEqual([])
     }
+  })
+
+  test('frameworks refuses a session nobody can be asked in with its own text first; init keeps its text', async () => {
+    for (const interactive of [false, null]) {
+      const run = memIo(gitWorld({ interactive }), {})
+      const { io, stats } = withStats(run)
+      expect(await initGuard(io, 'frameworks')).toEqual({ kind: 'refuse', text: t('frameworks.notInteractive') })
+      expect(await initGuard(io, 'init')).toEqual({ kind: 'refuse', text: NOT_INTERACTIVE_REPLY })
+      expect(run.reads).toEqual([])
+      expect(stats).toEqual([])
+    }
+  })
+
+  test('frameworks is refused in the frameworks wording inside an active autopilot run', async () => {
+    const files = { [STATUS_PATH]: '{"isOn":true,"phase":"running","beat":1000000}' }
+    const run = memIo(gitWorld({ files }), {})
+    const text = autopilotReply('active', 'frameworks')
+    expect(await initGuard(run.io, 'frameworks')).toEqual({ kind: 'refuse', text })
+    expect(run.reads).toEqual([STATUS_PATH])
   })
 
   test('an unreadable session root is refused next, before any stat or read', async () => {

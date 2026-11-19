@@ -5,18 +5,17 @@
  * it (reviewLines: the roles, each scope card, the plan, the policy and start, the instructions per role, the private
  * files and the improver line); and reviewStage, the pure stage that has the draft planned, shows it, asks, goes back
  * to one item's stage until Confirm, and then replies with the plan on a --dry-run or has it applied. Pure: it gives
- * states and never performs an effect, imports apply, core, generate, plan, roles, scan, scope, team, ui, init/draft,
+ * states and never performs an effect, imports apply, core, plan, roles, scan, scope, team, ui, init/draft,
  * init/initapply, init/initplan, init/replies, init/state and the launch and policy stages, and never imports
  * init/machine or init/run.
  */
 import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
-import { setupAfterInstalls } from '../../apply/installs'
+import { projectInstallOf, projectPluginInstall, setupAfterInstalls } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { clean, reportText } from '../../core/text'
 import type { ListWords } from '../../core/text'
-import { builtClaudeMdPath } from '../../generate/launcher'
 import { t, tn } from '../../locales/t'
 import { planSummary, renderPlan } from '../../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
@@ -24,7 +23,7 @@ import { recommend } from '../../roles/recommend'
 import { scanWarnings } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { MEMORY_PATTERN } from '../../scope/lint'
-import { resolvedFramework, scopesFor } from '../../team'
+import { resolvedFramework } from '../../team'
 import { ASK_HEADERS, choiceAnswer, contextText, orList, quotedLabels, refusalLine, withContext } from '../../ui/ask'
 import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { reviewContext } from '../../ui/blocks/context'
@@ -35,7 +34,7 @@ import { UNCUT, wrapLine } from '../../ui/pane'
 import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../../ui/paging'
 import type { Draft, PlanResult, Reviewed } from '../draft'
 import { initReplyText } from '../initapply'
-import { privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
+import { consentedPluginKeys, draftScopes, privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
 import type { PlanStepInput } from '../initplan'
 import { IGNORE_ALL_NOTE } from '../replies'
 import { fullDraft, stageBack, stageCancelled, stageEnded, stageFailed, withEffect } from '../state'
@@ -127,7 +126,7 @@ type PageOption = ReviewItem | 'next' | 'previous' | 'change'
 type ReviewChoice = Exclude<PageOption, 'change'>
 
 /** The one answer that confirms the paged review: its Confirm option, as the dialog gives it (T-02.1-78). */
-const CONFIRM_LABEL = t('init.review.confirm')
+export const CONFIRM_LABEL = t('init.review.confirm')
 
 /** The label of the review's typed choice (D-233, ASKED #4): the item to change is named in a note. */
 export const CHANGE_SOMETHING_LABEL = t('init.review.changeSomething')
@@ -311,18 +310,9 @@ export function improverRunLine(count: number): string {
   return tn('init.review.improverRun', count, { count })
 }
 
-/**
- * How many built files the improver may run on after Confirm (02-GAPS-B3 S4): each `.cadre/<id>/CLAUDE.md` the plan
- * creates or changes for a role given a repo part (repoPartsOf), and each role given a global part (privatesOf), whose
- * private text file holds it.
- */
-export function improverRunCount(draft: Draft, plan: Plan): number {
-  const withParts = Array.from(repoPartsOf(draft.instructions)).filter(([, parts]) => parts.length > 0)
-  const built = new Set(withParts.map(([id]) => builtClaudeMdPath(id)))
-  const repoFiles = plan.ops.filter(op => (op.kind === 'create' || op.kind === 'change') && built.has(op.path))
-  const privateFiles = privatesOf(draft.instructions, draft.roles).filter(role => role.parts.length > 0)
-
-  return repoFiles.length + privateFiles.length
+/** How many files the improver may run on after Confirm: the private text file of each role given a global part. */
+export function improverRunCount(draft: Draft): number {
+  return privatesOf(draft.instructions, draft.roles).filter(role => role.parts.length > 0).length
 }
 
 /**
@@ -352,8 +342,10 @@ function handoutLines(draft: Draft, words: ListWords): string[] {
  * the policy is `ignore`, so both items with a review button of their own can be checked before Confirm, then the scan
  * warnings of the run, kept for this review, then the recommendations for the team as the security stage shows them
  * (recommend over the roles, their resolved frameworks and the scans before any install; recommendationLines,
- * ROLE-03), so every surface shows them, paged, before Confirm (WD-M2), then the plugins Confirm installs when the
- * person answered Install for any (the security plugins, decision #39, and claude-md-management, D-141), each key
+ * ROLE-03), so every surface shows them, paged, before Confirm (WD-M2), then each framework Confirm installs at
+ * project scope with its command and what its installer writes, then each plugin it installs at project scope the
+ * same way, then the plugins Confirm installs when the person answered Install for any (the security plugins,
+ * decision #39, and claude-md-management, D-141), each key
  * cleaned and capped as a report cell is (decision #69 B7), and last, when claude-md-management is installed or
  * answered Install and the improver has a built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4).
  * Every line has its secret-like spans hidden (redactedText, E1, #163), so the review block and each page of its
@@ -367,9 +359,20 @@ function reviewLines(
 ): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
   const installLine = t('init.review.reviewLines', { keys })
+  const frameworkLines = (draft.frameworkInstalls ?? []).flatMap(id => {
+    const install = projectInstallOf(id)
+    if (install === null) return []
+
+    return [t('init.review.frameworkInstall', { command: install.argv.join(' '), writes: install.writes.join(', ') })]
+  })
+  const pluginLines = (draft.projectPluginInstalls ?? []).map(key => {
+    const install = projectPluginInstall(key)
+
+    return t('init.review.pluginInstall', { command: install.argv.join(' '), writes: install.writes.join(', ') })
+  })
   const rows = draft.roles.map(role => privateFilesRow(role.id))
   const privateRows = draft.instructions.kind === 'parts' ? [] : [PRIVATE_FILES_HEADING, ...rows]
-  const count = improverRunCount(draft, plan)
+  const count = improverRunCount(draft)
   const installed = setupAfterInstalls(draft.gathered.setup, draft.pluginInstalls).installedPlugins
   const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
   const frameworks = draft.roles.map(role => resolvedFramework(role, draft.repoDefault))
@@ -388,27 +391,31 @@ function reviewLines(
     ...(draft.policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
     ...recommendationLines(recommendations, draft.roles),
+    ...frameworkLines,
+    ...pluginLines,
     ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
     ...improver,
   ].map(line => redactedText(line))
 }
 
 /**
- * What the review plans a draft with (decision #69 A4, G-02-1f): the scopes compiled with the plugins answered Install
- * counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every install
- * works, and planStep's input, with each role's repo parts (repoPartsOf) recorded in each parts-flow role's role.json
- * (withRepoRecords, G-02-1f Regen).
+ * What the review plans a draft with: the scopes compiled with the plugins answered Install, the plugin installs of
+ * the consented frameworks and the consented project plugins counted as installed (draftScopes,
+ * consentedPluginKeys), so the cards and the plan show what Confirm writes when every install works, and planStep's
+ * input, with each role's repo parts (repoPartsOf) recorded in each parts-flow role's role.json (withRepoRecords).
  */
 function reviewPlanOf(draft: Draft): {
   readonly scopes: ReadonlyMap<string, CompiledScope>
   readonly input: PlanStepInput
 } {
-  const setup = setupAfterInstalls(draft.gathered.setup, draft.pluginInstalls)
-  const gathered = { ...draft.gathered, setup }
-  const scopes = scopesFor(draft.roles, draft.repoDefault, gathered, draft.hunks, draft.launchStart)
+  const { scopes, recorded } = draftScopes(draft, [
+    ...draft.pluginInstalls,
+    ...consentedPluginKeys(draft, []),
+    ...(draft.projectPluginInstalls ?? []),
+  ])
   const repoParts = repoPartsOf(draft.instructions)
   const input = {
-    roles: withRepoRecords(draft.roles, draft.instructions, repoParts),
+    roles: withRepoRecords(draft.roles, repoParts),
     repoDefault: draft.repoDefault,
     policy: draft.policy,
     launchStart: draft.launchStart,
@@ -418,6 +425,8 @@ function reviewPlanOf(draft: Draft): {
     locations: draft.locations,
     readUserMcp: draft.readUserMcp,
     repoParts,
+    ...recorded,
+    ...(draft.structure === undefined ? {} : { structure: draft.structure }),
   }
 
   return { scopes, input }
@@ -534,7 +543,7 @@ function afterPlan(state: InitState, planned: PlanResult): InitState {
 function dryRunReply(reviewed: Reviewed): string {
   const { plan, state } = reviewed.planned
   const confirmed = reviewed.draft
-  const count = improverRunCount(confirmed, plan)
+  const count = improverRunCount(confirmed)
   const installed = setupAfterInstalls(confirmed.gathered.setup, confirmed.pluginInstalls).installedPlugins
   const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
   const rows = confirmed.roles.map(role => privateFilesRow(role.id))

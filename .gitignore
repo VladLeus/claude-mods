@@ -7,3 +7,6 @@ thoughts/
 *.log
 .idea/
 node_modules/
+# e2e run results and cassettes stay local; they are never committed.
+e2e/results/
+e2e/cassettes/

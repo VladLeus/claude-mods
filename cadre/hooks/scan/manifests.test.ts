@@ -1,10 +1,19 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RepoScan, ScanFinding, ScanKind } from '../../types'
-import { entry, findingOf, leaks, link, memIo, memWorld, SECRET_FIXTURES } from '../testkit'
+import { BACKSLASH, entry, findingOf, leaks, link, memIo, memWorld, SECRET_FIXTURES } from '../testkit'
 import type { MemWorld } from '../testkit'
 import { MAX_READ_BYTES } from './facts/normalize'
-import { cargoDeps, composerDeps, gemfileGems, goModules, pyprojectDeps, requirementsDeps } from './manifests'
+import {
+  cargoDeps,
+  composerDeps,
+  dockerScriptCommands,
+  gemfileGems,
+  goModules,
+  pyprojectDeps,
+  requirementsDeps,
+  scriptRunner,
+} from './manifests'
 import { MANIFEST_FILES, MARKER_ROWS } from './markers'
 import type { MarkerRow } from './markers'
 import { scanRepo } from './repo'
@@ -506,5 +515,73 @@ describe('manifest parsers (G-02-1c)', () => {
     })
 
     expect(scan.warnings).toEqual(names.map(name => `could not read ${name} (treated as unknown)`))
+  })
+})
+
+describe('the docker scripts of a package.json', () => {
+  test('a docker-named script that runs docker or docker-compose gives its runner and name, sorted', () => {
+    const scripts = {
+      up: 'docker-compose up',
+      'docker:rspec': 'docker compose exec -e RAILS_ENV=test console rspec',
+      lint: 'eslint .',
+    }
+
+    expect(dockerScriptCommands(scripts, 'yarn')).toEqual(['yarn docker:rspec'])
+  })
+
+  test('a name must start with a letter or digit and hold docker, so no runner built-in or flag passes', () => {
+    const dropped = ['exec', 'dlx', 'node', '--cwd', '-docker', '.docker', ':docker', '_docker', 'up', 'Docker:up']
+    const kept = ['docker', 'rspec-docker', '9docker:up']
+    const scripts = Object.fromEntries([...dropped, ...kept].map(name => [name, 'docker compose up']))
+
+    expect(dockerScriptCommands(scripts, 'yarn')).toEqual(['yarn 9docker:up', 'yarn docker', 'yarn rspec-docker'])
+  })
+
+  test('a script that runs anything else, or holds a shell operator or a line break, is dropped', () => {
+    const commands = [
+      'eslint .',
+      'dockerize app',
+      'RAILS_ENV=test docker compose up',
+      'docker compose up; rm -rf tmp',
+      'docker compose up && echo done',
+      'docker compose ps | head',
+      'docker compose exec console `id`',
+      'docker compose exec console $SHELL',
+      'docker compose exec console rspec < specs.txt',
+      'docker compose logs > out.txt',
+      'docker compose exec console (rspec',
+      'docker compose exec console rspec)',
+      `docker compose exec console rspec ${BACKSLASH}`,
+      'docker compose up\nrm -rf tmp',
+      'docker compose up\rrm -rf tmp',
+    ]
+    const scripts = Object.fromEntries(commands.map((command, index) => [`docker:s${index}`, command]))
+
+    expect(dockerScriptCommands(scripts, 'npm run')).toEqual([])
+  })
+
+  test('a docker name with a character outside A-Za-z0-9:._-, or a command that is no string, is dropped', () => {
+    const scripts = {
+      'docker rspec': 'docker compose up',
+      'docker/up': 'docker compose up',
+      'up*': 'docker compose up',
+      'docker:up': 5,
+      'docker:A9._-': 'docker compose up',
+    }
+
+    expect(dockerScriptCommands(scripts, 'pnpm')).toEqual(['pnpm docker:A9._-'])
+  })
+
+  test('a scripts value that is not a plain object gives none', () => {
+    for (const scripts of [undefined, null, 'docker compose up', ['docker compose up'], 5]) {
+      expect(dockerScriptCommands(scripts, 'npm run')).toEqual([])
+    }
+  })
+
+  test('the runner is yarn with a root yarn.lock, pnpm with a root pnpm-lock.yaml, else npm run', () => {
+    expect(scriptRunner(['package.json', 'yarn.lock'])).toBe('yarn')
+    expect(scriptRunner(['pnpm-lock.yaml'])).toBe('pnpm')
+    expect(scriptRunner(['package.json', 'package-lock.json'])).toBe('npm run')
+    expect(scriptRunner([])).toBe('npm run')
   })
 })

@@ -4,16 +4,18 @@
  * value from outside is cleaned. It imports the scope card, records, paths, core, the framework registry, the infra
  * catalog, role validation and the types, so the file set and apply read them here.
  */
-import type { CadreState, CompiledScope, InstructionPart, RoleSpec } from '../../types'
+import type { CadreState, CompiledScope, FrameworkAdapter, InstructionPart, RoleSpec, ScopeCard } from '../../types'
 import { stableJson } from '../core/json'
 import { MAX_ROLE_CHARS } from '../core/kickoff-text'
 import { cardList, clean, reportText } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { fill } from '../locales/t'
-import { handoffFolderOf, launcherPath } from '../paths'
+import { AGENTS_MD_FILE, cadreStatePath, handoffFolderOf, launcherPath, SIZING_RUBRIC_PATH } from '../paths'
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
+import { asksInEpic, standIn, standsFor } from '../roles/template'
+import type { ChainRole } from '../roles/template'
 import { MAX_PURPOSE_CHARS } from '../roles/validate'
 import { CARD_LIST_WORDS, scopeCardLines } from '../scope/card'
 
@@ -39,19 +41,227 @@ export function mcpText(scope: CompiledScope): string {
 const ATTENDED_LINE = ARTIFACT.roleMdAttended
 
 /**
- * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session; it is never named
- * CLAUDE.md or AGENTS.md (D-50). It holds, in this order: the title and id, the purpose, the framework with the model,
- * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
- * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
- * "Handoffs" (the folder autopilot accepts, D-79), "Inbox" (the role's inbox file and how to leave a note in another
- * role's; D-114: text only, no new command) and "Scope" (the lines of the scope card, ROLE-06). The framework is the
- * one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The title and
- * the purpose come from outside, so they are cleaned.
+ * The core PM's How you work: fetch with the named dependencies, grill with code facts from TL, brief, feed outcomes
+ * and the report form, and accept, with no build loop and no ask gate.
  */
-export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
+const CORE_PM_WORK: readonly string[] = [
+  ARTIFACT.roleMdCorePmIntro,
+  ARTIFACT.roleMdCorePmFetch,
+  ARTIFACT.roleMdCorePmDeps,
+  ARTIFACT.roleMdCorePmGrillStep,
+  ARTIFACT.roleMdCorePmFacts,
+  ARTIFACT.roleMdCorePmNotFound,
+  ARTIFACT.roleMdCorePmBrief,
+  ARTIFACT.roleMdCorePmFeed,
+  ARTIFACT.roleMdCorePmOutcomes,
+  ARTIFACT.roleMdCorePmReportForm,
+  ARTIFACT.roleMdCorePmAccept,
+]
+
+/**
+ * The How you work text of ROLE.md: the core PM's own steps, else the kickoff text of the role's framework, worded
+ * for a core team's TL or Security and for a role that asks the person in an epic.
+ */
+function howYouWork(role: RoleSpec, adapter: FrameworkAdapter, team: RoleMdTeam): string {
+  if (team.isCore && standsFor(role, 'pm')) return CORE_PM_WORK.join('\n')
+  const isCoreLead = team.isCore && standsFor(role, 'tl')
+  const isCoreReviewer = team.isCore && standsFor(role, 'security') && !standsFor(role, 'tl')
+
+  return adapter.kickoffText({
+    title: role.title,
+    roleId: role.id,
+    specPath: null,
+    isCoreLead,
+    isCoreReviewer,
+    asksInEpic: asksInEpic(role, team.isCore),
+  })
+}
+
+/**
+ * The Planning docs section of ROLE.md: the start steps of each framework the role may run, own framework first and
+ * worded for the lead or the core lead; two or more frameworks add the pick line and a label per framework. None when
+ * no framework has a step.
+ */
+function planningDocsLines(role: RoleSpec, card: ScopeCard, isCoreLead: boolean): string[] {
+  const ctx = { roleId: role.id, isLead: standsFor(role, 'tl'), isCoreLead }
+  const groups = [card.framework, ...card.alsoRuns]
+    .map(id => ({ id, steps: adapterOf(id).roleWork.startSteps(ctx) }))
+    .filter(group => group.steps.length > 0)
+  if (groups.length === 0) return []
+
+  const stepLines = (steps: readonly string[]): string[] =>
+    steps.map(step => fill(ARTIFACT.roleMdPlanningStep, { step }))
+  const intro = [ARTIFACT.roleMdPlanningDocs, '', ARTIFACT.roleMdPlanningIntro]
+  if (groups.length === 1) return [...intro, ...groups.flatMap(group => stepLines(group.steps)), '']
+
+  return [
+    ...intro,
+    ARTIFACT.roleMdPlanningPick,
+    ...groups.flatMap(({ id, steps }) => [
+      fill(ARTIFACT.roleMdPlanningGroup, { framework: adapterOf(id).name, id }),
+      ...stepLines(steps),
+    ]),
+    '',
+  ]
+}
+
+/** The Hierarchy lines every role gets: where a question goes, who asks the user, a rejection and the epic end. */
+const COMMON_PART: readonly string[] = [
+  ARTIFACT.roleMdHierarchyCommonQuestions,
+  ARTIFACT.roleMdHierarchyCommonAsk,
+  ARTIFACT.roleMdHierarchyCommonRejected,
+  ARTIFACT.roleMdHierarchyCommonEpicEnd,
+]
+
+/** The Hierarchy lines every role of a core team gets: where a question goes, a rejection and the epic end. */
+const CORE_COMMON_PART: readonly string[] = [
+  ARTIFACT.roleMdHierarchyCommonQuestions,
+  ARTIFACT.roleMdHierarchyCommonRejected,
+  ARTIFACT.roleMdHierarchyCommonEpicEnd,
+]
+
+/** PM's grill and epic rules in the Hierarchy section of ROLE.md. */
+const PM_PART: readonly string[] = [
+  ARTIFACT.roleMdPmGrill,
+  ARTIFACT.roleMdPmGrillNoSkill,
+  ARTIFACT.roleMdPmGrillRounds,
+  ARTIFACT.roleMdPmGrillDone,
+  ARTIFACT.roleMdPmGrillText,
+  ARTIFACT.roleMdPmGrillMode,
+  ARTIFACT.roleMdPmGrillRecord,
+  ARTIFACT.roleMdPmGrillFeed,
+  ARTIFACT.roleMdPmGrillCritical,
+]
+
+/** A core PM's part: PM's grill rules, with the ask and decide-alone lines in place of the critical-question line. */
+const CORE_PM_PART: readonly string[] = [
+  ...PM_PART.filter(line => line !== ARTIFACT.roleMdPmGrillCritical),
+  ARTIFACT.roleMdCorePmAsk,
+  ARTIFACT.roleMdCorePmDecideAlone,
+]
+
+/** TL's ticket loop in the Hierarchy section of ROLE.md. */
+const TL_PART: readonly string[] = [
+  ARTIFACT.roleMdTlLoop,
+  ARTIFACT.roleMdTlPlan,
+  ARTIFACT.roleMdTlTasks,
+  ARTIFACT.roleMdTlReport,
+]
+
+/** A worker's task rules in the Hierarchy section of ROLE.md. */
+const WORKER_PART: readonly string[] = [
+  ARTIFACT.roleMdWorkerTask,
+  ARTIFACT.roleMdWorkerCommit,
+  ARTIFACT.roleMdWorkerReport,
+  ARTIFACT.roleMdWorkerNoTl,
+]
+
+/** A core worker's part: it plans from TL's brief, raises a blocker at once and reports unrun checks as partial. */
+const CORE_WORKER_PART: readonly string[] = [
+  ARTIFACT.roleMdCoreWorkerPlan,
+  ARTIFACT.roleMdWorkerCommit,
+  ARTIFACT.roleMdCoreWorkerBlocked,
+  ARTIFACT.roleMdCoreWorkerReport,
+  ARTIFACT.roleMdWorkerNoTl,
+]
+
+/** Core Security's part: it reviews the whole change of each ticket TL sends and reports every finding to TL. */
+const CORE_SECURITY_PART: readonly string[] = [
+  ARTIFACT.roleMdCoreSecurityReview,
+  ARTIFACT.roleMdWorkerCommit,
+  ARTIFACT.roleMdCoreSecurityReport,
+  ARTIFACT.roleMdWorkerNoTl,
+  ARTIFACT.roleMdCoreSecurityAsk,
+]
+
+/**
+ * A core team's TL part: the loop on the fed ticket only, a brief for each implementer instead of a plan, no dispatch
+ * of what an open product question affects, what to ask the person, trust in the reports, a QA task when the team has
+ * QA, and with Security each finished ticket sent to it and the choice of which findings to raise with the person.
+ */
+function coreTlPart(roles: readonly ChainRole[]): readonly string[] {
+  const hasQa = standIn('qa', roles) !== null
+  const hasSecurity = standIn('security', roles) !== null
+  const qaLines = hasQa ? [ARTIFACT.roleMdCoreTlQa] : []
+  const securityLine = hasQa ? ARTIFACT.roleMdCoreTlSecurity : ARTIFACT.roleMdCoreTlSecurityNoQa
+  const securityLines = hasSecurity ? [securityLine, ARTIFACT.roleMdCoreTlFindings] : []
+
+  return [
+    ARTIFACT.roleMdTlLoop,
+    ARTIFACT.roleMdCoreTlFed,
+    ARTIFACT.roleMdCoreTlBrief,
+    ARTIFACT.roleMdCoreTlHold,
+    ARTIFACT.roleMdCoreTlAsk,
+    ARTIFACT.roleMdTlTasks,
+    ARTIFACT.roleMdCoreTlTrust,
+    ARTIFACT.roleMdCoreTlFailed,
+    ...qaLines,
+    ...securityLines,
+    ARTIFACT.roleMdCoreTlWait,
+    ARTIFACT.roleMdCoreTlReport,
+  ]
+}
+
+/**
+ * The role's own part of the Hierarchy section: PM's, TL's or a worker's, each with a core-team version; a core team's
+ * Security gets its review part instead of the core worker part.
+ */
+function rolePart(role: RoleSpec, team: RoleMdTeam): readonly string[] {
+  if (team.isCore && standsFor(role, 'pm')) return CORE_PM_PART
+  if (team.isCore && standsFor(role, 'tl')) return coreTlPart(team.roles)
+  if (standsFor(role, 'pm')) return PM_PART
+  if (standsFor(role, 'tl')) return TL_PART
+  if (team.isCore && standsFor(role, 'security')) return CORE_SECURITY_PART
+  if (team.isCore) return CORE_WORKER_PART
+
+  return WORKER_PART
+}
+
+/**
+ * The Hierarchy section of ROLE.md: its heading, the lines every role gets, the ask line of a role started with
+ * --ask-user, then the role's own part. A core team's role is also told whether it starts with --ask-user in an epic,
+ * in place of the line that only PM asks the user there.
+ */
+function hierarchyLines(role: RoleSpec, team: RoleMdTeam): string[] {
+  const askUserLine = team.isCore ? ARTIFACT.roleMdCoreAskUser : ARTIFACT.roleMdHierarchyAskUser
+  const askLines = role.autopilot.askUser ? [askUserLine] : []
+  if (!team.isCore) return [ARTIFACT.roleMdHierarchy, '', ...COMMON_PART, ...askLines, ...rolePart(role, team), '']
+  const epicLine = asksInEpic(role, team.isCore) ? ARTIFACT.roleMdCoreEpicAsk : ARTIFACT.roleMdCoreEpicNoAsk
+
+  return [ARTIFACT.roleMdHierarchy, '', ...CORE_COMMON_PART, ...askLines, epicLine, ...rolePart(role, team), '']
+}
+
+/**
+ * The Sizing section of ROLE.md: the four dimensions and who scores them, the size rule with the threshold's file, the
+ * rubric and the user's pin. It names the file the threshold is read from, not a number.
+ */
+function sizingLines(): string[] {
+  return [
+    ARTIFACT.roleMdSizing,
+    '',
+    ARTIFACT.roleMdSizeVector,
+    fill(ARTIFACT.roleMdSizeRule, { state: cadreStatePath() }),
+    fill(ARTIFACT.roleMdSizeRubric, { rubric: SIZING_RUBRIC_PATH }),
+    ARTIFACT.roleMdSizePin,
+    '',
+  ]
+}
+
+/** The team a ROLE.md is written for: whether it is cadre's core team, and its roles. */
+export type RoleMdTeam = { readonly isCore: boolean; readonly roles: readonly ChainRole[] }
+
+const CUSTOM_TEAM: RoleMdTeam = Object.freeze({ isCore: false, roles: [] })
+
+/**
+ * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session (never named CLAUDE.md
+ * or AGENTS.md), section by section. The framework is the one the scope was compiled for, so the document and the card
+ * cannot disagree. A core team's PM gets its own How you work; its TL gets the kickoff, start steps and Hierarchy part
+ * of a lead that plans no implementation.
+ */
+export function roleMdText(role: RoleSpec, scope: CompiledScope, team: RoleMdTeam = CUSTOM_TEAM): string {
   const { card } = scope
   const adapter = adapterOf(card.framework)
-  const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null })
+  const isCoreLead = team.isCore && standsFor(role, 'tl')
   const model = fill(ARTIFACT.roleMdModel, { model: role.model, effort: role.effort })
   const lines = [
     fill(ARTIFACT.roleMdTitle, { title: clean(role.title, MAX_ROLE_CHARS), id: role.id }),
@@ -63,7 +273,7 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     '',
     ARTIFACT.roleMdHowYouWork,
     '',
-    kickoff,
+    howYouWork(role, adapter, team),
     '',
     ARTIFACT.roleMdDecisions,
     '',
@@ -75,9 +285,14 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     '',
     ARTIFACT.roleMdInbox,
     '',
-    fill(ARTIFACT.roleMdInboxLine, { id: role.id }),
+    ARTIFACT.roleMdInboxLine,
+    ARTIFACT.roleMdInboxIdle,
     ARTIFACT.roleMdNoteLine,
+    ARTIFACT.roleMdInboxStates,
     '',
+    ...planningDocsLines(role, card, isCoreLead),
+    ...hierarchyLines(role, team),
+    ...sizingLines(),
     ARTIFACT.roleMdScope,
     '',
     ...scopeCardLines(card),
@@ -95,9 +310,9 @@ function markerCell(text: string): string {
 }
 
 /**
- * The marker line above a part in a built role file (G-02-1f): `<!-- from <file> > <heading or (top of file)> -->`.
- * The file and the heading are marker cells (markerCell), so no character of either can add a line, hide text or end
- * the comment early (02-GAPS-B2 N2).
+ * The marker line above a part in the private role file: `<!-- from <file> > <heading or (top of file)> -->`. The
+ * file and the heading are marker cells (markerCell), so no character of either can add a line, hide text or end the
+ * comment early.
  */
 function partMarker(part: InstructionPart): string {
   const heading = part.heading === '' ? TOP_OF_FILE : markerCell(part.heading)
@@ -105,14 +320,14 @@ function partMarker(part: InstructionPart): string {
   return fill(ARTIFACT.partMarker, { file: markerCell(part.file), heading })
 }
 
-/** A part's text as a built role file holds it: as read, each `\r\n` written `\n`, its line ends at the end dropped. */
+/** A part's text in the private role file: as read, each `\r\n` written `\n`, its line ends at the end dropped. */
 function partBody(text: string): string {
   return text.replaceAll('\r\n', '\n').replace(/\n+$/, '')
 }
 
 /**
- * The text of a built role file after its header line (02-GAPS-B3 N5): each part under its marker, a blank line before
- * each, and one final newline; '\n' with no part.
+ * The parts of the private role file after its header line: each part under its marker, a blank line before each, and
+ * one final newline; '\n' with no part.
  */
 export function partsBody(parts: readonly InstructionPart[]): string {
   if (parts.length === 0) return '\n'
@@ -121,17 +336,19 @@ export function partsBody(parts: readonly InstructionPart[]): string {
   return `\n\n${blocks.join('\n\n')}\n`
 }
 
+/** The import of the root AGENTS.md from `.cadre/<id>/CLAUDE.md`. */
+const AGENTS_IMPORT = `@../../${AGENTS_MD_FILE}`
+
 /**
- * The text of `.cadre/<id>/CLAUDE.md`, the instructions built for a role from the parts it was given (G-02-1f Storage
- * split, D-140). The first line says the file is built and how to change it, then partsBody: a blank line, then each
- * part in the order given, which is read order, its marker (partMarker) and its text as read (partBody), a blank line
- * between two parts. Every line ends in `\n`, and the text ends with exactly one. It holds whatever parts it is given:
- * desiredFiles gives it a role's repo parts only, so no part of the global CLAUDE.md reaches a repo file (T-02-69).
+ * The text of `.cadre/<id>/CLAUDE.md`: the header line, then a blank line and the AGENTS.md import line when a part
+ * given is from AGENTS.md, then one newline. The repo files a role is given load from their originals, so it holds no
+ * part text.
  */
 export function roleClaudeMdText(id: string, parts: readonly InstructionPart[]): string {
   const header = fill(ARTIFACT.roleClaudeMdHeader, { id })
+  const agents = parts.some(part => part.file === AGENTS_MD_FILE) ? `\n\n${AGENTS_IMPORT}` : ''
 
-  return `${header}${partsBody(parts)}`
+  return `${header}${agents}\n`
 }
 
 /** The most characters of one server name the index shows; a name a role.json holds is at most 100. */
@@ -207,4 +424,38 @@ export function indexMdText(roles: readonly RoleSpec[], scopes: ReadonlyMap<stri
 /** The text of `.cadre/cadre.json`: the repo state (D-89) as stable JSON, which regen and the ignore block read. */
 export function cadreJsonText(state: CadreState): string {
   return stableJson(state)
+}
+
+/** The lines of the sizing rubric in file order. */
+const RUBRIC_LINES: readonly string[] = [
+  ARTIFACT.rubricTitle,
+  '',
+  ARTIFACT.rubricHow,
+  ARTIFACT.rubricWho,
+  ARTIFACT.rubricEdit,
+  '',
+  ARTIFACT.rubricScope,
+  ARTIFACT.rubricScopeLow,
+  ARTIFACT.rubricScopeMid,
+  ARTIFACT.rubricScopeHigh,
+  '',
+  ARTIFACT.rubricComplexity,
+  ARTIFACT.rubricComplexityLow,
+  ARTIFACT.rubricComplexityMid,
+  ARTIFACT.rubricComplexityHigh,
+  '',
+  ARTIFACT.rubricRisk,
+  ARTIFACT.rubricRiskLow,
+  ARTIFACT.rubricRiskMid,
+  ARTIFACT.rubricRiskHigh,
+  '',
+  ARTIFACT.rubricEffort,
+  ARTIFACT.rubricEffortLow,
+  ARTIFACT.rubricEffortMid,
+  ARTIFACT.rubricEffortHigh,
+]
+
+/** The text of `.cadre/sizing.md`, the default anchors each dimension of a ticket's size is scored against. */
+export function rubricText(): string {
+  return `${RUBRIC_LINES.join('\n')}\n`
 }

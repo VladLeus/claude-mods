@@ -17,26 +17,39 @@ import type {
   SettingsSource,
 } from '../../types'
 import { privateLevelsProblem, roleFolderLevels } from '../apply/safety'
-import { isObject } from '../core/json'
+import { sha256Hex } from '../core/hash'
+import { allOrNull, isObject, parseJsonValue } from '../core/json'
 import { sortedUnique } from '../core/text'
+import { GIT_TIMEOUT_MS } from '../git/argv'
 import { gitCommonDirOf, mainCheckoutOf } from '../git/common-dir'
+import { envFilesOf, MODIFIED_ENV_ARGV, TRACKED_ENV_ARGV, unchangedEnvFilesOf } from '../git/env-files'
 import { isPartsFlowRole } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
 import { t } from '../locales/t'
 import {
   displayPath,
+  inboxDirOf,
+  inboxFolderLevels,
+  inboxHomeOf,
+  isDirInsideRoot,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   memoryFolderOf,
   parentOf,
   roleMemoryDir,
+  startSettingsPath,
   userDirOf,
 } from '../paths'
+import { PER_SKILL_DENY_PLUGINS } from '../roles/infra'
+import { runsRepoChecks } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
-import { SOURCE_ORDER } from '../scan/facts/settings'
+import { isEntryForRoot, SOURCE_ORDER } from '../scan/facts/settings'
 import { claudeMdImports } from '../scan/instructions/imports'
+import { readRepoFile } from '../scan/port-read'
 import { ruleFiles, RULES_FOLDER } from '../scan/rules'
 import { claudeMdPathsOf } from '../scan/setup/claude-md'
+import { isInsideRepo, listFolder } from '../scan/setup/read'
+import type { SetupContext } from '../scan/setup/read'
 import { hookScriptOf, positiveInteger } from '../scan/setup/settings'
 import { linkedMemoriesOf } from './memory-links'
 import { isPlainName, NO_MEMORY_LINKS } from './render-plan'
@@ -62,8 +75,8 @@ export function privateFolderRefusal(path: string, reason: 'link' | 'not-folder'
 }
 
 /**
- * What gatherLaunchUser gives: the launching user's facts with the warnings to show and what to do in the role memory
- * folder (MemoryLinks, G-02-1f), or the exact refusal.
+ * What gatherLaunchUser gives: the launching user's facts with the warnings to show, what to do in the role memory
+ * folder (MemoryLinks, G-02-1f) and the role's inbox folder in the user config folder, or the exact refusal.
  */
 export type LaunchUserRead =
   | {
@@ -71,6 +84,7 @@ export type LaunchUserRead =
       readonly user: LaunchUser
       readonly warnings: readonly string[]
       readonly memories: MemoryLinks
+      readonly inboxDir: string
     }
   | { readonly kind: 'refuse'; readonly text: string }
 
@@ -203,18 +217,120 @@ async function memoryFilesOf(io: InitIo, userDir: string, root: string): Promise
   return markdownFiles(io, memoryFolderOf(userDir, root))
 }
 
-/** The user's skills: the folders and links in `<userDir>/skills`, sorted; a listing that fails gives none. */
-async function userSkillsOf(io: InitIo, userDir: string): Promise<string[]> {
-  const entries = (await io.list(`${userDir}/skills`)) ?? []
-
+/** The skill names of a listing: its folders and links, sorted, once each. */
+function skillFolderNames(entries: readonly PortEntry[]): string[] {
   return sortedUnique(entries.filter(entry => entry.kind === 'dir' || entry.isLink).map(entry => entry.name))
 }
 
-/** The user's agents: the regular `.md` files in `<userDir>/agents`, by name without `.md`, sorted. */
-async function userAgentsOf(io: InitIo, userDir: string): Promise<string[]> {
-  const names = await markdownFiles(io, `${userDir}/agents`)
+/** The names of a listing's regular `.md` files without the extension, sorted, once each. */
+function markdownNames(entries: readonly PortEntry[]): string[] {
+  return sortedUnique(markdownFileNames(entries).map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
+}
 
-  return sortedUnique(names.map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
+/**
+ * A launch root `.claude` folder's listing, as the setup scan lists the repo's agents: only a folder whose real path is
+ * inside the root or the main checkout is listed, so an epic worktree reads the links its mirror makes; one that links
+ * elsewhere or cannot be read adds a warning.
+ */
+async function repoFolderEntries(
+  io: InitIo,
+  ctx: SetupContext,
+  main: string | null,
+  path: string,
+  warnings: string[],
+): Promise<readonly PortEntry[]> {
+  const isInside = (stat: unknown, root: string): boolean =>
+    isDirInsideRoot(stat, root) || (main !== null && isDirInsideRoot(stat, main))
+  if (!(await isInsideRepo(io, ctx, path, isInside, warnings))) return []
+
+  return listFolder(io, ctx, path, warnings)
+}
+
+/** A skill name a plugin's own skill list may hold. */
+const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+/** The JSON value of a file read whole within MAX_READ_BYTES; null when it cannot be read or parsed. */
+async function jsonOf(io: InitIo, path: string): Promise<unknown> {
+  const read = await io.read(path, MAX_READ_BYTES)
+  if (read.state !== 'text') return null
+
+  return parseJsonValue(read.text)?.value ?? null
+}
+
+/**
+ * The install path installed_plugins.json records for the plugin `key`: the first repo entry for one of `roots` (the
+ * root, the root as given or the main checkout of a nested worktree), else the first user entry; null if not absolute.
+ */
+function installPathOf(value: unknown, roots: readonly string[], key: string): string | null {
+  if (!isObject(value) || !isObject(value.plugins) || !Object.hasOwn(value.plugins, key)) return null
+  const entries = value.plugins[key]
+  if (!Array.isArray(entries)) return null
+  const usable = entries.filter(isObject).filter(entry => isEntryForRoot(entry, roots))
+  const repoEntry = usable.find(entry => entry.scope !== 'user')
+  const path = (repoEntry ?? usable.find(entry => entry.scope === 'user'))?.installPath
+
+  return typeof path === 'string' && path.startsWith('/') ? path : null
+}
+
+/** The skill name of one plugin.json `skills` item: a path's last segment, a bare name, or an object's `name`. */
+function skillNameOf(item: unknown): string | null {
+  if (isObject(item)) return typeof item.name === 'string' && SKILL_NAME.test(item.name) ? item.name : null
+  if (typeof item !== 'string') return null
+  const name = item.slice(item.lastIndexOf('/') + 1)
+
+  return SKILL_NAME.test(name) ? name : null
+}
+
+/** The skill names a plugin.json lists, sorted and once each; null when the list is missing, empty or not whole. */
+function skillListOf(value: unknown): string[] | null {
+  if (!isObject(value) || !Array.isArray(value.skills)) return null
+  const names = allOrNull(value.skills, skillNameOf)
+  if (names === null || names.length === 0) return null
+
+  return sortedUnique(names)
+}
+
+/**
+ * The skill names of each installed PER_SKILL_DENY_PLUGINS key, from its own plugin.json; a key whose list cannot be
+ * read whole is left out, so the launch turns that plugin off.
+ */
+async function pluginSkillsOf(
+  io: InitIo,
+  userDir: string,
+  roots: readonly string[],
+): Promise<Record<string, readonly string[]>> {
+  const installed = await jsonOf(io, `${userDir}/plugins/installed_plugins.json`)
+  const lists: Record<string, readonly string[]> = {}
+  for (const key of PER_SKILL_DENY_PLUGINS) {
+    const installPath = installPathOf(installed, roots, key)
+    if (installPath === null) continue
+    const skills = skillListOf(await jsonOf(io, `${installPath}/.claude-plugin/plugin.json`))
+    if (skills === null) continue
+    lists[key] = skills
+  }
+
+  return lists
+}
+
+/** The enabledPlugins keys a settings value sets to true, sorted. */
+function enabledKeysOf(value: unknown): string[] {
+  if (!isObject(value) || !isObject(value.enabledPlugins)) return []
+  const enabled = Object.entries(value.enabledPlugins).filter(([, isOn]) => isOn === true)
+
+  return sortedUnique(enabled.map(([key]) => key))
+}
+
+/**
+ * The plugin keys the root's .claude/settings.json and a dir start folder's turn on, sorted; a file that cannot be
+ * read adds none.
+ */
+async function projectPluginsOf(io: InitIo, root: string, startDir: string | undefined): Promise<string[]> {
+  const rootKeys = enabledKeysOf(await jsonOf(io, `${root}/.claude/settings.json`))
+  if (startDir === undefined) return rootKeys
+  const read = await readRepoFile(io, root, startSettingsPath(startDir), MAX_READ_BYTES)
+  const startKeys = read.state === 'text' ? enabledKeysOf(parseJsonValue(read.text)?.value) : []
+
+  return sortedUnique([...rootKeys, ...startKeys])
 }
 
 /** Whether a listed entry is a file or a link: a linked file loads like one, so it is counted too (fails closed). */
@@ -258,33 +374,71 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
 }
 
 /**
- * The launching user's facts (D-98), gathered in the root session through the ports:
+ * The privateFolderRefusal for the first level of a private folder, from the top, that privateLevelsProblem finds, its
+ * path as `shown` gives it; null when none: each level is stat'ed, and `<userDir>` and each level but the last listed.
+ */
+async function levelsRefusal(
+  io: InitIo,
+  userDir: string,
+  levels: readonly string[],
+  shown: (path: string) => string,
+): Promise<string | null> {
+  const stats = new Map<string, PortStat | null>()
+  for (const level of levels) stats.set(level, await io.stat(level))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of [userDir, ...levels.slice(0, -1)]) listings.set(folder, await io.list(folder))
+  const problem = privateLevelsProblem(levels, stats, listings)
+
+  return problem === null ? null : privateFolderRefusal(shown(problem.path), problem.reason)
+}
+
+async function trackedEnvFilesOf(
+  host: HostIo,
+  role: Pick<RoleSpec, 'id' | 'basedOn'>,
+  root: string,
+): Promise<readonly string[] | null> {
+  if (!runsRepoChecks(role)) return null
+  const listed = envFilesOf(await host.run(TRACKED_ENV_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS }))
+  if (listed === null || listed.length === 0) return listed
+
+  return unchangedEnvFilesOf(listed, await host.run(MODIFIED_ENV_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS }))
+}
+
+/**
+ * The launching user's facts, gathered in the root session through the ports:
  * - the repo root as resolved and as given, the home folder, and the user folder (CLAUDE_CONFIG_DIR, else
  *   `<home>/.claude`); an ignored CLAUDE_CONFIG_DIR is warned about by the setup scan of the same run, so it is not
- *   repeated here (D-238, WF-S3);
+ *   repeated here;
  * - the git common dir from GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves
- *   it, else as git gave it, with its SHA-256 (gitCommonDirOf): they name the role memory folders (roleMemoryDir,
- *   D-20, D-91); and, for a root that lies below the main checkout of its git common dir (mainCheckoutOf), that
- *   checkout as `mainRoot`, set before the memories are linked, so a linked worktree links and denies main's memory
- *   folder and gets main's code-dir denies (03.1-W3 M1, S1);
+ *   it, else as git gave it, with its SHA-256 (gitCommonDirOf): they name the role memory folders (roleMemoryDir); and,
+ *   for a root that lies below the main checkout of its git common dir (mainCheckoutOf), that checkout as `mainRoot`,
+ *   set before the memories are linked, so a linked worktree links and denies main's memory folder and gets main's
+ *   code-dir denies;
  * - the carried values of the user settings (launchSettingsOf) and the hooks of each source hookSourcesFor names for
- *   the launch start (launchHooksOf, D-103);
+ *   the launch start (launchHooksOf), and the folder of a dir start (startDir);
  * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
- *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
- *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
- *   skills and agents, and the code dirs given;
+ *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes, the global CLAUDE.md
+ *   with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's skills
+ *   and agents, the skills and agents the root's own `.claude` folders provide (repoFolderEntries, whose warnings lead
+ *   the ok result's), and the code dirs given;
+ * - the skill list of the installed mattpocock-skills (pluginSkillsOf), whose install entry is looked up over the same
+ *   roots as the user folder, and the plugins the settings files of the repo and of a dir start folder turn on
+ *   (projectPluginsOf), each set only when there is one;
+ * - for a role that runs the repo's checks (runsRepoChecks), the env files git tracks at the root (TRACKED_ENV_ARGV)
+ *   less those it lists as modified (MODIFIED_ENV_ARGV), left out when either run fails;
  * - for a parts-flow role (isPartsFlowRole), the memories its hand-out record names, linked into its role memory
- *   folder with cadre's MEMORY.md block (linkedMemoriesOf, G-02-1f, D-140 q3-a): their link paths are the user's
- *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
- *   whole-files role gets none, as its memories are linked under `.runtime/instructions/` (instructionPlan).
+ *   folder with cadre's MEMORY.md block (linkedMemoriesOf): their link paths are the user's linkedMemories, and the
+ *   links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A whole-files role gets
+ *   none, as its memories are linked under `.runtime/instructions/` (instructionPlan).
  * A listing or read that fails counts as empty. It refuses with START_NO_HOME when there is no home folder, before
  * any run, and with START_NO_GIT_DIR when git gives no absolute path; only then is the user folder taken, with
- * CLAUDE_CONFIG_DIR checked against the root, the root as given and the main checkout (D-238, WF-S4). Then each level
- * of the role memory folder (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its
- * instructions/ subfolder) is stat'ed, and `<userDir>` and each level but the last listed, and it refuses with
- * privateFolderRefusal when privateLevelsProblem finds a level that is a link, is not a folder, or whose parent could
- * not be listed (02-GAPS-B3 C5), before any step runs; `<userDir>` itself is never checked, as a linked config folder
- * is common. No setting value, hook command or file text is ever part of a refusal or a warning.
+ * CLAUDE_CONFIG_DIR checked against the root, the root as given and the main checkout. Then each level of the role
+ * memory folder (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its instructions/
+ * subfolder), then each level of the role's inbox folder (inboxFolderLevels: `<userDir>/cadre`, its `inboxes`, the
+ * inbox home of the root and the role's folder) is checked by levelsRefusal, which refuses with privateFolderRefusal
+ * when a level is a link, is not a folder, or its parent could not be listed, before any step runs; `<userDir>` itself
+ * is never checked, as a linked config folder is common. The ok result carries the role's inbox folder. No setting
+ * value, hook command or file text is ever part of a refusal or a warning.
  */
 export async function gatherLaunchUser(
   io: InitIo,
@@ -293,8 +447,8 @@ export async function gatherLaunchUser(
     readonly locations: InitLocations
     readonly launchStart: LaunchStart
     readonly codeDirs: readonly string[]
-    /** The role to launch; a parts-flow role gets the memories its hand-out record names linked (G-02-1f). */
-    readonly role: Pick<RoleSpec, 'id' | 'instructions'>
+    /** The role to launch; a parts-flow role gets the memories its hand-out record names linked. */
+    readonly role: Pick<RoleSpec, 'id' | 'instructions' | 'basedOn'>
   },
 ): Promise<LaunchUserRead> {
   const { locations } = input
@@ -303,22 +457,35 @@ export async function gatherLaunchUser(
   const commonDir = await gitCommonDirOf(io, host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
   const main = mainCheckoutOf(commonDir.gitCommonDir, locations.root)
-  const userDir = userDirOf(locations, [locations.root, locations.givenRoot, ...(main === null ? [] : [main])], [])
+  const roots = [locations.root, locations.givenRoot, ...(main === null ? [] : [main])]
+  const userDir = userDirOf(locations, roots, [])
   // Fail closed: with a home, userDirOf always gives a folder.
   if (userDir === null) return { kind: 'refuse', text: START_NO_HOME }
-  const levels = roleFolderLevels(roleMemoryDir({ userDir, ...commonDir }, input.role.id))
-  const stats = new Map<string, PortStat | null>()
-  for (const level of levels) stats.set(level, await io.stat(level))
-  const listings = new Map<string, readonly PortEntry[] | null>()
-  for (const folder of [userDir, ...levels.slice(0, -1)]) listings.set(folder, await io.list(folder))
-  const problem = privateLevelsProblem(levels, stats, listings)
-  if (problem !== null) {
-    const shownPath = displayPath(problem.path, home, locations.root)
-
-    return { kind: 'refuse', text: privateFolderRefusal(shownPath, problem.reason) }
-  }
+  const shown = (path: string): string => displayPath(path, home, locations.root)
+  const memoryLevels = roleFolderLevels(roleMemoryDir({ userDir, ...commonDir }, input.role.id))
+  const memoryRefusal = await levelsRefusal(io, userDir, memoryLevels, shown)
+  if (memoryRefusal !== null) return { kind: 'refuse', text: memoryRefusal }
+  const inboxDir = inboxDirOf(inboxHomeOf(userDir, locations.root, await sha256Hex(locations.root)), input.role.id)
+  const inboxRefusal = await levelsRefusal(io, userDir, inboxFolderLevels(inboxDir), shown)
+  if (inboxRefusal !== null) return { kind: 'refuse', text: inboxRefusal }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
+  const pluginSkills = await pluginSkillsOf(io, userDir, roots)
+  const startDir = input.launchStart.kind === 'dir' ? input.launchStart.path : undefined
+  const projectPlugins = await projectPluginsOf(io, locations.root, startDir)
+  const ctx: SetupContext = {
+    root: locations.root,
+    givenRoot: locations.givenRoot,
+    home,
+    configDir: locations.configDir,
+  }
+  const repoWarnings: string[] = []
+  const skillEntries = await repoFolderEntries(io, ctx, main, `${locations.root}/.claude/skills`, repoWarnings)
+  const commandEntries = await repoFolderEntries(io, ctx, main, `${locations.root}/.claude/commands`, repoWarnings)
+  const agentEntries = await repoFolderEntries(io, ctx, main, `${locations.root}/.claude/agents`, repoWarnings)
+  const repoSkills = sortedUnique([...skillFolderNames(skillEntries), ...markdownNames(commandEntries)])
+  const repoAgents = markdownNames(agentEntries)
+  const trackedEnvFiles = await trackedEnvFilesOf(host, input.role, locations.root)
   const user: LaunchUser = {
     root: locations.root,
     givenRoot: locations.givenRoot,
@@ -334,15 +501,24 @@ export async function gatherLaunchUser(
     globalClaudeMd: await globalClaudeMdOf(io, userDir, home),
     memoryFiles: await memoryFilesOf(io, userDir, locations.root),
     givenMemoryFiles: await memoryFilesOf(io, userDir, locations.givenRoot),
-    userSkills: await userSkillsOf(io, userDir),
-    userAgents: await userAgentsOf(io, userDir),
+    userSkills: skillFolderNames((await io.list(`${userDir}/skills`)) ?? []),
+    userAgents: markdownNames((await io.list(`${userDir}/agents`)) ?? []),
+    ...(repoSkills.length === 0 ? {} : { repoSkills }),
+    ...(repoAgents.length === 0 ? {} : { repoAgents }),
     codeDirs: input.codeDirs,
     linkedMemories: [],
+    ...(Object.keys(pluginSkills).length === 0 ? {} : { pluginSkills }),
+    ...(projectPlugins.length === 0 ? {} : { projectPlugins }),
+    ...(startDir === undefined ? {} : { startDir }),
+    ...(trackedEnvFiles === null ? {} : { trackedEnvFiles }),
   }
-  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS }
+  if (!isPartsFlowRole(input.role)) {
+    return { kind: 'ok', user, warnings: repoWarnings, memories: NO_MEMORY_LINKS, inboxDir }
+  }
   const linked = await linkedMemoriesOf(io, user, input.role.id)
   const { memories } = linked
   const linkedMemories = memories.links.map(link => link.path)
+  const warnings = [...repoWarnings, ...linked.warnings]
 
-  return { kind: 'ok', user: { ...user, linkedMemories }, warnings: linked.warnings, memories }
+  return { kind: 'ok', user: { ...user, linkedMemories }, warnings, memories, inboxDir }
 }

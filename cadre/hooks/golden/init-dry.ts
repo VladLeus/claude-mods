@@ -86,6 +86,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -113,7 +125,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -126,7 +138,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -151,6 +164,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -164,7 +178,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "            .cadre/**/*.cadre-new",
       "            CLAUDE-SECURITY-*/",
       "            # <<< cadre",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
@@ -198,6 +212,19 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Use these roles",
           "Adjust them",
           "Describe my own structure"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Which frameworks does this team use? Found: GSD. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, be, fe, qa, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD (Recommended)",
+          "Add superpowers too",
+          "None (built-in)"
         ],
         "multiSelect": false
       },
@@ -248,6 +275,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "opus + medium",
           "sonnet + medium",
           "sonnet + high"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
         ],
         "multiSelect": false
       },
@@ -302,7 +341,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 46 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 47 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -315,7 +354,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -361,6 +401,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -378,7 +419,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "            run: node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo",
       "  hunk      .planning/config.json  workflow.text_mode: not set (GSD default) -> false  (required, accepted)",
       "            run: node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false",
-      "Summary: 46 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted)",
+      "Summary: 47 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted)",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
@@ -415,6 +456,31 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Use these roles",
           "Adjust them",
           "Describe my own structure"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Which frameworks does this team use? Found: superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, be, fe, qa, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep superpowers (Recommended)",
+          "Add GSD too",
+          "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
         ],
         "multiSelect": false
       },
@@ -470,6 +536,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Git policy for .cadre/?",
           "Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed."
         ],
@@ -497,7 +575,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 46 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 47 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -510,7 +588,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [],
@@ -556,6 +635,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -569,7 +649,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "            .cadre/**/*.cadre-new",
       "            CLAUDE-SECURITY-*/",
       "            # <<< cadre",
-      "Summary: 46 create, 0 change, 0 leave, 0 conflict, 0 hunks",
+      "Summary: 47 create, 0 change, 0 leave, 0 conflict, 0 hunks",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
@@ -606,6 +686,42 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Use these roles",
           "Adjust them",
           "Describe my own structure"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Which frameworks does this team use? Found: GSD and superpowers. Adding one installs it at project scope after Confirm.",
+          "Roles: pm, tl, security."
+        ],
+        "header": "Framework",
+        "options": [
+          "Keep GSD and superpowers (Recommended)",
+          "None (built-in)"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install GSD for this repo?",
+          "cadre runs npx -y @opengsd/gsd-core@latest --claude --local from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install superpowers for this repo?",
+          "cadre runs claude plugin install superpowers@claude-plugins-official --scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it fetches from."
+        ],
+        "header": "Framework",
+        "options": [
+          "No",
+          "Yes, install it"
         ],
         "multiSelect": false
       },
@@ -718,6 +834,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Go one by one",
           "None",
           "All roles"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
         ],
         "multiSelect": false
       },
@@ -843,7 +971,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -857,16 +985,17 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
     ],
     "logged": [
       "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again.",
       "attended: GSD needs a person until mode and workflow.text_mode are set as proposed"
     ],
     "shown": [],
     "promptHashes": [
-      "73ed8a25af823e7774847203e3339bade6da6f7cdfe71913f7258a90cfca6f63",
-      "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",
-      "b0ffcdc1549fb1f75a563b1cb102c2049200b5609496358160e4481165ff0f95",
-      "a5452cf1b1e18f52222fc72b9effa70502e0bed5559e357ade2dd50ed907c30c",
-      "11d63e0be53d8180ea3aa5348775dd81a9fce25081e868f42f313ad7e1ffa72c",
-      "11d63e0be53d8180ea3aa5348775dd81a9fce25081e868f42f313ad7e1ffa72c"
+      "05f625b9310c497e9098cc1cac56b4aa99fde5437426a465ac9c7cbd0f3588c3",
+      "e53c22d1bdf4e437bcec25607b2658a321b0b5bdae1539f908143e8a67098b78",
+      "e53c22d1bdf4e437bcec25607b2658a321b0b5bdae1539f908143e8a67098b78",
+      "d4b82b6fc072954b7c25f21908eeb45686b9a36d1a01eeda2c7d6b62f0301601",
+      "7dc8be37e04448d0b226a008f9a38255df7de6f51a0f850ac6000b7ff516432b",
+      "7dc8be37e04448d0b226a008f9a38255df7de6f51a0f850ac6000b7ff516432b"
     ],
     "reply": [
       "cadre init --dry-run",
@@ -889,6 +1018,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -908,7 +1038,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false",
       "  hunk      .planning/config.json  hooks.context_warnings: not set (GSD default) -> false  (optional, accepted)",
       "            run: node .claude/gsd-core/bin/gsd-tools.cjs config-set hooks.context_warnings false",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",
@@ -997,6 +1127,18 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
+          "Install mattpocock-skills from claude-plugins-official for PM after you confirm the plan? It gives PM mattpocock-skills:grilling and mattpocock-skills:grill-me.",
+          "It runs from the repo root at project scope, never in a --dry-run: claude plugin install mattpocock-skills@claude-plugins-official --scope project"
+        ],
+        "header": "Skills",
+        "options": [
+          "No",
+          "Yes, install it"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
           "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.",
           "Found: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 2 memories. No keeps the whole-file questions."
         ],
@@ -1022,8 +1164,8 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.",
-          "Without it the built files stay as cadre wrote them; a --dry-run installs nothing."
+          "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's private CLAUDE.md, built from your global CLAUDE.md, and you accept or keep each change.",
+          "Without it the private CLAUDE.md files stay as cadre wrote them; a --dry-run installs nothing."
         ],
         "header": "Improver",
         "options": [
@@ -1061,7 +1203,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       {
         "question": [
           "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.",
-          "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
+          "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root",
           "Use a button, or type duration, model, assignments, memory, env or hunks under Other."
         ],
         "header": "Review",
@@ -1074,12 +1216,13 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       }
     ],
     "logged": [
-      "No session history for this repo."
+      "No session history for this repo.",
+      "PM runs without its grill skills: to add them, run claude plugin install mattpocock-skills@claude-plugins-official --scope project from the repo root, then /cadre init again."
     ],
     "shown": [],
     "promptHashes": [
       "a89364612765f874c3ebf9fc7baa79ff4797b916d202f79f24ebe06c5084b5ef",
-      "6823fc05883d034a7f4c21868cea7b0780bbf7395d1546a1ba19fec0c9ae809a"
+      "1541d9bc5ed1169f6a23675f227e7893a9274c8b824d40c5f015afe3611cd0bd"
     ],
     "reply": [
       "cadre init --dry-run",
@@ -1102,6 +1245,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "  create    .cadre/security/mcp.json",
       "  create    .cadre/security/role.json",
       "  create    .cadre/security/settings.json",
+      "  create    .cadre/sizing.md",
       "  create    .cadre/tl/CLAUDE.md",
       "  create    .cadre/tl/ROLE.md",
       "  create    .cadre/tl/kickoff.txt",
@@ -1115,7 +1259,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       "            .cadre/**/*.cadre-new",
       "            CLAUDE-SECURITY-*/",
       "            # <<< cadre",
-      "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
+      "Summary: 26 create, 0 change, 0 leave, 0 conflict, 0 hunks",
       "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
       "Launchers start in: the git root",
       "Private files per role (written after Confirm):",

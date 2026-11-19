@@ -1,41 +1,62 @@
 /**
- * The mirror plan of an epic worktree (D-147, D-148, D-149, D-156, D-172), a layer 11 module: from the main checkout's
- * untracked and ignored entries and the listings of the main checkout and the worktree, mirrorPlan gives the ordered
- * steps that make the worktree like main (real folders for `.cadre` and its protected folders, a copy for env and git
- * files, a link for the rest) with a warning for each entry it leaves alone, and epicStepArgv gives the argv of a step.
- * It is pure and imports core, paths and epic/git; the mirror run reads it.
+ * The mirror plan of an epic worktree, a layer 11 module: from the main checkout's untracked and ignored entries, the
+ * paths its .worktreeinclude names and the listings of the main checkout and the worktree, mirrorPlan gives the
+ * ordered steps that make the worktree like main (real folders for `.cadre` and its protected folders and above a
+ * named path, a copy for a named path and for env and git files, a link for the rest) with a warning for each entry it
+ * leaves alone, and epicStepArgv and epicStepTimeoutMs give the argv and the time limit of a step. It is pure and
+ * imports core, paths and epic/git; the mirror run reads it.
  */
 import type { PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
-import { foldersAbove } from '../paths'
+import { foldersAbove, SIZING_RUBRIC_PATH } from '../paths'
 import { WORKTREES_DIR } from './git'
 
 /**
- * One step of the mirror into the epic worktree (D-147, D-148, D-172), in the order runEpic runs it; every path is
- * absolute:
+ * One step of the mirror into the epic worktree, in the order runEpic runs it; every path is absolute:
  * - `mkdir`: make a real folder in the worktree, and the folders above it;
  * - `link`: make `path` a symbolic link to `target` in the main checkout, never over something that is there;
- * - `copy`: copy the regular file `source` of the main checkout to `path`, keeping its mode and times.
+ * - `copy`: copy `source` of the main checkout, a regular file or a real folder, to `path`, keeping modes and times;
+ * - `move`: move `source` to `path`, replacing what is there only with `overwrite`.
  */
 export type EpicStep =
   | { readonly kind: 'mkdir'; readonly path: string }
   | { readonly kind: 'link'; readonly path: string; readonly target: string }
   | { readonly kind: 'copy'; readonly path: string; readonly source: string }
+  | { readonly kind: 'move'; readonly path: string; readonly source: string; readonly overwrite: boolean }
 
-/** How long one mirror step (a folder, a link or a copy) may run before it is given up (Pitfall 8). */
+/** How long a mkdir or link step may run before it is given up. */
 export const MIRROR_STEP_TIMEOUT_MS = 10_000
 
+/** How long a copy or move step may run before it is given up: a whole folder may take long to copy. */
+export const MIRROR_COPY_TIMEOUT_MS = 120_000
+
+/** How long a step may run: MIRROR_COPY_TIMEOUT_MS for a copy or move, MIRROR_STEP_TIMEOUT_MS for a mkdir or link. */
+export function epicStepTimeoutMs(step: EpicStep): number {
+  if (step.kind === 'copy' || step.kind === 'move') return MIRROR_COPY_TIMEOUT_MS
+
+  return MIRROR_STEP_TIMEOUT_MS
+}
+
 /**
- * The argv that runs a mirror step, absolute and with no shell, `--` before the paths (D-147, T-03.1-06): `/bin/mkdir
- * -p --` for a folder; `/bin/ln -s --` for a link, with no `-f`, so it never replaces what is there; `/bin/cp -p --`
- * for a copy.
+ * The argv that runs a mirror step, absolute and with no shell, `--` before the paths: `/bin/mkdir -p --` for a
+ * folder; `/bin/ln -s --` for a link, with no `-f`, so it never replaces what is there; `/bin/cp -pR --` for a copy,
+ * which copies a regular file or a real folder whole; `/bin/mv -n --` places a finished copy without replacing what is
+ * there, and `/bin/mv -f --` replaces main's file at epic done.
  */
 export function epicStepArgv(step: EpicStep): readonly string[] {
   if (step.kind === 'mkdir') return ['/bin/mkdir', '-p', '--', step.path]
   if (step.kind === 'link') return ['/bin/ln', '-s', '--', step.target, step.path]
+  if (step.kind === 'move') return ['/bin/mv', step.overwrite ? '-f' : '-n', '--', step.source, step.path]
 
-  return ['/bin/cp', '-p', '--', step.source, step.path]
+  return ['/bin/cp', '-pR', '--', step.source, step.path]
+}
+
+export const COPY_TEMP_SUFFIX = '.cadre-copy'
+
+/** Where a mirror copy is made before it is moved into place, so a copy that did not finish never sits at `path`. */
+export function copyTempPath(path: string): string {
+  return `${path}${COPY_TEMP_SUFFIX}`
 }
 
 /** The folder of cadre's own files, which the worktree gets as a real folder and never as one link (D-156). */
@@ -61,6 +82,11 @@ export function isGitFile(path: string): boolean {
   return GIT_FILE_NAMES.includes(path.slice(path.lastIndexOf('/') + 1))
 }
 
+/** Whether a mirror copy is hidden from git by the excludes: a copy of a git file or of the sizing rubric. */
+export function isHiddenCopy(path: string): boolean {
+  return isGitFile(path) || path === SIZING_RUBRIC_PATH
+}
+
 /** A C0 control character or DEL: no gitignore line can hold a name with one (03.1-W2 S2). */
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
 
@@ -74,7 +100,7 @@ function protectedFolders(roleIds: readonly string[]): string[] {
 }
 
 /** The repo-relative folder a path lies in, '' for the root. */
-function parentOf(path: string): string {
+export function parentOf(path: string): string {
   const at = path.lastIndexOf('/')
 
   return at === -1 ? '' : path.slice(0, at)
@@ -93,29 +119,32 @@ export function listedEntry(listings: ReadonlyMap<string, readonly PortEntry[]>,
 }
 
 /**
- * The folders runEpic lists for mirrorPlan (D-147), repo-relative and '' for the root, each list sorted and once each:
- * every folder the rules read. In the main checkout (`main`): the protected folders (`.cadre`, `.cadre/bin` and
- * `.cadre/<id>` for each role id) and `.claude`, whose children the mirror walks, and the folder of each entry, which
- * shows whether it is a file. In the worktree (`tree`): the root, `.claude`, each protected folder and the folders
- * above it, and the folders above each entry, which show what the worktree holds already and which of its folders
- * are links.
+ * The folders runEpic lists for mirrorPlan, repo-relative and '' for the root, each list sorted and once each: every
+ * folder the rules read. In the main checkout (`main`): the protected folders (`.cadre`, `.cadre/bin` and `.cadre/<id>`
+ * for each role id) and `.claude`, whose children the mirror walks, the folder of each entry, which shows whether it
+ * is a file, and the folders above each named path (`included`), which the mirror may walk. In the worktree (`tree`):
+ * the root, `.claude`, each protected folder and the folders above it, and the folders above each entry and each named
+ * path, which show what the worktree holds already and which of its folders are links.
  */
 export function mirrorPaths(
   entries: readonly string[],
   roleIds: readonly string[],
+  included: readonly string[],
 ): { readonly main: readonly string[]; readonly tree: readonly string[] } {
   const kept = protectedFolders(roleIds)
-  const main = sortedUnique([...kept, CLAUDE_DIR, ...entries.map(parentOf)])
+  const walked = included.flatMap(foldersAbove)
+  const main = sortedUnique([...kept, CLAUDE_DIR, ...entries.map(parentOf), ...walked])
   const above = [...kept.flatMap(folder => [...foldersAbove(folder), folder]), ...entries.flatMap(foldersAbove)]
 
-  return { main, tree: sortedUnique(['', CLAUDE_DIR, ...above]) }
+  return { main, tree: sortedUnique(['', CLAUDE_DIR, ...above, ...walked]) }
 }
 
 /**
- * The mirror of the main checkout into the epic worktree (D-147, D-148, D-149, D-156, D-172). `main` and `tree` hold
- * the listing of each repo-relative folder ('' for the root) in the main checkout and in the worktree, as mirrorPaths
- * names them; a folder with no listing counts as empty, and a target the worktree lists, a dangling link included, is
- * there. The entries are taken sorted, and each, then each child it hands on, gets the first rule that fits:
+ * The mirror of the main checkout into the epic worktree. `main` and `tree` hold the listing of each repo-relative
+ * folder ('' for the root) in the main checkout and in the worktree, as mirrorPaths names them; a folder with no
+ * listing counts as empty, and a target the worktree lists, a dangling link included, is there. `included` holds the
+ * paths the main checkout's .worktreeinclude names that git ignores (the named paths). The entries are taken sorted,
+ * and each, then each child it hands on, gets the first rule that fits:
  * - (a) `.claude/worktrees` and anything below it: nothing;
  * - (b) anything at or below `.cadre/<id>/.runtime` for a role id: nothing, as each worktree renders its own;
  * - (c) a path already planned or already in the worktree's listing, or below either: nothing, so no step lands in the
@@ -126,14 +155,21 @@ export function mirrorPaths(
  *   child of its main listing, by these same rules;
  * - (f) `.claude`: each child of its main listing but `worktrees`, by these same rules;
  * - (g) a path whose name holds a control character, a line break included: nothing, nothing below it, and the
- *   mirrorUnhideableWarning line, as no excludes line can hide it (03.1-W2 S2);
- * - (h) a file whose last segment starts with `.env`, or is `.gitignore`, `.gitattributes` or `.mailmap`
- *   (GIT_FILE_NAMES, which git never reads through a link, 03.1 S1), as the main listing of its folder shows (a regular
- *   file, not a link): a copy step, unless the worktree lists its target;
- * - (i) anything else: a link step to the main checkout's path, unless the worktree lists its target.
- * A link or copy below a folder the worktree does not list gets a mkdir step for each such folder from the top first,
- * once each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, and the
- * warnings.
+ *   mirrorUnhideableWarning line, as no excludes line can hide it;
+ * - (h) a path that is not named but holds a named path deeper down, when the main listing of its folder shows a real
+ *   folder (not a link): a mkdir step, then each child of its main listing, by these same rules;
+ * - (i) a named path the main listing of its folder shows as a regular file or a real folder, or a file whose last
+ *   segment starts with `.env`, or is `.gitignore`, `.gitattributes` or `.mailmap` (GIT_FILE_NAMES, which git never
+ *   reads through a link), as that listing shows (a regular file, not a link): a copy step to its temporary sibling
+ *   (copyTempPath), then a move step that places it; when the worktree lists that sibling already: nothing, and the
+ *   mirrorCopyTempWarning line;
+ * - (j) anything else: a link step to the main checkout's path;
+ * - (k) once the entries are done, `.cadre/sizing.md` (SIZING_RUBRIC_PATH) when the main listing of `.cadre` shows
+ *   it as a regular file, not a link: the rules above apply first, as for an entry, and then it is copied as in rule
+ *   (i), never linked, so a rubric main has and the worktree lacks is copied into it.
+ * A step below a folder the worktree does not list gets a mkdir step for each such folder from the top first, once
+ * each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, the folders
+ * rule (h) made real (walked), in plan order, and the warnings.
  */
 export function mirrorPlan(input: {
   readonly root: string
@@ -142,18 +178,21 @@ export function mirrorPlan(input: {
   readonly roleIds: readonly string[]
   readonly main: ReadonlyMap<string, readonly PortEntry[]>
   readonly tree: ReadonlyMap<string, readonly PortEntry[]>
+  readonly included: readonly string[]
 }): {
   readonly steps: readonly EpicStep[]
   readonly links: readonly string[]
   readonly copies: readonly string[]
+  readonly walked: readonly string[]
   readonly warnings: readonly string[]
 } {
-  const { root, worktree, main, tree } = input
+  const { root, worktree, main, tree, included } = input
   const kept = protectedFolders(input.roleIds)
   const runtimes = input.roleIds.map(id => `${CADRE_DIR}/${id}/.runtime`)
   const steps: EpicStep[] = []
   const links: string[] = []
   const copies: string[] = []
+  const walked: string[] = []
   const warnings: string[] = []
   const made = new Set<string>()
   const placed = new Set<string>()
@@ -163,7 +202,7 @@ export function mirrorPlan(input: {
   }
   const childrenOf = (folder: string) => sortedUnique((main.get(folder) ?? []).map(entry => entry.name))
 
-  const visit = (path: string): void => {
+  const visit = (path: string, isCopy = false): void => {
     if (isAtOrUnder(path, WORKTREES_DIR)) return
     if (runtimes.some(runtime => isAtOrUnder(path, runtime))) return
     const above = foldersAbove(path)
@@ -183,8 +222,7 @@ export function mirrorPlan(input: {
       return
     }
     if (listedEntry(tree, path) !== undefined) {
-      // A target that is there is placed, so nothing below it is mirrored, as below a planned link
-      // (rule c, 03.1-W2 S3).
+      // A target that is there is placed, so nothing below it is mirrored, as below a planned link (rule c).
       placed.add(path)
       return
     }
@@ -193,13 +231,28 @@ export function mirrorPlan(input: {
       warnings.push(mirrorUnhideableWarning(path))
       return
     }
+    const shown = listedEntry(main, path)
+    const isNamed = included.includes(path)
+    const isReal = shown !== undefined && !shown.isLink
+    const holdsNamed = included.some(named => named.startsWith(`${path}/`))
+    if (isReal && shown.kind === 'dir' && !isNamed && holdsNamed) {
+      for (const folder of [...missing, path]) mkdir(folder)
+      walked.push(path)
+      for (const child of childrenOf(path)) visit(`${path}/${child}`)
+      return
+    }
     for (const folder of missing) mkdir(folder)
     placed.add(path)
-    const shown = listedEntry(main, path)
     const name = path.slice(path.lastIndexOf('/') + 1)
-    const isCopied = name.startsWith(ENV_PREFIX) || GIT_FILE_NAMES.includes(name)
-    if (isCopied && shown !== undefined && shown.kind === 'file' && !shown.isLink) {
-      steps.push({ kind: 'copy', path: `${worktree}/${path}`, source: `${root}/${path}` })
+    const isCopied = isCopy || isNamed || name.startsWith(ENV_PREFIX) || GIT_FILE_NAMES.includes(name)
+    if (isCopied && isReal && (shown.kind === 'file' || (isNamed && shown.kind === 'dir'))) {
+      const temp = copyTempPath(path)
+      if (listedEntry(tree, temp) !== undefined) {
+        warnings.push(mirrorCopyTempWarning(path, temp))
+        return
+      }
+      steps.push({ kind: 'copy', path: `${worktree}/${temp}`, source: `${root}/${path}` })
+      steps.push({ kind: 'move', path: `${worktree}/${path}`, source: `${worktree}/${temp}`, overwrite: false })
       copies.push(path)
       return
     }
@@ -207,8 +260,10 @@ export function mirrorPlan(input: {
     links.push(path)
   }
   for (const entry of sortedUnique(input.entries)) visit(entry)
+  const rubric = listedEntry(main, SIZING_RUBRIC_PATH)
+  if (rubric !== undefined && rubric.kind === 'file' && !rubric.isLink) visit(SIZING_RUBRIC_PATH, true)
 
-  return { steps, links, copies, warnings }
+  return { steps, links, copies, walked, warnings }
 }
 
 /**
@@ -226,4 +281,12 @@ export function mirrorLinkedParentWarning(path: string): string {
  */
 export function mirrorUnhideableWarning(path: string): string {
   return t('epic.mirror.mirrorUnhideableWarning', { path: reportText(path) })
+}
+
+/**
+ * The warning line for a path the mirror leaves out because the worktree holds its temporary sibling, left by a copy
+ * that did not finish, which cadre never copies into. Both repo-relative paths are shown cleaned.
+ */
+export function mirrorCopyTempWarning(path: string, temp: string): string {
+  return t('epic.mirror.mirrorCopyTempWarning', { path: reportText(path), temp: reportText(temp) })
 }

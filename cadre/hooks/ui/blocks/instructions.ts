@@ -10,14 +10,16 @@ import { redactedText } from '../../core/redact'
 import { clean, idsOrNone, withMax } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
-import { TOP_OF_FILE } from '../../records'
+import { isWholeFilePart, TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
 
 /**
- * Where a part comes from, as the pane and a topic's context line show it: its file, cleaned, then its heading
- * (G-02-1f; 02-GAPS-B2 N3: the file is cleaned only where it is shown).
+ * Where a part comes from, as the pane and a topic's context line show it: its file, cleaned, alone for a whole repo
+ * file, else followed by its heading or TOP_OF_FILE.
  */
 export function sourceText(part: InstructionPart): string {
+  if (isWholeFilePart(part.source, part.heading)) return clean(part.file)
+
   return t('ui.instructions.sourceText', {
     file: clean(part.file),
     value: part.heading === '' ? TOP_OF_FILE : part.heading,

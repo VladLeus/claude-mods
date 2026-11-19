@@ -11,7 +11,14 @@ import { t } from '../locales/t'
 import { trimSlash } from '../paths'
 import { parseCadreState, parseManifest } from '../state/cadre-files'
 import { hiddenNameWarnings, MAX_READ_BYTES } from './facts/normalize'
-import { manifestsOf, packageFilesOf, readDependencies, readManifest } from './manifests'
+import {
+  dockerScriptCommands,
+  manifestsOf,
+  packageFilesOf,
+  readDependencies,
+  readManifest,
+  scriptRunner,
+} from './manifests'
 import { addMarkers, SOURCE_EXTENSIONS } from './markers'
 import type { Findings } from './markers'
 import { listingState, readRepoFile } from './port-read'
@@ -120,14 +127,14 @@ function sortedFindings(found: Findings): ScanFinding[] {
 }
 
 /**
- * The read-only repo scan (SCAN-01, D-55, D-137): the stack, the backend and frontend frameworks, tests and E2E, each
- * finding with the repo-relative path that proves it, plus the source languages and the top-level code folders, and
- * what an earlier run left in `.cadre/` (D-67). It walks through the port with bounded depth and entries
- * (MAX_SCAN_DEPTH, MAX_FOLDER_ENTRIES in each deeper folder, MAX_SCAN_ENTRIES in all), records the deeper folders it
- * listed only in part and a stop at the safety cap, never follows a link, and reads only the dependency names of the
- * package.json files in the root and one folder down, then of the root manifests of MANIFEST_FILES, and the two state
- * files of `.cadre/`, all through readRepoFile. A listing or read that fails is a warning, never an absence. It writes
- * nothing and runs nothing.
+ * The read-only repo scan: the stack, the backend and frontend frameworks, tests and E2E, each finding with the
+ * repo-relative path that proves it, plus the source languages and the top-level code folders, the docker wrapper
+ * scripts of the root package.json, and what an earlier run left in `.cadre/`. It walks through the port with bounded
+ * depth and entries (MAX_SCAN_DEPTH, MAX_FOLDER_ENTRIES in each deeper folder, MAX_SCAN_ENTRIES in all), records the
+ * deeper folders it listed only in part and a stop at the safety cap, never follows a link, and reads only the
+ * dependency names of the package.json files in the root and one folder down, with the root one's scripts from the
+ * same read, then of the root manifests of MANIFEST_FILES, and the two state files of `.cadre/`, all through
+ * readRepoFile. A listing or read that fails is a warning, never an absence. It writes nothing and runs nothing.
  */
 export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   const walked = await walk(io, trimSlash(root))
@@ -135,11 +142,15 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   addMarkers(found, walked.seen)
   const hidden = hiddenNameWarnings(walked.hidden, 'repoEntry', MAX_ENTRY_NAME_CHARS)
   const warnings = [...walked.warnings, ...hidden]
+  const scripts = new Map<string, unknown>()
   // One file at a time and in walk order, so the first path that names a dependency is always the same one.
   for (const path of packageFilesOf(walked.seen)) {
-    const problem = await readDependencies(found, io, root, path)
-    if (problem !== null) warnings.push(problem)
+    const read = await readDependencies(found, io, root, path)
+    if (read.warning !== null) warnings.push(read.warning)
+    scripts.set(path, read.scripts)
   }
+  const rootNames = walked.seen.filter(entry => entry.depth === 0).map(entry => entry.name)
+  const dockerScripts = dockerScriptCommands(scripts.get('package.json'), scriptRunner(rootNames))
   // Then the root manifests, one at a time in MANIFEST_FILES order, for the same reason (D-137).
   for (const kind of manifestsOf(walked.seen)) {
     const problem = await readManifest(found, io, root, kind)
@@ -157,6 +168,7 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
     isOverallCapped: walked.isOverallCapped,
     cadre,
     warnings,
+    dockerScripts,
   }
 }
 

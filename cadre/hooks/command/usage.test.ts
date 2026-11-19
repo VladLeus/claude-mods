@@ -14,6 +14,8 @@ const HELP_LINES: readonly string[] = [
   '  /cadre init --dry-run         the same guided flow; prints the plan and writes nothing',
   '  /cadre regen <id>             re-render one role from its role.json and write its files',
   "  /cadre regen <id> --dry-run   print that role's plan and write nothing",
+  "  /cadre frameworks             choose the team's frameworks again: the questions, a review, then write",
+  '  /cadre frameworks --dry-run   the same questions; prints the changes and writes nothing',
   "  /cadre start <id>             render a role's runtime files, then print and copy its launcher command",
   '  /cadre start <id> --terminal  also open it in a new Terminal window, iTerm tab or tmux window (macOS)',
   "  /cadre status <id>            show from disk whether a role's autopilot run is done, running, stopped, " +
@@ -49,7 +51,7 @@ describe('helpText', () => {
 
   test('each command has its own row, and every row starts its description in the same column', () => {
     const rows = USAGE_LINES.slice(1)
-    expect(rows).toHaveLength(11)
+    expect(rows).toHaveLength(13)
     const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_COLUMN).trimEnd())
     expect(commands).toEqual([
       '/cadre detect',
@@ -58,6 +60,8 @@ describe('helpText', () => {
       '/cadre init --dry-run',
       '/cadre regen <id>',
       '/cadre regen <id> --dry-run',
+      '/cadre frameworks',
+      '/cadre frameworks --dry-run',
       '/cadre start <id>',
       '/cadre start <id> --terminal',
       '/cadre status <id>',

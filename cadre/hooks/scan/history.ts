@@ -159,11 +159,8 @@ export function busiestFirst(a: NameCount, b: NameCount): number {
 }
 
 /**
- * Reads the sessions listSessions gave, in that order, through the port and keeps only what countNames finds, with
- * the counts of each name summed (SCAN-03, D-59). A session over HISTORY_MAX_FILE_BYTES is skipped and counted
- * (`skippedLarge`, Pitfall 9), and so is one that cannot be read or is gone (`skippedUnknown`). The total counts the
- * listed size of each session read; once it reaches HISTORY_MAX_TOTAL_BYTES the scan reads no more, and it is partial
- * when sessions are left (Pitfall 5). No text, path or file name is kept.
+ * Reads the given sessions in `dir`, in order, within the per-file and total caps, and keeps only the names and counts
+ * countNames finds. A skipped session counts as too large or unknown, and the scan is partial when sessions are left.
  */
 export async function scanHistory(io: InitIo, dir: string, sessions: readonly PortEntry[]): Promise<HistoryScan> {
   const counts = new Map<string, number>()

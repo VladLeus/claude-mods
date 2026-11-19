@@ -1,9 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, OpenQuestion } from '../../../types'
+import type { AskContext, AskSpec, ContextRow, InitIo, OpenQuestion } from '../../../types'
+import { CONFLICT_OPTIONS, conflictContext } from '../../apply/conflict'
 import { isObject } from '../../core/json'
+import { memIo, memWorld } from '../../testkit'
+import { lineDiff } from '../diff'
+import type { DiffRow } from '../diff'
 import { wrapLine } from '../pane'
+import { NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from '../paging'
 import { PREVIEW_LINE_ROWS, previewMarkdown } from '../preview'
+import type { PageView } from './contract'
 import { TUI_DEFAULT } from './tui-default'
 
 /** One single-select AskUserQuestion question with two options and no preview, as a model asks it (D3). */
@@ -96,5 +102,187 @@ describe('the TUI-default preview by wrapped rows (D-260)', () => {
       true,
       true,
     ])
+  })
+})
+
+describe('the TUI-default paged conflict question', () => {
+  const VIEW: PageView = { columns: () => 80, seat: () => null, rows: () => null }
+  const QUESTION = 'ROLE.md changed since cadre wrote it. Keep mine or take new?'
+
+  /** The conflict question over a diff of `count` changed lines. */
+  function conflictSpec(count: number): AskSpec {
+    const before = Array.from({ length: count }, (_, at) => `old ${at + 1}`).join('\n')
+    const after = Array.from({ length: count }, (_, at) => `new ${at + 1}`).join('\n')
+    const context = conflictContext('.cadre/roles/be/ROLE.md', lineDiff(before, after))
+
+    return { options: CONFLICT_OPTIONS, header: 'Conflict', context }
+  }
+
+  /** A port that records every ask and answers Next page while a page offers it, then `answer`. */
+  function recordingIo(answer: string): { readonly io: InitIo; readonly specs: AskSpec[] } {
+    const base = memIo(memWorld({}), [])
+    const specs: AskSpec[] = []
+    const io: InitIo = {
+      ...base.io,
+      ask: async (_question, spec) => {
+        specs.push(spec)
+
+        return spec.options.includes(NEXT_PAGE_LABEL) ? NEXT_PAGE_LABEL : answer
+      },
+    }
+
+    return { io, specs }
+  }
+
+  /** The conflict question over a diff that adds `lines` and removes none. */
+  function addedSpec(lines: readonly string[]): AskSpec {
+    const rows = lines.map((line): DiffRow => ({ kind: 'added', line }))
+    const context = conflictContext('.cadre/roles/be/ROLE.md', { rows, added: rows.length, removed: 0 })
+
+    return { options: CONFLICT_OPTIONS, header: 'Conflict', context }
+  }
+
+  /** The preview the TUI default gives the dialog of one asked page at `columns`. */
+  function pagePreview(spec: AskSpec, columns: number | null = 80): unknown {
+    const options = spec.options.map(label => ({ label, description: label }))
+    const raw = [{ question: QUESTION, header: 'Conflict', multiSelect: false, options }]
+    const open: OpenQuestion = {
+      question: QUESTION,
+      header: 'Conflict',
+      context: spec.context ?? null,
+      acceptsTyped: false,
+      takesNote: false,
+    }
+    const [previews = []] = optionPreviews(TUI_DEFAULT.dialogPlan(raw, open, null, columns)?.questions ?? undefined)
+
+    return previews[0]
+  }
+
+  test(
+    'a long conflict diff is asked a page at a time, each preview showing its page and its page marker',
+    async () => {
+      const spec = conflictSpec(200)
+      const { io, specs } = recordingIo('Take new')
+      const answer = await TUI_DEFAULT.pagedPort(io, VIEW).ask(QUESTION, spec)
+      expect(answer).toBe('Take new')
+      expect(specs.length).toBeGreaterThan(1)
+      expect(specs[0]?.options[0]).toBe(NEXT_PAGE_LABEL)
+      expect(specs.at(-1)?.options).toEqual([PREVIOUS_PAGE_LABEL, ...CONFLICT_OPTIONS])
+      for (const [at, page] of specs.entries()) {
+        const context = page.context
+        if (context === undefined) throw new Error('a page has no context')
+        expect(context.lines).toEqual(spec.context?.lines ?? [])
+        const texts = (context.rows ?? []).flatMap(section => section.rows.map(row => row.text))
+        expect(texts.length).toBeGreaterThan(0)
+        const preview = pagePreview(page)
+        const lines = [...texts, `page ${at + 1} of ${specs.length}`]
+        expect(preview).toBe(previewMarkdown([{ ...context, lines }], 80))
+        expect(String(preview)).not.toContain('more above')
+      }
+    },
+  )
+
+  test(
+    'a diff of 200 removed lines is asked in 11 pages at 40 and 80 columns, each preview ending with its marker, ' +
+      'and nothing is printed above the dialog',
+    async () => {
+      const rows = Array.from({ length: 200 }, (_, at): DiffRow => {
+        const number = String(at + 1).padStart(3, '0')
+
+        return { kind: 'removed', line: `e2e hand-added line ${number}` }
+      })
+      const context = conflictContext('.cadre/be/ROLE.md', { rows, added: 0, removed: 200 })
+      const spec: AskSpec = { options: CONFLICT_OPTIONS, header: 'Conflict', context }
+      const diff = rows.map(row => `- ${row.line}`)
+      for (const columns of [40, 80]) {
+        const { io, specs } = recordingIo('Take new')
+        const view: PageView = { ...VIEW, columns: () => columns }
+        expect(await TUI_DEFAULT.pagedPort(io, view).ask(QUESTION, spec)).toBe('Take new')
+        const texts = specs.map(page =>
+          (page.context?.rows ?? []).flatMap(section => section.rows.map(row => row.text)),
+        )
+        expect([columns, specs.length]).toEqual([columns, 11])
+        expect(texts[0]).toEqual(['Take new: 0 lines added, 200 removed', ...diff.slice(0, 18)])
+        expect(texts[10]).toEqual(diff.slice(189))
+        for (const [at, page] of specs.entries()) {
+          const preview = String(pagePreview(page, columns))
+          const lines = [...(texts[at] ?? []), `page ${at + 1} of 11`]
+          expect(preview).toBe(previewMarkdown([{ title: context.title, lines }], columns))
+          expect(preview).not.toContain('more above')
+          const opened = TUI_DEFAULT.dialogOpenEffects(page.context ?? null, null, columns)
+          expect([columns, at, opened]).toEqual([columns, at, [{ kind: 'status', text: null }]])
+        }
+      }
+    },
+  )
+
+  test('a long hand-out list that is not paged is still printed whole above the dialog, once', () => {
+    const lines = Array.from({ length: 80 }, (_, at) => `skill ${at + 1}`)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [{ title: null, rows: lines.map(plain) }]
+    const context: AskContext = { title: 'Hand out', lines, kind: 'skills', summary: '80 skills', rows }
+    const entries = ['Hand out', ...lines].map(text => ({ kind: 'transcript', text }))
+
+    expect(TUI_DEFAULT.dialogOpenEffects(context, null, 80)).toEqual([
+      { kind: 'status', text: null },
+      ...entries,
+      { kind: 'printed', context },
+    ])
+    expect(TUI_DEFAULT.dialogOpenEffects(context, context, 80)).toEqual([{ kind: 'status', text: null }])
+  })
+
+  test('a short conflict diff that fits the preview is asked once, as given', async () => {
+    const spec = conflictSpec(3)
+    const { io, specs } = recordingIo('Keep mine')
+    expect(await TUI_DEFAULT.pagedPort(io, VIEW).ask(QUESTION, spec)).toBe('Keep mine')
+    expect(specs).toEqual([spec])
+  })
+
+  test('on a wide preview each diff line is whole on exactly one page and no page preview is cut', async () => {
+    const wide: PageView = { ...VIEW, columns: () => 122 }
+    const spec = addedSpec(Array.from({ length: 60 }, (_, at) => `${'lorem ipsum '.repeat(18)}END${at + 1}X`))
+    const { io, specs } = recordingIo('Take new')
+    expect(await TUI_DEFAULT.pagedPort(io, wide).ask(QUESTION, spec)).toBe('Take new')
+    expect(specs.length).toBeGreaterThan(1)
+    const texts = specs.map(page => (page.context?.rows ?? []).flatMap(section => section.rows.map(row => row.text)))
+    expect(texts.flat()).toEqual(spec.context?.lines ?? [])
+    for (const [at, page] of specs.entries()) {
+      const preview = String(pagePreview(page, 122))
+      const lines = [...(texts[at] ?? []), `page ${at + 1} of ${specs.length}`]
+      expect(preview).toBe(previewMarkdown([{ title: page.context?.title ?? '', lines }], 122))
+      expect([preview.endsWith('\n…'), preview.includes('more above')]).toEqual([false, false])
+    }
+  })
+
+  test('a diff that fills the preview rows exactly is asked once; one line more pages', async () => {
+    const short = (count: number): string[] => Array.from({ length: count }, (_, at) => `line ${at + 1}`)
+    const exact = addedSpec(short(PREVIEW_LINE_ROWS - 2))
+    const once = recordingIo('Keep mine')
+    expect(await TUI_DEFAULT.pagedPort(once.io, VIEW).ask(QUESTION, exact)).toBe('Keep mine')
+    expect(once.specs).toEqual([exact])
+    const over = recordingIo('Keep mine')
+    await TUI_DEFAULT.pagedPort(over.io, VIEW).ask(QUESTION, addedSpec(short(PREVIEW_LINE_ROWS - 1)))
+    expect(over.specs.length).toBe(2)
+  })
+
+  test('with unknown columns a diff of long lines that fits the preview is asked once', async () => {
+    const unknown: PageView = { ...VIEW, columns: () => null }
+    for (const count of [10, 15]) {
+      const spec = addedSpec(Array.from({ length: count }, (_, at) => `${'lorem ipsum '.repeat(6)}END${at + 1}X`))
+      const { io, specs } = recordingIo('Keep mine')
+      expect(await TUI_DEFAULT.pagedPort(io, unknown).ask(QUESTION, spec)).toBe('Keep mine')
+      expect([count, specs]).toEqual([count, [spec]])
+    }
+  })
+
+  test('a question of another kind with a long context is asked once, as given', async () => {
+    const lines = Array.from({ length: 80 }, (_, at) => `skill ${at + 1}`)
+    const plain = (text: string): ContextRow => ({ role: 'plain', text, indent: 0 })
+    const rows = [{ title: null, rows: lines.map(plain) }]
+    const context: AskContext = { title: 'Hand out', lines, kind: 'skills', summary: '80 skills', rows }
+    const spec: AskSpec = { options: ['All', 'None'], context }
+    const { io, specs } = recordingIo('All')
+    expect(await TUI_DEFAULT.pagedPort(io, VIEW).ask('Hand these out?', spec)).toBe('All')
+    expect(specs).toEqual([spec])
   })
 })

@@ -1,15 +1,17 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HostIo, ManifestEntry, MemoryItem, RoleSpec } from '../../types'
+import type { HostIo, ManifestEntry, MemoryItem, RoleSpec, TeamStructure } from '../../types'
 import { instructionsRecordPath, instructionsRecordText } from '../apply/private'
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue, stableJson } from '../core/json'
-import { cadreJsonText, roleJsonText } from '../generate/docs'
+import { cadreJsonText, roleJsonText, rubricText } from '../generate/docs'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
+import { parseInbox } from '../messages/record'
+import { inboxDirOf, inboxHomeOf, parentOf } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeTooOldReply } from '../start/claude-version'
-import { START_NO_GIT_DIR } from '../start/gather-user'
+import { privateFolderRefusal, START_NO_GIT_DIR } from '../start/gather-user'
 import { launcherChangedReply } from '../start/launcher-check'
 import { MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END } from '../start/memory-links'
 import { runStart } from '../start/run'
@@ -31,6 +33,7 @@ import {
   RECORD,
   rule,
   templateRole,
+  withFramework,
 } from '../testkit'
 import type { EpicRun, HostRunRule, HostWrite, MemWorld } from '../testkit'
 import { COPIED_LINE, launcherCommand, TERMINAL_MAC_ONLY, terminalPlan } from '../ui/terminal'
@@ -43,15 +46,22 @@ import {
   EXCLUDES_CONFIG_ARGV,
   GIT_DIR_ARGV,
   GLOBAL_EXCLUDES_ARGV,
+  INCLUDED_ARGV,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
   WORKTREE_CONFIG_ARGV,
   WORKTREE_LIST_ARGV,
 } from './git'
 import { epicBadKeyReply } from './key'
-import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine } from './launcher'
+import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine, epicWorktreeLauncherUnreadLine } from './launcher'
 import { EPIC_NO_WORKTREE_LIST } from './lookup'
-import { epicExcludesFailedReply, epicListFailedReply, epicStepFailedReply, globalExcludesWarning } from './mirror-run'
+import {
+  epicCopyFailedReply,
+  epicExcludesFailedReply,
+  epicListFailedReply,
+  epicStepFailedReply,
+  globalExcludesWarning,
+} from './mirror-run'
 import {
   EPIC_CANCELLED,
   EPIC_NO_PM,
@@ -85,10 +95,15 @@ function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
 
 /**
  * A git repo at /repo after a plain init of `roles` (PM and BE by default): cadre.json lists them on the built-in
- * default, launched at the git root, recording `readUserMcp` (no consent to read ~/.claude.json by default), each
- * role.json is written from its role, and each launcher lies in `.cadre/bin/` with its sha256 in the manifest.
+ * default, launched at the git root, recording `readUserMcp` (no consent to read ~/.claude.json by default) and
+ * `structure` when given (none by default), each role.json is written from its role, and each launcher lies in
+ * `.cadre/bin/` with its sha256 in the manifest.
  */
-async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
+async function teamWorld(
+  roles: readonly RoleSpec[] = TEAM,
+  readUserMcp = false,
+  structure?: TeamStructure,
+): Promise<MemWorld> {
   const ids = roles.map(role => role.id)
   const state = cadreJsonText({
     schema: 1,
@@ -98,6 +113,7 @@ async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false)
     roles: ids,
     launchStart: { kind: 'git-root' },
     readUserMcp,
+    ...(structure === undefined ? {} : { structure }),
   })
   const entries = await Promise.all(ids.map(launcherEntry))
   const files: Record<string, string> = {
@@ -122,6 +138,41 @@ function worktreeRuns(run: EpicRun): (readonly string[])[] {
   return run.calls.map(call => call.argv).filter(argv => argv[3] === 'worktree')
 }
 
+/** The inbox home of `worktree` in the user config folder of the fixture user. */
+async function inboxHomeAt(worktree: string): Promise<string> {
+  return inboxHomeOf('/home/u/.claude', worktree, await sha256Hex(worktree))
+}
+
+/**
+ * `world` with the inbox home `home` and each folder above it up to the user folder there, each listed in the one
+ * above, and the home listing the role folders `ids`, as an earlier epic of the same key left them.
+ */
+function withInboxHome(world: MemWorld, home: string, ids: readonly string[]): MemWorld {
+  const tree = parentOf(home)
+  const cadre = parentOf(tree)
+
+  return {
+    ...world,
+    dirs: {
+      ...world.dirs,
+      [parentOf(cadre)]: [entry('cadre', 'dir')],
+      [cadre]: [entry('inboxes', 'dir')],
+      [tree]: [entry(home.slice(tree.length + 1), 'dir')],
+      [home]: ids.map(id => entry(id, 'dir')),
+    },
+  }
+}
+
+/** The removals an epic run made in the inbox home `home`, each as its argv joined by spaces, in order. */
+function inboxRemovals(run: EpicRun, home: string): string[] {
+  return run.events.filter(event => event.startsWith(`/bin/rm -f -- ${home}/`))
+}
+
+/** The removals of the inbox and the session record of each role of `ids` in `home`, as joined argv, in order. */
+function clearedOf(home: string, ids: readonly string[]): string[] {
+  return ids.flatMap(id => [`/bin/rm -f -- ${home}/${id}/inbox.jsonl`, `/bin/rm -f -- ${home}/${id}/session.json`])
+}
+
 describe('runEpic', () => {
   test('PROJ-1 Add retry adds the worktree on a new epic branch from HEAD and names both (D-145, D-146)', async () => {
     const run = await epic(await teamWorld(), [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)])
@@ -129,6 +180,60 @@ describe('runEpic', () => {
     expect(addRuns(run)).toEqual([ADD_ARGV])
     expect(run.reply).toContain(WORKTREE)
     expect(run.reply).toContain(BRANCH)
+  })
+
+  test('a new worktree has the inbox and session files of its role folders removed right after the add', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const run = await epic(world, [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)])
+    const addAt = run.events.indexOf(ADD_ARGV.join(' '))
+
+    expect(addAt).toBeGreaterThanOrEqual(0)
+    expect(run.events.slice(addAt + 1, addAt + 5)).toEqual(clearedOf(home, ['pm', 'be']))
+    expect(inboxRemovals(run, home)).toEqual(clearedOf(home, ['pm', 'be']))
+  })
+
+  test('a failed add removes nothing in the inbox home', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const run = await epic(withInboxHome(await teamWorld(), home, ['pm', 'be']), [rule(ADD_ARGV, 128)])
+
+    expect(inboxRemovals(run, home)).toEqual([])
+  })
+
+  test('a removal that fails leaves the reply as it is, and the other removals still run', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const rules = [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)]
+    const cleared = await epic(world, rules)
+    const failed = await epic(world, [rule(['/bin/rm', '-f', '--', `${home}/pm/inbox.jsonl`], 1), ...rules])
+
+    expect(failed.reply).toBe(cleared.reply)
+    expect(inboxRemovals(failed, home)).toEqual(clearedOf(home, ['pm', 'be']))
+  })
+
+  test('a link at the inbox home or at the inbox tree removes nothing, and each render refuses it', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const tree = parentOf(home)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const rules = [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`), COMMON_DIR]
+    const atHome = await epic({ ...world, realPaths: { [home]: '/elsewhere/home' } }, rules)
+    const atTree = await epic({ ...world, realPaths: { [tree]: '/elsewhere/inboxes' } }, rules)
+
+    expect([addRuns(atHome), addRuns(atTree)]).toEqual([[ADD_ARGV], [ADD_ARGV]])
+    expect([inboxRemovals(atHome, home), inboxRemovals(atTree, home)]).toEqual([[], []])
+    expect(atHome.reply).toContain(privateFolderRefusal(`~${home.slice('/home/u'.length)}`, 'link'))
+    expect(atTree.reply).toContain(privateFolderRefusal('~/.claude/cadre/inboxes', 'link'))
+  })
+
+  test('with no HOME the worktree is added and nothing is removed in an inbox home', async () => {
+    const home = await inboxHomeAt(WORKTREE)
+    const world = withInboxHome(await teamWorld(), home, ['pm', 'be'])
+    const locations = { ...DEFAULT_LOCATIONS, home: null, givenHome: null }
+    const rules = [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)]
+    const run = await epic({ ...world, locations }, rules)
+
+    expect(addRuns(run)).toEqual([ADD_ARGV])
+    expect(run.events.filter(event => event.startsWith('/bin/rm '))).toEqual([])
   })
 
   test('a key that is not 1-32 letters, digits, - or _ refuses before anything runs (D-162)', async () => {
@@ -223,6 +328,19 @@ describe('finding an epic by its key (D-163)', () => {
     expect(run.reply).toContain(kept)
   })
 
+  test('a kept branch added back has the inbox and session files of its role folders removed, too', async () => {
+    const kept = '/repo/.claude/worktrees/proj-1-old'
+    const readd = ['git', '-C', '/repo', 'worktree', 'add', kept, 'epic/proj-1-old']
+    const branches = rule(EPIC_BRANCHES_ARGV('/repo'), 0, 'epic/proj-1-old\n')
+    const gitDir = rule(GIT_DIR_ARGV(kept), 0, '/repo/.git/worktrees/proj-1-old\n')
+    const home = await inboxHomeAt(kept)
+    const run = await epic(withInboxHome(await teamWorld(), home, ['pm', 'be']), [branches, rule(readd, 0), gitDir])
+    const addAt = run.events.indexOf(readd.join(' '))
+
+    expect(addAt).toBeGreaterThanOrEqual(0)
+    expect(run.events.slice(addAt + 1, addAt + 5)).toEqual(clearedOf(home, ['pm', 'be']))
+  })
+
   test('a registered worktree of the key is reused: nothing is added, and its record names the title', async () => {
     const path = '/repo/.claude/worktrees/proj-1-x'
     const gitDir = '/repo/.git/worktrees/proj-1-x'
@@ -242,6 +360,21 @@ describe('finding an epic by its key (D-163)', () => {
     expect(addRuns(run)).toEqual([])
     // The role lines of the render stage follow it (D-157).
     expect(run.reply.slice(0, created.length)).toBe(created)
+  })
+
+  test('a reused worktree keeps its inboxes: nothing is removed in its inbox home', async () => {
+    const path = '/repo/.claude/worktrees/proj-1-x'
+    const porcelain =
+      'worktree /repo\nHEAD a\nbranch refs/heads/main\n\n' +
+      `worktree ${path}\nHEAD b\nbranch refs/heads/epic/proj-1-x\n`
+    const home = await inboxHomeAt(path)
+    const run = await epic(withInboxHome(await teamWorld(), home, ['pm', 'be']), [
+      rule(WORKTREE_LIST_ARGV('/repo'), 0, porcelain),
+      rule(GIT_DIR_ARGV(path), 0, '/repo/.git/worktrees/proj-1-x\n'),
+    ])
+
+    expect(addRuns(run)).toEqual([])
+    expect(inboxRemovals(run, home)).toEqual([])
   })
 
   test('a folder at the worktree path that git does not list refuses before anything is added (D-147)', async () => {
@@ -311,6 +444,7 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
 
     expect(run.writes.find(write => write.path === BARE_EXCLUDES)?.text).toBe(excludesText('', ['node_modules']))
     expect(run.events.filter(isMirrorEvent)).toEqual([
+      `write ${MAIN_RUBRIC}`,
       GLOBAL_EXCLUDES_ARGV('/repo').join(' '),
       `write ${BARE_EXCLUDES}`,
       WORKTREE_CONFIG_ARGV('/repo').join(' '),
@@ -333,7 +467,12 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
     const run = await epic({ ...world, dirs }, rules, 'PROJ-1', '')
     const excludes = lastWrite(run, BARE_EXCLUDES)
 
-    expect(stepRuns(run)).toEqual(['copy .env', 'copy .gitignore'])
+    expect(stepRuns(run)).toEqual([
+      'copy .env.cadre-copy',
+      'move .env',
+      'copy .gitignore.cadre-copy',
+      'move .gitignore',
+    ])
     expect(excludes).toBe(excludesText('', ['.gitignore']))
     expect(excludes?.split('\n')).not.toContain('/.env')
   })
@@ -381,6 +520,7 @@ const STEP_KINDS: ReadonlyMap<string, string> = new Map([
   ['/bin/mkdir', 'mkdir'],
   ['/bin/ln', 'link'],
   ['/bin/cp', 'copy'],
+  ['/bin/mv', 'move'],
 ])
 
 /** The mirror steps an epic run ran, each as stepLine writes it: its kind and its path below BARE_WORKTREE. */
@@ -427,6 +567,109 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
       'mkdir .cadre/pm',
       'link .cadre/pm/role.json',
     ])
+  })
+})
+
+/** git ignoring thoughts/ and node_modules/ in the main checkout, and naming thoughts/ as .worktreeinclude lists it. */
+const INCLUDE_RULES: readonly HostRunRule[] = [
+  rule(LS_OTHERS_ARGV('/repo'), 0, ''),
+  rule(LS_IGNORED_ARGV('/repo'), 0, 'thoughts/\0node_modules/\0'),
+  rule(INCLUDED_ARGV('/repo'), 0, 'thoughts/\0'),
+  rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`),
+]
+
+/** A team world whose main checkout lists node_modules and thoughts as real folders, with `files` added. */
+async function includeWorld(files: Readonly<Record<string, string>> = {}): Promise<MemWorld> {
+  const world = await teamWorld()
+  const dirs = { ...world.dirs, '/repo': [entry('node_modules', 'dir'), entry('thoughts', 'dir')] }
+
+  return { ...world, files: { ...world.files, ...files }, dirs }
+}
+
+/** The temporary sibling the epic mirror copies thoughts to before it moves the copy into place. */
+const THOUGHTS_TEMP = `${BARE_WORKTREE}/thoughts.cadre-copy`
+
+/** The copy of main's thoughts to THOUGHTS_TEMP. */
+const THOUGHTS_CP: readonly string[] = ['/bin/cp', '-pR', '--', '/repo/thoughts', THOUGHTS_TEMP]
+
+/** The move of THOUGHTS_TEMP into place, never over what is there. */
+const THOUGHTS_MV: readonly string[] = ['/bin/mv', '-n', '--', THOUGHTS_TEMP, `${BARE_WORKTREE}/thoughts`]
+
+describe('copying what .worktreeinclude names into the epic worktree', () => {
+  test('a named folder is copied to a temporary sibling, then moved into place and recorded as a copy', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    const run = await epic(world, INCLUDE_RULES, 'PROJ-1', '')
+    const ln = ['/bin/ln', '-s', '--', '/repo/node_modules', `${BARE_WORKTREE}/node_modules`]
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+    const isCopyStep = (argv: readonly string[]) => argv[0] === '/bin/cp' || argv[0] === '/bin/mv'
+
+    expect(stepRuns(run)).toEqual(['link node_modules', 'copy thoughts.cadre-copy', 'move thoughts'])
+    expect(run.events).toContain(THOUGHTS_CP.join(' '))
+    expect(run.events).toContain(THOUGHTS_MV.join(' '))
+    expect(run.events).toContain(ln.join(' '))
+    expect(run.calls.filter(call => isCopyStep(call.argv)).map(call => call.options.timeoutMs)).toEqual([
+      120_000,
+      120_000,
+    ])
+    expect([record?.copies, record?.links]).toEqual([['thoughts'], ['node_modules']])
+    expect(record).toMatchObject({ copiedAt: { thoughts: 1_000_000 } })
+  })
+
+  test('a failed or rejected copy stops naming the path and its sibling, no move run, no copy recorded', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    for (const failed of [rule(THOUGHTS_CP, 1), rule(THOUGHTS_CP, null)]) {
+      const run = await epic(world, [failed, ...INCLUDE_RULES], 'PROJ-1', '')
+      const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+
+      expect(run.reply).toBe(epicCopyFailedReply('thoughts', 'thoughts.cadre-copy'))
+      expect(run.calls.filter(call => call.argv[0] === '/bin/mv')).toEqual([])
+      expect([record?.copies, record?.links]).toEqual([[], ['node_modules']])
+    }
+  })
+
+  test('a move into place that fails stops the same way, and the copy is not recorded', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    const run = await epic(world, [rule(THOUGHTS_MV, 1), ...INCLUDE_RULES], 'PROJ-1', '')
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+
+    expect(run.reply).toBe(epicCopyFailedReply('thoughts', 'thoughts.cadre-copy'))
+    expect(stepRuns(run)).toEqual(['link node_modules', 'copy thoughts.cadre-copy', 'move thoughts'])
+    expect([record?.copies, record?.links]).toEqual([[], ['node_modules']])
+  })
+
+  test('a path named below an ignored folder records the walked folder; with no walk none is recorded', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/shared/\n' })
+    const dirs = { ...world.dirs, '/repo/thoughts': [entry('notes.md'), entry('shared', 'dir')] }
+    const rules = [rule(INCLUDED_ARGV('/repo'), 0, 'thoughts/shared/\0'), ...INCLUDE_RULES]
+    const run = await epic({ ...world, dirs }, rules, 'PROJ-1', '')
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+    const whole = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    const plain = await epic(whole, INCLUDE_RULES, 'PROJ-1', '')
+
+    expect([record?.walked, record?.copies]).toEqual([['thoughts'], ['thoughts/shared']])
+    expect(record?.links).toContain('thoughts/notes.md')
+    expect(lastWrite(plain, BARE_RECORD)).not.toContain('walked')
+    expect(parseEpicRecord(lastWrite(plain, BARE_RECORD) ?? '')?.copies).toEqual(['thoughts'])
+  })
+
+  test('with no .worktreeinclude there is no INCLUDED_ARGV run, and thoughts stays a link', async () => {
+    const run = await epic(await includeWorld(), INCLUDE_RULES, 'PROJ-1', '')
+    const record = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')
+
+    expect(run.events).not.toContain(INCLUDED_ARGV('/repo').join(' '))
+    expect(stepRuns(run)).toEqual(['link node_modules', 'link thoughts'])
+    expect([record?.copies, record?.links]).toEqual([[], ['node_modules', 'thoughts']])
+  })
+
+  test('a failed or rejected INCLUDED_ARGV run stops before the excludes file and any step', async () => {
+    const world = await includeWorld({ '/repo/.worktreeinclude': 'thoughts/\n' })
+    for (const failure of [rule(INCLUDED_ARGV('/repo'), 128), rule(INCLUDED_ARGV('/repo'), null)]) {
+      const run = await epic(world, [failure, ...INCLUDE_RULES], 'PROJ-1', '')
+
+      expect(run.reply).toBe(epicListFailedReply('PROJ-1'))
+      expect(run.writes.filter(write => write.path === BARE_EXCLUDES)).toEqual([])
+      expect(run.calls.filter(call => (call.argv[0] ?? '').startsWith('/bin/'))).toEqual([])
+    }
   })
 })
 
@@ -551,6 +794,29 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
     })
   })
 
+  test('a reuse records the copy time of what it copies beside the recorded ones; no copy, no copiedAt', async () => {
+    const plain = { ...RECORD, slug: 'proj-1-x', branch: 'epic/proj-1-x' }
+    const recorded = { ...plain, copiedAt: { old: 500 } }
+    const kept = await keptWorld(epicRecordText(recorded))
+    const world = {
+      ...kept,
+      files: { ...kept.files, '/repo/.worktreeinclude': 'docs/local/\n' },
+      dirs: { ...kept.dirs, '/repo': [entry('docs', 'dir')], '/repo/docs': [entry('local', 'dir')] },
+    }
+    const named = [rule(LS_IGNORED_ARGV('/repo'), 0, 'docs/\0'), rule(INCLUDED_ARGV('/repo'), 0, 'docs/local/\0')]
+    const run = await epic(world, [...named, ...KEPT_RULES])
+    const uncopied = await epic(await keptWorld(epicRecordText(plain)), KEPT_RULES)
+    const recordPath = `${KEPT_GIT_DIR}/${EPIC_RECORD_FILE}`
+
+    expect(parseEpicRecord(lastWrite(run, recordPath) ?? '')).toEqual({
+      ...recorded,
+      copies: ['docs/local'],
+      walked: ['docs'],
+      copiedAt: { 'docs/local': 1_000_000, old: 500 },
+    })
+    expect(lastWrite(uncopied, recordPath)).not.toContain('copiedAt')
+  })
+
   test('a reuse with an unreadable record still mirrors, and records only what this run made', async () => {
     const run = await epic(await keptWorld('not a record'), KEPT_RULES)
 
@@ -576,11 +842,16 @@ const COMMON_DIR = rule(GIT_COMMON_DIR_ARGV, 0, '/repo/.git\n')
 const RENDER_RULES: readonly HostRunRule[] = [rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`), COMMON_DIR]
 
 /**
- * The team world of `roles` (PM and BE by default) and `readUserMcp` with each role folder a real folder in the main
- * checkout and in BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its role folder.
+ * The team world of `roles` (PM and BE by default), `readUserMcp` and `structure` with each role folder a real folder
+ * in the main checkout and in BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its
+ * role folder.
  */
-async function renderWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
-  const world = await teamWorld(roles, readUserMcp)
+async function renderWorld(
+  roles: readonly RoleSpec[] = TEAM,
+  readUserMcp = false,
+  structure?: TeamStructure,
+): Promise<MemWorld> {
+  const world = await teamWorld(roles, readUserMcp, structure)
   const folders = roles.flatMap(role => [`/repo/.cadre/${role.id}`, `${BARE_WORKTREE}/.cadre/${role.id}`])
 
   return { ...world, dirs: { ...world.dirs, ...Object.fromEntries(folders.map(folder => [folder, []])) } }
@@ -607,7 +878,7 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
 
     expect(paths).toContain(`${BARE_WORKTREE}/.cadre/pm/.runtime/settings.json`)
     expect(paths).toContain(`${BARE_WORKTREE}/.cadre/be/.runtime/stamp`)
-    expect(paths.filter(path => path.startsWith('/repo/.cadre/'))).toEqual([])
+    expect(paths.filter(path => path.startsWith('/repo/.cadre/') && path !== MAIN_RUBRIC)).toEqual([])
     expect(run.reply.split('\n').slice(-4)).toEqual([
       `  pm: ${epicCommand('pm')}`,
       `  be: ${epicCommand('be')}`,
@@ -657,10 +928,26 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     expect(kickoff.endsWith(' --ask-user\n')).toBe(true)
     expect(paths.indexOf(`${runtime}/stamp`) - paths.indexOf(`${runtime}/kickoff.txt`)).toBe(1)
   })
+
+  test('each role rendered into the worktree runs as its id, with the worktree root as CADRE_ROOT', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const envs = TEAM.map(role => settingsAt(run.writes, BARE_WORKTREE, role.id).env)
+
+    expect(envs.map(env => (isObject(env) ? [env.CADRE_ROLE, env.CADRE_ROOT] : null))).toEqual(
+      TEAM.map(role => [role.id, BARE_WORKTREE]),
+    )
+  })
+
+  test('each role rendered into the worktree carries the main checkout as CADRE_MAIN_ROOT', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const envs = TEAM.map(role => settingsAt(run.writes, BARE_WORKTREE, role.id).env)
+
+    expect(envs.map(env => (isObject(env) ? env.CADRE_MAIN_ROOT : null))).toEqual(TEAM.map(() => '/repo'))
+  })
 })
 
 describe('the epic kickoff of each role (D-158 to D-160)', () => {
-  test('a worker starts by waiting for its parent and never asks the user; PM always does (D-159, D-160)', async () => {
+  test('a worker starts by waiting for its parent and never asks the user; PM and TL of a core team do', async () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
     const team = [
@@ -668,14 +955,24 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
       templateRole('tl'),
       { ...be, autopilot: { ...be.autopilot, askUser: true } },
     ]
-    const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
+    const run = await epic(await renderWorld(team, false, 'core'), RENDER_RULES, 'PROJ-1', '')
     const kickoff = (id: string) => lastWrite(run, `${BARE_WORKTREE}/.cadre/${id}/.runtime/kickoff.txt`) ?? ''
 
-    expect(kickoff('be')).toContain('session-answer')
+    expect(kickoff('be')).toContain('idle-inbox')
     expect(kickoff('be')).toContain('cadre-tl')
     expect(kickoff('be')).not.toContain(' --ask-user')
     expect(kickoff('pm')).toContain('then feed cadre-tl ticket by ticket.')
     expect(kickoff('pm').endsWith(' --ask-user\n')).toBe(true)
+    expect(kickoff('tl').endsWith(' --ask-user\n')).toBe(true)
+  })
+
+  test('an unrecorded team gives only PM --ask-user', async () => {
+    const team = [templateRole('pm'), templateRole('tl'), templateRole('be'), templateRole('security')]
+    const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
+    const kickoff = (id: string) => lastWrite(run, `${BARE_WORKTREE}/.cadre/${id}/.runtime/kickoff.txt`) ?? ''
+
+    expect(team.filter(role => !kickoff(role.id).startsWith('/autopilot '))).toEqual([])
+    expect(team.map(role => kickoff(role.id).endsWith(' --ask-user\n'))).toEqual([true, false, false, false])
   })
 
   test('a role whose worktree launcher predates the epic kickoff is named, not copied; others go on', async () => {
@@ -700,6 +997,113 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
 
 /** PM, TL and BE, in the order cadre.json lists them in the role picker specs. */
 const TRIO: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templateRole('be')]
+
+/** The sizing rubric of the main checkout and of BARE_WORKTREE. */
+const MAIN_RUBRIC = '/repo/.cadre/sizing.md'
+const WORKTREE_RUBRIC = `${BARE_WORKTREE}/.cadre/sizing.md`
+
+/** The inbox home of BARE_WORKTREE in the user config folder of the fixture user. */
+const WORKTREE_INBOX_HOME = inboxHomeOf('/home/u/.claude', BARE_WORKTREE, await sha256Hex(BARE_WORKTREE))
+
+/** The stdin of the inbox append of each role an epic run rendered, by role id. */
+function inboxStdins(run: EpicRun, ids: readonly string[]): (string | undefined)[] {
+  return ids.map(id => {
+    const path = `${inboxDirOf(WORKTREE_INBOX_HOME, id)}/inbox.jsonl`
+
+    return run.calls.find(call => call.argv[0] === '/usr/bin/tee' && call.argv[2] === path)?.options.stdin
+  })
+}
+
+describe("PM's epic brief and the sizing rubric of an epic", () => {
+  test("the PM's new inbox starts with the epic brief from cadre; every other inbox starts empty", async () => {
+    const run = await epic(await renderWorld(TRIO), RENDER_RULES, 'PROJ-1', '')
+    const [pm = '', tl, be] = inboxStdins(run, ['pm', 'tl', 'be'])
+    const seed = parseInbox(pm)
+
+    expect([pm.startsWith('\n'), tl, be]).toEqual([true, '', ''])
+    expect(seed).toHaveLength(1)
+    expect(seed[0]).toMatchObject({ type: 'entry', from: 'cadre', to: 'pm', kind: 'note', at: 1_000_000 })
+    expect(seed[0]?.type === 'entry' ? seed[0].body : '').toContain('PROJ-1')
+  })
+
+  test("an old PM inbox in a new worktree's inbox home is removed first, so PM's render seeds a new one", async () => {
+    const world = withInboxHome(await renderWorld(TRIO), WORKTREE_INBOX_HOME, ['pm'])
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const inbox = `${inboxDirOf(WORKTREE_INBOX_HOME, 'pm')}/inbox.jsonl`
+    const removedAt = run.events.indexOf(`/bin/rm -f -- ${inbox}`)
+    const [pm = ''] = inboxStdins(run, ['pm'])
+    const seed = parseInbox(pm)
+
+    expect(removedAt).toBeGreaterThanOrEqual(0)
+    expect(run.events.indexOf(`/usr/bin/tee -a ${inbox}`)).toBeGreaterThan(removedAt)
+    expect(seed).toHaveLength(1)
+    expect(seed[0]).toMatchObject({ type: 'entry', from: 'cadre', to: 'pm', kind: 'note' })
+  })
+
+  test("main's rubric is written where absent, before the excludes; the worktree's is never written", async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const paths = run.writes.map(write => write.path)
+
+    expect(lastWrite(run, MAIN_RUBRIC)).toBe(rubricText())
+    expect([paths.indexOf(MAIN_RUBRIC) < paths.indexOf(BARE_EXCLUDES), paths.includes(WORKTREE_RUBRIC)]).toEqual([
+      true,
+      false,
+    ])
+  })
+
+  test('a rubric main tracks and the worktree lacks is copied, hidden and recorded, never written', async () => {
+    const world = await renderWorld()
+    const files = { ...world.files, [MAIN_RUBRIC]: 'my anchors\n' }
+    const dirs = { ...world.dirs, '/repo/.cadre': [entry('sizing.md')] }
+    const run = await epic({ ...world, files, dirs }, RENDER_RULES, 'PROJ-1', '')
+    const excludes = (lastWrite(run, BARE_EXCLUDES) ?? '').split('\n')
+    const copies = parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')?.copies
+    const paths = run.writes.map(write => write.path)
+
+    expect(run.events).toContain(['/bin/cp', '-pR', '--', MAIN_RUBRIC, `${WORKTREE_RUBRIC}.cadre-copy`].join(' '))
+    expect(run.events).toContain(['/bin/mv', '-n', '--', `${WORKTREE_RUBRIC}.cadre-copy`, WORKTREE_RUBRIC].join(' '))
+    expect([excludes.includes('/.cadre/sizing.md'), copies, run.reply.includes('Linked 0, copied 1.')]).toEqual([
+      true,
+      ['.cadre/sizing.md'],
+      true,
+    ])
+    expect([paths.includes(MAIN_RUBRIC), paths.includes(WORKTREE_RUBRIC)]).toEqual([false, false])
+  })
+
+  test('a rubric main does not track is linked into the worktree and hidden, never copied or written', async () => {
+    const world = await renderWorld()
+    const files = { ...world.files, [MAIN_RUBRIC]: 'my anchors\n' }
+    const dirs = { ...world.dirs, '/repo/.cadre': [entry('sizing.md')] }
+    const rules = [rule(LS_OTHERS_ARGV('/repo'), 0, '.cadre/sizing.md\0'), ...RENDER_RULES]
+    const run = await epic({ ...world, files, dirs }, rules, 'PROJ-1', '')
+    const excludes = (lastWrite(run, BARE_EXCLUDES) ?? '').split('\n')
+    const isCopied = run.events.some(event => event.startsWith('/bin/cp '))
+
+    expect(run.events).toContain(['/bin/ln', '-s', '--', MAIN_RUBRIC, WORKTREE_RUBRIC].join(' '))
+    expect([excludes.includes('/.cadre/sizing.md'), isCopied]).toEqual([true, false])
+    expect(run.writes.map(write => write.path)).not.toContain(WORKTREE_RUBRIC)
+  })
+
+  test("a dangling link at main's rubric, or a linked .cadre in main, is never written through", async () => {
+    const world = await renderWorld()
+    const dangling = { ...world, dirs: { ...world.dirs, '/repo/.cadre': [link('sizing.md')] } }
+    const realPaths = { '/repo/.cadre': '/elsewhere/.cadre' }
+    const linked = { ...world, dirs: { ...world.dirs, '/repo/.cadre': [] }, realPaths }
+    for (const over of [dangling, linked]) {
+      const run = await epic(over, RENDER_RULES, 'PROJ-1', '')
+
+      expect(run.reply).toContain('Linked 0, copied 0.')
+      expect(run.writes.map(write => write.path)).not.toContain(MAIN_RUBRIC)
+    }
+  })
+
+  test('with no clock there is no seed, and the render goes on', async () => {
+    const run = await epic({ ...(await renderWorld()), now: null }, RENDER_RULES, 'PROJ-1', '')
+
+    expect(inboxStdins(run, ['pm', 'be'])).toEqual(['', ''])
+    expect(run.writes.map(write => write.path)).toContain(`${BARE_WORKTREE}/.cadre/pm/.runtime/stamp`)
+  })
+})
 
 /** The ids of the roles an epic run rendered into BARE_WORKTREE: the role of each `.runtime/stamp` write, in order. */
 function stampedRoles(run: EpicRun): string[] {
@@ -818,7 +1222,7 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
   })
 
   test(
-    'a worktree launcher changed from the one checked in main is not opened or copied; an equal one opens (03.1-W4 S1)',
+    'a worktree launcher changed from the one checked in main is not opened or copied; an equal one opens',
     async () => {
       const world = await renderWorld()
       const files = {
@@ -839,7 +1243,25 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
     },
   )
 
-  test('a worktree launcher too large to read in full is not opened (03.1-W4 S1)', async () => {
+  test('the changed worktree launcher refusal names how to bring the checked launcher to the epic branch', () => {
+    const line = epicWorktreeLauncherChangedLine('pm')
+
+    expect(line).toBe(
+      "not opened: the worktree's .cadre/bin/pm differs from the launcher cadre checked in the main checkout. " +
+        'Commit .cadre/ in the main checkout and bring that commit to the epic branch, or commit the regenerated ' +
+        '.cadre/bin/pm and .cadre/manifest.json to the epic branch, then run /cadre epic with the same key again.',
+    )
+    expect(line).not.toContain('epic done')
+  })
+
+  test('the unread worktree launcher refusal says cadre could not check it against the main checkout', () => {
+    expect(epicWorktreeLauncherUnreadLine('pm')).toBe(
+      "not opened: cadre could not read the worktree's .cadre/bin/pm in full, so it did not check it against the " +
+        'launcher in the main checkout.',
+    )
+  })
+
+  test('a worktree launcher too large to read in full is not opened and says it could not be read', async () => {
     const world = await renderWorld()
     // 300 KB, over MAX_READ_BYTES (256 KB): the read of it gives too-large.
     const files = { ...world.files, [`${BARE_WORKTREE}/.cadre/bin/pm`]: `#!/bin/sh\n${'#'.repeat(300 * 1024)}\n` }
@@ -849,6 +1271,19 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
 
     expect(opens).toEqual([epicCommand('be')])
     expect(copiedTexts(run)).toEqual([])
+    expect(run.reply.split('\n')).toContain(`  pm: ${epicWorktreeLauncherUnreadLine('pm')}`)
+  })
+
+  test('a worktree launcher the port cannot read is not opened and says it could not be read', async () => {
+    const world = await renderWorld()
+    const unknownPaths = [`${BARE_WORKTREE}/.cadre/bin/pm`]
+    const env = { TERM_PROGRAM: 'iTerm.app' }
+    const run = await epic({ ...world, unknownPaths }, [...RENDER_RULES, DARWIN], 'PROJ-1', '', { env })
+    const opens = run.calls.filter(call => call.argv[0] === '/usr/bin/osascript').map(call => call.argv.at(-1))
+
+    expect(opens).toEqual([epicCommand('be')])
+    expect(copiedTexts(run)).toEqual([])
+    expect(run.reply.split('\n')).toContain(`  pm: ${epicWorktreeLauncherUnreadLine('pm')}`)
   })
 })
 
@@ -1005,7 +1440,6 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     expect(start).not.toContain('is gone')
     expect(run.reply).not.toContain('is gone')
     expect(deny).toContain('Edit(//home/u/.claude/projects/-repo/memory/**)')
-    expect(deny).toContain('Write(//home/u/.claude/projects/-repo/memory/**)')
   })
 
   test(
@@ -1079,6 +1513,8 @@ describe('safety net: epic failure paths (A8)', () => {
       GIT_COMMON_DIR_ARGV.join(' '),
       '/usr/bin/uname -s',
     ])
+    const rubricAt = events.indexOf(`write ${MAIN_RUBRIC}`)
+    expect([rubricAt >= 0, rubricAt < events.indexOf(`write ${GIT_DIR}/${EXCLUDES_FILE}`)]).toEqual([true, true])
   })
 
   test('create: a worktree or branch list git cannot give stops before any add, the list run last', async () => {
@@ -1092,5 +1528,42 @@ describe('safety net: epic failure paths (A8)', () => {
     const before = [CHECKOUT_ARGV('/repo').join(' '), 'claude --version', list.join(' ')]
     expect([noList.reply, noList.events]).toEqual([reply, before])
     expect([noBranches.reply, noBranches.events]).toEqual([reply, [...before, branches.join(' ')]])
+  })
+})
+
+describe('the epic GSD workstream', () => {
+  /** PM, and BE on GSD. */
+  const GSD_TEAM: readonly RoleSpec[] = [templateRole('pm'), withFramework(templateRole('be'), 'gsd')]
+
+  /** The GSD_WORKSTREAM a render wrote for be under `root`; undefined when it wrote none. */
+  function workstreamOf(writes: readonly HostWrite[], root: string): unknown {
+    const env = settingsAt(writes, root, 'be').env
+
+    return isObject(env) ? env.GSD_WORKSTREAM : undefined
+  }
+
+  test('an epic renders BE on GSD with the epic workstream, while the main checkout keeps cadre-be', async () => {
+    const world = await renderWorld(GSD_TEAM)
+    const host = epicHost([COMMON_DIR])
+    await runStart(memIo(world, {}).io, host.io, { id: 'be', terminal: 'none' })
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const inEpic = String(workstreamOf(run.writes, BARE_WORKTREE))
+
+    expect([workstreamOf(host.writes, '/repo'), inEpic]).toEqual(['cadre-be', 'cadre-proj-1-be'])
+    expect([inEpic.startsWith('cadre-'), inEpic.endsWith('-be'), inEpic !== 'cadre-be']).toEqual([true, true, true])
+  })
+
+  test('two epics with different slugs give BE two different workstreams', async () => {
+    const second = '/repo/.claude/worktrees/proj-2'
+    const base = await renderWorld(GSD_TEAM)
+    const world = { ...base, dirs: { ...base.dirs, [`${second}/.cadre/pm`]: [], [`${second}/.cadre/be`]: [] } }
+    const rules = [rule(GIT_DIR_ARGV(second), 0, '/repo/.git/worktrees/proj-2\n'), COMMON_DIR]
+    const one = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const two = await epic(world, rules, 'PROJ-2', '')
+
+    expect([workstreamOf(one.writes, BARE_WORKTREE), workstreamOf(two.writes, second)]).toEqual([
+      'cadre-proj-1-be',
+      'cadre-proj-2-be',
+    ])
   })
 })

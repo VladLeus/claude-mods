@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionHandout, Plan, RoleChange } from '../../../types'
+import type { FrameworkId, InstructionHandout, InstructionPart, Plan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { clean } from '../../core/text'
 import { PANE_LIST_WORDS } from '../../locales/t'
+import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../../roles/infra'
 import { proposeRoles } from '../../roles/propose'
 import { recommend } from '../../roles/recommend'
 import type { Gathered } from '../../scan/gather'
@@ -16,6 +17,7 @@ import {
   EMPTY_FACTS,
   emptySetupScan,
   gitWorld,
+  HASH,
   memIo,
   repoScan,
   SECURITY_KEY,
@@ -76,10 +78,10 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
     )
     expect(PRIVATE_FILES_HEADING).toBe('Private files per role (written after Confirm):')
     expect([improverRunLine(1), improverRunLine(2)]).toEqual([
-      'After Confirm, claude-md-improver runs on up to 1 built file (claude -p, acceptEdits, up to 5 minutes each); ' +
-        'you accept or keep each change.',
-      'After Confirm, claude-md-improver runs on up to 2 built files (claude -p, acceptEdits, up to 5 minutes each); ' +
-        'you accept or keep each change.',
+      'After Confirm, claude-md-improver runs on up to 1 private CLAUDE.md, built from your global CLAUDE.md ' +
+        '(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.',
+      'After Confirm, claude-md-improver runs on up to 2 private CLAUDE.md files, built from your global CLAUDE.md ' +
+        '(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.',
     ])
   })
 })
@@ -211,7 +213,7 @@ async function plannedFor(state: InitState): Promise<PlanResult> {
 const GIT_POLICY_ASK_TEXT = withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)
 
 /** The summary of the review of REVIEW_DRAFT (D-310): the files its plan writes or keeps and its three roles. */
-const REVIEW_SUMMARY = '25 files, 3 roles'
+const REVIEW_SUMMARY = '26 files, 3 roles'
 
 /** The answer to the plan io effect: the plan made. */
 function planAnswer(planned: PlanResult): Answer {
@@ -378,7 +380,10 @@ describe('the review stage (D-230)', () => {
     const going = nextStage(asking, { kind: 'answer', text: 'hunks' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['hunks', 'review', 'hunks'])
     expect(going.effect.kind === 'io' ? going.effect.call.id : null).toBe('read-repo-file')
-    const read = nextStage(going, { kind: 'io', result: { id: 'read-repo-file', result: { state: 'absent' } } })
+    const read = nextStage(going, {
+      kind: 'io',
+      result: { id: 'read-repo-file', result: { state: 'text', text: '{}' } },
+    })
     const back = driven(read, ['Accept', 'Accept']).state
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.hunks?.map(hunk => [hunk.key, hunk.isAccepted])).toEqual([
@@ -437,9 +442,17 @@ describe('the review stage (D-230)', () => {
     expect([chosen.returnTo, chosen.returnAfter, chosen.rounds]).toEqual(['review', 'improver-install', 0])
     const folds = chosen.outputs.flatMap(output => (output.kind === 'fold' ? [output.title] : []))
     expect(folds).toEqual(['Recommendations'])
+    const rules: InstructionPart = {
+      id: 'P1',
+      file: '~/.claude/CLAUDE.md',
+      heading: 'Rules',
+      source: 'global',
+      text: '# Rules\n',
+      hash: HASH,
+    }
     const built: InstructionHandout = {
       kind: 'parts',
-      scan: { parts: [], files: [], memories: [], warnings: [] },
+      scan: { parts: [rules], files: [], memories: [], warnings: [] },
       topics: [{ id: 'T1', title: 'Rules', summary: 'The team rules.', partIds: ['P1'] }],
       recommended: new Map(),
       given: new Map([['T1', ['pm']]]),
@@ -537,7 +550,7 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
   })
 
   test('a team with nothing to recommend shows the one line the security stage shows for none', async () => {
-    const draft = draftWith([withFramework(templateRole('pm'), 'superpowers')])
+    const draft = draftWith([withFramework(templateRole('tl'), 'superpowers')])
     const { lines } = await reviewed(draft, PANE_DESKTOP)
     expect(recommendedLines(draft)).toEqual(['Recommendations: none'])
     const at = lines.indexOf('Recommendations: none')
@@ -720,7 +733,7 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
     expect(shown.length < PANE_PAGE_ROWS).toBe(true)
     expect(asking.openQuestion?.spec.options).toEqual(['Confirm', 'Change something…'])
     // One page has no place to name: a pane surface asks the review question with its summary alone (D-310).
-    const summary = '4 files, 0 roles'
+    const summary = '5 files, 0 roles'
     const pane = paneOf(asking, summary)
     const context = { title: 'Review', lines: shown, kind: 'review', summary, pane }
     expect(asking.openQuestion?.spec.context).toEqual(context)
@@ -736,3 +749,87 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
   })
 })
 
+
+describe('the framework installs in the review', () => {
+  /** How a framework install line starts in the review. */
+  const START =
+    "Framework install from the repo root after Confirm (a --dry-run installs nothing; the repo's own settings for " +
+    'the command, such as its .npmrc for npx, decide where it fetches from): '
+
+  /** The framework install lines of the review of REVIEW_DRAFT with these installs consented, page by page. */
+  async function installLines(frameworkInstalls: readonly FrameworkId[]): Promise<string[]> {
+    const entered = reviewAt({ frameworkInstalls })
+    const asking = nextStage(entered, planAnswer(await plannedFor(entered)))
+
+    return pagedLines(asking).filter(line => line.startsWith(START))
+  }
+
+  test(
+    "GSD's line names its npx command, from the repo root after Confirm, and every path the install writes",
+    async () => {
+      const writes =
+        '.claude/gsd-core, .claude/commands, .claude/agents, .claude/hooks, .claude/settings.local.json, ' +
+        '.claude/scripts, .claude/gsd-file-manifest.json, .claude/gsd-install-state.json'
+      const line = `${START}npx -y @opengsd/gsd-core@latest --claude --local; it writes ${writes}`
+      expect(await installLines(['gsd'])).toEqual([line])
+      expect(line).toContain('.claude/settings.local.json')
+    },
+  )
+
+  test("GSD's line says the repo's own settings (its .npmrc for npx) decide where it fetches from", async () => {
+    const [line = ''] = await installLines(['gsd'])
+
+    expect(line).toContain('.npmrc')
+  })
+
+  test("superpowers' line names its plugin install and the setting it writes; no install shows no line", async () => {
+    const command = 'claude plugin install superpowers@claude-plugins-official --scope project'
+    const line = `${START}${command}; it writes enabledPlugins in .claude/settings.json`
+    expect([await installLines(['superpowers']), await installLines([])]).toEqual([[line], []])
+  })
+
+  test('a consented superpowers install counts as installed in the scopes the review plans', () => {
+    const roles = [withFramework(templateRole('be'), 'superpowers')]
+    const isEnabled = (over: Partial<Draft>): boolean => {
+      const { effect } = reviewAt({ roles, ...over })
+      if (effect.kind !== 'io' || effect.call.id !== 'plan') return false
+      const scope = effect.call.input.scopes.get('be')
+
+      return scope?.settings.enabledPlugins['superpowers@claude-plugins-official'] === true
+    }
+    expect([isEnabled({ frameworkInstalls: ['superpowers'] }), isEnabled({})]).toEqual([true, false])
+  })
+})
+
+describe('the PM plugin install in the review', () => {
+  /** How a project plugin install line starts in the review. */
+  const START = 'Plugin install from the repo root after Confirm (a --dry-run installs nothing): '
+
+  /** The plugin install lines of the review of REVIEW_DRAFT with these project plugin keys consented, page by page. */
+  async function pluginLines(projectPluginInstalls: readonly string[]): Promise<string[]> {
+    const entered = reviewAt({ projectPluginInstalls })
+    const asking = nextStage(entered, planAnswer(await plannedFor(entered)))
+
+    return pagedLines(asking).filter(line => line.startsWith(START))
+  }
+
+  test('one line per consented key names its project command and the setting it writes; none shows none', async () => {
+    const command = 'claude plugin install mattpocock-skills@claude-plugins-official --scope project'
+    const line = `${START}${command}; it writes enabledPlugins in .claude/settings.json`
+
+    expect([await pluginLines([MATTPOCOCK_PLUGIN]), await pluginLines([])]).toEqual([[line], []])
+  })
+
+  test('a consented PM plugin counts as installed in the scopes the review plans', () => {
+    const roles = [templateRole('pm', { skills: [...GRILL_SKILLS] })]
+    const isEnabled = (over: Partial<Draft>): boolean => {
+      const { effect } = reviewAt({ roles, ...over })
+      if (effect.kind !== 'io' || effect.call.id !== 'plan') return false
+      const scope = effect.call.input.scopes.get('pm')
+
+      return scope?.settings.enabledPlugins[MATTPOCOCK_PLUGIN] === true
+    }
+
+    expect([isEnabled({ projectPluginInstalls: [MATTPOCOCK_PLUGIN] }), isEnabled({})]).toEqual([true, false])
+  })
+})

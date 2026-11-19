@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { BACKSLASH, BE_FILE, manifestText, SHA_A, stateText } from '../testkit'
-import { parseCadreState, parseManifest } from './cadre-files'
+import { planState } from '../init/initplan'
+import type { PlanStepInput } from '../init/initplan'
+import {
+  BACKSLASH,
+  BE_FILE,
+  DEFAULT_LOCATIONS,
+  manifestText,
+  repoScan,
+  SHA_A,
+  stateText,
+  templateRole,
+} from '../testkit'
+import { listsCadreRole, parseCadreState, parseManifest } from './cadre-files'
 
 const SHA_B = '0123456789abcdef'.repeat(4)
 const BE_LAUNCHER = { path: '.cadre/bin/be', sha256: SHA_B, mode: 'exec' }
@@ -180,6 +191,10 @@ describe('parseCadreState', () => {
     }
   })
 
+  test('a state that lists the reserved role id cadre is null', () => {
+    expect(parseCadreState(stateText({ roles: ['pm', 'cadre'] }))).toBeNull()
+  })
+
   test('a reserved role id (bin, all, none) makes the state null, as a role can never take one', () => {
     for (const reserved of ['bin', 'all', 'none']) {
       expect(parseCadreState(stateText({ roles: ['be', reserved] }))).toBeNull()
@@ -223,5 +238,169 @@ describe('parseCadreState', () => {
 
   test('a role id listed twice is null', () => {
     expect(parseCadreState(stateText({ roles: ['be', 'fe', 'be'] }))).toBeNull()
+  })
+})
+
+describe('parseCadreState: the sizing block and the recorded frameworks', () => {
+  const SIZING = { threshold: 0.6, mapping: { small: 'superpowers', large: 'gsd' }, rubric: '.cadre/sizing.md' }
+
+  test('a state with no sizing block and no frameworks parses, with neither key', () => {
+    const state = parseCadreState(stateText())
+
+    expect(state).not.toBeNull()
+    expect(Object.keys(state ?? {}).filter(key => key === 'sizing' || key === 'frameworks')).toEqual([])
+  })
+
+  test('a valid sizing block and a list of frameworks come back as they are', () => {
+    const state = parseCadreState(stateText({ sizing: SIZING, frameworks: ['gsd', 'superpowers'] }))
+
+    expect([state?.sizing, state?.frameworks]).toEqual([SIZING, ['gsd', 'superpowers']])
+    expect(parseCadreState(stateText({ frameworks: ['gsd'] }))?.frameworks).toEqual(['gsd'])
+  })
+
+  test('a threshold of 0.1 or 1 is kept, and a field the block does not name is dropped', () => {
+    for (const threshold of [0.1, 1]) {
+      expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold } }))?.sizing?.threshold).toBe(threshold)
+    }
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, extra: 1 } }))?.sizing).toEqual(SIZING)
+  })
+
+  test('a sizing block with threshold 0 makes the state null', () => {
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold: 0 } }))).toBeNull()
+  })
+
+  test('a sizing block with threshold 1.5 makes the state null', () => {
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold: 1.5 } }))).toBeNull()
+  })
+
+  test('a threshold that is no number, or a sizing block that is no object, makes the state null', () => {
+    for (const threshold of ['0.5', null, undefined]) {
+      expect(parseCadreState(stateText({ sizing: { ...SIZING, threshold } }))).toBeNull()
+    }
+    for (const sizing of [null, 'small', [], 0.5]) {
+      expect(parseCadreState(stateText({ sizing }))).toBeNull()
+    }
+  })
+
+  test('a mapping value that is no framework id makes the state null', () => {
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, mapping: { small: 'aidlc', large: 'gsd' } } }))).toBeNull()
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, mapping: { small: 'gsd' } } }))).toBeNull()
+    expect(parseCadreState(stateText({ sizing: { ...SIZING, mapping: null } }))).toBeNull()
+  })
+
+  test('a rubric path that isSafeRelativePath refuses makes the state null', () => {
+    for (const rubric of ['../sizing.md', '/abs/sizing.md', 'a b.md', '', 5]) {
+      expect(parseCadreState(stateText({ sizing: { ...SIZING, rubric } }))).toBeNull()
+    }
+  })
+
+  test('frameworks with an id that is no framework id make the state null', () => {
+    expect(parseCadreState(stateText({ frameworks: ['x'] }))).toBeNull()
+    expect(parseCadreState(stateText({ frameworks: 'gsd' }))).toBeNull()
+  })
+
+  test('frameworks with an id listed twice make the state null', () => {
+    expect(parseCadreState(stateText({ frameworks: ['gsd', 'gsd'] }))).toBeNull()
+  })
+})
+
+describe('the docker scripts cadre.json records', () => {
+  /** What planStep plans from, for BE alone, with a repo scan that found these docker scripts. */
+  function planInput(dockerScripts?: readonly string[]): PlanStepInput {
+    return {
+      roles: [templateRole('be')],
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes: new Map(),
+      hunks: [],
+      repo: repoScan(dockerScripts === undefined ? {} : { dockerScripts }),
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+    }
+  }
+
+  test('recorded docker scripts are read back, and an absent field stays absent', () => {
+    const recorded = parseCadreState(stateText({ dockerScripts: ['npm run docker:up', 'yarn docker:rspec'] }))
+    const absent = parseCadreState(stateText())
+
+    expect(recorded?.dockerScripts).toEqual(['npm run docker:up', 'yarn docker:rspec'])
+    expect(absent).not.toBeNull()
+    expect(Object.hasOwn(absent ?? {}, 'dockerScripts')).toBe(false)
+  })
+
+  test('docker scripts that are not a list of runner commands make the state null', () => {
+    const commands = [
+      'yarn',
+      'make docker:up',
+      'yarn docker rspec',
+      'yarn docker;up',
+      'npm docker:up',
+      ' yarn up',
+      'yarn up\n',
+    ]
+    for (const command of commands) {
+      expect(parseCadreState(stateText({ dockerScripts: [command] }))).toBeNull()
+    }
+    for (const dockerScripts of ['yarn docker:rspec', [1], null, {}]) {
+      expect(parseCadreState(stateText({ dockerScripts }))).toBeNull()
+    }
+  })
+
+  test('docker scripts that list one twice make the state null', () => {
+    expect(parseCadreState(stateText({ dockerScripts: ['yarn docker:rspec', 'yarn docker:rspec'] }))).toBeNull()
+  })
+
+  test('a docker script named with no leading letter or digit, or without docker, makes the state null', () => {
+    const commands = ['yarn exec', 'yarn --cwd', 'pnpm dlx', 'npm run up', 'yarn -docker', 'yarn .docker']
+    for (const command of [...commands, 'yarn Docker:up']) {
+      expect(parseCadreState(stateText({ dockerScripts: [command] }))).toBeNull()
+    }
+    const kept = ['npm run docker:up', 'yarn rspec-docker']
+
+    expect(parseCadreState(stateText({ dockerScripts: kept }))?.dockerScripts).toEqual(kept)
+  })
+
+  test("planState records the scan's docker scripts only when the scan found one", () => {
+    expect(planState(planInput(['yarn docker:rspec']), '0.5.17').dockerScripts).toEqual(['yarn docker:rspec'])
+    expect(Object.hasOwn(planState(planInput([]), '0.5.17'), 'dockerScripts')).toBe(false)
+    expect(Object.hasOwn(planState(planInput(), '0.5.17'), 'dockerScripts')).toBe(false)
+  })
+})
+
+describe('the structure cadre.json records', () => {
+  test('cadre.json keeps the recorded structure, refuses an unknown one, and reads none as absent', () => {
+    const input: PlanStepInput = {
+      roles: [templateRole('be')],
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes: new Map(),
+      hunks: [],
+      repo: repoScan(),
+      locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
+    }
+    const absent = parseCadreState(stateText())
+
+    for (const structure of ['core', 'custom']) {
+      expect(parseCadreState(stateText({ structure }))?.structure).toBe(structure)
+    }
+    for (const structure of ['team', 'Core', '', 1, null, ['core'], {}]) {
+      expect(parseCadreState(stateText({ structure }))).toBeNull()
+    }
+    expect(absent).not.toBeNull()
+    expect(Object.hasOwn(absent ?? {}, 'structure')).toBe(false)
+    expect(planState({ ...input, structure: 'custom' }, '0.5.18').structure).toBe('custom')
+    expect(Object.hasOwn(planState(input, '0.5.18'), 'structure')).toBe(false)
+  })
+})
+
+describe('listsCadreRole', () => {
+  test('it is true only for a cadre.json text whose roles list holds the role id cadre', () => {
+    expect(listsCadreRole(stateText({ roles: ['pm', 'cadre'] }))).toBe(true)
+    expect(listsCadreRole(stateText({ roles: ['pm', 'be'] }))).toBe(false)
+    expect(listsCadreRole('not json')).toBe(false)
+    expect(listsCadreRole(stateText({ roles: 'cadre' }))).toBe(false)
   })
 })

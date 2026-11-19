@@ -16,6 +16,7 @@ import type {
   ScopeContext,
   SetupScan,
 } from '../types'
+import { FRAMEWORK_IDS, repoFrameworks } from './core/framework-id'
 import { idsOrNone } from './core/text'
 import { isAttendedFromConfig, isUnmetHunk } from './framework/gsd/hunks'
 import { ADAPTERS } from './framework/registry'
@@ -24,15 +25,29 @@ import { SCREEN_LIST_WORDS, t } from './locales/t'
 import { cadreStatePath, isRepoFolder, roleJsonPath } from './paths'
 import { parseRoleJson } from './roles/rolejson'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
-import { gatherScans } from './scan/gather'
+import { gatherScans, withStartSettings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { readRepoFile } from './scan/port-read'
 import { compileScope } from './scope/compile'
-import { parseCadreState } from './state/cadre-files'
+import { runnableFrameworks } from './scope/frameworks'
+import { listsCadreRole, parseCadreState } from './state/cadre-files'
 
 /** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */
 export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | null): FrameworkId {
   return role.framework ?? repoDefault ?? 'none'
+}
+
+/** The frameworks any role of the team may run, its own and the recorded ones, in FRAMEWORK_IDS order. */
+export function teamFrameworks(
+  roles: readonly RoleSpec[],
+  repoDefault: FrameworkId | null,
+  recorded: readonly FrameworkId[],
+): FrameworkId[] {
+  const runs = roles.flatMap(role =>
+    runnableFrameworks({ framework: resolvedFramework(role, repoDefault), alsoRuns: recorded }),
+  )
+
+  return FRAMEWORK_IDS.filter(id => runs.includes(id))
 }
 
 /**
@@ -58,10 +73,11 @@ function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySe
 }
 
 /**
- * One compiled scope per role, by role id (ROLE-06, D-80): each role is compiled for the framework it runs on
- * (resolvedFramework), with the setup and the code dirs of the scans, the MCP route of every role (MCP_ROUTE, D-104),
- * where the launchers start, so the card tells what loads there (D-122), the whole team for the decision chain, and as
- * attended when its framework is in `attended`.
+ * One compiled scope per role, by role id: each role is compiled for the framework it runs on (resolvedFramework),
+ * with the setup, the code dirs and the docker scripts of the scans, the MCP route of every role (MCP_ROUTE), where the
+ * launchers start, so the card tells what loads there, the whole team for the decision chain, with the repo's
+ * `frameworks`, when given, as what it may also run, and with the repo `root`, when given, so the card labels the inbox
+ * rule as the launch can deny it. A role is attended when any framework it may run is in `attended`.
  */
 export function compileAll(
   roles: readonly RoleSpec[],
@@ -69,7 +85,12 @@ export function compileAll(
   gathered: Gathered,
   attended: ReadonlySet<FrameworkId>,
   launchStart: LaunchStart,
+  frameworks?: readonly FrameworkId[],
+  root?: string,
 ): ReadonlyMap<string, CompiledScope> {
+  const alsoRuns = frameworks === undefined ? {} : { alsoRuns: frameworks }
+  const rootOf = root === undefined ? {} : { root }
+
   return new Map(
     roles.map((role): [string, CompiledScope] => {
       const framework = resolvedFramework(role, repoDefault)
@@ -77,10 +98,13 @@ export function compileAll(
         framework,
         setup: gathered.setup,
         codeDirs: gathered.repo.codeDirs,
-        isAttended: attended.has(framework),
+        isAttended: runnableFrameworks({ framework, ...alsoRuns }).some(id => attended.has(id)),
         mcpRoute: MCP_ROUTE,
         launchStart,
         roles,
+        ...alsoRuns,
+        ...rootOf,
+        dockerScripts: gathered.repo.dockerScripts ?? [],
       }
 
       return [role.id, compileScope(role, context)]
@@ -89,10 +113,10 @@ export function compileAll(
 }
 
 /**
- * The scope of every role, which init shows and plans from (ROLE-06, D-78, D-104): compileScope with the role's own
- * framework or the repo default, the setup and the code dirs of the scans, MCP_ROUTE, where the launchers start (D-122)
- * and the whole team. A role is attended when an unmet hunk is on its framework's config file (A5). Keyed by role id,
- * in role order.
+ * The scope of every role, which init shows and plans from: compileScope with the role's own framework or the repo
+ * default, the setup and the code dirs of the scans, MCP_ROUTE, where the launchers start, the whole team and, when
+ * given, the repo root (compileAll). A role is attended when an unmet hunk is on the config file of any framework it
+ * may run. Keyed by role id, in role order.
  */
 export function scopesFor(
   roles: readonly RoleSpec[],
@@ -100,8 +124,12 @@ export function scopesFor(
   gathered: Gathered,
   hunks: readonly HunkOp[],
   launchStart: LaunchStart,
+  frameworks?: readonly FrameworkId[],
+  root?: string,
 ): ReadonlyMap<string, CompiledScope> {
-  return compileAll(roles, repoDefault, gathered, attendedByHunks(gathered.setup, hunks), launchStart)
+  const attended = attendedByHunks(gathered.setup, hunks)
+
+  return compileAll(roles, repoDefault, gathered, attended, launchStart, frameworks, root)
 }
 
 /** The cadre commands that work from an applied team, so they need `.cadre/cadre.json`. */
@@ -123,6 +151,9 @@ export const REGEN_NO_STATE = noStateReply('regen')
  * state (parseCadreState), or the launcher folder it stores is not a folder inside the repo (T-02-36).
  */
 export const REGEN_BAD_STATE = t('team.regenBadState')
+
+/** The reply when `.cadre/cadre.json` lists the role id cadre, which is reserved: it names the rename. */
+export const REGEN_CADRE_ROLE = t('team.regenCadreRole')
 
 /** The reply when `.cadre/cadre.json` does not list the role asked for: it names the roles listed, or none. */
 export function regenNoRole(id: string, roles: readonly string[]): string {
@@ -155,8 +186,9 @@ export function regenRefusal(text: string): RegenRead<never> {
 /**
  * The repo state regen re-renders from, and /cadre start and /cadre status work from (D-68, T-02-36):
  * `.cadre/cadre.json` read through readRepoFile, so a link out of the repo is never read, and checked by
- * parseCadreState. A missing file refuses with noStateReply, worded for `command`; a file that cannot be read, is too
- * large or is not valid state refuses with REGEN_BAD_STATE, and so does a stored launcher folder that is not a folder
+ * parseCadreState. A missing file refuses with noStateReply, worded for `command`; a state that is not valid because
+ * it lists the reserved role id cadre refuses with REGEN_CADRE_ROLE; a file that cannot be read, is too large or is
+ * not valid state otherwise refuses with REGEN_BAD_STATE, and so does a stored launcher folder that is not a folder
  * inside the repo (isRepoFolder).
  */
 async function regenState(
@@ -167,6 +199,7 @@ async function regenState(
   const read = await readRepoFile(io, root, cadreStatePath(), MAX_READ_BYTES)
   if (read.state === 'absent') return regenRefusal(noStateReply(command))
   const state = read.state === 'text' ? parseCadreState(read.text) : null
+  if (state === null && read.state === 'text' && listsCadreRole(read.text)) return regenRefusal(REGEN_CADRE_ROLE)
   if (state === null) return regenRefusal(REGEN_BAD_STATE)
   const start = state.launchStart
   if (start.kind === 'dir' && !(await isRepoFolder(io, root, start.path))) return regenRefusal(REGEN_BAD_STATE)
@@ -214,11 +247,12 @@ export type TeamState = {
 /**
  * The team regen, /cadre start and /cadre status read before they plan or launch anything (D-68, T-02-36). It refuses
  * with an exact reply in this order, which is runRegen's: no `.cadre/cadre.json` (noStateReply, worded for
- * `command`); a cadre.json that cannot be read or is not valid, its stored launcher folder included (REGEN_BAD_STATE);
- * an `id` it does not list (regenNoRole); the first listed role.json, in cadre.json order, that is missing, not valid
- * or holds another id (regenBadRole); and, when the repo has no default framework, the first listed role with none of
- * its own (regenNeedsFramework, D-73). A null `id` (/cadre epic, which asks for no one role) reads the whole team, so
- * the regenNoRole check is skipped. It asks nothing and writes nothing.
+ * `command`); a cadre.json that lists the reserved role id cadre (REGEN_CADRE_ROLE); a cadre.json that cannot be read
+ * or is not valid, its stored launcher folder included (REGEN_BAD_STATE); an `id` it does not list (regenNoRole); the
+ * first listed role.json, in cadre.json order, that is missing, not valid or holds another id (regenBadRole); and,
+ * when the repo has no default framework, the first listed role with none of its own (regenNeedsFramework), except
+ * for /cadre frameworks, which decides every role's framework again. A null `id` (/cadre epic, which asks for no one
+ * role) reads the whole team, so the regenNoRole check is skipped. It asks nothing and writes nothing.
  */
 export async function readTeam(
   io: InitIo,
@@ -235,7 +269,7 @@ export async function readTeam(
   if (team.kind === 'refuse') return team
   const { roles, texts } = team.value
   const unframed = state.framework === null ? roles.find(role => role.framework === undefined) : undefined
-  if (unframed !== undefined) return regenRefusal(regenNeedsFramework(unframed.id))
+  if (unframed !== undefined && command !== 'frameworks') return regenRefusal(regenNeedsFramework(unframed.id))
 
   return { kind: 'ok', value: { state, roles, texts } }
 }
@@ -266,10 +300,12 @@ export async function attendedByConfig(
 }
 
 /**
- * The scans and the compiled scopes of a team, as regen and /cadre start use them (D-68, D-70, D-72): the scans of one
- * run (gatherScans), which read ~/.claude.json only when cadre.json records the consent (readUserMcp, A1); attended
- * judged from the config on disk with no question asked (attendedByConfig); and every role compiled on its own
- * framework or the repo default, for cadre.json's launch start (compileAll, D-122).
+ * The scans and the compiled scopes of a team, as regen and /cadre start use them: the scans of one run (gatherScans),
+ * which read ~/.claude.json only when cadre.json records the consent (readUserMcp), with the start folder's settings of
+ * a dir start (withStartSettings); attended judged from the config on disk with no question asked (attendedByConfig);
+ * and every role compiled on its own framework or the repo default, for cadre.json's launch start, with the
+ * frameworks the repo records (repoFrameworks) as what it may also run and the docker scripts cadre.json records, never
+ * those of this run's scan (compileAll).
  */
 export async function compileTeam(
   io: InitIo,
@@ -277,9 +313,14 @@ export async function compileTeam(
   state: CadreState,
   roles: readonly RoleSpec[],
 ): Promise<{ readonly gathered: Gathered; readonly scopes: ReadonlyMap<string, CompiledScope> }> {
-  const gathered = await gatherScans(io, locations, state.readUserMcp)
-  const frameworks = roles.map(role => resolvedFramework(role, state.framework))
+  const scanned = await gatherScans(io, locations, state.readUserMcp)
+  const gathered = await withStartSettings(io, scanned, locations.root, state.launchStart)
+  const frameworks = teamFrameworks(roles, state.framework, repoFrameworks(state))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
 
-  return { gathered, scopes: compileAll(roles, state.framework, gathered, attended, state.launchStart) }
+  const recorded = repoFrameworks(state)
+  const compiled = { ...gathered, repo: { ...gathered.repo, dockerScripts: state.dockerScripts ?? [] } }
+  const scopes = compileAll(roles, state.framework, compiled, attended, state.launchStart, recorded, locations.root)
+
+  return { gathered, scopes }
 }

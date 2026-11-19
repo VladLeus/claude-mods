@@ -47,16 +47,28 @@ const PATH_FLAGS: readonly string[] = Object.freeze([
 const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
 
 /**
- * What the exec line runs claude through (D-140 q1-b): `env` with the variable that makes the engine load a CLAUDE.md
- * from each folder `--add-dir` adds, so the role's built CLAUDE.md and its private one load, set for claude alone and
- * not for the launcher's own commands or the probe run.
+ * The session variables a launcher started from inside a Claude session would pass on: unset, so the role session
+ * gets its own session id and messaging socket and other roles can reach it by that id.
  */
-const EXEC_CLAUDE = 'exec env CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude'
+const SCRUBBED_ENV: readonly string[] = Object.freeze([
+  'CLAUDECODE',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_CHILD_SESSION',
+])
+
+/**
+ * What the exec line runs claude through: `env` that unsets SCRUBBED_ENV and sets the variable that makes the engine
+ * load a CLAUDE.md from each folder `--add-dir` adds, so the role's built CLAUDE.md and its private one load, for
+ * claude alone and not for the launcher's own commands or the probe run.
+ */
+const EXEC_CLAUDE = `exec env -u ${SCRUBBED_ENV.join(' -u ')} CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude`
 
 /**
  * The flag words a launcher that starts in a sub-folder (here or dir) adds after the scope flags: the git root it
- * found, as an added directory, so the role reads its inbox, other roles' inboxes and the root `.planning/` without a
- * prompt (D-127). It is not a scope flag: only the launcher knows the root it resolved.
+ * found, as an added directory, so the role reads the root `.planning/` without a prompt. It is not a scope flag: only
+ * the launcher knows the root it resolved.
  */
 const ROOT_DIR_FLAG = '--add-dir "$root"'
 
@@ -191,6 +203,7 @@ function probeVerdictLines(id: string): readonly string[] {
     '      tool-present) case ",$tools," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
     '      command-present) case ",$commands," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
     '      skill-present) case ",$skills," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+    '      skill-absent) case ",$skills," in *",\\"$token\\","*) ok=0 ;; esac ;;',
     '      permission-mode) [ "$mode" = "$token" ] || ok=0 ;;',
     '      memory-path) [ "$memory" = "$token" ] || [ "$memory" = "$token/" ] || ok=0 ;;',
     '      note) echo "note         $text"; continue ;;',
@@ -236,8 +249,7 @@ export function hasRuntimeKickoff(text: string): boolean {
  * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing; or `.cadre/cadre.json` or the
  *   role's role.json, settings.json or mcp.json is newer than it, so a render the role files changed after never
  *   starts; or the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render
- *   did not finish (D-102). The stamp is checked first, since `-nt` against a missing file is true; inbox.md is never
- *   compared, other roles append to it;
+ *   did not finish (D-102). The stamp is checked first, since `-nt` against a missing file is true;
  * - the rendered settings.json or mcp.json is missing, empty or not valid JSON, since the engine drops an invalid
  *   settings file in silence with every deny in it (D-107). jq checks them when it is on PATH, else node, else one
  *   line says they were not checked again: `/cadre start` checked them when it rendered them (D-129).

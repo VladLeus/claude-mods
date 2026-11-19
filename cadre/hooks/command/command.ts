@@ -1,6 +1,6 @@
 /**
- * The command parser, a layer 9 module: the `/cadre` arguments as one command (help, detect, init, regen, start,
- * status, epic, epic done), with the text a reply echoes back cleaned of invisible characters and capped. It
+ * The command parser, a layer 9 module: the `/cadre` arguments as one command (help, detect, init, regen, frameworks,
+ * start, status, epic, epic done), with the text a reply echoes back cleaned of invisible characters and capped. It
  * imports core/role-id and the types, so register dispatches every /cadre command here.
  */
 import type { CadreCommand, TerminalChoice } from '../../types'
@@ -70,6 +70,14 @@ function regenCommand(rest: string): CadreCommand | null {
   if (!ROLE_ID_PATTERN.test(dryRun.rest)) return null
 
   return { kind: 'regen', id: dryRun.rest, dryRun: dryRun.isOn }
+}
+
+/** /cadre frameworks, when the arguments after `frameworks` are only `--dry-run`; null when anything else follows. */
+function frameworksCommand(rest: string): CadreCommand | null {
+  const dryRun = takeSwitch(rest, 'dry-run')
+  if (dryRun.rest !== '') return null
+
+  return { kind: 'frameworks', dryRun: dryRun.isOn }
 }
 
 /** The places `--terminal=<value>` can name, as the value reads lowercased (D-109, D-126). */
@@ -152,8 +160,9 @@ function epicDoneCommand(rest: string): CadreCommand | null {
 /**
  * `/cadre` arguments. Empty or `help` is the help text; `detect`, optionally with `--adapters`, is the
  * detection; `init`, optionally with `--dry-run`, is the guided setup; `regen` with one role id, optionally with
- * `--dry-run`, re-renders that role; `start` with one role id, optionally with `--terminal[=terminal|iterm|tmux]`,
- * renders that role's runtime files and prints its launcher command; `status` with exactly one role id reports that
+ * `--dry-run`, re-renders that role; `frameworks`, optionally with `--dry-run`, asks the framework step again;
+ * `start` with one role id, optionally with `--terminal[=terminal|iterm|tmux]`, renders that role's runtime files
+ * and prints its launcher command; `status` with exactly one role id reports that
  * role's autopilot run from disk; `epic` with a key and optional title words, optionally with
  * `--terminal[=terminal|iterm|tmux]`, creates or reuses the epic's worktree; `epic done`, `done` in any letter case as
  * the first word after `epic`, with one key and optionally `--force`, removes a finished epic's worktree (D-152).
@@ -172,6 +181,9 @@ export function parseCommand(args: string): CadreCommand {
 
   const regen = /^regen(?=\s|$)/i.exec(text)
   if (regen) return regenCommand(text.slice(regen[0].length)) ?? unknownCommand(text)
+
+  const frameworks = /^frameworks(?=\s|$)/i.exec(text)
+  if (frameworks) return frameworksCommand(text.slice(frameworks[0].length)) ?? unknownCommand(text)
 
   const start = /^start(?=\s|$)/i.exec(text)
   if (start) return startCommand(text.slice(start[0].length)) ?? unknownCommand(text)

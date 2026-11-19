@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  IDLE_INBOX_WAIT,
   MCP_SYSTEM,
   PROMPTS,
   proposeSystemText,
@@ -35,6 +36,15 @@ describe('locales/prompts (D-221)', () => {
     expect(systems.filter(text => !isPromptAscii(text))).toEqual([])
   })
 
+  test('the idle inbox sentence names both exits, in printable ASCII with no quote or backtick', () => {
+    expect(IDLE_INBOX_WAIT).toBe(
+      'When your inbox is empty, call wait_for with reason idle-inbox if more work may come; ' +
+        'when your task is finished, give the done answer autopilot asks for.',
+    )
+    expect(isPromptAscii(IDLE_INBOX_WAIT)).toBe(true)
+    expect(/["'`]/.test(IDLE_INBOX_WAIT)).toBe(false)
+  })
+
   test('the ASCII check refuses a byte above 0x7E and a control character', () => {
     expect(isPromptAscii('plain\nline')).toBe(true)
     expect(isPromptAscii('café')).toBe(false)
@@ -44,5 +54,9 @@ describe('locales/prompts (D-221)', () => {
   test('the system prompt builders put the caps where the prompts named them', () => {
     expect(proposeSystemText(8)).toContain('Give at most 8 roles, and each id once.')
     expect(topicsSystemText(60, 160)).toContain('A title has at most 60 characters and a summary at most 160.')
+  })
+
+  test('the roles proposal names every reserved id, cadre among them', () => {
+    expect(proposeSystemText(8)).toContain('The ids "bin", "all", "none" and "cadre" are not allowed.')
   })
 })

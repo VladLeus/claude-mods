@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, GsdFact, RawGsdCandidate, RoleChange, RoleProposal, RoleSpec } from '../../../types'
+import type {
+  FrameworkId,
+  GsdFact,
+  RawGsdCandidate,
+  RoleChange,
+  RoleProposal,
+  RoleSpec,
+  TeamStructure,
+} from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
@@ -117,6 +125,21 @@ const EMPTY_DESCRIPTION =
 
 /** The describe question as it is asked: the question, then its context line (D-136). */
 const DESCRIBE_ASKED = withContext(DESCRIBE_QUESTION, DESCRIBE_CONTEXT)
+
+/** The install question for superpowers as it is asked: the question, then the command it runs. */
+const SUPERPOWERS_INSTALL_ASKED =
+  'Install superpowers for this repo?\ncadre runs claude plugin install superpowers@claude-plugins-official ' +
+  "--scope project from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) " +
+  'decide where it fetches from.'
+
+/** The install question for GSD as it is asked: the question, then the command it runs. */
+const GSD_INSTALL_ASKED =
+  'Install GSD for this repo?\ncadre runs npx -y @opengsd/gsd-core@latest --claude --local ' +
+  "from the repo root after Confirm, so the repo's own settings for it (an .npmrc for npx) decide where it " +
+  'fetches from.'
+
+/** What a refusal to set a role to GSD ends with: the command that installs it. */
+const GSD_COMMAND_END = ' To install it, run from the repo root: npx -y @opengsd/gsd-core@latest --claude --local'
 
 describe('describeStep', () => {
   /** The answer that asks the describe question, and the answer that accepts the roles asked about after it. */
@@ -268,7 +291,7 @@ describe('adjustLoop', () => {
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'api', 'fe', 'qa', 'security'])
     expect(adjusted?.find(role => role.id === 'api')?.title).toBe('API')
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
-    expect(adjusted?.filter(role => role.framework !== undefined)).toHaveLength(1)
+    expect(adjusted?.filter(role => role.framework !== undefined).map(role => role.id)).toEqual(['pm', 'qa'])
   })
 
   test('Done adjusting gives the adjusted roles, which the roles question still has to confirm', async () => {
@@ -317,13 +340,15 @@ describe('adjustLoop', () => {
     )
   })
 
-  test('Adjust refuses a framework not installed, names the installed ones, and the role keeps its own', async () => {
-    const { run, end, adjusts } = await adjustRun(['framework qa superpowers', 'Done adjusting'], ['gsd', 'none'])
+  test('Adjust refuses a framework whose install is declined, naming the installed ones and its command', async () => {
+    const answers = ['framework qa superpowers', 'No', 'Done adjusting']
+    const { run, end, adjusts } = await adjustRun(answers, ['gsd', 'none'])
     expect(rolesOf(end)).toEqual(roles)
     const refusal =
       'Cannot set qa to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
-      'qa keeps its framework.'
-    expect(adjusts).toEqual([ASKED, `${refusal}\n${ASKED}`])
+      'qa keeps its framework. To install it, run from the repo root: ' +
+      'claude plugin install superpowers@claude-plugins-official --scope project'
+    expect(adjusts).toEqual([ASKED, SUPERPOWERS_INSTALL_ASKED, `${refusal}\n${ASKED}`])
     expect(run.logged).toEqual([])
   })
 
@@ -336,13 +361,15 @@ describe('adjustLoop', () => {
   })
 
   test('none is always installed, so a role can always be set to the built-in fallback', async () => {
-    const { run, end, adjusts } = await adjustRun(['framework qa none', 'framework be gsd', 'Done adjusting'], ['none'])
+    const answers = ['framework qa none', 'framework be gsd', 'No', 'Done adjusting']
+    const { run, end, adjusts } = await adjustRun(answers, ['none'])
     const adjusted = rolesOf(end)
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('none')
     expect(adjusted?.find(role => role.id === 'be')?.framework).toBeUndefined()
     const refusal =
-      'Cannot set be to gsd: it is not installed for this repo (installed: none (built-in)). be keeps its framework.'
-    expect(adjusts).toEqual([ASKED, ASKED, `${refusal}\n${ASKED}`])
+      'Cannot set be to gsd: it is not installed for this repo (installed: none (built-in)). be keeps its framework.' +
+      GSD_COMMAND_END
+    expect(adjusts).toEqual([ASKED, ASKED, GSD_INSTALL_ASKED, `${refusal}\n${ASKED}`])
     expect(run.logged).toEqual([])
   })
 
@@ -681,9 +708,10 @@ describe('the GSD check an Adjust that names gsd asks (D-269, edge #35)', () => 
   }
   /** The Adjust line that sets PM to gsd. */
   const GSD_ADJUST = 'framework pm gsd'
-  /** Its refusal while gsd is not installed for the repo (A5). */
+  /** Its refusal once the install of gsd, not installed for the repo, is declined (A5). */
   const REFUSAL =
-    'Cannot set pm to gsd: it is not installed for this repo (installed: none (built-in)). pm keeps its framework.'
+    'Cannot set pm to gsd: it is not installed for this repo (installed: none (built-in)). pm keeps its framework.' +
+    GSD_COMMAND_END
 
   /** The Adjust question of the roles stage on the FULL_SCAN proposal, with the draft fields of `over`. */
   function adjusting(over: Partial<Draft> = {}): InitState {
@@ -721,22 +749,34 @@ describe('the GSD check an Adjust that names gsd asks (D-269, edge #35)', () => 
     expect(checked.openQuestion?.question.startsWith(ADJUST_QUESTION)).toBe(true)
   })
 
-  test('a Yes whose check proves nothing keeps installed and refuses the Adjust, as before', () => {
+  test('a Yes whose check proves nothing keeps installed and asks the install, whose No refuses the Adjust', () => {
     const asked = nextStage(adjusting(), { kind: 'answer', text: GSD_ADJUST })
     const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
     const nothing: RawGsdCandidate = { ...PROBED, runtimeStdout: null }
     const checked = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: nothing } })
-    expect([checked.draft.installed, checked.draft.gsdCheck, refusedWith(checked, REFUSAL)]).toEqual([
+    const no = nextStage(checked, { kind: 'answer', text: 'No' })
+    expect([checked.draft.installed, checked.draft.gsdCheck, checked.openQuestion?.question]).toEqual([
       ['none'],
       'run',
-      true,
+      GSD_INSTALL_ASKED,
     ])
+    expect([no.draft.installed, refusedWith(no, REFUSAL)]).toEqual([['none'], true])
   })
 
-  test('No refuses the Adjust as before and keeps declined, so the frameworks stage asks the check no more', () => {
+  test('No keeps declined and asks the install, whose No refuses the Adjust; frameworks asks no check', () => {
     const asked = nextStage(adjusting(), { kind: 'answer', text: GSD_ADJUST })
     const no = nextStage(asked, { kind: 'answer', text: 'No, skip the check' })
-    expect([no.sub.kind, no.draft.gsdCheck, refusedWith(no, REFUSAL)]).toEqual(['adjust', 'declined', true])
+    const declined = nextStage(no, { kind: 'answer', text: 'No' })
+    expect([no.sub.kind, no.draft.gsdCheck, no.openQuestion?.question]).toEqual([
+      'install',
+      'declined',
+      GSD_INSTALL_ASKED,
+    ])
+    expect([declined.sub.kind, declined.draft.gsdCheck, refusedWith(declined, REFUSAL)]).toEqual([
+      'adjust',
+      'declined',
+      true,
+    ])
     const later = frameworksStage.enter(stateAt('frameworks', wholeDraft({ gathered: GATHERED, gsdCheck: 'declined' })))
     expect(later.openQuestion).toBeNull()
   })
@@ -747,13 +787,128 @@ describe('the GSD check an Adjust that names gsd asks (D-269, edge #35)', () => 
     expect(dismissed.effect).toEqual({ kind: 'end', reply: cancelledReply(GSD_CHECK_DISMISSED_REASON) })
   })
 
-  test('D-295: after a skipped check the Adjust still asks it; after a No or a run it is refused, asks nothing', () => {
+  test('a framework consented before the check stays installed, so a later Adjust to it asks no install', () => {
+    const install = nextStage(adjusting(), { kind: 'answer', text: 'framework tl superpowers' })
+    const consented = nextStage(install, { kind: 'answer', text: 'Yes, install it' })
+    const asked = nextStage(consented, { kind: 'answer', text: 'framework be gsd' })
+    const yes = nextStage(asked, { kind: 'answer', text: 'Yes, run the check' })
+    const checked = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: PROBED } })
+    const fe = nextStage(checked, { kind: 'answer', text: 'framework fe superpowers' })
+    const frameworkOf = (id: string): FrameworkId | undefined =>
+      fe.sub.kind === 'adjust' ? fe.sub.roles.find(role => role.id === id)?.framework : undefined
+    expect([fe.sub.kind, frameworkOf('be'), frameworkOf('fe')]).toEqual(['adjust', 'gsd', 'superpowers'])
+    expect([fe.draft.frameworkInstalls, fe.draft.installed]).toEqual([['superpowers'], ['gsd', 'superpowers', 'none']])
+  })
+
+  test('after a skipped check the Adjust still asks it; after a No or a run it asks the install, not the check', () => {
     const skipped = nextStage(adjusting({ gsdCheck: 'skipped' }), { kind: 'answer', text: GSD_ADJUST })
     expect(skipped.sub.kind).toBe('roles-gsd-check')
     const asked: readonly ('declined' | 'run')[] = ['declined', 'run']
     for (const gsdCheck of asked) {
-      const refused = nextStage(adjusting({ gsdCheck }), { kind: 'answer', text: GSD_ADJUST })
-      expect([refused.sub.kind, refusedWith(refused, REFUSAL)]).toEqual(['adjust', true])
+      const install = nextStage(adjusting({ gsdCheck }), { kind: 'answer', text: GSD_ADJUST })
+      const refused = nextStage(install, { kind: 'answer', text: 'No' })
+      expect([install.sub.kind, refused.sub.kind, refusedWith(refused, REFUSAL)]).toEqual(['install', 'adjust', true])
     }
+  })
+})
+
+describe('the install question an Adjust asks', () => {
+  const full = proposeRoles(FULL_SCAN)
+  /** The Adjust line that sets BE to superpowers, which the repo does not have installed. */
+  const SUPERPOWERS_ADJUST = 'framework be superpowers'
+  /** Its refusal once the install is declined: the installed ones, then the command. */
+  const REFUSAL =
+    'Cannot set be to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
+    'be keeps its framework. To install it, run from the repo root: ' +
+    'claude plugin install superpowers@claude-plugins-official --scope project'
+
+  /** The install question asked for SUPERPOWERS_ADJUST on the FULL_SCAN proposal, with GSD alone installed. */
+  function installAsked(): InitState {
+    const draft: Partial<Draft> = { proposal: full, installed: ['gsd', 'none'] }
+    const adjusting = nextStage(rolesStage.enter(stateAt('roles', draft)), { kind: 'answer', text: 'Adjust them' })
+
+    return nextStage(adjusting, { kind: 'answer', text: SUPERPOWERS_ADJUST })
+  }
+
+  /** The framework of BE while the Adjust question is out; undefined when it has none or no Adjust is out. */
+  function beFramework(state: InitState): FrameworkId | undefined {
+    return state.sub.kind === 'adjust' ? state.sub.roles.find(role => role.id === 'be')?.framework : undefined
+  }
+
+  test('an Adjust to a framework not installed asks its install question, No first, naming the command', () => {
+    const asked = installAsked()
+    expect([asked.sub.kind, asked.openQuestion?.question]).toEqual(['install', SUPERPOWERS_INSTALL_ASKED])
+    expect(asked.openQuestion?.spec.options).toEqual(['No', 'Yes, install it'])
+  })
+
+  test('Yes sets BE to superpowers and records its install, superpowers installed before none', () => {
+    const yes = nextStage(installAsked(), { kind: 'answer', text: 'Yes, install it' })
+    const after = [yes.draft.frameworkInstalls, yes.draft.installed, beFramework(yes)]
+    expect(after).toEqual([['superpowers'], ['gsd', 'superpowers', 'none'], 'superpowers'])
+    expect(yes.openQuestion?.question.startsWith(ADJUST_QUESTION)).toBe(true)
+  })
+
+  test('No keeps the framework of BE, and the next Adjust ask ends its refusal with the command', () => {
+    const no = nextStage(installAsked(), { kind: 'answer', text: 'No' })
+    const after = [no.sub.kind, no.draft.frameworkInstalls, no.draft.installed, beFramework(no)]
+    expect(after).toEqual(['adjust', undefined, ['gsd', 'none'], undefined])
+    expect(no.openQuestion?.question.startsWith(`${REFUSAL}\n${ADJUST_QUESTION}`)).toBe(true)
+  })
+
+  test('a dismissal does the same as No: it records no install and init goes on', () => {
+    const dismissed = nextStage(installAsked(), { kind: 'answer', text: null })
+    const after = [dismissed.sub.kind, dismissed.draft.frameworkInstalls, beFramework(dismissed)]
+    expect(after).toEqual(['adjust', undefined, undefined])
+    expect(dismissed.openQuestion?.question.startsWith(`${REFUSAL}\n${ADJUST_QUESTION}`)).toBe(true)
+  })
+
+  test('an answer that is neither is asked again with why on top', () => {
+    const again = nextStage(installAsked(), { kind: 'answer', text: 'Install' })
+    const refusal = `'Install' isn't one of: "No", "Yes, install it".`
+    const asked = `${refusal}\n${SUPERPOWERS_INSTALL_ASKED}`
+    expect([again.sub.kind, again.openQuestion?.question]).toEqual(['install', asked])
+  })
+})
+
+describe('the structure the roles stage records', () => {
+  const full = proposeRoles(FULL_SCAN)
+  const DESCRIBING = ['Describe my own structure', DESCRIPTION]
+
+  /** Adjust them, then a change of role `id` to superpowers whose install is answered Yes, then Done and Use. */
+  function installAdjust(id: string): string[] {
+    return ['Adjust them', `framework ${id} superpowers`, 'Yes, install it', 'Done adjusting', 'Use these roles']
+  }
+
+  /** The roles stage asked again from the review about `start`, accepted with `structure`, and Use these roles. */
+  async function goneBack(start: RoleProposal, structure: TeamStructure): Promise<InitState> {
+    const run = memIo(memWorld({}), ['Use these roles'])
+    const draft: Partial<Draft> = { proposal: PROPOSAL, installed: FRAMEWORKS, ...start, structure }
+
+    return stageRun(run.io, rolesStage, stateAt('roles', draft))
+  }
+
+  test('Use these roles records the core structure for the template, an adjusted template and a go-back', async () => {
+    const template = await rolesRun(['Use these roles'])
+    const adjusted = await rolesRun(['Adjust them', 'drop fe', 'Done adjusting', 'Use these roles'], [], full)
+    const installed = await rolesRun(installAdjust('qa'), [], full, ['gsd', 'none'])
+    const ends = [template.end, adjusted.end, installed.end, await goneBack(PROPOSAL, 'core')]
+    expect(ends.map(end => [end.sub.kind, end.draft.structure])).toEqual([
+      ['done', 'core'],
+      ['done', 'core'],
+      ['done', 'core'],
+      ['done', 'core'],
+    ])
+    expect(installed.run.asked[2]).toBe(SUPERPOWERS_INSTALL_ASKED)
+  })
+
+  test('a described structure is recorded as custom', async () => {
+    const described = await rolesRun([...DESCRIBING, 'Use these roles'], [DESCRIBED_REPLY])
+    const adjusted = await rolesRun([...DESCRIBING, ...installAdjust('docs')], [DESCRIBED_REPLY], PROPOSAL, ['none'])
+    const again = await goneBack({ roles: DESCRIBED_ROLES, changes: [] }, 'custom')
+    const template = await rolesRun(['Describe my own structure', 'Use the template instead', 'Use these roles'])
+    const fallback = await rolesRun([...DESCRIBING, 'Use these roles'], ['not json', 'not json', 'not json'])
+    const ends = [described.end, adjusted.end, again, template.end, fallback.end]
+    expect(ends.map(end => end.draft.structure)).toEqual(['custom', 'custom', 'custom', 'core', 'core'])
+    expect(adjusted.end.draft.roles?.find(role => role.id === 'docs')?.framework).toBe('superpowers')
   })
 })

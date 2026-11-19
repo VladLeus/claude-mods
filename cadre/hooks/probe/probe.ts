@@ -9,6 +9,9 @@ import type { CompiledScope, ProbeCheck, ProbeCheckKind, ProbeExpectation, Scope
 import { asciiLine } from '../generate/kickoff'
 import { CONTRACTS } from '../locales/contracts'
 import { fill } from '../locales/t'
+import { INFRA_SKILLS } from '../roles/infra'
+import { callDeniedLines, SKILLS_RULE_ENFORCEMENT } from '../scope/card'
+import { pluginName, skillPlugin } from '../scope/lint'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
 export const PROBE_CHECK_KINDS: readonly ProbeCheckKind[] = Object.freeze([
@@ -17,6 +20,7 @@ export const PROBE_CHECK_KINDS: readonly ProbeCheckKind[] = Object.freeze([
   'tool-present',
   'command-present',
   'skill-present',
+  'skill-absent',
   'permission-mode',
   'memory-path',
   'not-visible',
@@ -73,6 +77,7 @@ function checkLabel(check: ProbeCheck): string {
   if (kind === 'tool-present') return fill(CONTRACTS.probeToolPresent, { token })
   if (kind === 'command-present') return fill(CONTRACTS.probeCommandPresent, { token })
   if (kind === 'skill-present') return fill(CONTRACTS.probeSkillPresent, { token })
+  if (kind === 'skill-absent') return fill(CONTRACTS.probeSkillAbsent, { token })
 
   return fill(CONTRACTS.probePermissionMode, { token })
 }
@@ -99,15 +104,76 @@ function ruleExpectations(rule: ScopeRule): ProbeExpectation[] {
   )
 }
 
+/** The skill names of the `Skill(<name>)` entries of a deny list, in order. */
+export function deniedSkillNames(entries: readonly string[]): string[] {
+  return entries.flatMap(entry => {
+    const match = /^Skill\((.+)\)$/.exec(entry)
+
+    return match?.[1] === undefined ? [] : [match[1]]
+  })
+}
+
+/** What the launch did with the role's skills: denied per skill at call time, plugins switched off, not linked. */
+export type LaunchSkills = {
+  readonly deniedSkills: readonly string[]
+  readonly offPlugins: readonly string[]
+  readonly unlinkedSkills: readonly string[]
+}
+
+export const NO_LAUNCH_SKILLS: LaunchSkills = Object.freeze({ deniedSkills: [], offPlugins: [], unlinkedSkills: [] })
+
+/** One expectation of a single skill with the Skills rule's enforcement, written as a card rule's check is. */
+function skillExpectation(kind: 'skill-present' | 'skill-absent', text: string, token: string): ProbeExpectation {
+  const checked = fill(CONTRACTS.probeChecked, { text, label: checkLabel({ kind, token }) })
+
+  return written({ check: kind, enforcement: SKILLS_RULE_ENFORCEMENT, text: probeText(checked), token })
+}
+
+/** A given skill's line: a note when the launch did not link it or switched its plugin off, else skill-present. */
+function grantedExpectation(name: string, launch: LaunchSkills): ProbeExpectation {
+  const plugin = skillPlugin(name)
+  const isPluginOff = plugin !== null && launch.offPlugins.map(pluginName).includes(plugin)
+  if (!isPluginOff && !launch.unlinkedSkills.includes(name)) {
+    return skillExpectation('skill-present', CONTRACTS.probeSkillGranted, name)
+  }
+  const text = probeText(fill(CONTRACTS.probeSkillUnavailable, { name }))
+
+  return { check: 'note', enforcement: 'none', text, token: '' }
+}
+
 /**
- * The expectations of a role's probe (D-112, D-130), in card rule order: one per check of a rule, as
- * `<rule text> [<check>]` with the rule's label, or for a rule with no check one not-visible expectation (hard or best
- * effort), which the launcher reports best-effort, or one note (none). The last one is the role's memory folder, which
- * the init event shows as `memory_paths.auto` (ISO-03). A check or memory token that fails isProbeToken is never
- * written as a check: that expectation is not-visible, its token '' and its text ends with
- * ` (not checked: unusual characters)` (T-03-10).
+ * The per-skill expectations: for each given skill but the handoff skills the infra rule checks, skill-present or a
+ * note when the launch dropped it; skill-absent for each not-given skill of a plugin the role does not enable; then one
+ * best-effort summary per plugin of the skills denied at call time, which the init listing still shows.
  */
-export function expectationsFor(scope: CompiledScope, memoryDir: string): ProbeExpectation[] {
+function skillExpectations(scope: CompiledScope, launch: LaunchSkills): ProbeExpectation[] {
+  const granted = scope.card.skills.filter(name => !INFRA_SKILLS.includes(name))
+  const callDenied = callDeniedLines(launch.deniedSkills).map(
+    (text): ProbeExpectation => ({
+      check: 'not-visible',
+      enforcement: SKILLS_RULE_ENFORCEMENT,
+      text: probeText(text),
+      token: '',
+    }),
+  )
+
+  return [
+    ...granted.map(name => grantedExpectation(name, launch)),
+    ...scope.card.notGiven.pluginSkills.map(name => skillExpectation('skill-absent', CONTRACTS.probeSkillDenied, name)),
+    ...callDenied,
+  ]
+}
+
+/**
+ * The expectations of a role's probe: one per check of each card rule in order (a rule with no check gives one
+ * not-visible line, or a note when it is labelled none), the per-skill lines, then the role's memory folder. A token
+ * that fails isProbeToken is never compared: its line is not-visible, with the token '' and marked not checked.
+ */
+export function expectationsFor(
+  scope: CompiledScope,
+  memoryDir: string,
+  launch: LaunchSkills = NO_LAUNCH_SKILLS,
+): ProbeExpectation[] {
   const memory = written({
     check: 'memory-path',
     enforcement: 'hard',
@@ -115,7 +181,7 @@ export function expectationsFor(scope: CompiledScope, memoryDir: string): ProbeE
     token: memoryDir,
   })
 
-  return [...scope.card.rules.flatMap(ruleExpectations), memory]
+  return [...scope.card.rules.flatMap(ruleExpectations), ...skillExpectations(scope, launch), memory]
 }
 
 /**

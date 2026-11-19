@@ -207,6 +207,10 @@ describe('skill assignment', () => {
       'gsd-execute-phase',
       'gsd-validate-phase',
       'gsd-code-review',
+      'gsd-new-project',
+      'gsd-new-milestone',
+      'gsd-quick',
+      'gsd-phase',
     ])
     expect(adapterOf('superpowers').startSkills).toEqual([
       'superpowers:brainstorming',

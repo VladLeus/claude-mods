@@ -9,20 +9,35 @@
  * (D-150). It imports core, generate/launcher, git, guards/repo, host/steps, paths, roles/template, scan, start, team,
  * ui and the epic modules; register and the goldens run it.
  */
-import type { CadreState, EpicRecord, HostIo, InitIo, InitLocations, RoleSpec, TerminalChoice } from '../../types'
+import type {
+  CadreState,
+  EpicRecord,
+  HostIo,
+  InitIo,
+  InitLocations,
+  PortEntry,
+  PortStat,
+  RoleSpec,
+  TerminalChoice,
+} from '../../types'
+import { isNewRepoFileWritable } from '../apply/run'
+import { privateLevelsProblem } from '../apply/safety'
+import { sha256Hex } from '../core/hash'
 import { reportText, sortedUnique } from '../core/text'
+import { rubricText } from '../generate/docs'
 import { hasRuntimeKickoff, shQuote } from '../generate/launcher'
 import { GIT_TIMEOUT_MS } from '../git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
 import { repoGuard } from '../guards/repo'
-import { hasRunFailed } from '../host/steps'
+import { hasRunFailed, isStepDone } from '../host/steps'
 import { t } from '../locales/t'
-import { launcherPath } from '../paths'
-import { standIn } from '../roles/template'
+import { inboxHomeOf, inboxTreeOf, launcherPath, parentOf, SIZING_RUBRIC_PATH, userDirOf } from '../paths'
+import { isCoreTeam, standIn } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { claudeRefusal } from '../start/claude-version'
 import { launcherRead } from '../start/launcher-check'
 import { renderRole } from '../start/render'
+import { inboxClearSteps } from '../start/render-plan'
 import { compileTeam, readTeam, regenBadRole } from '../team'
 import { terminalHostOf } from '../ui/open'
 import {
@@ -44,6 +59,8 @@ import {
   worktreeAddArgv,
   worktreePathOf,
 } from './git'
+import { epicEntryLine } from './brief'
+import { teamViewOf } from './hierarchy'
 import { epicBadKeyReply, epicBadNameReply, epicKeyOf, epicSlug, isEpicSlug } from './key'
 import { epicKickoffText } from './kickoff'
 import type { EpicWorktree } from './kickoff'
@@ -183,21 +200,37 @@ async function openedLines(
   return [...lines, copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE, ...refusal]
 }
 
+/** PM's epic brief, the first line of PM's new inbox; null with no clock or no team view of the main checkout. */
+async function pmSeed(
+  io: InitIo,
+  root: string,
+  epic: { readonly key: string; readonly title: string; readonly roles: readonly RoleSpec[] },
+): Promise<string | null> {
+  const at = await io.now()
+  if (at === null) return null
+  const team = await teamViewOf(io, root)
+  if (team === null) return null
+
+  return epicEntryLine({ ...epic, team, at })
+}
+
 /**
- * The render stage of runEpic (D-157, D-102, RESEARCH Pattern 1), once the mirror ran every step: the team, read in the
- * main checkout, is compiled there once (compileTeam), and each picked role, in cadre.json order, is rendered for the
- * worktree by renderRole with the worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every
- * `.runtime/` it writes is the worktree's own, never main's. The render names the main checkout as the epic's, so the
- * role keeps the worktree's CLAUDE.md files out and gets main's code-dir denies too (Pitfalls 1 and 2), and it looks a
- * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
- * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/`
- * (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf over the whole team and
- * the team's TL, D-158 to D-160). Its lines: one `warning: <id>: <text>` line per render warning, then the lines of
- * the open stage (openedLines). A role whose render refuses keeps that refusal as its line, which does not stop the
- * others, and one whose launcher in the worktree reads as a text without the epic kickoff line (hasRuntimeKickoff)
- * gets epicWorktreeLauncherLine and does not open, and one that is there but is not the launcher text runEpic checked
- * in the main checkout, or cannot be read in full, gets epicWorktreeLauncherChangedLine and does not open either
- * (epicWorktreeLauncherCheck, 03.1-W4 S1); a role whose worktree has no launcher stays openable.
+ * The render stage of runEpic, once the mirror ran every step: the team, read in the main checkout, is compiled there
+ * once (compileTeam), and each picked role, in cadre.json order, is rendered for the worktree by renderRole with the
+ * worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every `.runtime/` it writes is the
+ * worktree's own, never main's. The render names the main checkout as the epic's, so the role keeps the worktree's
+ * CLAUDE.md files out and gets main's code-dir denies too, and it looks a server up in the `~/.claude.json` project of
+ * the worktree, then of the main root as resolved and as given, where the user's project servers are recorded, and it
+ * names the epic record's slug, which names each role's workstream. Each role's render also writes its epic kickoff
+ * into its `.runtime/` (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf
+ * over the whole team, the team's TL and whether cadre.json records the core team), and PM's starts a new inbox with
+ * the epic brief (epicEntryLine). Its lines: one
+ * `warning: <id>: <text>` line per render warning, then the lines of the open stage (openedLines). A role whose render
+ * refuses keeps that refusal as its line, which does not stop the others, and one whose launcher in the worktree reads
+ * as a text without the epic kickoff line (hasRuntimeKickoff) gets epicWorktreeLauncherLine and does not open; one
+ * whose launcher differs from the text runEpic checked in the main checkout gets epicWorktreeLauncherChangedLine, one
+ * whose launcher cannot be read in full gets epicWorktreeLauncherUnreadLine, and neither opens
+ * (epicWorktreeLauncherCheck); a role whose worktree has no launcher stays openable.
  */
 async function renderedLines(
   io: InitIo,
@@ -213,7 +246,7 @@ async function renderedLines(
     /** The text of each picked role's launcher in the main checkout, as runEpic checked it (03.1-W4 S1). */
     readonly launchers: ReadonlyMap<string, string>
   },
-  epicWorktree: { readonly path: string; readonly title: string },
+  epicWorktree: { readonly path: string; readonly title: string; readonly record: { readonly slug: string } },
 ): Promise<string[]> {
   const { locations, state, roles, key } = team
   const worktree = epicWorktree.path
@@ -222,6 +255,7 @@ async function renderedLines(
   const worktreeLocations: InitLocations = { ...locations, root: worktree, givenRoot: worktree }
   const warnings: string[] = []
   const rendered: RenderedRole[] = []
+  const seed = await pmSeed(io, locations.root, { key, title: epicWorktree.title, roles })
   for (const role of team.picked) {
     const { id } = role
     const scope = scopes.get(id)
@@ -231,7 +265,16 @@ async function renderedLines(
       continue
     }
     const parent = epicParentOf(role, roles, team.pmId)
-    const kickoff = epicKickoffText({ role, key, title: epicWorktree.title, isPm: id === team.pmId, parent, tlId })
+    const kickoff = epicKickoffText({
+      role,
+      key,
+      title: epicWorktree.title,
+      isPm: id === team.pmId,
+      parent,
+      tlId,
+      isCoreTeam: isCoreTeam(state),
+    })
+    const inboxSeed = id === team.pmId && seed !== null ? { inboxSeed: seed } : {}
     const render = await renderRole(io, host, {
       locations: worktreeLocations,
       state,
@@ -239,7 +282,7 @@ async function renderedLines(
       scope,
       codeDirs: gathered.repo.codeDirs,
       mcpRoots: [worktree, locations.root, locations.givenRoot],
-      epic: { mainRoot: locations.root, kickoff },
+      epic: { mainRoot: locations.root, kickoff, slug: epicWorktree.record.slug, ...inboxSeed },
     })
     if (render.kind === 'refuse') {
       rendered.push({ id, line: render.text })
@@ -255,15 +298,18 @@ async function renderedLines(
 }
 
 /**
- * The mirror and render stages of runEpic and their reply (D-147, D-157, D-163, D-164): a worktree whose git dir git
- * did not name absolutely gets epicExcludesFailedReply, as its links could not be hidden. Otherwise mirrorSteps runs
- * with the record's links and copies, and the record is written to the git dir with its links and copies joined, once
- * each, with those this run made, also when the mirror stopped, so the next run and the epic's removal find them. A
- * stopped mirror replies with its failure, then one `warning: ` line per mirror warning as epicCreatedText prints them
- * (D-240) and the epicNoRecordWarning line when the record write failed (D-272, #37), and renders nothing; else the
- * reply is epicCreatedText with what this run linked and copied, the mirror's warnings and the epicNoRecordWarning line
- * when the record write failed, then the lines of the render stage (renderedLines), which renders each picked role
- * into the worktree and opens it there.
+ * The mirror and render stages of runEpic and their reply: a worktree whose git dir git did not name absolutely gets
+ * epicExcludesFailedReply, as its links could not be hidden. Otherwise main's sizing rubric is written first, only
+ * where it is absent with no link on its way (isNewRepoFileWritable), and a refused or failed write says nothing; the
+ * worktree gets the rubric from the mirror, as a link or a hidden, recorded copy, and never as a write of its own. Then
+ * mirrorSteps runs with the record's links and copies, and the record is written to the git dir with its links, copies
+ * and walked folders joined, once each, with those this run made, and its copiedAt joined with this run's copies at
+ * the time the mirror started (none without a clock), also when the mirror stopped, so the next run and the epic's
+ * removal find them; walked and copiedAt are written only when they hold an entry. A stopped mirror replies with its
+ * failure, then one `warning: ` line per mirror warning as epicCreatedText prints them and the epicNoRecordWarning
+ * line when the record write failed, and renders nothing; else the reply is epicCreatedText with what this run linked
+ * and copied, the mirror's warnings and the epicNoRecordWarning line when the record write failed, then the lines of
+ * the render stage (renderedLines), which renders each picked role into the worktree and opens it there.
  */
 async function mirroredReply(
   io: InitIo,
@@ -291,6 +337,10 @@ async function mirroredReply(
   const { key } = epic
   const { path, gitDir, record } = worktree
   if (!gitDir.startsWith('/')) return epicExcludesFailedReply(key)
+  if (await isNewRepoFileWritable(io, epic.root, SIZING_RUBRIC_PATH)) {
+    await host.write(`${epic.root}/${SIZING_RUBRIC_PATH}`, rubricText())
+  }
+  const copiedTime = await io.now()
   const mirrored = await mirrorSteps(io, host, {
     ...epic,
     worktree: path,
@@ -300,7 +350,18 @@ async function mirroredReply(
   })
   const links = sortedUnique([...record.links, ...mirrored.links])
   const copies = sortedUnique([...record.copies, ...mirrored.copies])
-  const isRecorded = await host.write(epicRecordPath(gitDir), epicRecordText({ ...record, links, copies }))
+  const { walked: recordedWalked = [], copiedAt: recordedCopiedAt = {}, ...kept } = record
+  const walked = sortedUnique([...recordedWalked, ...mirrored.walked])
+  const timed = copiedTime === null ? [] : mirrored.copies.map((copy): [string, number] => [copy, copiedTime])
+  const copiedAt = { ...recordedCopiedAt, ...Object.fromEntries(timed) }
+  const text = epicRecordText({
+    ...kept,
+    links,
+    copies,
+    ...(walked.length > 0 ? { walked } : {}),
+    ...(Object.keys(copiedAt).length > 0 ? { copiedAt } : {}),
+  })
+  const isRecorded = await host.write(epicRecordPath(gitDir), text)
   if (mirrored.failure !== null) {
     const warningLines = mirrored.warnings.map(warning => t('epic.create.epicCreatedText4', { warning }))
     // A record write that failed is named after the mirror warnings, so the failure never hides it (D-272, #37).
@@ -314,6 +375,27 @@ async function mirroredReply(
   const created = epicCreatedText({ key, title, path, branch, outcome, ...counts, warnings })
 
   return [created, ...(await renderedLines(io, host, epic, worktree))].join('\n')
+}
+
+/**
+ * Removes the inbox and session record of each role folder in the inbox home of a worktree runEpic has just added,
+ * where an earlier epic of the same key left them. A link or a non-folder on the way to the home removes nothing, and
+ * a removal that fails changes nothing else.
+ */
+async function clearedInboxes(io: InitIo, host: HostIo, locations: InitLocations, worktree: string): Promise<void> {
+  const userDir = userDirOf(locations, [worktree, locations.root], [])
+  if (userDir === null) return
+  const home = inboxHomeOf(userDir, worktree, await sha256Hex(worktree))
+  const tree = inboxTreeOf(userDir)
+  const levels = [parentOf(tree), tree, home]
+  const stats = new Map<string, PortStat | null>()
+  for (const level of levels) stats.set(level, await io.stat(level))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of [userDir, parentOf(tree), tree]) listings.set(folder, await io.list(folder))
+  if (privateLevelsProblem(levels, stats, listings) !== null) return
+  const entries = await io.list(home)
+  if (entries === null) return
+  for (const step of inboxClearSteps(home, entries)) await isStepDone(host, step)
 }
 
 /**
@@ -332,12 +414,15 @@ async function mirroredReply(
  * `<root>/.claude/worktrees/<name>` is added back on the kept branch, named for it, or made on the new branch
  * `epic/<slug>` from the current HEAD: a name isEpicSlug refuses, or a path that already exists (epicPathExistsReply),
  * stops it before the one `git worktree add` through the host; an add that fails or cannot start gives
- * epicAddFailedReply, and the branch is never deleted. Its epic record (D-164) holds the key, its name as the slug, the
- * title typed, the branch, the base (the branch checked out at the root, else its commit, else null) and the time.
+ * epicAddFailedReply, and the branch is never deleted. A worktree it has just added starts with empty inboxes
+ * (clearedInboxes). Its epic record (D-164) holds the key, its name as the slug, the title typed, the branch, the base
+ * (the branch checked out at the root, else its commit, else null) and the time.
  * Either way the main checkout is then mirrored into the worktree (mirroredReply, D-147, D-148): what git does not
  * track or ignores there and the worktree lacks is linked in or copied, hidden from git by the worktree's own excludes
  * file, which keeps the user's global excludes and is set up before the first link; a worktree whose git dir git does
- * not name as an absolute path stops with epicExcludesFailedReply. The record is then written to that git dir with its
+ * not name as an absolute path stops with epicExcludesFailedReply. Right before the mirror, main's sizing rubric is
+ * written where it is absent and safe to write (isNewRepoFileWritable); the worktree gets it from the mirror, as a link
+ * or a hidden, recorded copy, never as a write of its own. The record is then written to that git dir with its
  * links and copies joined with those this run made (D-163); a reused worktree whose record is unreadable gets a new one
  * from this run's key, title and branch, with no base. A write that fails adds the epicNoRecordWarning line. Once the
  * mirror ran every step, each picked role is rendered into the worktree (renderedLines, D-157): the team read from the
@@ -449,6 +534,7 @@ export async function runEpic(
   const base = headBranch === '' ? headCommit : headBranch
   const added = await host.run(worktreeAddArgv(root, path, branch, isNew), { timeoutMs: GIT_ADD_TIMEOUT_MS })
   if (hasRunFailed(added)) return epicAddFailedReply(branch, isNew)
+  await clearedInboxes(io, host, guard.locations, path)
 
   const named = await host.run(GIT_DIR_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
   const gitDir = named !== null && named.exitCode === 0 ? named.stdout.trim() : ''

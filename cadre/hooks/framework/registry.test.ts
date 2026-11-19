@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { EMPTY_FACTS } from '../testkit'
 import { isDecisionType } from './contract'
 import { GSD_ADAPTER } from './gsd/adapter'
 import { BUILTIN_ADAPTER } from './none/adapter'
@@ -34,6 +35,12 @@ describe('ADAPTERS', () => {
       expect(Object.isFrozen(adapter.locations.spec)).toBe(true)
       expect(Object.isFrozen(adapter.locations.plan)).toBe(true)
       expect(Object.isFrozen(adapter.doneSignal)).toBe(true)
+      const install = adapter.projectInstall
+      expect([install, install?.argv, install?.writes].every(part => Object.isFrozen(part))).toBe(true)
+      expect(Object.isFrozen(adapter.roleWork)).toBe(true)
+      for (const isLead of [true, false]) {
+        expect(Object.isFrozen(adapter.roleWork.startSteps({ roleId: 'be', isLead }))).toBe(true)
+      }
     }
   })
 })
@@ -58,7 +65,14 @@ describe('adapter contract (DET-04)', () => {
       const { doneSignal, locations } = adapter
       const texts = [adapter.name, adapter.detectRule, doneSignal.artifact, doneSignal.check]
       const lists = [adapter.startWork, locations.spec, locations.plan, adapter.verify, adapter.humanGates]
-      const calls = [adapter.detect, adapter.kickoffText, adapter.autonomyHunks, adapter.ownsSkill, adapter.roleStart]
+      const calls = [
+        adapter.detect,
+        adapter.kickoffText,
+        adapter.autonomyHunks,
+        adapter.ownsSkill,
+        adapter.roleStart,
+        adapter.isInstalled,
+      ]
       const named = [...adapter.startSkills, ...adapter.pluginsToEnable]
       const optional = [adapter.agentPrefix, adapter.install, adapter.factsHeading]
 
@@ -70,7 +84,26 @@ describe('adapter contract (DET-04)', () => {
       expect(optional.every(value => value === null || typeof value === 'string')).toBe(true)
       expect(typeof adapter.needsBash).toBe('boolean')
       expect(adapter.autonomy.length > 0 || (adapter.autonomyNote ?? '').trim() !== '').toBe(true)
+      const install = adapter.projectInstall
+      const isInstall = install !== null && install.argv.length > 0 && install.writes.length > 0
+      expect([Object.hasOwn(adapter, 'projectInstall'), install === null || isInstall]).toEqual([true, true])
+      const { roleWork } = adapter
+      const env = roleWork.workstreamEnv
+      expect([Object.hasOwn(adapter, 'roleWork'), typeof roleWork.startSteps]).toEqual([true, 'function'])
+      expect(env === null || /^[A-Z][A-Z0-9_]*$/.test(env)).toBe(true)
     }
+    expect(ADAPTERS.filter(adapter => adapter.projectInstall === null).map(adapter => adapter.id)).toEqual(['none'])
+  })
+
+  test('a project install names the folders a later session runs code from: frozen, each one it writes', () => {
+    const installs = ADAPTERS.flatMap(adapter => (adapter.projectInstall === null ? [] : [adapter.projectInstall]))
+
+    expect(installs.map(install => Object.isFrozen(install.runs))).toEqual(installs.map(() => true))
+    expect(installs.flatMap(install => install.runs.filter(dir => !install.writes.includes(dir)))).toEqual([])
+    expect([GSD_ADAPTER.projectInstall?.runs, SUPERPOWERS_ADAPTER.projectInstall?.runs]).toEqual([
+      ['.claude/hooks', '.claude/gsd-core', '.claude/scripts'],
+      [],
+    ])
   })
 
   test('every gate table passes the gate contract', () => {
@@ -92,6 +125,12 @@ describe('adapter contract (DET-04)', () => {
     }
   })
 
+  test('the built-in fallback has no start step for any role', () => {
+    for (const roleId of ['tl', 'be', 'pm']) {
+      for (const isLead of [true, false]) expect(BUILTIN_ADAPTER.roleWork.startSteps({ roleId, isLead })).toEqual([])
+    }
+  })
+
   test('every kickoff names the AUTOPILOT_DONE answer', () => {
     for (const adapter of ADAPTERS) {
       expect(adapter.kickoffText({ title: 'BE', roleId: 'be', specPath: null })).toContain('AUTOPILOT_DONE')
@@ -100,10 +139,8 @@ describe('adapter contract (DET-04)', () => {
 })
 
 /**
- * Which startWork entries each adapter's kickoff names word for word today (A8): GSD two of three, as it never names
- * /gsd-new-project; superpowers one of two, as it words the writing-plans start its own way; the built-in fallback
- * none, as it words both entries its own way. The gap is logged in .planning/todos/pending/gsd-kickoff-new-project.md,
- * so a later fix shows as a diff here.
+ * Which startWork entries each adapter's kickoff names word for word: GSD all three; superpowers one of two, as it
+ * words the writing-plans start its own way; the built-in fallback none, as it words both entries its own way.
  */
 describe('safety net: kickoff names startWork (A8)', () => {
   test('for a fixed context each kickoff holds these startWork entries word for word, and not the others', () => {
@@ -114,9 +151,15 @@ describe('safety net: kickoff names startWork (A8)', () => {
       return [adapter.id, adapter.startWork.map(entry => kickoff.includes(entry))]
     })
     expect(matched).toEqual([
-      ['gsd', [true, true, false]],
+      ['gsd', [true, true, true]],
       ['superpowers', [false, true]],
       ['none', [false, false]],
     ])
+  })
+})
+
+describe('the built-in fallback install', () => {
+  test('is always installed: it has nothing to install', () => {
+    expect(BUILTIN_ADAPTER.isInstalled(EMPTY_FACTS)).toBe(true)
   })
 })

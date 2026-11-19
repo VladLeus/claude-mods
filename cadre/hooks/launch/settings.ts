@@ -4,12 +4,15 @@
  * and the deny list, and never the context monitor hook (D-62, D-84, D-91, A7). It imports core, paths, the scope card
  * and lint, the launch links and denies, and the types, so the launch plan renders the settings here.
  */
-import type { CompiledScope, RoleSpec } from '../../types'
+import type { CompiledScope, RoleSpec, SettingsTemplate } from '../../types'
 import { sortedUnique } from '../core/text'
-import { roleMemoryDir } from '../paths'
+import { adapterOf } from '../framework/registry'
+import { workstreamName } from '../framework/workstream'
+import { isSafeRoot, MAIN_ENV, ROLE_ENV, roleMemoryDir, ROOT_ENV } from '../paths'
+import { runsRepoChecks } from '../roles/template'
 import { mcpToolName } from '../scope/card'
 import { isContextMonitorScript } from '../scope/lint'
-import { settingsDeny } from './deny'
+import { pluginSkillDeny, settingsDeny } from './deny'
 import type { LaunchUser } from './links'
 
 /**
@@ -40,18 +43,44 @@ function carriedStatusLine(role: RoleSpec, user: LaunchUser): unknown {
 }
 
 /**
- * The env of the role: the user's value for each env name the role carries, sorted by name. A name the user has no
- * value for is left out, and a name that is a property of every object (`constructor`) is never read as a value. Null
- * when nothing is left, so an empty env is not rendered.
+ * The user's value for each env name the role carries, sorted by name. A name the user has no value for is left out,
+ * and a name that is a property of every object (`constructor`) is never read as a value.
  */
-function carriedEnv(role: RoleSpec, user: LaunchUser): Record<string, string> | null {
+function carriedEnv(role: RoleSpec, user: LaunchUser): Record<string, string> {
   const entries: [string, string][] = []
   for (const name of sortedUnique(role.carry.env)) {
     const value = Object.hasOwn(user.env, name) ? user.env[name] : undefined
     if (typeof value === 'string') entries.push([name, value])
   }
 
-  return entries.length === 0 ? null : Object.fromEntries(entries)
+  return Object.fromEntries(entries)
+}
+
+/**
+ * The workstream env of a role session: the workstream env name of every framework the role may run, set to the role's
+ * workstream.
+ */
+function workstreamEnv(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, string> {
+  const names = [scope.card.framework, ...scope.card.alsoRuns].flatMap(id => adapterOf(id).roleWork.workstreamEnv ?? [])
+  const name = workstreamName(role.id, user.epicSlug ?? null)
+
+  return Object.fromEntries(names.map((env): [string, string] => [env, name]))
+}
+
+/**
+ * The env of a role session: the carried env, then its workstream env, with cadre's role and root names laid over it,
+ * then the main checkout's name when the launch has one, so cadre's names win.
+ */
+function sessionEnv(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, string> {
+  const main = user.mainRoot === undefined ? {} : { [MAIN_ENV]: user.mainRoot }
+
+  return {
+    ...carriedEnv(role, user),
+    ...workstreamEnv(role, scope, user),
+    [ROLE_ENV]: role.id,
+    [ROOT_ENV]: user.root,
+    ...main,
+  }
 }
 
 /** One carried hook command as the settings hold it; `timeout` only when the user set one. */
@@ -101,6 +130,32 @@ function deniedServers(scope: CompiledScope, deny: readonly string[]): { readonl
   return scope.card.notGiven.mcp.filter(name => deny.includes(mcpToolName(name))).map(serverName => ({ serverName }))
 }
 
+/**
+ * The plugins of a role session: the scope's record, with `false` for a plugin whose skill list the launch could not
+ * read (pluginSkillDeny) and for every plugin the repo's settings enable that the scope does not, so a project install
+ * reaches no role not given it.
+ */
+function enabledPluginsFor(role: RoleSpec, scope: CompiledScope, user: LaunchUser): Record<string, boolean> {
+  const enabled = scope.settings.enabledPlugins
+  const leaked = (user.projectPlugins ?? []).filter(key => !Object.hasOwn(enabled, key) || enabled[key] !== true)
+  const off = [...pluginSkillDeny(role, scope, user).offPlugins, ...leaked]
+
+  return { ...enabled, ...Object.fromEntries(off.map((key): [string, boolean] => [key, false])) }
+}
+
+/**
+ * The sandbox of a role session: the template's, and for a Bash role that runs the repo's checks at a safe root, the
+ * env files git tracks there made readable to its commands. Sandbox paths are plain absolute paths, not `//` patterns.
+ */
+function sandboxFor(role: RoleSpec, scope: CompiledScope, user: LaunchUser): SettingsTemplate['sandbox'] {
+  const { sandbox } = scope.settings
+  const tracked = user.trackedEnvFiles ?? []
+  if (!role.hasBash || !runsRepoChecks(role) || !isSafeRoot(user.root) || tracked.length === 0) return sandbox
+  const allowRead = tracked.map(file => `${user.root}/${file}`)
+
+  return { ...sandbox, filesystem: { ...sandbox.filesystem, allowRead } }
+}
+
 /** The settings of renderRuntimeSettings with the deny list given, so a caller that has it computes it only once. */
 export function settingsFor(
   role: RoleSpec,
@@ -114,11 +169,11 @@ export function settingsFor(
     ['autoMemoryDirectory', roleMemoryDir(user, role.id)],
     ['claudeMdExcludes', [...claudeMdExcludes]],
     ['deniedMcpServers', deniedServers(scope, deny)],
-    ['enabledPlugins', { ...scope.settings.enabledPlugins }],
-    ...entryIf('env', carriedEnv(role, user)),
+    ['enabledPlugins', enabledPluginsFor(role, scope, user)],
+    ['env', sessionEnv(role, scope, user)],
     ...entryIf('hooks', carriedHooks(role, user)),
     ['permissions', { defaultMode: scope.settings.permissions.defaultMode, deny: [...deny] }],
-    ['sandbox', { enabled: scope.settings.sandbox.enabled }],
+    ['sandbox', sandboxFor(role, scope, user)],
     ...entryIf('statusLine', carriedStatusLine(role, user)),
   ]
 
@@ -126,14 +181,14 @@ export function settingsFor(
 }
 
 /**
- * The runtime settings of a role: the launch half of D-66. renderRole writes the result to
- * `.cadre/<id>/.runtime/settings.json`; init never writes it. It holds the template's plugins and sandbox, the
- * permissions with the deny list of `settingsDeny` (runtimeDeny's, the private instructions folder's and, for a
- * parts-flow role, the linked memories', G-02-1f), the absolute memory folder of the role (D-91), the given CLAUDE.md
- * excludes, the scanned servers its tool denies cover as deniedMcpServers (D-124), and the values the role carries from
- * the user's settings: the compact window, the status line, the env values for its env names, and its hooks (D-60,
- * D-62, D-84). Every key is one of RUNTIME_SETTINGS_KEYS, in that order, so a value of any other name or key never
- * appears.
+ * The runtime settings of a role: the launch half of the settings. renderRole writes the result to
+ * `.cadre/<id>/.runtime/settings.json`; init never writes it. It holds the template's plugins, its sandbox with the
+ * tracked env files a role that runs the repo's checks may read (sandboxFor), the permissions with the deny list of
+ * `settingsDeny` (runtimeDeny's, the private instructions folder's and, for a parts-flow role, the linked memories'),
+ * the absolute memory folder of the role, the given CLAUDE.md excludes, the scanned servers its tool denies cover as
+ * deniedMcpServers, and the values the role carries from the user's settings: the compact window, the status line, the
+ * env values for its env names, and its hooks. Every key is one of RUNTIME_SETTINGS_KEYS, in that order, so a value of
+ * any other name or key never appears.
  */
 export function renderRuntimeSettings(
   role: RoleSpec,

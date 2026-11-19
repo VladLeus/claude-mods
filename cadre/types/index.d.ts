@@ -13,6 +13,7 @@ export type TerminalChoice = 'none' | 'auto' | 'terminal' | 'iterm' | 'tmux' | '
 /**
  * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
  * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json;
+ * `frameworks [--dry-run]` asks the framework step of init again for the stored team and re-renders its role files;
  * `start <id> [--terminal[=terminal|iterm|tmux]]` renders a role's per-launch files and prints its launcher command;
  * `status <id>` reads from disk whether a role's autopilot run is done, running, stopped, not started or unknown, and
  * writes nothing; `epic <KEY> [title] [--terminal[=terminal|iterm|tmux]]` creates or reuses the epic's worktree in the
@@ -43,6 +44,11 @@ export type CadreCommand =
       readonly kind: 'regen'
       /** The role id, already matched against the role-id slug (D-48). */
       readonly id: string
+      readonly dryRun: boolean
+    }
+  | {
+      readonly kind: 'frameworks'
+      /** Whether --dry-run was given: the changes are printed and nothing is installed or written. */
       readonly dryRun: boolean
     }
   | {
@@ -98,6 +104,10 @@ export type EpicRecord = {
   readonly links: readonly string[]
   /** The repo-relative paths cadre copied into the worktree (D-172). */
   readonly copies: readonly string[]
+  /** The repo-relative folders the mirror made real above a path .worktreeinclude names. */
+  readonly walked?: readonly string[]
+  /** When each recorded copy was placed, in epoch ms, by its repo-relative path; written only when it holds one. */
+  readonly copiedAt?: Readonly<Record<string, number>>
 }
 
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */
@@ -305,6 +315,25 @@ export type KickoffContext = {
   readonly roleId: string
   /** The spec's path in the repo; null when the role has no spec yet. */
   readonly specPath: string | null
+  /** True only for the TL of a core team, which plans no implementation. */
+  readonly isCoreLead?: boolean
+  /** True only for a core team's Security, which reviews and runs no repo checks. */
+  readonly isCoreReviewer?: boolean
+  /** True for a role that asks the person in an epic; its question gate then defers to its Hierarchy section. */
+  readonly asksInEpic?: boolean
+}
+
+/**
+ * A framework's install at project scope, run from the repo root once the person consented and confirmed. `writes`
+ * names what the installer writes, for the review; `runs` names the folders of `writes` a later session runs code from.
+ */
+export type ProjectInstall = {
+  readonly id: string
+  readonly argv: readonly string[]
+  readonly timeoutMs: number
+  readonly writes: readonly string[]
+  readonly runs: readonly string[]
+  readonly isPlugin: boolean
 }
 
 /**
@@ -312,12 +341,31 @@ export type KickoffContext = {
  * Every field is required except `roleFacts`. `autonomyNote` is null unless `autonomy` is empty, and then it
  * states why the framework needs no autonomy settings.
  */
+/** Who a framework's start steps are worded for: the role, and whether it is the team's lead. */
+export type RoleWorkContext = {
+  readonly roleId: string
+  readonly isLead: boolean
+  /** True only for the TL of a core team, which plans no implementation. */
+  readonly isCoreLead?: boolean
+}
+
+/**
+ * How a role keeps its own planning state in a framework: the env name its runtime settings set to the role's
+ * workstream (null when the framework has none), and the steps the role runs to start its planning.
+ */
+export type RoleWork = {
+  readonly workstreamEnv: string | null
+  readonly startSteps: (ctx: RoleWorkContext) => readonly string[]
+}
+
 export type FrameworkAdapter = {
   readonly id: FrameworkId
   readonly name: string
   /** One line, shown by `--adapters`, on how this framework is detected. */
   readonly detectRule: string
   readonly detect: (facts: Facts) => Detection
+  /** Whether the framework is installed for the repo, apart from being in use. */
+  readonly isInstalled: (facts: Facts) => boolean
   /** The exact commands or skills the role line names to start the work. */
   readonly startWork: readonly string[]
   /** Where specs and plans live, relative to the repo root. */
@@ -349,12 +397,19 @@ export type FrameworkAdapter = {
   readonly agentPrefix: string | null
   /** Whether the framework's workflows need Bash: a role on it without Bash runs them through a person (A1). */
   readonly needsBash: boolean
-  /** What the kickoff role line of a role starts the session with: a command, a skill or a file. */
-  readonly roleStart: (roleId: string) => string
+  /**
+   * What the kickoff role line of a role starts the session with: a command, a skill or a file. A core team's TL may
+   * start elsewhere.
+   */
+  readonly roleStart: (roleId: string, isCoreLead?: boolean) => string
   /** The command a person runs to install the framework; null when there is nothing to install. */
   readonly install: string | null
+  /** The install cadre runs at project scope on consent; null when there is nothing to install. */
+  readonly projectInstall: ProjectInstall | null
   /** The heading of the detect report line that lists the adapter's roleFacts; null when no line is shown. */
   readonly factsHeading: string | null
+  /** How a role on this framework keeps its own planning state. */
+  readonly roleWork: RoleWork
 }
 
 /** A repo-root entry that marks a framework cadre does not drive in v1. */
@@ -756,6 +811,164 @@ export type HostIo = {
   readonly env: (name: HostEnvName) => Promise<string | null>
 }
 
+/** What an inbox entry is: the kinds a role may send. */
+export type MessageKind = 'ticket' | 'task' | 'report' | 'question' | 'answer' | 'epic-end' | 'note'
+
+/** The size of a ticket: four scores, each from 0.1 to 1.0. */
+export type SizeVector = {
+  readonly scope: number
+  readonly complexity: number
+  readonly risk: number
+  readonly effort: number
+}
+
+/** The scores the PM gives a ticket from its requirements; the role that plans it adds the other two. */
+export type ProductScores = {
+  readonly scope: number
+  readonly risk: number
+}
+
+/** How an epic is planned: as one GSD milestone, or ticket by ticket with a framework picked by each ticket's size. */
+export type PlanningMode = 'gsd-epic' | 'ticket'
+
+/** How a ticket runs on GSD: /gsd-quick when small, a phase when large. */
+export type GsdPath = 'quick' | 'phase'
+
+/** The class of a ticket's size against the repo threshold, and the class a user pin may set. */
+export type SizeClass = 'small' | 'large'
+
+/** How a worker's report says its task ended. */
+export type ReportOutcome = 'done' | 'blocked' | 'partial'
+
+/** The `sizing` block of `.cadre/cadre.json`: the threshold of a large ticket, the framework per size, the rubric. */
+export type Sizing = {
+  readonly threshold: number
+  readonly mapping: {
+    readonly small: FrameworkId
+    readonly large: FrameworkId
+  }
+  readonly rubric: string
+}
+
+/** The framework a task runs on and, on gsd, its GSD path. */
+export type TaskUse = {
+  readonly framework: FrameworkId
+  readonly gsdPath?: GsdPath
+}
+
+/**
+ * The fields of an inbox entry beside its subject and body that inbox_send checks per kind, and the stamps cadre adds:
+ * `size`, `large` and, when a pin set the class, `pinned` on a task; `planPath` and `method` on a superpowers task.
+ */
+export type InboxEntryFields = {
+  readonly ticketKey?: string
+  readonly scores?: ProductScores
+  readonly pin?: SizeClass
+  readonly reportForm?: string
+  readonly vector?: SizeVector
+  readonly use?: TaskUse
+  readonly specPath?: string
+  readonly outcome?: ReportOutcome
+  readonly changes?: string
+  readonly verification?: string
+  readonly reason?: string
+  readonly frameworkUsed?: FrameworkId
+  readonly docPaths?: readonly string[]
+  readonly openQuestions?: readonly string[]
+  readonly mode?: PlanningMode
+  readonly tickets?: readonly string[]
+  readonly size?: number
+  readonly large?: boolean
+  readonly pinned?: SizeClass
+  readonly planPath?: string
+  readonly method?: string
+}
+
+/** The state of an inbox entry: unread until its owner marks it. */
+export type InboxState = 'unread' | 'read' | 'awaiting' | 'blocked' | 'rejected' | 'done'
+
+/** One message in a role's inbox.jsonl, stamped by cadre with its id, time and sender. */
+export type InboxEntry = {
+  readonly v: 1
+  readonly type: 'entry'
+  readonly id: string
+  readonly at: number
+  readonly from: string
+  readonly to: string
+  readonly kind: MessageKind
+  readonly subject: string
+  readonly body: string
+  readonly replyTo?: string
+} & InboxEntryFields
+
+/** A state change of an entry, appended to the inbox that holds the entry. */
+export type InboxMark = {
+  readonly v: 1
+  readonly type: 'mark'
+  readonly id: string
+  readonly at: number
+  readonly by: string
+  readonly state: Exclude<InboxState, 'unread'>
+  readonly note?: string
+  readonly waitsFor?: string
+}
+
+/** One line of an inbox.jsonl. */
+export type InboxEvent = InboxEntry | InboxMark
+
+/** Where a large inbox moves at /cadre start, and the fresh cadre entry appended in its place, as one record line. */
+export type InboxRotation = {
+  readonly archive: string
+  readonly text: string
+}
+
+/** An entry with the state its marks give it, as inbox_read shows it. */
+export type InboxItem = {
+  readonly entry: InboxEntry
+  readonly state: InboxState
+  readonly note: string | null
+  readonly waitsFor: string | null
+  readonly reply: string | null
+  readonly markedAt: number | null
+}
+
+/**
+ * The role a session runs as and the root it runs in, read from its runtime env; `main` is the main checkout of a
+ * session in a linked worktree, where its role and team are read.
+ */
+export type RoleContext = {
+  readonly id: string
+  readonly root: string
+  readonly main?: string
+}
+
+/** A role session with its inbox home in the user config folder, worked out by the session itself. */
+export type RoleSession = RoleContext & { readonly inboxHome: string }
+
+/**
+ * The roles of the team, each role's parent (null for the top of the hierarchy), pm, the PM stand-in, null when the
+ * team has none, and the repo's sizing and frameworks.
+ */
+export type TeamView = {
+  readonly ids: readonly string[]
+  readonly parents: Readonly<Record<string, string | null>>
+  readonly pm: string | null
+  readonly sizing: Sizing
+  readonly frameworks: readonly FrameworkId[]
+  /** The frameworks each role may run: its own first, then the others the repo records. */
+  readonly mayRun: Readonly<Record<string, readonly FrameworkId[]>>
+}
+
+/** Sends a live message to a session by its id; true when the host delivered it. */
+export type SessionLink = {
+  readonly send: (sessionId: string, text: string) => Promise<boolean>
+}
+
+/** What a cadre tool answers the model: its result, or a refusal. */
+export type ToolOutcome =
+  | { readonly kind: 'result'; readonly text: string }
+  | { readonly kind: 'deny'; readonly text: string }
+
 /**
  * What the one runtime identity call gave (D-28, WR-01): its stdout when it exited 0, else null, and `could-not-run`
  * when the call threw, which covers node missing from PATH and a timeout alike; the error itself is never read (IN-05).
@@ -821,14 +1034,13 @@ export type InstructionGroup = 'global-claude-md' | 'auto-memory' | 'project-cla
 export type PartSource = 'global' | 'repo'
 
 /**
- * One part of an instruction file (G-02-1f Part unit): a section of a CLAUDE.md file, a rule file, AGENTS.md or a doc
- * a repo file links to, cut at its `#` and `##` headings. `id` is `P<n>` in read order; `file` is the raw repo-relative
- * path for a repo part, the display form for a global one (`~/.claude/CLAUDE.md` style); cleaned only where shown
- * (02-GAPS-B2 N3); `heading` is '' for the text before the first heading. `text` is the section as read, its heading
- * line included, held in memory for this run; it is never logged, shown, asked or put in a reply; a repo part a role
- * is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited. `hash`
- * is the SHA-256 of `text` as 64 lowercase hex characters, for regen (G-02-1f Regen): the same text gives the same
- * hash, whatever file it is in.
+ * One part of an instruction file: a whole repo CLAUDE.md, rule file or AGENTS.md, or a section of a global file, cut
+ * at its `#` and `##` headings. `id` is `P<n>` in read order; `file` is the raw repo-relative path for a repo part, the
+ * display form for a global one (`~/.claude/CLAUDE.md` style), cleaned only where shown; `heading` is '' for a repo
+ * part and for the text before a global file's first heading. `text` is the file or section as read, held in memory
+ * for this run; it is never logged, shown, asked or put in a reply, and originals are never edited. `hash` is the
+ * SHA-256 of `text` as 64 lowercase hex characters, for regen: the same text gives the same hash, whatever file it is
+ * in.
  */
 export type InstructionPart = {
   readonly id: string
@@ -877,13 +1089,13 @@ export type InstructionScan = {
 }
 
 /**
- * How init handed out the instruction files (G-02-1f): `none` when there was nothing to hand out, `whole` for the D-63
- * whole-file questions, and `parts` for the topics and memories: the read, the topics, the roles the model recommended
- * for each topic and memory (keyed by topic id and memory id; a usable recommendation names every one, and the map is
- * empty when the model gave none) and the roles the person gave each (keyed the same way; a topic or memory no role
- * was given stays with the root session only). The text is held in memory for this run; it is never logged, shown,
- * asked or put in a reply; a repo part a role is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm
- * (generate.ts); originals are never edited.
+ * How init handed out the instruction files: `none` when there was nothing to hand out, `whole` for the whole-file
+ * questions, and `parts` for the topics and memories: the read, the topics, the roles the model recommended for each
+ * topic and memory (keyed by topic id and memory id; a usable recommendation names every one, and the map is empty
+ * when the model gave none) and the roles the person gave each (keyed the same way; a topic or memory no role was
+ * given stays with the root session only). The text is held in memory for this run; it is never logged, shown, asked
+ * or put in a reply; a repo file a role is given loads from its original at launch, and a global part goes into the
+ * role's private CLAUDE.md after Confirm; originals are never edited.
  */
 export type InstructionHandout =
   | { readonly kind: 'none' }
@@ -930,10 +1142,10 @@ export type RoleSpec = {
   readonly skills: readonly string[]
   readonly instructions: readonly InstructionGroup[]
   /**
-   * The repo parts the role was given (G-02-1f Regen), each by its repo-relative file, its heading ('' for the text
-   * before the first heading) and the SHA-256 of its text, so regen can compare them with the files as they are now
-   * (partChanges). It is committed with role.json, so it never holds a global part or a memory: those are recorded only
-   * in the role's private instructions.json (D-140 q2-a). Absent in a role.json written before it, which still parses.
+   * The repo parts the role was given, each by its repo-relative file, its heading ('' for the whole file, else a
+   * section heading) and the SHA-256 of its text, so regen can compare them with the files as they are now
+   * (partChanges). It is committed with role.json, so it never holds a global part or a memory: those are in the
+   * role's private instructions.json. Absent in an older role.json, which still parses.
    */
   readonly instructionParts?: readonly InstructionPartRecord[]
   /**
@@ -1017,6 +1229,9 @@ export type LaunchStart =
   | { readonly kind: 'here' }
   | { readonly kind: 'dir'; readonly path: string }
 
+/** Which structure init used: cadre's core team (the template, adjusted or not) or the user's own. */
+export type TeamStructure = 'core' | 'custom'
+
 /** `.cadre/cadre.json`: the repo-level answers regen and the ignore block need (D-89). */
 export type CadreState = {
   readonly schema: 1
@@ -1032,6 +1247,14 @@ export type CadreState = {
    * ~/.claude.json only when it is true, so the MCP denies init compiled from it are kept (A1).
    */
   readonly readUserMcp: boolean
+  /** The sizing block; absent in a setup that never recorded one, which then takes the default. */
+  readonly sizing?: Sizing
+  /** The frameworks recorded for the repo; absent in a setup from before they were recorded. */
+  readonly frameworks?: readonly FrameworkId[]
+  /** The repo's docker scripts init found, as `<runner> <name>`; absent when it found none. */
+  readonly dockerScripts?: readonly string[]
+  /** Absent in a setup from before it was recorded, which reads as custom. */
+  readonly structure?: TeamStructure
 }
 
 /** What the repo scan found (SCAN-01): a separate type beside the frozen Facts (D-88). */
@@ -1054,6 +1277,8 @@ export type RepoScan = {
     readonly stateState: ReadState
   }
   readonly warnings: readonly string[]
+  /** The docker wrapper scripts of the root package.json, as `<runner> <name>`, sorted; absent in a hand-built scan. */
+  readonly dockerScripts?: readonly string[]
 }
 
 /** A skill or plugin command by name, with the plugin that adds it; null for user and project skills. */
@@ -1116,7 +1341,28 @@ export type SetupScan = {
   readonly memoryFiles: readonly string[]
   readonly settingsKeys: readonly { readonly source: SettingsSource; readonly keys: readonly string[] }[]
   readonly hooks: readonly HookScript[]
+  /** The start folder's settings of a dir start; absent otherwise. */
+  readonly startSettings?: StartSettings
   readonly carry: CarryFacts
+  readonly warnings: readonly string[]
+}
+
+/** A key of a start folder's `.claude/settings.json` that cadre does not scan. */
+export type StartSettingsKey =
+  | 'permissions.allow'
+  | 'permissions.additionalDirectories'
+  | 'env'
+  | 'sandbox'
+  | 'disableAllHooks'
+
+/**
+ * What the scan read of a dir start folder's .claude/settings.json: hooks and keys only when it was read, and the
+ * warnings of the read.
+ */
+export type StartSettings = {
+  readonly state: 'absent' | 'unknown' | 'read'
+  readonly hooks: readonly HookScript[]
+  readonly keys: readonly StartSettingsKey[]
   readonly warnings: readonly string[]
 }
 
@@ -1131,6 +1377,7 @@ export type Enforcement = 'hard' | 'best-effort' | 'none'
  * - `tool-present`: `tools` lists the tool named by the token;
  * - `command-present`: `slash_commands` lists the command named by the token;
  * - `skill-present`: `skills` lists the skill named by the token;
+ * - `skill-absent`: `skills` does not list the skill named by the token;
  * - `permission-mode`: `permissionMode` is the token;
  * - `memory-path`: `memory_paths.auto` is the folder of the token, with or without a trailing `/` (ISO-03);
  * - `not-visible`: nothing; the event cannot show the rule, so the probe reports it best-effort;
@@ -1142,6 +1389,7 @@ export type ProbeCheckKind =
   | 'tool-present'
   | 'command-present'
   | 'skill-present'
+  | 'skill-absent'
   | 'permission-mode'
   | 'memory-path'
   | 'not-visible'
@@ -1190,13 +1438,23 @@ export type ScopeContext = {
    * roles.ts: a role id, or a role's id with the template role it is based on.
    */
   readonly roles: readonly (string | Pick<RoleSpec, 'id' | 'basedOn'>)[]
+  /** Every framework the repo records, which a role not on none may also run; absent when none is passed. */
+  readonly alsoRuns?: readonly FrameworkId[]
+  /** The repo root the launch denies are written under; absent when not known. */
+  readonly root?: string
+  /** The repo's docker scripts, which a role that runs the repo's checks runs outside the sandbox; absent when none. */
+  readonly dockerScripts?: readonly string[]
 }
 
 /** The committed settings template: portable keys only (D-84). Per-user values are rendered at launch. */
 export type SettingsTemplate = {
   readonly enabledPlugins: Readonly<Record<string, boolean>>
   readonly permissions: { readonly defaultMode: PermissionMode; readonly deny: readonly string[] }
-  readonly sandbox: { readonly enabled: boolean }
+  readonly sandbox: {
+    readonly enabled: boolean
+    readonly excludedCommands?: readonly string[]
+    readonly filesystem?: { readonly allowWrite?: readonly string[]; readonly allowRead?: readonly string[] }
+  }
 }
 
 /** The committed MCP file: the server names this role is given (D-93). Phase 3 renders the real --mcp-config at launch. */
@@ -1210,6 +1468,8 @@ export type ScopeCard = {
   readonly roleId: string
   readonly title: string
   readonly framework: FrameworkId
+  /** The frameworks the role may run besides `framework`; [] for a role on none. */
+  readonly alsoRuns: readonly FrameworkId[]
   readonly model: string
   readonly effort: Effort
   readonly permissionMode: PermissionMode
@@ -1218,17 +1478,23 @@ export type ScopeCard = {
   readonly isAttended: boolean
   readonly skills: readonly string[]
   readonly mcp: readonly string[]
-  readonly notGiven: { readonly skills: readonly string[]; readonly mcp: readonly string[] }
+  readonly notGiven: {
+    readonly skills: readonly string[]
+    /** The not-given skills whose scanned plugin is set, which is off for the role. */
+    readonly pluginSkills: readonly string[]
+    readonly mcp: readonly string[]
+  }
+  /** The not-given skills the launch denies per skill at call time, as `plugin:skill`, sorted. */
+  readonly callDenied: readonly string[]
   /**
-   * The scanned hook scripts by what loads them in a role session (D-62, A1): `loaded` are the hooks the role carries;
-   * `loadedByProject` are scripts registered in project settings that are not carried, which load because the launcher
-   * runs `--setting-sources project`, and only for a git-root start: a `here` or `dir` start does not load the project
-   * settings of the git root, so the list is empty and those scripts are not loaded (D-122); `notLoaded` are the
-   * scripts that are neither. Each list is sorted, once each.
+   * The scanned hook scripts by what loads them in a role session: `loaded` are the hooks the role carries;
+   * `loadedByProject` are scripts the start's project settings load that are not carried (the git root's for a git-root
+   * start, the start folder's for a dir start, none for here); null when the start folder's settings could not be read;
+   * `notLoaded` are the scripts that are neither. Each list is sorted, once each.
    */
   readonly hooks: {
     readonly loaded: readonly string[]
-    readonly loadedByProject: readonly string[]
+    readonly loadedByProject: readonly string[] | null
     readonly notLoaded: readonly string[]
   }
   readonly rules: readonly ScopeRule[]

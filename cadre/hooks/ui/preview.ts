@@ -111,20 +111,16 @@ export function fitPreview(context: AskContext, rows: number, columns: number | 
 }
 
 /**
- * The transcript entries the TUI default prints right above a dialog (D-228, D-262, WD-S4): for a context too long for
- * the preview drawn at `columns` (fitPreview at PREVIEW_LINE_ROWS, D-260), one entry per row, its title and then every
- * line, each cleaned with no cap (T-02.1-79, T-02.2-09), so no value can add an entry or a title of its own and the
- * full text above holds whole what the preview leaves out. Rows are never joined: the terminal stores a newline inside
- * a `$.ui.log` text as U+FFFD and draws the rows run together (D-262 reload check, user 2026-11-04). None for a context
- * that fits, for the Review (it is paged), for no context, and for a context with the same title and the same lines,
- * in order, as `printed`, the one printed last, so a question asked again prints its context once.
+ * The rows printed above the TUI dialog for a context whose preview leaves lines out, once per context; none when the
+ * preview shows it whole, a paged context's page included.
  */
 export function tuiTranscriptEntries(
   context: AskContext | null,
   printed: AskContext | null,
   columns: number | null,
 ): readonly string[] {
-  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS, columns).isOverflow) return []
+  if (context === null) return []
+  if (!fitPreview({ ...context, lines: shownLines(context) }, PREVIEW_LINE_ROWS, columns).isOverflow) return []
   const { title, lines } = context
   const isPrinted =
     printed !== null &&
@@ -351,6 +347,27 @@ export type AskRewrite = {
   readonly asked: readonly AskedQuestion[]
 }
 
+/** The lines a preview fits of a context: a paged one's page rows, a section title first; else its lines. */
+function shownLines(context: AskContext): readonly string[] {
+  if (context.page === undefined || context.rows === undefined || context.kind === 'review') return context.lines
+
+  return context.rows.flatMap(section => [
+    ...(section.title === null ? [] : [section.title]),
+    ...section.rows.map(row => row.text),
+  ])
+}
+
+/**
+ * Whether the TUI-default preview of `context`, a paged one's page rows (shownLines), shows it whole at `rows` and
+ * `columns`: it neither overflows the rows (fitPreview) nor is cut at MAX_PREVIEW_CHARS (previewMarkdown).
+ */
+export function previewFits(context: AskContext, rows: number, columns: number | null): boolean {
+  const shown = { ...context, lines: shownLines(context) }
+  if (fitPreview(shown, rows, columns).isOverflow) return false
+
+  return !previewMarkdown([shown], columns).endsWith(`\n${CUT_LINE}`)
+}
+
 /**
  * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
  * D3, R3, R4); null, so the call passes through unchanged and the dialog keeps its Other row, when the open question
@@ -361,8 +378,8 @@ export type AskRewrite = {
  * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
  * that pairs its text as asked with the text the dialog shows (A3), with the labels of its options as asked and
  * `takesNote`, whether a note typed in it is its answer (D-270); a multi-select question is copied unchanged,
- * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context fitted to
- * them at `columns` (fitPreview, D-228, D-260); with none it shows every line.
+ * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context, a paged
+ * one's page rows (shownLines), fitted to them at `columns` (fitPreview, D-228, D-260); with none it shows every line.
  */
 export function askRewrite(
   questions: unknown,
@@ -373,7 +390,8 @@ export function askRewrite(
   rows: number | null = null,
 ): AskRewrite | null {
   if (context === null) return null
-  const shown = rows === null ? context : { ...context, lines: fitPreview(context, rows, columns).lines }
+  const page = { ...context, lines: shownLines(context) }
+  const shown = rows === null ? context : { ...context, lines: fitPreview(page, rows, columns).lines }
   const preview = previewMarkdown([shown], columns)
   const previewed = withPreviews(questions, () => preview)
   if (previewed === null) return null

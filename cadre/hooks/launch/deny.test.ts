@@ -7,8 +7,9 @@ import { GIT_DIR_ARGV } from '../epic/git'
 import { adapterOf } from '../framework/registry'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
+import { t } from '../locales/t'
 import { INSTRUCTIONS_RECORD_FILE, roleMemoryDir } from '../paths'
-import { INFRA_SKILLS } from '../roles/infra'
+import { GRILL_SKILLS, INFRA_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope } from '../scope/compile'
 import {
@@ -37,9 +38,12 @@ import {
 } from '../testkit'
 import type { HostRunRule, HostWrite, MemWorld } from '../testkit'
 import {
+  editRules,
   linkedMemoryDeny,
   lintRuntimeDenyPattern,
+  pluginSkillDeny,
   runtimeDeny,
+  settingsDeny,
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
   UNDENIED_RECORD_WARNING,
@@ -79,35 +83,60 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
 }
 
 /**
- * The deny of a role's private instructions folder under its role memory folder `folder` (02-GAPS-B2 S3): Edit and
- * Write on `<folder>/instructions/**`, written as exact `//` rules.
+ * The deny of a role's private instructions folder under its role memory folder `folder`: Edit on
+ * `<folder>/instructions/**`, written as an exact `//` rule.
  */
 function privateDeny(folder: string): string[] {
-  return [`Edit(/${folder}/instructions/**)`, `Write(/${folder}/instructions/**)`]
+  return [`Edit(/${folder}/instructions/**)`]
 }
 
 /**
- * The deny every role gets beside its private folder deny, for the fixture repo /repo (02-GAPS-B3 C2, C3): Edit and
- * Write on the repo's memory folder under `userDir`, `<userDir>/projects/-repo/memory/**`, and on the hand-out record
- * in the role memory folder `folder`, `<folder>/instructions.json`.
+ * The deny every role gets beside its private folder deny, for the fixture repo /repo: Edit on the repo's memory
+ * folder under `userDir`, `<userDir>/projects/-repo/memory/**`, and on the hand-out record in the role memory folder
+ * `folder`, `<folder>/instructions.json`.
  */
 function memoryAndRecordDeny(userDir: string, folder: string): string[] {
+  return [`Edit(/${userDir}/projects/-repo/memory/**)`, `Edit(/${folder}/instructions.json)`]
+}
+
+/**
+ * The deny of the private instructions copy of role `id` under the root `root` and at any depth below it, for a role
+ * given no team ids.
+ */
+function privateCopyRules(root: string, id: string): string[] {
   return [
-    `Edit(/${userDir}/projects/-repo/memory/**)`,
-    `Write(/${userDir}/projects/-repo/memory/**)`,
-    `Edit(/${folder}/instructions.json)`,
-    `Write(/${folder}/instructions.json)`,
+    `Edit(/${root}/.cadre/${id}/.runtime/private-instructions/**)`,
+    `Edit(/${root}/**/.cadre/${id}/.runtime/private-instructions/**)`,
   ]
 }
 
 /**
- * The deny of the launch files under the root `root` (03.1-SEC-S1): Edit and Write on `.claude/settings.json`,
- * `.claude/settings.local.json`, `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
+ * The deny of the launch files under the root `root`: Edit on `.claude/settings.json`, `.claude/settings.local.json`,
+ * `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
  */
 function launchFileRules(root: string): string[] {
   const files = ['.cadre/bin/**', '.cadre/manifest.json', '.claude/settings.json', '.claude/settings.local.json']
 
-  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+  return files.map(file => `Edit(/${root}/${file})`)
+}
+
+/** The deny of the inbox tree in the user folder `userDir`, every role's inbox and session files, as a `//` rule. */
+function inboxFileRules(userDir: string): string[] {
+  return [`Edit(/${userDir}/cadre/inboxes/**)`]
+}
+
+/** A deny entry that names the inbox tree, or an inbox or session file anywhere. */
+const INBOX_ENTRY = /\/cadre\/inboxes\/|inbox\.jsonl|session\.json/
+
+/**
+ * The deny of cadre.json, the role.json of each role in `ids` and the folders GSD's project install runs code from,
+ * under the root `root`, as exact `//` rules.
+ */
+function teamFileRules(root: string, ids: readonly string[]): string[] {
+  const roleFiles = ids.map(id => `.cadre/${id}/role.json`)
+  const files = ['.cadre/cadre.json', ...roleFiles, '.claude/gsd-core/**', '.claude/hooks/**', '.claude/scripts/**']
+
+  return files.map(file => `Edit(/${root}/${file})`)
 }
 
 /** A hook script the user's settings register. */
@@ -235,7 +264,7 @@ describe('runtimeDeny', () => {
   test('lintRuntimeDenyPattern accepts an exact absolute pattern', () => {
     expect(lintRuntimeDenyPattern('Read(//repo/cadre/**)')).toBeNull()
     expect(lintRuntimeDenyPattern('Edit(//repo/cadre/**)')).toBeNull()
-    expect(lintRuntimeDenyPattern('Write(//repo/x..y/**)')).toBeNull()
+    expect(lintRuntimeDenyPattern('Edit(//repo/x..y/**)')).toBeNull()
   })
 
   test('lintRuntimeDenyPattern refuses a .. segment in an absolute pattern', () => {
@@ -513,6 +542,9 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
         ...privateDeny(folder),
         ...memoryAndRecordDeny('/home/u/.claude', folder),
         ...launchFileRules('/repo'),
+        ...inboxFileRules('/home/u/.claude'),
+        ...teamFileRules('/repo', ['be']),
+        ...privateCopyRules('/repo', 'be'),
       ]),
     })
   })
@@ -549,15 +581,13 @@ function fileOf(path: string): string {
 }
 
 describe('linked memory deny (G-02-1f)', () => {
-  test('linkedMemoryDeny gives an Edit and a Write rule for each linked path, sorted and once each', () => {
+  test('linkedMemoryDeny gives an Edit rule for each linked path, sorted and once each', () => {
     const result = linkedMemoryDeny([...LINKED, `${BE_MEMORY}/squad.md`])
 
     expect(result).toEqual({
       deny: [
         'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/notes.md)',
         'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/squad.md)',
-        'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/notes.md)',
-        'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/squad.md)',
       ],
       warnings: [],
     })
@@ -575,7 +605,7 @@ describe('linked memory deny (G-02-1f)', () => {
     ]
     const result = linkedMemoryDeny([`${BE_MEMORY}/squad.md`, ...odd])
 
-    expect(result.deny).toEqual([`Edit(/${BE_MEMORY}/squad.md)`, `Write(/${BE_MEMORY}/squad.md)`])
+    expect(result.deny).toEqual([`Edit(/${BE_MEMORY}/squad.md)`])
     expect(result.warnings).toEqual(odd.map(path => undeniedMemoryWarning(fileOf(path))))
     expect(undeniedMemoryWarning('my notes.md')).toBe(
       'memory my notes.md has a path a permission rule cannot hold: it stays editable',
@@ -593,17 +623,20 @@ describe('linked memory deny (G-02-1f)', () => {
     const base = runtimeDeny(role, scope, launcher).deny
 
     const own = [...privateDeny(BE_MEMORY), ...memoryAndRecordDeny('/home/u/.claude', BE_MEMORY)]
+    const inbox = inboxFileRules('/home/u/.claude')
+    const launch = [
+      ...launchFileRules('/repo'),
+      ...inbox,
+      ...teamFileRules('/repo', ['be']),
+      ...privateCopyRules('/repo', 'be'),
+    ]
     expect(isPartsFlowRole(role)).toBe(true)
-    expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launchFileRules('/repo')]))
+    expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launch]))
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
       `Edit(/${BE_MEMORY}/instructions.json)`,
       `Edit(/${BE_MEMORY}/instructions/**)`,
       `Edit(/${BE_MEMORY}/notes.md)`,
       `Edit(/${BE_MEMORY}/squad.md)`,
-      `Write(/${BE_MEMORY}/instructions.json)`,
-      `Write(/${BE_MEMORY}/instructions/**)`,
-      `Write(/${BE_MEMORY}/notes.md)`,
-      `Write(/${BE_MEMORY}/squad.md)`,
     ])
   })
 
@@ -611,7 +644,7 @@ describe('linked memory deny (G-02-1f)', () => {
     const role = templateRole('be', { instructions: ['auto-memory'] })
     const scope = compileScope(role, context())
     const deny = denyOf(renderRuntimeSettings(role, scope, user({ linkedMemories: LINKED }), []))
-    const record = [`Edit(/${BE_MEMORY}/instructions.json)`, `Write(/${BE_MEMORY}/instructions.json)`]
+    const record = [`Edit(/${BE_MEMORY}/instructions.json)`]
 
     expect(isPartsFlowRole(role)).toBe(false)
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual(
@@ -619,7 +652,7 @@ describe('linked memory deny (G-02-1f)', () => {
     )
   })
 
-  test('every role, of either flow, denies Edit and Write on its private instructions folder (S3)', () => {
+  test('every role, of either flow, denies Edit on its private instructions folder (S3)', () => {
     const launcher = user({ userDir: '/cfg', userSkills: GSD_SKILLS })
     const roles = [templateRole('pm'), templateRole('pm', { instructions: ['global-claude-md'] }), templateRole('be')]
     const denies = roles.map(role => {
@@ -633,10 +666,7 @@ describe('linked memory deny (G-02-1f)', () => {
       privateDeny('/cfg/cadre/repo-1a2b3c4d/pm'),
       privateDeny('/cfg/cadre/repo-1a2b3c4d/be'),
     ])
-    expect(privateDeny('/cfg/cadre/repo-1a2b3c4d/pm')).toEqual([
-      'Edit(//cfg/cadre/repo-1a2b3c4d/pm/instructions/**)',
-      'Write(//cfg/cadre/repo-1a2b3c4d/pm/instructions/**)',
-    ])
+    expect(privateDeny('/cfg/cadre/repo-1a2b3c4d/pm')).toEqual(['Edit(//cfg/cadre/repo-1a2b3c4d/pm/instructions/**)'])
   })
 
   test('a private folder or memory path no rule can hold is not denied; the plan warns after runtimeDeny', () => {
@@ -648,12 +678,14 @@ describe('linked memory deny (G-02-1f)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launchFileRules('/repo')])
+    const launch = [...launchFileRules('/repo'), ...teamFileRules('/repo', ['be']), ...privateCopyRules('/repo', 'be')]
+    const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch])
     expect(denyOf(plan.settings)).toEqual(expected)
-    expect(plan.warnings.slice(0, lead.length + 4)).toEqual([
+    expect(plan.warnings.slice(0, lead.length + 5)).toEqual([
       ...lead,
       UNDENIED_PRIVATE_WARNING,
       UNDENIED_MEMORY_FOLDER_WARNING,
+      t('launch.deny.undeniedInboxWarning'),
       UNDENIED_RECORD_WARNING,
       undeniedMemoryWarning('a.md'),
     ])
@@ -670,10 +702,10 @@ describe('linked memory deny (G-02-1f)', () => {
           const scope = matrixScope(role, framework)
           const folder = roleMemoryDir(MATRIX_USER, role.id)
           const plan = launchPlan(role, scope, { ...MATRIX_USER, linkedMemories: [`${folder}/squad.md`] })
-          const memory = isPartsFlowRole(role) ? [`Edit(/${folder}/squad.md)`, `Write(/${folder}/squad.md)`] : []
+          const memory = isPartsFlowRole(role) ? [`Edit(/${folder}/squad.md)`] : []
           const home = denyOf(plan.settings).filter(entry => entry.includes('//home/'))
           const own = [...privateDeny(folder), ...memoryAndRecordDeny(MATRIX_USER.userDir, folder)]
-          const expected = sortedUnique([...own, ...memory])
+          const expected = sortedUnique([...own, ...memory, ...inboxFileRules(MATRIX_USER.userDir)])
           const problems = [
             ...launchProblems(plan, role, scope, framework),
             ...(JSON.stringify(home) === JSON.stringify(expected) ? [] : [`home denies ${home.join(', ')}`]),
@@ -690,8 +722,107 @@ describe('linked memory deny (G-02-1f)', () => {
   })
 })
 
+describe('Edit-only file denies', () => {
+  test('settingsDeny writes no Write rule for any role', () => {
+    const ids = ROLE_TEMPLATE.map(row => row.id)
+    const roles = ids.flatMap(id => [templateRole(id), templateRole(id, { instructions: ['auto-memory'] })])
+    const results = roles.map(role => {
+      const folder = roleMemoryDir(user(), role.id)
+      const launcher = user({ userSkills: GSD_SKILLS, linkedMemories: [`${folder}/squad.md`] })
+      const deny = settingsDeny(role, compileScope(role, context()), launcher).deny
+      const memory = isPartsFlowRole(role) ? [`Edit(/${folder}/squad.md)`] : []
+      const kept = [
+        ...privateDeny(folder),
+        ...memoryAndRecordDeny(launcher.userDir, folder),
+        ...memory,
+        ...launchFileRules('/repo'),
+        ...inboxFileRules(launcher.userDir),
+        ...teamFileRules('/repo', [role.id]),
+      ]
+
+      const writes = deny.filter(entry => entry.startsWith('Write('))
+
+      return { writes, lost: kept.filter(rule => !deny.includes(rule)) }
+    })
+
+    expect(results).toEqual(roles.map(() => ({ writes: [], lost: [] })))
+    expect(roles.filter(isPartsFlowRole)).toHaveLength(ids.length)
+  })
+
+  test('editRules gives the one Edit rule of a path, and null for a path no exact rule can hold', () => {
+    expect(editRules('/repo/.cadre/bin', '/**')).toEqual(['Edit(//repo/.cadre/bin/**)'])
+    expect(editRules('/home/u s/.claude', '/**')).toBeNull()
+  })
+
+  test('a Write rule goes to the committed lint, which refuses an absolute pattern', () => {
+    expect(lintRuntimeDenyPattern('Write(//repo/cadre/**)')).not.toBeNull()
+  })
+})
+
+describe('the start folder settings deny and the shortened memory folder deny', () => {
+  const BE = templateRole('be')
+  const BE_SCOPE = compileScope(BE, context())
+
+  /** The settings files of the start folder src under each of `roots`, as Edit rules. */
+  function startFolderRules(roots: readonly string[]): string[] {
+    const files = ['.claude/settings.json', '.claude/settings.local.json']
+
+    return roots.flatMap(root => files.map(file => `Edit(/${root}/src/${file})`))
+  }
+
+  test('a dir start denies Edit of its folder settings files under every launch root, and only a dir start', () => {
+    const dir = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src' })).deny
+    const main = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src', mainRoot: '/main' })).deny
+    const plain = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo' })).deny
+
+    expect(startFolderRules(['/repo', '/link/repo']).filter(rule => !dir.includes(rule))).toEqual([])
+    expect(startFolderRules(['/repo', '/link/repo', '/main']).filter(rule => !main.includes(rule))).toEqual([])
+    expect(plain.filter(entry => entry.includes('/src/.claude/'))).toEqual([])
+  })
+
+  test('a dir start denies Edit of the folders its settings run code from under every launch root', () => {
+    const folders = ['.claude/hooks', '.claude/gsd-core', '.claude/scripts']
+    const runsRules = (roots: readonly string[]) =>
+      roots.flatMap(root => folders.map(folder => `Edit(/${root}/src/${folder}/**)`))
+    const dir = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src' })).deny
+    const main = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo', startDir: 'src', mainRoot: '/main' })).deny
+    const plain = settingsDeny(BE, BE_SCOPE, user({ givenRoot: '/link/repo' })).deny
+
+    expect(runsRules(['/repo', '/link/repo']).filter(rule => !dir.includes(rule))).toEqual([])
+    expect(runsRules(['/repo', '/link/repo', '/main']).filter(rule => !main.includes(rule))).toEqual([])
+    expect(plain.filter(entry => entry.includes('/src/.claude/'))).toEqual([])
+  })
+
+  test('a dir start folder no exact rule can hold warns once, naming it; the roots keep their launch file rules', () => {
+    const roots = { givenRoot: '/link/repo', mainRoot: '/main' }
+    const scoped = settingsDeny(BE, BE_SCOPE, user({ ...roots, startDir: 'packages/@acme/web' }))
+    const safe = settingsDeny(BE, BE_SCOPE, user({ ...roots, startDir: 'src' }))
+    const rootRules = ['/repo', '/link/repo', '/main'].flatMap(root => launchFileRules(root))
+
+    expect(scoped.warnings).toEqual([
+      'the start folder packages/@acme/web has a path a permission rule cannot hold: ' +
+        'its .claude settings files and framework install folders stay editable',
+    ])
+    expect(rootRules.filter(rule => !scoped.deny.includes(rule))).toEqual([])
+    expect(scoped.deny.filter(entry => entry.includes('@acme'))).toEqual([])
+    expect(safe.warnings).toEqual([])
+  })
+
+  test('a root with a long encoded name also gets one glob Edit rule over its shortened memory folder', () => {
+    const root = `/r/${'a'.repeat(250)}`
+    const glob = `Edit(//home/u/.claude/projects/-r-${'a'.repeat(197)}*/memory/**)`
+    const long = settingsDeny(BE, BE_SCOPE, user({ root, givenRoot: root })).deny
+    const short = settingsDeny(BE, BE_SCOPE, user()).deny
+
+    expect(long.filter(entry => entry === glob)).toEqual([glob])
+    expect(long).toContain(`Edit(//home/u/.claude/projects/-r-${'a'.repeat(250)}/memory/**)`)
+    expect(short.filter(entry => entry.includes('*/memory/'))).toEqual([])
+    expect(lintRuntimeDenyPattern(glob)).toBeNull()
+  })
+})
+
 describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
-  test('every role denies Edit and Write on the memory folder of the root as resolved and as given, once each', () => {
+  test('every role denies Edit on the memory folder of the root as resolved and as given, once each', () => {
     const roles = [templateRole('pm'), templateRole('pm', { instructions: ['auto-memory'] }), templateRole('be')]
     const launcher = user({ givenRoot: '/link/repo', userSkills: GSD_SKILLS })
     const folders = roles.map(role => {
@@ -704,19 +835,16 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
       roles.map(() => [
         'Edit(//home/u/.claude/projects/-link-repo/memory/**)',
         'Edit(//home/u/.claude/projects/-repo/memory/**)',
-        'Write(//home/u/.claude/projects/-link-repo/memory/**)',
-        'Write(//home/u/.claude/projects/-repo/memory/**)',
       ]),
     )
     const be = templateRole('be')
     const once = denyOf(launchPlan(be, compileScope(be, context()), user()).settings)
     expect(once.filter(entry => entry.includes('/projects/'))).toEqual([
       'Edit(//home/u/.claude/projects/-repo/memory/**)',
-      'Write(//home/u/.claude/projects/-repo/memory/**)',
     ])
   })
 
-  test('every role denies Edit and Write on its own hand-out record instructions.json, never on a memory', () => {
+  test('every role denies Edit on its own hand-out record instructions.json, never on a memory', () => {
     const launcher = user({ userDir: '/cfg', userSkills: GSD_SKILLS })
     const ids: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'security']
     const records = ids.map(id => {
@@ -726,12 +854,7 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
       return deny.filter(entry => entry.endsWith(`/${INSTRUCTIONS_RECORD_FILE})`))
     })
 
-    expect(records).toEqual(
-      ids.map(id => [
-        `Edit(//cfg/cadre/repo-1a2b3c4d/${id}/instructions.json)`,
-        `Write(//cfg/cadre/repo-1a2b3c4d/${id}/instructions.json)`,
-      ]),
-    )
+    expect(records).toEqual(ids.map(id => [`Edit(//cfg/cadre/repo-1a2b3c4d/${id}/instructions.json)`]))
     expect(INSTRUCTIONS_RECORD_FILE).toBe('instructions.json')
   })
 
@@ -742,11 +865,16 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    const launch = [...launchFileRules('/link/repo'), ...launchFileRules('/repo')]
+    const launch = ['/link/repo', '/repo'].flatMap(root => [
+      ...launchFileRules(root),
+      ...teamFileRules(root, ['pm']),
+      ...privateCopyRules(root, 'pm'),
+    ])
     expect(denyOf(plan.settings)).toEqual(sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch]))
     expect(plan.warnings.slice(lead.length)).toEqual([
       UNDENIED_PRIVATE_WARNING,
       UNDENIED_MEMORY_FOLDER_WARNING,
+      t('launch.deny.undeniedInboxWarning'),
       UNDENIED_RECORD_WARNING,
     ])
     expect(UNDENIED_MEMORY_FOLDER_WARNING).toBe(
@@ -757,24 +885,27 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     )
   })
 
-  test('the matrix with both denies keeps no deny over .cadre/<id>/, the handoff folder or .planning/ (B4)', () => {
+  test('the matrix keeps only the private copy and role.json rules over .cadre/<id>/, none over .planning/', () => {
     const results = matrixCases(MATRIX_USER).map(item => {
       const deny = denyOf(item.plan.settings)
       const ownFolder = `//repo/.cadre/${item.role.id}/`
-      const repo = deny.filter(entry => entry.includes(ownFolder) || entry.includes('//repo/.planning/'))
+      const kept = [`Edit(${ownFolder}.runtime/private-instructions/**)`, `Edit(${ownFolder}role.json)`]
+      const own = deny.filter(entry => entry.includes(ownFolder))
+      const planning = deny.filter(entry => entry.includes('//repo/.planning/'))
       const memory = deny.filter(entry => entry.includes('/projects/-repo/memory/'))
       const record = deny.filter(entry => entry.endsWith(`/${item.role.id}/instructions.json)`))
+      const isKept = JSON.stringify(own) === JSON.stringify(kept) && planning.length === 0
 
-      return { label: item.label, repo, isDenied: memory.length === 2 && record.length === 2 }
+      return { label: item.label, isKept, isDenied: memory.length === 1 && record.length === 1 }
     })
 
-    expect(results.filter(result => result.repo.length > 0 || !result.isDenied).map(result => result.label)).toEqual([])
+    expect(results.filter(result => !result.isKept || !result.isDenied).map(result => result.label)).toEqual([])
     expect(results).toHaveLength(42)
   })
 })
 
 describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
-  test('every role denies Edit and Write of the launch files under its root, given root and main (03.1-SEC-S1)', () => {
+  test('every role denies Edit of the launch files under its root, given root and main (03.1-SEC-S1)', () => {
     const role = templateRole('pm', { hasBash: false })
     const scope = compileScope(role, context())
     const worktree = '/repo/.claude/worktrees/x'
@@ -786,7 +917,7 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
 
     expect(epicRules.filter(rule => !epicDeny.includes(rule))).toEqual([])
     expect(mainRules.filter(rule => !mainDeny.includes(rule))).toEqual([])
-    expect(epicDeny.filter(entry => entry.includes('/.runtime/'))).toEqual([])
+    expect(epicDeny.filter(entry => INBOX_ENTRY.test(entry))).toEqual(inboxFileRules('/home/u/.claude'))
   })
 
   test('an epic role denies the code dirs of the main checkout as well as of its worktree', () => {
@@ -802,6 +933,223 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
     expect([...main, ...own].filter(entry => !epicDeny.includes(entry))).toEqual([])
     // Without mainRoot the list is the worktree's alone, as before.
     expect([...main, ...own].filter(entry => ownDeny.includes(entry))).toEqual(own)
+  })
+})
+
+describe('the private instructions copy deny', () => {
+  /** The `kind` rule of the private instructions copy of role `id` under the root `root`. */
+  function copyRule(kind: 'Edit' | 'Read', root: string, id: string): string {
+    return `${kind}(/${root}/.cadre/${id}/.runtime/private-instructions/**)`
+  }
+
+  /** The `kind` rule of the private instructions copy of role `id` at any depth under the root `root`. */
+  function anyDepthRule(kind: 'Edit' | 'Read', root: string, id: string): string {
+    return `${kind}(/${root}/**/.cadre/${id}/.runtime/private-instructions/**)`
+  }
+
+  /** The rules BE's settingsDeny holds for `launcher` that name a private instructions copy. */
+  function copyDenies(launcher: LaunchUser): string[] {
+    const role = templateRole('be')
+
+    return settingsDeny(role, compileScope(role, context()), launcher).deny.filter(entry =>
+      entry.includes('/.runtime/private-instructions/'),
+    )
+  }
+
+  /** The copy rules of BE in a team of BE, PM and QA under the root `root`, at the root and at any depth. */
+  function teamRules(root: string): string[] {
+    return [
+      copyRule('Edit', root, 'be'),
+      copyRule('Edit', root, 'pm'),
+      copyRule('Edit', root, 'qa'),
+      copyRule('Read', root, 'pm'),
+      copyRule('Read', root, 'qa'),
+      anyDepthRule('Edit', root, 'be'),
+      anyDepthRule('Edit', root, 'pm'),
+      anyDepthRule('Edit', root, 'qa'),
+      anyDepthRule('Read', root, 'pm'),
+      anyDepthRule('Read', root, 'qa'),
+    ]
+  }
+
+  test('a role denies Edit of every team copy and Read of every other copy, at any depth, not Read of its own', () => {
+    const denies = copyDenies(user({ teamIds: ['be', 'pm', 'qa'] }))
+
+    expect(denies).toEqual([
+      'Edit(//repo/**/.cadre/be/.runtime/private-instructions/**)',
+      'Edit(//repo/**/.cadre/pm/.runtime/private-instructions/**)',
+      'Edit(//repo/**/.cadre/qa/.runtime/private-instructions/**)',
+      'Edit(//repo/.cadre/be/.runtime/private-instructions/**)',
+      'Edit(//repo/.cadre/pm/.runtime/private-instructions/**)',
+      'Edit(//repo/.cadre/qa/.runtime/private-instructions/**)',
+      'Read(//repo/**/.cadre/pm/.runtime/private-instructions/**)',
+      'Read(//repo/**/.cadre/qa/.runtime/private-instructions/**)',
+      'Read(//repo/.cadre/pm/.runtime/private-instructions/**)',
+      'Read(//repo/.cadre/qa/.runtime/private-instructions/**)',
+    ])
+    expect(denies).not.toContain('Read(//repo/.cadre/be/.runtime/private-instructions/**)')
+    expect(denies).not.toContain('Read(//repo/**/.cadre/be/.runtime/private-instructions/**)')
+  })
+
+  test('an epic role gets the same rules under its worktree root and under the main checkout root', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: ['be', 'pm', 'qa'] })
+
+    expect(copyDenies(launcher)).toEqual(sortedUnique([...teamRules('/repo'), ...teamRules(worktree)]))
+    expect(copyDenies(launcher)).toContain('Read(//repo/**/.cadre/pm/.runtime/private-instructions/**)')
+  })
+
+  test('with no team ids a role denies Edit of its own copy only, at any depth, and Read of no copy', () => {
+    expect(copyDenies(user())).toEqual([anyDepthRule('Edit', '/repo', 'be'), copyRule('Edit', '/repo', 'be')])
+  })
+
+  test('a team id no exact rule can hold gets no copy rule, at the root or at any depth', () => {
+    const denies = copyDenies(user({ teamIds: ['be', 'p m'] }))
+
+    expect(denies).toEqual([anyDepthRule('Edit', '/repo', 'be'), copyRule('Edit', '/repo', 'be')])
+  })
+})
+
+describe('the private instructions folder deny of the other roles', () => {
+  /** BE's rules on the private instructions folders in a team of BE, PM and QA, for the fixture user. */
+  const TEAM_FOLDER_RULES: readonly string[] = [
+    'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
+    'Read(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
+    'Read(//home/u/.claude/cadre/repo-1a2b3c4d/qa/instructions/**)',
+  ]
+
+  /** The rules BE's settingsDeny holds for `launcher` that name a private instructions folder. */
+  function folderDenies(launcher: LaunchUser): string[] {
+    const role = templateRole('be')
+
+    return settingsDeny(role, compileScope(role, context()), launcher).deny.filter(entry =>
+      entry.includes('/instructions/'),
+    )
+  }
+
+  test('a role denies Read of the private instructions folder of every other team role, never of its own', () => {
+    const denies = folderDenies(user({ teamIds: ['be', 'pm', 'qa'] }))
+
+    expect(denies).toEqual(TEAM_FOLDER_RULES)
+    expect(denies).not.toContain('Read(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)')
+  })
+
+  test('an epic role denies Read of the same folders: they follow the git common dir, not the launch root', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: ['be', 'pm', 'qa'] })
+
+    expect(folderDenies(launcher)).toEqual(TEAM_FOLDER_RULES)
+  })
+
+  test('with no team ids a role denies Edit of its own private instructions folder only, and Read of none', () => {
+    expect(folderDenies(user())).toEqual(['Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)'])
+  })
+
+  test('a folder no exact rule can hold gets no rule; only the folder of the role itself warns, once', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+    const oddDir = user({ userDir: '/home/u s/.claude', teamIds: ['be', 'pm', 'qa'] })
+    const oddId = user({ teamIds: ['be', 'p m'] })
+    const warned = settingsDeny(role, scope, oddDir).warnings.filter(text => text === UNDENIED_PRIVATE_WARNING)
+
+    expect(folderDenies(oddDir)).toEqual([])
+    expect(warned).toHaveLength(1)
+    expect(folderDenies(oddId)).toEqual(['Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)'])
+    expect(settingsDeny(role, scope, oddId).warnings).not.toContain(UNDENIED_PRIVATE_WARNING)
+  })
+})
+
+describe('the inbox tree deny', () => {
+  const TEAM_IDS: readonly TemplateRoleId[] = ['pm', 'tl', 'be']
+
+  /** The deny entries of the template role `id` for `launcher` that name an inbox or session file. */
+  function inboxEntries(id: TemplateRoleId, launcher: LaunchUser): string[] {
+    const role = templateRole(id)
+    const deny = denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
+
+    return deny.filter(entry => INBOX_ENTRY.test(entry))
+  }
+
+  test('every role, with or without the team ids, denies Edit of the inbox tree in one rule', () => {
+    const expected = inboxFileRules('/home/u/.claude')
+
+    expect(TEAM_IDS.map(id => inboxEntries(id, user({ teamIds: TEAM_IDS })))).toEqual(TEAM_IDS.map(() => expected))
+    expect(inboxEntries('tl', user())).toEqual(expected)
+    expect(expected).toEqual(['Edit(//home/u/.claude/cadre/inboxes/**)'])
+  })
+
+  test('an epic role denies the same one rule, never one per root', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: TEAM_IDS })
+
+    expect(inboxEntries('be', launcher)).toEqual(inboxFileRules('/home/u/.claude'))
+  })
+
+  test('a user folder no rule can hold gets no inbox rule and warns once; ~/.claude does not warn', () => {
+    const role = templateRole('pm')
+    const scope = compileScope(role, context())
+    const unsafe = launchPlan(role, scope, user({ userDir: '/home/u s/.claude', teamIds: TEAM_IDS }))
+    const safe = launchPlan(role, scope, user({ teamIds: TEAM_IDS }))
+    const warning = t('launch.deny.undeniedInboxWarning')
+
+    expect(denyOf(unsafe.settings).filter(entry => INBOX_ENTRY.test(entry))).toEqual([])
+    expect(unsafe.warnings.filter(line => line === warning)).toEqual([warning])
+    expect(safe.warnings).not.toContain(warning)
+  })
+})
+
+describe('the team and project install files deny', () => {
+  const TEAM_IDS: readonly TemplateRoleId[] = ['pm', 'tl', 'be']
+
+  /** The deny list in the plan of the template role `id` for `launcher`. */
+  function planDeny(id: TemplateRoleId, launcher: LaunchUser): string[] {
+    const role = templateRole(id)
+
+    return denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
+  }
+
+  test('every role denies Edit of cadre.json, each team role.json and the GSD hook folders', () => {
+    const launcher = user({ teamIds: TEAM_IDS })
+    const expected = teamFileRules('/repo', TEAM_IDS)
+    const ids = ROLE_TEMPLATE.map(row => row.id)
+    const missing = ids.map(id => {
+      const deny = planDeny(id, launcher)
+
+      return expected.filter(rule => !deny.includes(rule))
+    })
+
+    expect(missing).toEqual(ids.map(() => []))
+    expect(planDeny('be', launcher)).toContain('Edit(//repo/.cadre/pm/role.json)')
+    expect(planDeny('pm', launcher)).toContain('Edit(//repo/.claude/hooks/**)')
+  })
+
+  test('every role on any framework denies Edit of .claude/scripts/**, also with no GSD in the repo', () => {
+    const rules = ['Edit(//repo/.claude/scripts/**)']
+    const missing = FRAMEWORKS.flatMap(framework =>
+      ROLE_TEMPLATE.map(row => {
+        const role = roleFromTemplate(row)
+        const deny = denyOf(launchPlan(role, compileScope(role, context({ framework })), user()).settings)
+
+        return rules.filter(rule => !deny.includes(rule))
+      }),
+    )
+
+    expect(missing).toEqual(FRAMEWORKS.flatMap(() => ROLE_TEMPLATE.map(() => [])))
+  })
+
+  test('an epic role denies them under its worktree and under the main checkout', () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo', teamIds: TEAM_IDS })
+    const deny = planDeny('be', launcher)
+    const expected = [...teamFileRules('/repo', TEAM_IDS), ...teamFileRules(worktree, TEAM_IDS)]
+
+    expect(expected.filter(rule => !deny.includes(rule))).toEqual([])
+  })
+
+  test('with no team ids a role denies only its own role.json', () => {
+    const roleJson = planDeny('tl', user()).filter(entry => entry.endsWith('/role.json)'))
+
+    expect(roleJson).toEqual(['Edit(//repo/.cadre/tl/role.json)'])
   })
 })
 
@@ -882,9 +1230,130 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
 
     for (const root of ['/repo', BARE_WORKTREE]) {
       expect(deny).toContain(`Edit(/${root}/.claude/settings.json)`)
-      expect(deny).toContain(`Write(/${root}/.claude/settings.local.json)`)
+      expect(deny).toContain(`Edit(/${root}/.claude/settings.local.json)`)
       expect(deny).toContain(`Edit(/${root}/.cadre/bin/**)`)
-      expect(deny).toContain(`Write(/${root}/.cadre/manifest.json)`)
+      expect(deny).toContain(`Edit(/${root}/.cadre/manifest.json)`)
     }
+  })
+
+  test('an epic role denies editing the inbox tree in the user config folder, one rule', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const permissions = settingsAt(run.writes, BARE_WORKTREE, 'be').permissions
+    const deny: readonly unknown[] = isObject(permissions) && Array.isArray(permissions.deny) ? permissions.deny : []
+    const inboxRules = deny.filter(entry => typeof entry === 'string' && INBOX_ENTRY.test(entry))
+
+    expect(inboxRules).toEqual(inboxFileRules('/home/u/.claude'))
+  })
+})
+
+/** The skills the installed mattpocock-skills lists in the fixtures. */
+const MATT_LIST = ['grill-me', 'grilling', 'tdd', 'to-spec']
+
+/** PM given the two grill skills. */
+const GRILL_PM = templateRole('pm', { skills: [...GRILL_SKILLS] })
+
+/** GRILL_PM's scope with mattpocock-skills in the setup, so the scope enables it. */
+const GRILL_SCOPE = compileScope(
+  GRILL_PM,
+  context({ framework: 'none', setup: emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] }) }),
+)
+
+/** The launching user whose installed mattpocock-skills lists `skills`. */
+function listing(skills: readonly string[]): LaunchUser {
+  return user({ pluginSkills: { [MATTPOCOCK_PLUGIN]: skills } })
+}
+
+/** A mattpocock-skills key of another marketplace. */
+const LOOKALIKE = 'mattpocock-skills@acme'
+
+/** GRILL_PM's scope with the official key and LOOKALIKE in the setup, so the scope enables both. */
+const LOOKALIKE_SCOPE = compileScope(
+  GRILL_PM,
+  context({ framework: 'none', setup: emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN, LOOKALIKE] }) }),
+)
+
+describe('the per-skill deny of a plugin skill list', () => {
+  test('a role given the grill skills gets a deny for every other listed skill and none for its own', () => {
+    const result = pluginSkillDeny(GRILL_PM, GRILL_SCOPE, listing(MATT_LIST))
+
+    expect(result).toEqual({
+      deny: ['Skill(mattpocock-skills:tdd)', 'Skill(mattpocock-skills:to-spec)'],
+      warnings: [],
+      offPlugins: [],
+    })
+    expect(result.deny).not.toContain('Skill(mattpocock-skills:grilling)')
+    expect(result.deny).not.toContain('Skill(mattpocock-skills:grill-me)')
+  })
+
+  test('a skill a plugin update adds is denied at the next launch, in the rendered settings too', () => {
+    const updated = listing([...MATT_LIST, 'wizard'])
+    const deny = denyOf(renderRuntimeSettings(GRILL_PM, GRILL_SCOPE, updated, []))
+
+    expect(pluginSkillDeny(GRILL_PM, GRILL_SCOPE, updated).deny).toContain('Skill(mattpocock-skills:wizard)')
+    expect(deny).toContain('Skill(mattpocock-skills:wizard)')
+    expect(deny).toContain('Skill(mattpocock-skills:tdd)')
+    expect(deny).not.toContain('Skill(mattpocock-skills:grilling)')
+  })
+
+  test('with no skill list the plugin is turned off for the role, with a warning naming it', () => {
+    const result = pluginSkillDeny(GRILL_PM, GRILL_SCOPE, user())
+    const plan = launchPlan(GRILL_PM, GRILL_SCOPE, user())
+    const plugins = isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+
+    expect([result.deny, result.offPlugins]).toEqual([[], [MATTPOCOCK_PLUGIN]])
+    expect(result.warnings.length).toBe(1)
+    expect(result.warnings[0]).toContain(MATTPOCOCK_PLUGIN)
+    expect(plugins[MATTPOCOCK_PLUGIN]).toBe(false)
+    expect(plan.warnings).toContain(result.warnings[0])
+  })
+
+  test('a lookalike key with no list of its own is turned off; the official key with a list stays on', () => {
+    const result = pluginSkillDeny(GRILL_PM, LOOKALIKE_SCOPE, listing(MATT_LIST))
+    const plan = launchPlan(GRILL_PM, LOOKALIKE_SCOPE, listing(MATT_LIST))
+    const plugins = isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+
+    expect(LOOKALIKE_SCOPE.settings.enabledPlugins).toMatchObject({ [MATTPOCOCK_PLUGIN]: true, [LOOKALIKE]: true })
+    expect(result.offPlugins).toEqual([LOOKALIKE])
+    expect(result.deny).toEqual(['Skill(mattpocock-skills:tdd)', 'Skill(mattpocock-skills:to-spec)'])
+    expect(result.warnings.length).toBe(1)
+    expect(result.warnings[0]).toContain(LOOKALIKE)
+    expect([plugins[MATTPOCOCK_PLUGIN], plugins[LOOKALIKE]]).toEqual([true, false])
+  })
+
+  test('with no list read, the official key and the lookalike are both turned off, each with a warning', () => {
+    const result = pluginSkillDeny(GRILL_PM, LOOKALIKE_SCOPE, user())
+
+    expect([...result.offPlugins].sort()).toEqual([LOOKALIKE, MATTPOCOCK_PLUGIN])
+    expect(result.deny).toEqual([])
+    expect(result.warnings.length).toBe(2)
+    for (const key of [LOOKALIKE, MATTPOCOCK_PLUGIN]) {
+      expect(result.warnings.some(warning => warning.includes(key))).toBe(true)
+    }
+  })
+
+  test('a plugin of another name with no list read is never turned off by the skill list rule', () => {
+    const pm = templateRole('pm', { skills: [...GRILL_SKILLS, 'tool:x'] })
+    const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN, 'tool@m'] })
+    const scope = compileScope(pm, context({ framework: 'none', setup }))
+
+    expect(scope.settings.enabledPlugins['tool@m']).toBe(true)
+    expect(pluginSkillDeny(pm, scope, user()).offPlugins).toEqual([MATTPOCOCK_PLUGIN])
+  })
+
+  test('a role whose scope does not enable the plugin gets no rule, no warning and nothing turned off', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ setup: emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] }) }))
+
+    for (const launching of [listing(MATT_LIST), user()]) {
+      expect(pluginSkillDeny(be, scope, launching)).toEqual({ deny: [], warnings: [], offPlugins: [] })
+    }
+  })
+
+  test('every plugin skill deny passes the runtime lint and blocks no handoff skill or infra tool', () => {
+    const result = pluginSkillDeny(GRILL_PM, GRILL_SCOPE, listing([...MATT_LIST, ...INFRA_SKILLS, 'skill']))
+
+    expect(result.deny.length).toBe(MATT_LIST.length - GRILL_SKILLS.length + INFRA_SKILLS.length + 1)
+    expect(result.deny.map(lintRuntimeDenyPattern)).toEqual(result.deny.map(() => null))
+    expect(result.warnings).toEqual([])
   })
 })

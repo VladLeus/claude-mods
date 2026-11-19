@@ -1,6 +1,25 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { worktreeClaudeMd } from './render'
+import type { InitLocations, ProbeExpectation, RoleSpec } from '../../types'
+import { probeVerdicts } from '../probe/oracle'
+import type { InitInventory } from '../probe/oracle'
+import { GRILL_SKILLS, MATTPOCOCK_PLUGIN } from '../roles/infra'
+import { compileScope } from '../scope/compile'
+import {
+  context,
+  DEFAULT_LOCATIONS,
+  emptySetupScan,
+  entry,
+  hostWorld,
+  memHost,
+  memIo,
+  memWorld,
+  stateOf,
+  templateRole,
+} from '../testkit'
+import type { MemWorld } from '../testkit'
+import { renderRole, worktreeClaudeMd } from './render'
+import type { EpicRender } from './render'
 
 describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
   test('worktreeClaudeMd adds the CLAUDE.md files of the worktree, sorted and once each (Pitfall 1)', () => {
@@ -9,5 +28,165 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
       '/repo/.claude/worktrees/x/CLAUDE.md',
       '/repo/CLAUDE.md',
     ])
+  })
+})
+
+/** Where the fixture's mattpocock-skills is installed, as installed_plugins.json records it. */
+const MATT_PATH = '/u/.claude/plugins/cache/x/mattpocock-skills/1.3.1'
+
+/** The files of mattpocock-skills installed at `scope`, its plugin.json listing grilling, grill-me and tdd. */
+function mattInstall(entry: Readonly<Record<string, string>>): Record<string, string> {
+  const skills = ['./skills/productivity/grilling', './skills/productivity/grill-me', './skills/engineering/tdd']
+
+  return {
+    '/home/u/.claude/plugins/installed_plugins.json': JSON.stringify({
+      version: 2,
+      plugins: { [MATTPOCOCK_PLUGIN]: [{ ...entry, installPath: MATT_PATH, version: '1.3.1' }] },
+    }),
+    [`${MATT_PATH}/.claude-plugin/plugin.json`]: JSON.stringify({ name: 'mattpocock-skills', skills }),
+  }
+}
+
+/** The folders of the fixture repo: its .git and PM's role folder. */
+const REPO_DIRS = { '/repo/.git': [], '/repo/.cadre': [entry('pm', 'dir')], '/repo/.cadre/pm': [] }
+
+/** PM given the grill skills. */
+const PM: RoleSpec = templateRole('pm', { skills: [...GRILL_SKILLS] })
+
+/** The git argv of the launch user read, answered with the common dir /repo/.git. */
+const GIT_RULE = {
+  argv: ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+  result: { exitCode: 0, stdout: '/repo/.git\n', stderr: '' },
+}
+
+/** The expectations renderRole wrote for `role` over `world` at these locations, with this epic, and its warnings. */
+async function renderOf(
+  world: MemWorld,
+  role: RoleSpec = PM,
+  locations: InitLocations = DEFAULT_LOCATIONS,
+  epic: EpicRender | null = null,
+): Promise<{ readonly rules: ProbeExpectation[]; readonly warnings: readonly string[] }> {
+  const setup = emptySetupScan({ plugins: [MATTPOCOCK_PLUGIN] })
+  const scope = compileScope(role, context({ framework: 'none', setup, roles: ['pm'] }))
+  const host = memHost(hostWorld({ runs: [GIT_RULE] }))
+  const input = { locations, state: stateOf([role]), role, scope, codeDirs: [], mcpRoots: [], epic }
+  const render = await renderRole(memIo(world, {}).io, host.io, input)
+  if (render.kind === 'refuse') throw new Error(`renderRole refused: ${render.text}`)
+  const path = `${locations.root}/.cadre/pm/.runtime/probe-expectations.json`
+  const written = host.writes.find(write => write.path === path)
+  if (written === undefined) throw new Error('renderRole wrote no probe expectations')
+  const parsed: { readonly rules: ProbeExpectation[] } = JSON.parse(written.text)
+
+  return { rules: parsed.rules, warnings: render.warnings }
+}
+
+/** The expectations renderRole wrote for PM over `world` at these locations, with this epic. */
+async function renderedPm(
+  world: MemWorld,
+  locations: InitLocations = DEFAULT_LOCATIONS,
+  epic: EpicRender | null = null,
+): Promise<ProbeExpectation[]> {
+  return (await renderOf(world, PM, locations, epic)).rules
+}
+
+/** The start of the note a given skill the launch could not provide gets. */
+const UNAVAILABLE = 'Skill given to the role, not available at this launch: '
+
+/** The skill lines PM's probe gets: the two grill skills present, tdd in the call-denied summary, all best-effort. */
+const PM_SKILL_LINES: readonly ProbeExpectation[] = [
+  {
+    check: 'skill-present',
+    enforcement: 'best-effort',
+    text: 'Skill given to the role [skill mattpocock-skills:grill-me present]',
+    token: 'mattpocock-skills:grill-me',
+  },
+  {
+    check: 'skill-present',
+    enforcement: 'best-effort',
+    text: 'Skill given to the role [skill mattpocock-skills:grilling present]',
+    token: 'mattpocock-skills:grilling',
+  },
+  {
+    check: 'not-visible',
+    enforcement: 'best-effort',
+    text: 'denied at call time (mattpocock-skills, 1 skills): tdd',
+    token: '',
+  },
+]
+
+/** A startup inventory listing these skills and nothing else. */
+function skillsInventory(skills: readonly string[]): InitInventory {
+  return { tools: [], slashCommands: [], skills, permissionMode: null, memoryAuto: null }
+}
+
+describe('the per-skill probe lines of a render', () => {
+  test(
+    "PM's render writes the grill skills present and one call-denied summary line, before the memory folder line",
+    async () => {
+      const rules = await renderedPm(memWorld({ dirs: REPO_DIRS, files: mattInstall({ scope: 'user' }) }))
+      const lines = rules.slice(-4, -1)
+
+      expect(lines).toEqual([...PM_SKILL_LINES])
+      expect(rules.at(-1)?.check).toBe('memory-path')
+      expect(rules.filter(rule => rule.check === 'skill-absent' && rule.token === 'mattpocock-skills:tdd')).toEqual([])
+      const all = ['mattpocock-skills:grill-me', 'mattpocock-skills:grilling', 'mattpocock-skills:tdd']
+      expect(probeVerdicts(skillsInventory(all), lines).map(item => item.verdict)).toEqual([
+        'best-effort',
+        'best-effort',
+        'best-effort',
+      ])
+      expect(probeVerdicts(skillsInventory(all.slice(0, 2)), lines).map(item => item.verdict)).toEqual([
+        'best-effort',
+        'best-effort',
+        'best-effort',
+      ])
+    },
+  )
+  test("PM's epic render reads the main checkout's install and writes the same skill lines", async () => {
+    const worktree = '/repo/.claude/worktrees/proj-1'
+    const locations: InitLocations = { ...DEFAULT_LOCATIONS, root: worktree, givenRoot: worktree }
+    const dirs = { '/repo/.git': [], [`${worktree}/.cadre`]: [entry('pm', 'dir')], [`${worktree}/.cadre/pm`]: [] }
+    const world = memWorld({ dirs, files: mattInstall({ scope: 'project', projectPath: '/repo' }) })
+    const rules = await renderedPm(world, locations, { mainRoot: '/repo', kickoff: 'kickoff' })
+
+    expect(rules.slice(-4, -1)).toEqual([...PM_SKILL_LINES])
+    expect(rules.filter(rule => rule.token === 'mattpocock-skills:tdd')).toEqual([])
+    expect(rules.filter(rule => rule.text.endsWith(': tdd'))).toEqual([PM_SKILL_LINES[2]])
+  })
+  test('a given skill whose plugin the launch turned off gets a note instead of a skill-present line', async () => {
+    const { rules, warnings } = await renderOf(memWorld({ dirs: REPO_DIRS }))
+    const perSkill = rules.slice(-3, -1)
+
+    expect(perSkill).toEqual([
+      { check: 'note', enforcement: 'none', text: `${UNAVAILABLE}mattpocock-skills:grill-me`, token: '' },
+      { check: 'note', enforcement: 'none', text: `${UNAVAILABLE}mattpocock-skills:grilling`, token: '' },
+    ])
+    expect(rules.filter(rule => rule.check === 'skill-present' && GRILL_SKILLS.includes(rule.token))).toEqual([])
+    expect(probeVerdicts(skillsInventory([]), perSkill).map(item => item.verdict)).not.toContain('violated')
+    expect(warnings).toContain(
+      `plugin ${MATTPOCOCK_PLUGIN} is turned off for this role: ` +
+        'cadre could not read its skill list from the installed plugin.json',
+    )
+  })
+  test('a given user skill the launch could not link gets a note, and the not-linked warning stays', async () => {
+    const role = templateRole('pm', { skills: [...GRILL_SKILLS, 'my-notes'] })
+    const world = memWorld({ dirs: REPO_DIRS, files: mattInstall({ scope: 'user' }) })
+    const { rules, warnings } = await renderOf(world, role)
+
+    expect(rules.filter(rule => rule.text.endsWith('my-notes'))).toEqual([
+      { check: 'note', enforcement: 'none', text: `${UNAVAILABLE}my-notes`, token: '' },
+    ])
+    expect(warnings).toContain('skill my-notes was not found in your user skills: not linked')
+  })
+  test('a given skill the launch root provides as a skill folder gets a skill-present line, no warning', async () => {
+    const role = templateRole('pm', { skills: [...GRILL_SKILLS, 'repo-skill'] })
+    const skills = [entry('repo-skill', 'dir')]
+    const dirs = { ...REPO_DIRS, '/repo/.claude/skills': skills, '/repo/.claude/skills/repo-skill': [] }
+    const world = memWorld({ dirs, files: mattInstall({ scope: 'user' }) })
+    const { rules, warnings } = await renderOf(world, role)
+
+    expect(rules.filter(rule => rule.check === 'skill-present' && rule.token === 'repo-skill')).toHaveLength(1)
+    expect(rules.filter(rule => rule.text === `${UNAVAILABLE}repo-skill`)).toEqual([])
+    expect(warnings.filter(warning => warning.includes('repo-skill'))).toEqual([])
   })
 })

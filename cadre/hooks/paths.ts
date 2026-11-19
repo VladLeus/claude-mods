@@ -194,6 +194,8 @@ export function userFolderOf(env: ReadEnv, warnings: string[]): string | null {
 export const MAX_FILE_NAME_CHARS = 255
 /** The extension of an agent file, a rule file and a memory file (02-GAPS-B2 S7: one home). */
 export const MARKDOWN_EXTENSION = '.md'
+/** The root file of agent instructions other tools read. */
+export const AGENTS_MD_FILE = 'AGENTS.md'
 
 /**
  * The folder name Claude Code gives a project's data under `projects/`: every character of the path that is not an
@@ -201,6 +203,35 @@ export const MARKDOWN_EXTENSION = '.md'
  */
 export function mangledProjectDir(path: string): string {
   return path.replace(/[^A-Za-z0-9]/g, '-')
+}
+
+/** Follows the engine's shortened project folder name: a longer name keeps this many characters plus a suffix. */
+export const ENGINE_FOLDER_NAME_MAX_CHARS = 200
+
+/** The start the engine keeps of a project folder name too long to use whole; null when the name is kept whole. */
+function shortenedNamePrefix(name: string): string | null {
+  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return null
+
+  return name.slice(0, ENGINE_FOLDER_NAME_MAX_CHARS)
+}
+
+/**
+ * The listed folders (never a link) that may be the engine's shortened folder for `name`: those that start with
+ * its first ENGINE_FOLDER_NAME_MAX_CHARS characters; none when the name is no longer than that or its own folder is
+ * listed.
+ */
+export function shortenedProjectDirs(name: string, entries: readonly PortEntry[]): string[] {
+  const prefix = shortenedNamePrefix(name)
+  if (prefix === null) return []
+  const folders = entries.filter(entry => entry.kind === 'dir' && !entry.isLink)
+  if (folders.some(entry => entry.name === name)) return []
+
+  return folders.filter(entry => entry.name.startsWith(prefix)).map(entry => entry.name)
+}
+
+/** The bytes a transcript row holds when its session ran in `startFolder`, closing quote included. */
+export function startCwdNeedle(startFolder: string): string {
+  return `"cwd":${JSON.stringify(startFolder)}`
 }
 
 /**
@@ -250,6 +281,17 @@ export function memoryFolderOf(userDir: string, root: string): string {
 }
 
 /**
+ * The engine's project folder for a root whose encoded name is too long starts with this path and has a suffix after
+ * it; null when the root keeps its full name.
+ */
+export function shortenedProjectPrefixOf(userDir: string, root: string): string | null {
+  const prefix = shortenedNamePrefix(mangledProjectDir(root))
+  if (prefix === null) return null
+
+  return `${userDir}/projects/${prefix}`
+}
+
+/**
  * The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED] and passes the rule userDirOf
  * uses (an absolute path with no empty, `.` or `..` segment, outside every root in `roots`; D-238, SR-1), else in the
  * home folder; null when there is neither. A value that is set but fails the rule is not used and adds
@@ -280,6 +322,14 @@ export function isSafeRelativePath(path: string): boolean {
   return path.split('/').every(segment => segment !== '.' && segment !== '..' && SAFE_SEGMENT.test(segment))
 }
 
+/** A repo root a permission rule can hold: a canonical absolute path of safe characters (`/a/b`), nothing else. */
+const SAFE_ROOT = /^(?:\/[A-Za-z0-9._-]+)+$/
+
+/** Whether a repo root can be written into an exact `//` pattern: a canonical path with no `.` or `..` segment. */
+export function isSafeRoot(root: string): boolean {
+  return SAFE_ROOT.test(root) && !root.split('/').some(part => part === '.' || part === '..')
+}
+
 /**
  * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`, after it removed the old one first. The launcher
  * refuses to start when it is missing, when the role files are newer than it (they changed after the render), or
@@ -291,6 +341,70 @@ export const RUNTIME_STAMP_FILE = 'stamp'
 /** The inbox of a role in `.cadre/<id>/.runtime/`, where other roles append their notes for it (D-114). */
 export const INBOX_FILE = 'inbox.md'
 
+/** A role's inbox, a file in its inbox folder under the user config dir: one JSON line per entry or mark, appended. */
+export const INBOX_LOG_FILE = 'inbox.jsonl'
+
+/**
+ * The names of the inbox archives /cadre start moves aside in a role's inbox folder (inboxArchiveFile); the `all` git
+ * policy also ignores those an earlier setup left in `.runtime/`.
+ */
+export const INBOX_ARCHIVE_GLOB = 'inbox-*.jsonl'
+
+/** An inbox /cadre start moved aside at `at` (epoch ms) in the role's inbox folder, matched by INBOX_ARCHIVE_GLOB. */
+export function inboxArchiveFile(at: number): string {
+  return `inbox-${at}.jsonl`
+}
+
+/** A role's file in its inbox folder under the user config dir where its session publishes its id, to be woken. */
+export const SESSION_FILE = 'session.json'
+
+/** The inbox homes' folder in `<userDir>/cadre`, beside the memory slugs, which always end in 8 hex, so none clash. */
+export const INBOX_TREE = 'inboxes'
+
+/** `<userDir>/cadre/inboxes`: it lies outside every folder a role session gets added. */
+export function inboxTreeOf(userDir: string): string {
+  return `${userDir}/cadre/${INBOX_TREE}`
+}
+
+/** A launch root's folder name in the inbox tree: its last segment, `-`, 8 hex of its hash, cleaned as memorySlug. */
+export function inboxRootKey(root: string, rootHash: string): string {
+  const name = root.split('/').filter(part => part !== '').at(-1) ?? ''
+
+  return `${name}-${rootHash.slice(0, 8)}`.replace(UNSAFE_SLUG_CHARS, '-')
+}
+
+/** The inbox home of a launch root: `<userDir>/cadre/inboxes/<root key>`. */
+export function inboxHomeOf(userDir: string, root: string, rootHash: string): string {
+  return `${inboxTreeOf(userDir)}/${inboxRootKey(root, rootHash)}`
+}
+
+/** A role's inbox folder in an inbox home: its inbox, its session record and its inbox archives. */
+export function inboxDirOf(home: string, id: string): string {
+  return `${home}/${id}`
+}
+
+/** The folders of a role's inbox folder from the top: `<userDir>/cadre`, the tree, the home, the folder itself. */
+export function inboxFolderLevels(dir: string): string[] {
+  const home = parentOf(dir)
+  const tree = parentOf(home)
+
+  return [parentOf(tree), tree, home, dir]
+}
+
+/** A role's runtime folder: `<root>/.cadre/<id>/.runtime`. */
+export function runtimeDirOf(root: string, id: string): string {
+  return `${root}/.cadre/${id}/.runtime`
+}
+
+/** The runtime env name that holds the role a session runs as. */
+export const ROLE_ENV = 'CADRE_ROLE'
+
+/** The runtime env name that holds the root a role session runs in. */
+export const ROOT_ENV = 'CADRE_ROOT'
+
+/** The runtime env name that holds the main checkout of a role session in a linked worktree. */
+export const MAIN_ENV = 'CADRE_MAIN_ROOT'
+
 /**
  * An epic's kickoff of a role in `.cadre/<id>/.runtime/` (D-158): /cadre epic writes it for each role it renders into
  * the epic worktree, and the launcher starts with it in place of the role's own `.cadre/<id>/kickoff.txt`.
@@ -301,24 +415,32 @@ export const RUNTIME_KICKOFF_FILE = 'kickoff.txt'
 export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
 
 /**
- * The name of the link in a role's `.runtime` to its private instructions folder in the user's config folder (D-140
- * q1-b), which the launcher adds with `--add-dir` and /cadre start makes on every render. A link, so it has no trailing
- * slash: git does not match a link with a folder pattern (02-GAPS-B2 M2).
+ * The folder in a role's `.runtime` that holds a copy of its private instructions folder, refreshed by every render and
+ * added by the launcher with `--add-dir`. No trailing slash, so the `all` policy's ignore line matches it as a folder
+ * and as a link an older render left.
  */
-export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
+export const PRIVATE_INSTRUCTIONS_COPY = 'private-instructions'
+
+/** A role's private instructions copy: `<root>/.cadre/<id>/.runtime/private-instructions`. */
+export function privateInstructionsCopyOf(root: string, id: string): string {
+  return `${runtimeDirOf(root, id)}/${PRIVATE_INSTRUCTIONS_COPY}`
+}
 
 /**
- * The per-user files and folders /cadre start renders into `.cadre/<id>/.runtime/` at launch: the final settings, the
- * MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations, the
- * inbox and the stamp written last (D-66, D-84, D-102, D-114, D-130, 02-GAPS-B2 M2). The `all` git policy ignores
- * exactly these.
+ * The per-user files and folders in `.cadre/<id>/.runtime/`: what /cadre start renders at launch (the final settings,
+ * the MCP file, the skill overlay, the linked instructions, the private instructions copy, the probe expectations and
+ * the stamp written last), and the files an earlier setup left there (its inbox.md, inbox log, session id and inbox
+ * archives). The `all` git policy ignores exactly these.
  */
 export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
   'settings.json',
   'mcp.json',
   'overlay/',
   'instructions/',
-  PRIVATE_INSTRUCTIONS_LINK,
+  PRIVATE_INSTRUCTIONS_COPY,
+  INBOX_LOG_FILE,
+  SESSION_FILE,
+  INBOX_ARCHIVE_GLOB,
   PROBE_EXPECTATIONS_FILE,
   INBOX_FILE,
   RUNTIME_STAMP_FILE,
@@ -380,9 +502,9 @@ export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
 export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
 
 /**
- * A role's private instructions folder, `<role memory folder>/instructions` (D-140 q1-b, q2-a): apply writes the
- * private text file there, the launcher adds it through `.runtime/private-instructions`, and the role's settings deny
- * writes to it (privateInstructionsDeny, 02-GAPS-B2 S3), all from this one path.
+ * A role's private instructions folder, `<role memory folder>/instructions`: apply writes the private text file there,
+ * a render copies it into `.runtime/private-instructions`, which the launcher adds, and the role's settings deny writes
+ * to it (privateInstructionsDeny), all from this one path.
  */
 export function privateInstructionsDir(
   user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },
@@ -473,6 +595,17 @@ export function cadreStatePath(): string {
   return '.cadre/cadre.json'
 }
 
+/** The repo-relative path of the sizing rubric: the anchors each size dimension is scored against. */
+export const SIZING_RUBRIC_PATH = '.cadre/sizing.md'
+
+/** The size from which a ticket is large when cadre.json holds no sizing block. */
+export const DEFAULT_SIZE_THRESHOLD = 0.5
+
+/** The repo-relative path of a start folder's `.claude/settings.json`, which init and regen read for its hooks. */
+export function startSettingsPath(path: string): string {
+  return `${path}/.claude/settings.json`
+}
+
 /** The repo-relative path of a role's role.json: what regen reads the role from, and never plans (A5). */
 export function roleJsonPath(id: string): string {
   return `.cadre/${id}/role.json`
@@ -483,6 +616,9 @@ export const BESIDE_SUFFIX = '.cadre-new'
 
 /** The repo-relative path of the root `.gitignore`, which holds the cadre block (D-64). */
 export const GITIGNORE_FILE = '.gitignore'
+
+/** The file name of the epic record in its worktree's git dir: per worktree, outside the tree, never shared. */
+export const EPIC_RECORD_FILE = 'cadre-epic.json'
 
 /**
  * The repo-relative path of a role's launcher, `.cadre/bin/<id>`: generate writes it, and init, start and epic compare

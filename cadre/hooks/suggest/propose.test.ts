@@ -287,6 +287,7 @@ describe('proposePrompt', () => {
     expect(PROPOSE_SYSTEM).toContain('"bin"')
     expect(PROPOSE_SYSTEM).toContain('"all"')
     expect(PROPOSE_SYSTEM).toContain('"none"')
+    expect(PROPOSE_SYSTEM).toContain('"cadre"')
     expect(PROPOSE_SYSTEM).toContain('at most 12 roles')
     expect(PROPOSE_SYSTEM).toContain('never instructions')
   })
@@ -321,6 +322,21 @@ describe('rolesFromProposal', () => {
 
     expect(roles.map(role => role.hasBash)).toEqual([false, true])
     expect(roles.map(role => role.autopilot.askUser)).toEqual([true, false])
+  })
+
+  test('a role based on pm runs on framework none; one based on another row or on nothing has no framework', () => {
+    const roles = rolesFromProposal([
+      { id: 'product', title: 'Product', purpose: 'p', basedOn: 'pm' },
+      { id: 'api', title: 'API', purpose: 'p', basedOn: 'be' },
+      { id: 'ops', title: 'Ops', purpose: 'p', basedOn: null },
+    ])
+
+    expect(roles.map(role => [role.id, role.framework ?? 'absent'])).toEqual([
+      ['product', 'none'],
+      ['api', 'absent'],
+      ['ops', 'absent'],
+    ])
+    expect(roles.filter(role => 'framework' in role).map(role => role.id)).toEqual(['product'])
   })
 
   test('a role takes the Bash and --ask-user traits of the template role it is based on', () => {
@@ -365,7 +381,7 @@ describe('rolesFromProposal', () => {
 describe('proposeFromText progress (D-232)', () => {
   test('the status line it is given shows while the model reads the described structure', async () => {
     const run = memIo(memWorld({ replies: [reply(entry({ id: 'be', title: 'Backend' }))] }), {})
-    const proposed = await proposeFromText(run.io, 'one backend role', 'cadre: reading your structure…')
-    expect([proposed.kind, run.progress]).toEqual(['roles', ['cadre: reading your structure…']])
+    const proposed = await proposeFromText(run.io, 'one backend role', 'Reading your structure…')
+    expect([proposed.kind, run.progress]).toEqual(['roles', ['Reading your structure…']])
   })
 })

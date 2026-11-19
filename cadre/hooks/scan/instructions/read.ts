@@ -1,8 +1,8 @@
 /**
  * The instruction file reads, a layer 3 module: where the read starts (InstructionSources), what init finds of the
  * repo's own files before the content consent, and the read after it: the global CLAUDE.md, the repo chain, the rule
- * files, AGENTS.md and the docs they link to, with their @imports, each file once, split into hashed parts within the
- * read caps, and the warnings for what it could not or may not read (G-02-1f Sources, 02-GAPS-B2 M3, 02-GAPS-B3 M2).
+ * files and AGENTS.md, each file once within the read caps, a repo file as one whole part whose imports are not read
+ * and a global file as a part per section with its @imports, and the warnings for what it could not or may not read.
  * It writes nothing; the text is held in memory for the run. It imports core, paths, the facts read cap, the port
  * reads, the rule walk, the import rule, the section split, the memory reads and the types, so init and its regen read
  * the instruction files here.
@@ -12,13 +12,13 @@ import { sha256Hex } from '../../core/hash'
 import { clean, sortedUnique, utf8Bytes } from '../../core/text'
 import { t, tn } from '../../locales/t'
 import {
+  AGENTS_MD_FILE,
   displayPath,
   isDirInsideRoot,
   joinedPath,
   MARKDOWN_EXTENSION,
   pathFromDisplay,
   relativeTo,
-  resolveSegments,
   trimSlash,
   userDirOf,
 } from '../../paths'
@@ -30,11 +30,10 @@ import { readMemories, unreadableWarning } from './memories'
 import { splitSections } from './sections'
 
 /**
- * Where the instruction files are read from (G-02-1f Sources): the repo root, the home folder and CLAUDE_CONFIG_DIR
- * as resolved (the config folder is CLAUDE_CONFIG_DIR, else `<home>/.claude`; userDirOf), the CLAUDE.md files of the
- * repo chain in display form, outermost first, as the user-setup scan names them (SetupScan.claudeMd), what init
- * found of the repo's own files before the content consent, by name only (repoInstructionNames), and the auto-memory
- * folders of this repo.
+ * Where the instruction files are read from: the repo root, the home folder and CLAUDE_CONFIG_DIR as resolved (the
+ * config folder is CLAUDE_CONFIG_DIR, else `<home>/.claude`; userDirOf), the CLAUDE.md files of the repo chain in
+ * display form, outermost first, as the user-setup scan names them (SetupScan.claudeMd), what init found of the repo's
+ * own files before the content consent, by name only (repoInstructionNames), and the auto-memory folders of this repo.
  */
 export type InstructionSources = {
   readonly root: string
@@ -42,8 +41,8 @@ export type InstructionSources = {
   readonly configDir: string | null
   readonly chain: readonly string[]
   /**
-   * The `.md` rule files, repo-relative below `.claude/rules`, sub-folders included (02-GAPS-B2 M4), in name order;
-   * null when that folder could not be listed.
+   * The `.md` rule files, repo-relative below `.claude/rules`, sub-folders included, in name order; null when that
+   * folder could not be listed.
    */
   readonly rules: readonly string[] | null
   /** Whether `<root>/AGENTS.md` was a file when init looked, before the content consent. */
@@ -51,9 +50,6 @@ export type InstructionSources = {
   /** The absolute auto-memory folders of this repo, the one of the root as resolved first (readMemories). */
   readonly memoryFolders: readonly string[]
 }
-
-/** The repo file of the agent instructions other tools read (G-02-1f Sources), at the root. */
-const AGENTS_FILE = 'AGENTS.md'
 
 /**
  * The rule files of the repo (G-02-1f Sources), by name only: the `.md` files of `.claude/rules` and its sub-folders,
@@ -75,43 +71,15 @@ export async function repoInstructionNames(
   root: string,
 ): Promise<Pick<InstructionSources, 'rules' | 'hasAgentsMd'>> {
   const rules = await ruleNames(io, root)
-  const agents = await io.stat(joinedPath(root, AGENTS_FILE))
+  const agents = await io.stat(joinedPath(root, AGENTS_MD_FILE))
 
   return { rules, hasAgentsMd: agents?.kind === 'file' }
-}
-
-/**
- * A markdown link `[text](target)`: its target, up to the first white space or closing parenthesis. It is bounded and
- * atomic (a lookahead capture with a backreference), so a line with many unclosed links is linear (02-GAPS-B2 M1).
- */
-const MARKDOWN_LINK = /\[[^\]\n]{0,512}\]\(\s{0,16}(?=([^\s)]{1,512}))\1(?:\s[^)\n]{0,512})?\)/g
-
-/** A URI scheme at the start of a link target, such as `https:` or `mailto:`. */
-const LINK_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/
-
-/**
- * The repo docs a file links to (G-02-1f Sources): the target of each markdown link `[text](target)` that is a
- * relative path ending in `.md` (no scheme, not absolute; its `#` part is dropped), resolved against the folder of the
- * file (`fileDir`) with every `.` and `..` segment resolved away, and kept only when it lands inside the repo; as
- * absolute paths, once each, in the order the text gives them. It reads nothing.
- */
-export function referencedDocs(text: string, fileDir: string, root: string): string[] {
-  const inside = `${trimSlash(root)}/`
-  const found: string[] = []
-  for (const match of text.matchAll(MARKDOWN_LINK)) {
-    const target = (match[1] ?? '').split('#')[0] ?? ''
-    if (!target.endsWith(MARKDOWN_EXTENSION) || target.startsWith('/') || LINK_SCHEME.test(target)) continue
-    const path = resolveSegments(`${fileDir}/${target}`)
-    if (path.startsWith(inside)) found.push(path)
-  }
-
-  return Array.from(new Set(found))
 }
 
 /** The most import levels followed below a file the read starts from (G-02-1f Sources). */
 const MAX_IMPORT_LEVELS = 3
 
-/** The most imported files read for the global file, and again for the repo chain (G-02-1f Sources). */
+/** The most imported files read for the global file, and again for the chain files above the repo. */
 const MAX_IMPORTED_FILES = 20
 
 /**
@@ -126,19 +94,8 @@ export const MAX_TOTAL_BYTES = 2 * MAX_READ_BYTES
  */
 const MAX_PARTS = 120
 
-/** The most docs the read repo files link to that one read takes (G-02-1f Sources); the rest are counted. */
-const MAX_REFERENCED_DOCS = 20
-
 /** The warning when `.claude/rules` could not be listed before the consent (G-02-1f Sources): no rule file is read. */
 export const RULES_UNLISTED_WARNING = t('scan.unknown', { what: t('scan.rulesUnlisted') })
-
-/**
- * The warning for the docs past MAX_REFERENCED_DOCS that the read repo files link to (G-02-1f Sources): not read, so
- * no role gets them (02-GAPS-B2 S2).
- */
-export function moreDocsWarning(count: number): string {
-  return t('scan.instructions.read.moreDocsWarning', { count })
-}
 
 /** The warning for a file over the read cap (G-02-1f): it is not split, so no role gets it (02-GAPS-B2 S2). */
 export function overSizeWarning(file: string): string {
@@ -151,23 +108,6 @@ export function overSizeWarning(file: string): string {
  */
 export function outsideWarning(file: string): string {
   return t('scan.instructions.read.outsideWarning', { file })
-}
-
-/**
- * The warning for a file a repo file imports from outside the repo, the config folder included (G-02-1f Sources;
- * night-run AUTO-PICK #3): it is not read, so repo content cannot pull in a private file of the user, and no role gets
- * it (02-GAPS-B2 S2).
- */
-export function repoImportWarning(file: string): string {
-  return t('scan.instructions.read.repoImportWarning', { file })
-}
-
-/**
- * The warning for a file a repo file imports or links to that is a dotfile, under .git/ or not a .md file (02-GAPS-B2
- * M3): it is not read.
- */
-export function unfollowedImportWarning(file: string): string {
-  return t('scan.instructions.read.unfollowedImportWarning', { file })
 }
 
 /**
@@ -198,12 +138,10 @@ type Place =
   | { readonly kind: 'outside'; readonly path: string }
 
 /**
- * How the read reached a path (02-GAPS-B2 M3): `repo-link` for an import or a doc link of a repo file, which may be
- * followed only to a plain .md file in the repo (isFollowedLink); `chain` for a CLAUDE.md of the chain, which above
- * the repo is read as a private `global` part (02-GAPS-B2 S2); `own` for every other path the read starts from or
- * reaches.
+ * How the read reached a path: `chain` for a CLAUDE.md of the chain, which above the repo is read as a private
+ * `global` part; `own` for every other path the read starts from or reaches.
  */
-type Reach = 'own' | 'repo-link' | 'chain'
+type Reach = 'own' | 'chain'
 
 /** A file the read split into parts: its text, the folder its imports resolve against, and its source. */
 type ReadFile = {
@@ -225,8 +163,6 @@ type ReadState = {
   readonly sizes: number[]
   /** The files left unread once the read reached MAX_TOTAL_BYTES; any entry means the read has stopped. */
   readonly unread: string[]
-  /** Every repo file read, in read order: the docs they link to are read last (readDocs). */
-  readonly repoFiles: ReadFile[]
 }
 
 /** Where a path lies: in the repo first, then in the config folder, else elsewhere (G-02-1f Sources). */
@@ -254,20 +190,6 @@ function partFileOf(place: Exclude<Place, { readonly kind: 'outside' }>, sources
   if (place.kind === 'repo') return place.relPath
 
   return fileOf(place, sources)
-}
-
-/**
- * Whether a repo file's import or doc link may be followed to this repo-relative path (02-GAPS-B2 M3): a .md file that
- * is not a dotfile and has no .git segment, in any letter case (02-GAPS-B3 C9), so a hostile @./.env or .git/config
- * is never read.
- */
-function isFollowedLink(relPath: string): boolean {
-  const segments = relPath.split('/')
-  const last = segments.at(-1) ?? ''
-  if (segments.some(segment => segment.toLowerCase() === '.git')) return false
-  if (last.startsWith('.')) return false
-
-  return last.endsWith(MARKDOWN_EXTENSION)
 }
 
 /**
@@ -311,9 +233,9 @@ function leftUnread(state: ReadState, file: string): null {
 }
 
 /**
- * The parts of one file's text (G-02-1f Part unit): its sections (splitSections), each with the file and source it
- * comes from and the SHA-256 of its text (sha256Hex), for regen (G-02-1f Regen); `P<n>` in file order after the
- * `before` parts already read. The read of init and the read of regen both split a file through it.
+ * The parts of one file's text, each with its file, source and the SHA-256 of its text, `P<n>` after the `before`
+ * parts already read: a repo file is one whole part, a global file one part per section (splitSections). The read of
+ * init and the read of regen both cut a file through it.
  */
 export async function partsOfText(
   file: string,
@@ -321,6 +243,7 @@ export async function partsOfText(
   text: string,
   before: number,
 ): Promise<InstructionPart[]> {
+  if (source === 'repo') return [{ id: `P${before + 1}`, file, heading: '', source, text, hash: await sha256Hex(text) }]
   const parts: InstructionPart[] = []
   for (const section of splitSections(text)) {
     const { heading, text: partText } = section
@@ -331,16 +254,15 @@ export async function partsOfText(
   return parts
 }
 
-/** Adds a file's sections as parts, `P<n>` in read order (partsOfText). */
+/** Adds a file's parts, `P<n>` in read order (partsOfText). */
 async function addParts(state: ReadState, file: string, source: PartSource, text: string): Promise<void> {
   state.parts.push(...(await partsOfText(file, source, text, state.parts.length)))
 }
 
 /**
- * A text the port read, kept within the total (G-02-1f Sources): when it would take the read past MAX_TOTAL_BYTES the
- * read stops and the file is counted unread; else it is split into hashed parts and given back for its imports, and a
- * repo file is kept for the docs it links to. The parts name their file by partFileOf: the raw repo-relative path is
- * the part's identity; it is cleaned only where shown (02-GAPS-B2 N3).
+ * A text the port read, kept within the total: when it would take the read past MAX_TOTAL_BYTES the read stops and the
+ * file is counted unread; else it is cut into hashed parts and given back for its imports. The parts name their file
+ * by partFileOf: the raw repo-relative path is the part's identity; it is cleaned only where shown.
  */
 async function keptText(
   state: ReadState,
@@ -354,23 +276,18 @@ async function keptText(
   state.sizes.push(bytes)
   const source: PartSource = place.kind === 'repo' ? 'repo' : 'global'
   await addParts(state, file, source, text)
-  const read: ReadFile = { text, dir: folderOf(place.path), source }
-  if (source === 'repo') state.repoFiles.push(read)
 
-  return read
+  return { text, dir: folderOf(place.path), source }
 }
 
 /**
- * Reads one file the read reaches, once (G-02-1f Sources). A chain CLAUDE.md outside the repo and the config folder, an
- * ancestor above the repo, is read through the port as a private `global` part (02-GAPS-B2 S2); any other path outside
- * them is not read (outsideWarning), and neither is one a repo file imports from outside the repo (repoImportWarning,
- * night-run AUTO-PICK #3). A repo file's import or doc link is followed only to a .md file that is not a dotfile and
- * not under .git/ (isFollowedLink; else unfollowedImportWarning, 02-GAPS-B2 M3). A file of the config folder is read
- * only when it is a plain .md file outside projects/, cadre/ and plugins/ (isReadableConfigFile; else
- * configFileWarning, 02-GAPS-B3 M2); a chain file above the repo is not held to that rule. Once the read has stopped at
- * its total, a file is only counted. A repo file is read through readRepoFile, so a link out of the repo is never read;
- * a config-folder file through the port. A missing file is quiet; one the port could not read and one over
- * MAX_READ_BYTES are warnings.
+ * Reads one file the read reaches, once. A chain CLAUDE.md outside the repo and the config folder, an ancestor above
+ * the repo, is read through the port as a private `global` part; any other path outside them is not read
+ * (outsideWarning). A file of the config folder is read only when it is a plain .md file outside projects/, cadre/ and
+ * plugins/ (isReadableConfigFile; else configFileWarning); a chain file above the repo is not held to that rule. Once
+ * the read has stopped at its total, a file is only counted. A repo file is read through readRepoFile, so a link out
+ * of the repo is never read; a config-folder file through the port. A missing file is quiet; one the port could not
+ * read and one over MAX_READ_BYTES are warnings.
  */
 async function readOne(state: ReadState, path: string, reach: Reach): Promise<ReadFile | null> {
   if (state.seen.has(path)) return null
@@ -378,12 +295,7 @@ async function readOne(state: ReadState, path: string, reach: Reach): Promise<Re
   const placed = placeOf(path, state)
   const place: Place = reach === 'chain' && placed.kind === 'outside' ? { kind: 'global', path } : placed
   const file = fileOf(place, state.sources)
-  const isRepoLink = reach === 'repo-link'
-  if (place.kind === 'outside') return warned(state, isRepoLink ? repoImportWarning(file) : outsideWarning(file))
-  if (isRepoLink && place.kind === 'global') return warned(state, repoImportWarning(file))
-  if (isRepoLink && place.kind === 'repo' && !isFollowedLink(place.relPath)) {
-    return warned(state, unfollowedImportWarning(file))
-  }
+  if (place.kind === 'outside') return warned(state, outsideWarning(file))
   if (placed.kind === 'global' && state.userDir !== null && !isReadableConfigFile(path, state.userDir)) {
     return warned(state, configFileWarning(file))
   }
@@ -400,19 +312,19 @@ async function readOne(state: ReadState, path: string, reach: Reach): Promise<Re
 }
 
 /**
- * The imports of a file read, depth first (G-02-1f Sources): each import (claudeMdImports, in its sorted order) is
- * read once, at most MAX_IMPORT_LEVELS levels below the file the read started from and MAX_IMPORTED_FILES imports per
- * budget (`handled`); a repo file's imports may not leave the repo (readOne). With no home folder a `~/` import
- * resolves from `/`, so it lands outside and is not read.
+ * The imports of a global file read, depth first: each import (claudeMdImports, in its sorted order) is read once, at
+ * most MAX_IMPORT_LEVELS levels below the file the read started from and MAX_IMPORTED_FILES imports per budget
+ * (`handled`). A repo file's imports are never read, however the read reached it: they load with that file. With no
+ * home folder a `~/` import resolves from `/`, so it lands outside and is not read.
  */
 async function readImports(state: ReadState, from: ReadFile, level: number, handled: string[]): Promise<void> {
+  if (from.source === 'repo') return
   if (level >= MAX_IMPORT_LEVELS) return
-  const reach: Reach = from.source === 'repo' ? 'repo-link' : 'own'
   for (const path of claudeMdImports(from.text, from.dir, state.sources.home ?? '')) {
     if (handled.length >= MAX_IMPORTED_FILES) return
     if (state.seen.has(path)) continue
     handled.push(path)
-    const read = await readOne(state, path, reach)
+    const read = await readOne(state, path, 'own')
     if (read !== null) await readImports(state, read, level + 1, handled)
   }
 }
@@ -426,8 +338,9 @@ async function readGlobal(state: ReadState): Promise<void> {
 }
 
 /**
- * The repo chain, outermost first, then each chain file's imports depth first, with one budget for them all. A chain
- * file above the repo is a private `global` part (02-GAPS-B2 S2), and its imports are held to the config-folder rule.
+ * The repo chain, outermost first, then the imports of each chain file above the repo depth first, with one budget for
+ * them all: such a file is a private `global` part and its imports are held to the config-folder rule; a chain file in
+ * the repo is one whole part.
  */
 async function readChain(state: ReadState): Promise<void> {
   const files: ReadFile[] = []
@@ -453,23 +366,18 @@ async function readRules(state: ReadState): Promise<void> {
   for (const name of sortedUnique(rules)) await readOne(state, joinedPath(root, `${RULES_FOLDER}/${name}`), 'own')
 }
 
-/** The root AGENTS.md, only when it was a file before the consent (G-02-1f Sources). */
-async function readAgentsMd(state: ReadState): Promise<void> {
-  if (!state.sources.hasAgentsMd) return
-  await readOne(state, joinedPath(state.sources.root, AGENTS_FILE), 'own')
+/** Whether the repo chain holds a CLAUDE.md inside the repo, which a plain session loads in place of AGENTS.md. */
+function hasRootClaudeMd(state: ReadState): boolean {
+  return state.sources.chain.some(shown => placeOf(pathFromDisplay(shown, state.sources), state).kind === 'repo')
 }
 
 /**
- * The docs the repo files read so far link to (G-02-1f Sources; referencedDocs): one level, so a doc's own links are
- * not followed; each once, in first-seen order, skipping a file the read already reached, at most MAX_REFERENCED_DOCS,
- * and the rest counted in moreDocsWarning.
+ * The root AGENTS.md, when it was a file before the consent; it is read only when the repo has no CLAUDE.md of its own.
  */
-async function readDocs(state: ReadState): Promise<void> {
-  const linked = state.repoFiles.flatMap(file => referencedDocs(file.text, file.dir, state.sources.root))
-  const docs = Array.from(new Set(linked)).filter(path => !state.seen.has(path))
-  for (const path of docs.slice(0, MAX_REFERENCED_DOCS)) await readOne(state, path, 'repo-link')
-  const rest = docs.length - MAX_REFERENCED_DOCS
-  if (rest > 0) state.warnings.push(moreDocsWarning(rest))
+async function readAgentsMd(state: ReadState): Promise<void> {
+  if (!state.sources.hasAgentsMd) return
+  if (hasRootClaudeMd(state)) return
+  await readOne(state, joinedPath(state.sources.root, AGENTS_MD_FILE), 'own')
 }
 
 /**
@@ -489,25 +397,17 @@ function scanOf(state: ReadState, memories: readonly MemoryItem[]): InstructionS
 }
 
 /**
- * Reads the instruction files after the content consent (G-02-1f Sources), in this order: the global
- * `<config folder>/CLAUDE.md`, then its @imports (claudeMdImports) depth first, at most 3 import levels and 20 imported
- * files; then the repo chain, outermost first (SetupScan.claudeMd), then the chain files' @imports the same way with a
- * budget of their own; then each rule file of `.claude/rules` in name order, then the root AGENTS.md, then the docs
- * the repo files read link to (one level, at most 20; readDocs). Each file is read once. A path in the repo is a
- * 'repo' part, read only through readRepoFile, so a link that leads out of the repo is never read; a path in the
- * config folder is a 'global' part; any other path is not read and gets a warning, and so does any file a repo file
- * imports from outside the repo, the config folder included (night-run AUTO-PICK #3); but the chain ancestors above
- * the repo are read as private `global` parts (02-GAPS-B2 S2). A repo file's imports and doc links are followed only
- * to .md files that are not dotfiles and not under .git/ (02-GAPS-B2 M3), and a config-folder file is read only when it
- * is a plain .md file outside projects/, cadre/ and plugins/ (isReadableConfigFile, 02-GAPS-B3 M2). Each file is read
+ * Reads the instruction files after the content consent, each once, in this order: the global
+ * `<config folder>/CLAUDE.md` and its @imports depth first, at most 3 import levels and 20 imported files; the repo
+ * chain, outermost first (SetupScan.claudeMd), then the @imports of the chain files above the repo the same way with a
+ * budget of their own; each rule file of `.claude/rules` in name order; the root AGENTS.md when the repo has no root
+ * CLAUDE.md; last the auto-memories of this repo (readMemories). A path in the repo is one whole 'repo' part, read only
+ * through readRepoFile, its imports and links never read; a global file is a 'global' part per section; the chain
+ * ancestors above the repo are private `global` parts; any other path is not read and gets a warning. Each file is read
  * with MAX_READ_BYTES and one over it is not split; the read stops at 512 KiB in all and counts the files it did not
- * read; parts past the 120th are not offered. A missing file is quiet, and one the port could not read is a warning.
- * Last come the auto-memories of this repo, each an item of its own (readMemories), with their warnings. A config
- * folder inside the repo is not used: the read drops it, so nothing is read from it as the config folder (02-GAPS-B2
- * N10). An ignored CLAUDE_CONFIG_DIR is warned about by the setup scan of the same run, so it is not repeated here
- * (D-238, WF-S3). The text is held in memory for this run; it is never logged, shown, asked or put in a reply; a repo
- * part a role is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm (roleClaudeMdText); originals are never
- * edited.
+ * read; parts past the 120th are not offered. A config folder inside the repo is not used, and an ignored
+ * CLAUDE_CONFIG_DIR is warned about by the setup scan of the same run, not here. The text is held in memory for this
+ * run; it is never logged, shown, asked or put in a reply, and originals are never edited.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
   const warnings: string[] = []
@@ -521,13 +421,11 @@ export async function readInstructionFiles(io: InitIo, sources: InstructionSourc
     seen: new Set(),
     sizes: [],
     unread: [],
-    repoFiles: [],
   }
   await readGlobal(state)
   await readChain(state)
   await readRules(state)
   await readAgentsMd(state)
-  await readDocs(state)
   const read = await readMemories(io, sources.memoryFolders)
   state.warnings.push(...read.warnings)
 

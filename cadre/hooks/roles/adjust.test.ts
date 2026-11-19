@@ -234,7 +234,7 @@ describe('applyAdjust', () => {
   test('framework sets the framework of that role only', () => {
     const roles = adjusted(TEAM, { kind: 'framework', id: 'qa', framework: 'gsd' })
 
-    expect(roles.map(role => role.framework)).toEqual([undefined, undefined, undefined, undefined, 'gsd', undefined])
+    expect(roles.map(role => role.framework)).toEqual(['none', undefined, undefined, undefined, 'gsd', undefined])
     expect(roles.map(role => role.id)).toEqual(TEMPLATE_ORDER)
   })
 

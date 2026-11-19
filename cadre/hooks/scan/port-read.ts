@@ -7,7 +7,7 @@
 import type { InitIo, PortEntry, PortRead, PortStat } from '../../types'
 import { isObject } from '../core/json'
 import { utf8Bytes } from '../core/text'
-import { isFileInsideRoot, trimSlash } from '../paths'
+import { ENGINE_FOLDER_NAME_MAX_CHARS, isFileInsideRoot, shortenedProjectDirs, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from './facts/normalize'
 
 /**
@@ -38,6 +38,30 @@ export async function listingState(io: InitIo, path: string): Promise<Listing> {
   if (entries !== null) return { state: 'present', entries }
 
   return { state: await missingState(io, path) }
+}
+
+/**
+ * The project folder the engine uses for `folder`. Only a name over ENGINE_FOLDER_NAME_MAX_CHARS lists the parent; a
+ * shortened candidate there is followed only when it is the one `holdsStart` verifies, else the name stays as given.
+ */
+export async function followedProjectFolder(
+  io: InitIo,
+  folder: string,
+  holdsStart: (candidate: string) => Promise<boolean>,
+): Promise<string> {
+  const cut = folder.lastIndexOf('/')
+  const name = folder.slice(cut + 1)
+  if (name.length <= ENGINE_FOLDER_NAME_MAX_CHARS) return folder
+  const parent = folder.slice(0, cut)
+  const entries = await io.list(parent)
+  if (entries === null) return folder
+  const verified: string[] = []
+  for (const candidate of shortenedProjectDirs(name, entries)) {
+    if (await holdsStart(`${parent}/${candidate}`)) verified.push(candidate)
+  }
+  if (verified.length !== 1) return folder
+
+  return `${parent}/${verified[0] ?? name}`
 }
 
 /**

@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo, LaunchStart, PortStat } from '../../../types'
+import type { InitIo, LaunchStart, PortRead, PortStat, StartSettings } from '../../../types'
 import { isRepoFolder } from '../../paths'
 import { proposeRoles } from '../../roles/propose'
+import { MAX_READ_BYTES } from '../../scan/facts/normalize'
+import { readRepoFile } from '../../scan/port-read'
 import {
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
   driven,
   drivenWith,
+  emptySetupScan,
+  hook,
   memIo,
   memWorld,
   repoScan,
@@ -67,9 +71,12 @@ function launchAt(): InitState {
   return launchStage.enter(stateAt('launch', wholeDraft({ roles: LAUNCH_TEAM })))
 }
 
-/** The launch stage's host operation as init/run performs it, through `io` (isRepoFolder). */
+/** The launch stage's host operations as init/run performs them, through `io` (isRepoFolder, readRepoFile). */
 function launchCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
   return async call => {
+    if (call.id === 'read-repo-file') {
+      return { id: 'read-repo-file', result: await readRepoFile(io, call.root, call.path, call.maxBytes) }
+    }
     if (call.id !== 'launch-dir-check') throw new Error(`the launch stage does not set ${call.id}`)
 
     return { id: 'launch-dir-check', result: await isRepoFolder(io, call.root, call.path) }
@@ -307,7 +314,9 @@ describe('refusal re-ask (G-02-6b)', () => {
 
 describe('the launch stage (D-230)', () => {
   /** The launch stage entered for LAUNCH_TEAM in the fixture repo: the launcher start question out. */
-  const entered = launchStage.enter(stateAt('launch', { locations: DEFAULT_LOCATIONS, roles: LAUNCH_TEAM }))
+  const entered = launchStage.enter(
+    stateAt('launch', { locations: DEFAULT_LOCATIONS, roles: LAUNCH_TEAM, gathered: wholeDraft().gathered }),
+  )
 
   test('launchStage asks the launcher start question with the role ids; the open question is that ask', () => {
     const spec = {
@@ -353,8 +362,60 @@ describe('the launch stage (D-230)', () => {
     const checking = nextStage(asked, { kind: 'answer', text: 'apps/web/' })
     const call = { id: 'launch-dir-check', root: '/repo', path: 'apps/web' }
     expect([checking.effect, checking.openQuestion]).toEqual([{ kind: 'io', call }, null])
-    const done = nextStage(checking, { kind: 'io', result: { id: 'launch-dir-check', result: true } })
+    const reading = nextStage(checking, { kind: 'io', result: { id: 'launch-dir-check', result: true } })
+    const path = 'apps/web/.claude/settings.json'
+    const read = { id: 'read-repo-file', root: '/repo', path, maxBytes: MAX_READ_BYTES }
+    expect([reading.effect, reading.draft.launchStart]).toEqual([{ kind: 'io', call: read }, undefined])
+    const done = nextStage(reading, { kind: 'io', result: { id: 'read-repo-file', result: { state: 'absent' } } })
     expect(done.draft.launchStart).toEqual({ kind: 'dir', path: 'apps/web' })
+  })
+
+  test('the start folder settings read sets the start settings of the scans and ends the stage with the dir', () => {
+    const guard = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"node .claude/hooks/guard.sh"}]}]}}'
+    const asked = nextStage(entered, { kind: 'answer', text: 'other' })
+    const checking = nextStage(asked, { kind: 'answer', text: 'src' })
+    const reading = nextStage(checking, { kind: 'io', result: { id: 'launch-dir-check', result: true } })
+    const read = { id: 'read-repo-file', root: '/repo', path: 'src/.claude/settings.json', maxBytes: MAX_READ_BYTES }
+    expect(reading.effect).toEqual({ kind: 'io', call: read })
+    const result: PortRead = { state: 'text', text: guard }
+    const done = nextStage(reading, { kind: 'io', result: { id: 'read-repo-file', result } })
+    expect(done.draft.launchStart).toEqual({ kind: 'dir', path: 'src' })
+    expect(done.draft.gathered?.setup.startSettings).toEqual({
+      state: 'read',
+      hooks: [{ script: 'guard.sh', event: 'PreToolUse', source: 'project' }],
+      keys: [],
+      warnings: [],
+    })
+  })
+
+  test('a start folder settings read that is not text ends the stage the same way, with its state and no hook', () => {
+    const unread = 'could not read src/.claude/settings.json of the start folder (treated as unknown)'
+    const results: readonly PortRead[] = [{ state: 'absent' }, { state: 'unknown' }, { state: 'too-large', bytes: 9 }]
+    const starts = results.map(result => {
+      const asked = nextStage(entered, { kind: 'answer', text: 'other' })
+      const checking = nextStage(asked, { kind: 'answer', text: 'src' })
+      const reading = nextStage(checking, { kind: 'io', result: { id: 'launch-dir-check', result: true } })
+      const done = nextStage(reading, { kind: 'io', result: { id: 'read-repo-file', result } })
+
+      return [done.draft.launchStart, done.draft.gathered?.setup.startSettings]
+    })
+
+    expect(starts).toEqual([
+      [{ kind: 'dir', path: 'src' }, { state: 'absent', hooks: [], keys: [], warnings: [] }],
+      [{ kind: 'dir', path: 'src' }, { state: 'unknown', hooks: [], keys: [], warnings: [unread] }],
+      [{ kind: 'dir', path: 'src' }, { state: 'unknown', hooks: [], keys: [], warnings: [unread] }],
+    ])
+  })
+
+  test('a git-root or here answer ends the stage with no start settings left from an earlier dir answer', () => {
+    const startSettings: StartSettings = { state: 'read', hooks: [hook('guard.sh', 'project')], keys: [], warnings: [] }
+    const gathered = { ...wholeDraft().gathered, setup: emptySetupScan({ startSettings }) }
+    const state = launchStage.enter(stateAt('launch', wholeDraft({ roles: LAUNCH_TEAM, gathered })))
+    for (const answer of ['Git root of this repo', 'The folder I run it from']) {
+      const done = nextStage(state, { kind: 'answer', text: answer })
+      expect(done.draft.gathered?.setup).toEqual(emptySetupScan())
+      expect('startSettings' in (done.draft.gathered?.setup ?? {})).toBe(false)
+    }
   })
 
   test('a folder the check refuses is asked again with why on top, and an unsafe one is never checked', () => {

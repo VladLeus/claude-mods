@@ -349,7 +349,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     expect(value.instructions.kind).toBe('parts')
     const handout = partsOf(value.instructions)
     expect(handout.scan.parts.map(part => [part.file, part.heading, part.source])).toEqual([
-      ['.claude/rules/security.md', 'Secrets', 'repo'],
+      ['.claude/rules/security.md', '', 'repo'],
     ])
     expect([...handout.given.entries()]).toEqual([['T1', ['security']]])
   })

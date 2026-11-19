@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { GsdFact, GsdReadTarget, RawGsdCandidate } from '../../../types'
+import type { GsdFact, GsdReadTarget, InitFacts, RawGsdCandidate } from '../../../types'
 import { EMPTY_FACTS, PROVEN_FACTS, PROVEN_USER_GSD } from '../../testkit'
 import {
+  foundUserDir,
   gsdFactOf,
+  hasRepoGsd,
   isGsdIdentitySource,
   isRuntimeCallAllowed,
   isRuntimeIdentityArgv,
@@ -193,6 +195,35 @@ describe('provenUserDir', () => {
     expect(provenUserDir({ ...PROVEN_FACTS, facts: { ...EMPTY_FACTS, gsd: [repoCopy] } })).toBeNull()
     expect(provenUserDir({ ...PROVEN_FACTS, gsdUserDir: null })).toBeNull()
     expect(provenUserDir({ facts: EMPTY_FACTS, gsdUserDir: '/home/u/.claude/gsd-core' })).toBeNull()
+  })
+})
+
+describe('the GSD known after the installs', () => {
+  /** The repo's own GSD copy, proven. */
+  const REPO_COPY: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+
+  /** The facts of a user-level GSD with this identity, with its raw dir. */
+  function userGsd(identity: GsdFact['identity']): InitFacts {
+    return { ...PROVEN_FACTS, facts: { ...EMPTY_FACTS, gsd: [{ ...PROVEN_USER_GSD, identity }] } }
+  }
+
+  test('hasRepoGsd: a repo copy that is proven or unknown, never an absent one or a user-level GSD alone', () => {
+    expect(hasRepoGsd({ ...EMPTY_FACTS, gsd: [REPO_COPY] })).toBe(true)
+    expect(hasRepoGsd({ ...EMPTY_FACTS, gsd: [{ ...REPO_COPY, identity: 'unknown' }] })).toBe(true)
+    expect(hasRepoGsd({ ...EMPTY_FACTS, gsd: [{ ...REPO_COPY, identity: 'absent' }] })).toBe(false)
+    expect(hasRepoGsd({ ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD, { ...PROVEN_USER_GSD, identity: 'unknown' }] })).toBe(
+      false,
+    )
+    expect(hasRepoGsd(EMPTY_FACTS)).toBe(false)
+  })
+
+  test('foundUserDir: the raw dir of a user-level GSD that is proven or unknown; else null', () => {
+    expect(foundUserDir(userGsd('proven'))).toBe('/home/u/.claude/gsd-core')
+    expect(foundUserDir(userGsd('unknown'))).toBe('/home/u/.claude/gsd-core')
+    expect(foundUserDir(userGsd('absent'))).toBeNull()
+    expect(foundUserDir({ ...PROVEN_FACTS, facts: { ...EMPTY_FACTS, gsd: [REPO_COPY] } })).toBeNull()
+    expect(foundUserDir({ ...PROVEN_FACTS, facts: EMPTY_FACTS })).toBeNull()
+    expect(foundUserDir({ ...userGsd('unknown'), gsdUserDir: null })).toBeNull()
   })
 })
 

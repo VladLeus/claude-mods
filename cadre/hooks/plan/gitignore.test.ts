@@ -90,13 +90,16 @@ describe('ignore block', () => {
       expect(IGNORE_END).toBe('# <<< cadre')
     })
 
-    test('the per-user files /cadre start renders into .runtime are the eight named, in a frozen list', () => {
+    test('the per-user files /cadre start renders into .runtime are the eleven named, in a frozen list', () => {
       expect(RUNTIME_RENDERED).toEqual([
         'settings.json',
         'mcp.json',
         'overlay/',
         'instructions/',
         'private-instructions',
+        'inbox.jsonl',
+        'session.json',
+        'inbox-*.jsonl',
         'probe-expectations.json',
         'inbox.md',
         'stamp',
@@ -243,6 +246,7 @@ describe('ignore block', () => {
       expect(text).toBe(
         '# >>> cadre\nthoughts/\n.cadre/*/.runtime/settings.json\n.cadre/*/.runtime/mcp.json\n' +
           '.cadre/*/.runtime/overlay/\n.cadre/*/.runtime/instructions/\n.cadre/*/.runtime/private-instructions\n' +
+          '.cadre/*/.runtime/inbox.jsonl\n.cadre/*/.runtime/session.json\n.cadre/*/.runtime/inbox-*.jsonl\n' +
           '.cadre/*/.runtime/probe-expectations.json\n.cadre/*/.runtime/inbox.md\n.cadre/*/.runtime/stamp\n' +
           '.cadre/**/*.cadre-new\n# <<< cadre\n',
       )
@@ -252,6 +256,17 @@ describe('ignore block', () => {
       const text = mergeIgnoreBlock(null, gitignoreLines('ignore', null))
 
       expect(text).toBe('# >>> cadre\nthoughts/\n.cadre/\n# <<< cadre\n')
+    })
+
+    test('all ignores the inbox log and the published session id of every role, and keeps the old inbox line', () => {
+      const lines = gitignoreLines('all', null)
+      const wanted = ['.cadre/*/.runtime/inbox.jsonl', '.cadre/*/.runtime/session.json', '.cadre/*/.runtime/inbox.md']
+
+      expect(wanted.filter(line => lines.includes(line))).toEqual(wanted)
+    })
+
+    test('all ignores the inbox archives /cadre start moves aside, of every role', () => {
+      expect(ignoreLines('all')).toContain('.cadre/*/.runtime/inbox-*.jsonl')
     })
 
     test('thoughts/ is left out when a thoughts line is already outside the block, in every policy', () => {
@@ -276,7 +291,7 @@ describe('ignore block', () => {
     test('ignoreLines gives the policy lines alone, as a new array each time', () => {
       expect(ignoreLines('definitions')).toEqual(['.cadre/*/.runtime/', '.cadre/**/*.cadre-new'])
       expect(ignoreLines('ignore')).toEqual(['.cadre/'])
-      expect(ignoreLines('all')).toHaveLength(9)
+      expect(ignoreLines('all')).toHaveLength(12)
 
       const first = ignoreLines('all')
       first.push('changed')

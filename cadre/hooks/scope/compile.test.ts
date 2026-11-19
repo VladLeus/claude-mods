@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CompiledScope, FrameworkId, McpRoute, PermissionMode, ProbeCheck, RoleSpec, ScopeRule } from '../../types'
+import type {
+  CompiledScope,
+  FrameworkId,
+  McpRoute,
+  PermissionMode,
+  ProbeCheck,
+  RoleSpec,
+  ScopeRule,
+  TemplateRoleId,
+} from '../../types'
 import { adapterOf } from '../framework/registry'
+import type { LaunchUser } from '../launch/links'
+import { renderRuntimeSettings } from '../launch/settings'
 import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from '../roles/infra'
 import { chainLines, EMPTY_CARRY } from '../roles/template'
 import type { ChainRole } from '../roles/template'
@@ -10,8 +21,10 @@ import {
   BIDI_OVERRIDE,
   context,
   emptySetupScan,
+  HASH,
   hook,
   leaks,
+  role,
   session,
   skillRef,
   templateRole,
@@ -36,7 +49,28 @@ const PLUGIN_RULE =
   '(--setting-sources project whitelist)'
 
 /** The Bash rule of a role that has Bash: one rule for both platforms, with the weaker label (ROLE-06). */
-const SANDBOX_RULE = 'Bash runs in the sandbox (hard on macOS, best-effort on Linux)'
+const SANDBOX_RULE =
+  'Bash runs in the sandbox (hard on macOS, best-effort on Linux) and may write ~/.cache, which tools run outside ' +
+  'the sandbox load from'
+
+/** The secrets rule of BE, FE and QA: Bash is stopped through the sandbox, but for the env files git tracks. */
+const SECRETS_CHECKS_RULE =
+  'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied, Bash commands included through the sandbox, ' +
+  'except the env files git tracks, which Bash commands may read; a command run outside the sandbox is not stopped'
+
+/** The docker rule of BE, FE and QA in a repo with no docker script. */
+const DOCKER_RULE =
+  'These run outside the sandbox: docker, docker-compose. Run each one alone, with no cd, pipe or redirect.'
+
+/** The sandbox of a role that runs the repo's checks: docker outside it, the tool caches writable. */
+const IMPLEMENTER_SANDBOX = {
+  enabled: true,
+  excludedCommands: ['docker *', 'docker-compose *'],
+  filesystem: { allowWrite: ['~/.cache'] },
+}
+
+/** The sandbox of any other role with Bash: only the tool caches writable. */
+const CACHE_SANDBOX = { enabled: true, filesystem: { allowWrite: ['~/.cache'] } }
 
 /** The warning that leads the card of a role whose role.json sets bypassPermissions by hand (D-95). */
 const BYPASS_RULE = 'WARNING: bypassPermissions is set in role.json: permission prompts are skipped'
@@ -46,6 +80,9 @@ const ATTENDED_RULE = 'Attended: this role needs a person for framework steps th
 
 /** The rule the card of a role without Bash carries on GSD: GSD workflows need Bash, so a person runs them (A1). */
 const GSD_NO_BASH_RULE = 'Attended: GSD workflows need Bash; this role runs them through a person'
+
+/** The rule of a role started with --ask-user that may run GSD: GSD menus reach the person while asking is on. */
+const ASK_RULE = 'Attended: started with --ask-user, so framework menus reach the person while asking is on'
 
 /** The note on every card when the setup scan could not see every MCP server (A4). */
 const PARTIAL_MCP_RULE =
@@ -93,11 +130,11 @@ function skippedRule(dirs: string): string {
   )
 }
 
-/** The card rule that names what a role loads as its instructions: its built and private files (02-GAPS-B2 N9). */
+/** The card rule naming what a role loads: the repo files its role.json names and its private instructions. */
 function loadsRule(id: string): string {
   return (
-    `Loads .cadre/${id}/CLAUDE.md and its private instructions ` +
-    `(<config dir>/cadre/<repo>-<hash8>/${id}/instructions/)`
+    `Loads the repo CLAUDE.md, rule and AGENTS.md files .cadre/${id}/role.json names, from their originals, ` +
+    `and its private instructions (<config dir>/cadre/<repo>-<hash8>/${id}/instructions/)`
   )
 }
 
@@ -261,11 +298,24 @@ describe('compileScope', () => {
       'gsd-code-review',
       'gsd-discuss-phase',
       'gsd-execute-phase',
+      'gsd-new-milestone',
+      'gsd-new-project',
+      'gsd-phase',
       'gsd-plan-phase',
+      'gsd-quick',
       'gsd-validate-phase',
       'resume-handoff-doc',
     ])
     expect(scope.overlay.agents).toEqual(['gsd-executor', 'gsd-planner'])
+  })
+
+  test('TL on GSD has the commands its start steps name in its overlay, and none of them listed as not given', () => {
+    const named = ['gsd-new-project', 'gsd-new-milestone', 'gsd-quick', 'gsd-phase']
+    const scanned = emptySetupScan({ skills: named.map(name => skillRef(name)) })
+    const scope = compileScope(templateRole('tl'), context({ framework: 'gsd', setup: scanned }))
+
+    expect(named.filter(name => !scope.overlay.skills.includes(name))).toEqual([])
+    expect(named.filter(name => scope.card.notGiven.skills.includes(name))).toEqual([])
   })
 
   test('a role with no MCP servers and no skills still has the infra plugins, the handoff and the start skills', () => {
@@ -415,7 +465,7 @@ describe('scope rules', () => {
       'Read(~/.aws/**)',
       'Read(~/.ssh/**)',
     ])
-    expect(scope.settings.sandbox).toEqual({ enabled: true })
+    expect(scope.settings.sandbox).toEqual(IMPLEMENTER_SANDBOX)
     expect(ruleOf(scope, SANDBOX_RULE)).toEqual({ text: SANDBOX_RULE, enforcement: 'best-effort' })
     expect(ruleOf(scope, 'No Bash tool (denied)')).toBeUndefined()
     expect(scope.card.rules.filter(candidate => candidate.text.startsWith('Reads and edits'))).toEqual([])
@@ -604,8 +654,9 @@ describe('scope rules', () => {
       const scope = compileScope(templateRole('pm'), context({ setup: inProject }))
       const quiet = compileScope(templateRole('pm'), context({ setup: elsewhere }))
 
-      expect(scope.card.rules.slice(-4)).toEqual([
+      expect(scope.card.rules.slice(-5)).toEqual([
         { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+        { text: ASK_RULE, enforcement: 'none' },
         {
           text:
             'WARNING: gsd-context-monitor-v2.js is registered in project settings and loads in every role; ' +
@@ -693,6 +744,7 @@ describe('scope rules', () => {
     expect(attended).toEqual([
       { text: ATTENDED_RULE, enforcement: 'none' },
       { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+      { text: ASK_RULE, enforcement: 'none' },
     ])
   })
 
@@ -925,12 +977,18 @@ describe('scope rules', () => {
       { text: loadsRule('pm'), enforcement: 'none' },
       { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
       {
+        text: 'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them',
+        enforcement: 'hard',
+      },
+      { text: 'Live messages may be held in this permission mode; the inbox is the record', enforcement: 'none' },
+      {
         text: 'Permission mode: bypassPermissions',
         enforcement: 'hard',
         checks: [{ kind: 'permission-mode', token: 'bypassPermissions' }],
       },
       { text: ATTENDED_RULE, enforcement: 'none' },
       { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+      { text: ASK_RULE, enforcement: 'none' },
       { text: 'MCP route: strict (--strict-mcp-config)', enforcement: 'none' },
     ])
   })
@@ -942,7 +1000,8 @@ describe('scope rules', () => {
     expect(scope.card.rules).toEqual([
       { text: PLUGIN_RULE, enforcement: 'hard' },
       { text: SANDBOX_RULE, enforcement: 'best-effort' },
-      { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
+      { text: DOCKER_RULE, enforcement: 'none' },
+      { text: SECRETS_CHECKS_RULE, enforcement: 'best-effort' },
       {
         text: mergedDenied('jira'),
         enforcement: 'best-effort',
@@ -952,6 +1011,10 @@ describe('scope rules', () => {
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
       { text: loadsRule('be'), enforcement: 'none' },
       { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
+      {
+        text: 'Edit and Write of every inbox.jsonl and session.json are denied; only the cadre inbox tools write them',
+        enforcement: 'best-effort',
+      },
       { text: 'Permission mode: auto', enforcement: 'hard', checks: [{ kind: 'permission-mode', token: 'auto' }] },
       { text: MERGED_ROUTE_RULE, enforcement: 'none' },
     ])
@@ -1020,5 +1083,128 @@ describe('infra plugins by name in every scope (D-281)', () => {
       'autopilot@local-mods',
       'cadre@local-mods',
     ])
+  })
+})
+
+describe('union scope over the frameworks the repo records', () => {
+  /** A setup whose scan found the official superpowers plugin. */
+  const setup = emptySetupScan({ plugins: ['superpowers@claude-plugins-official'] })
+  /** Every framework the repo records, none included. */
+  const BOTH: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+  /** A launching user at /repo with nothing to carry. */
+  const LAUNCHER: LaunchUser = {
+    root: '/repo',
+    givenRoot: '/repo',
+    home: '/home/u',
+    userDir: '/home/u/.claude',
+    gitCommonDir: '/repo/.git',
+    commonDirHash: HASH,
+    autoCompactWindow: null,
+    statusLine: null,
+    env: {},
+    hooks: [],
+    claudeMd: [],
+    rules: [],
+    roleClaudeMds: [],
+    globalClaudeMd: [],
+    memoryFiles: [],
+    givenMemoryFiles: [],
+    userSkills: [],
+    userAgents: [],
+    codeDirs: [],
+    linkedMemories: [],
+  }
+
+  test('a role on gsd that may run superpowers enables its plugin and keeps both start skill sets', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ framework: 'gsd', setup, alsoRuns: BOTH }))
+
+    expect(scope.settings.enabledPlugins['superpowers@claude-plugins-official']).toBe(true)
+    expect(adapterOf('gsd').startSkills.every(skill => scope.overlay.skills.includes(skill))).toBe(true)
+    expect([scope.card.framework, scope.card.alsoRuns]).toEqual(['gsd', ['superpowers']])
+  })
+
+  test("a none role's enabledPlugins is unchanged when the repo records both frameworks", () => {
+    const pm = templateRole('pm')
+    const alone = compileScope(pm, context({ framework: 'none', setup }))
+    const union = compileScope(pm, context({ framework: 'none', setup, alsoRuns: BOTH }))
+
+    expect(union.settings.enabledPlugins).toEqual(alone.settings.enabledPlugins)
+    expect(union).toEqual(alone)
+    expect(union.card.alsoRuns).toEqual([])
+  })
+
+  test('with nothing recorded a gsd role compiles as before, with no superpowers plugin and alsoRuns []', () => {
+    const be = templateRole('be')
+    const scope = compileScope(be, context({ framework: 'gsd', setup }))
+
+    expect([scope.settings.enabledPlugins['superpowers@claude-plugins-official'], scope.card.alsoRuns]).toEqual([
+      undefined,
+      [],
+    ])
+  })
+
+  test('a superpowers-default role that may also run gsd renders GSD_WORKSTREAM', () => {
+    const tl = templateRole('tl')
+    const union = compileScope(tl, context({ framework: 'superpowers', alsoRuns: ['gsd', 'superpowers'] }))
+    const alone = compileScope(tl, context({ framework: 'superpowers' }))
+
+    expect(renderRuntimeSettings(tl, union, LAUNCHER, []).env).toEqual({
+      GSD_WORKSTREAM: 'cadre-tl',
+      CADRE_ROLE: 'tl',
+      CADRE_ROOT: '/repo',
+    })
+    expect(renderRuntimeSettings(tl, alone, LAUNCHER, []).env).toEqual({ CADRE_ROLE: 'tl', CADRE_ROOT: '/repo' })
+  })
+
+  test('a superpowers-default role that may also run gsd links the gsd agents of the setup', () => {
+    const scanned = emptySetupScan({ agents: ['gsd-planner', 'my-agent', 'gsd-executor'] })
+    const alsoRuns: FrameworkId[] = ['gsd', 'superpowers']
+    const tl = templateRole('tl')
+    const union = compileScope(tl, context({ framework: 'superpowers', setup: scanned, alsoRuns }))
+    const alone = compileScope(tl, context({ framework: 'superpowers', setup: scanned }))
+    const none = compileScope(templateRole('pm'), context({ framework: 'none', setup: scanned, alsoRuns }))
+
+    expect(union.overlay.agents).toEqual(['gsd-executor', 'gsd-planner'])
+    expect([alone.overlay.agents, none.overlay.agents]).toEqual([[], []])
+  })
+})
+
+describe('the sandbox of a role', () => {
+  test('BE, FE and QA run docker and docker-compose outside the sandbox and may write ~/.cache', () => {
+    const ids: readonly TemplateRoleId[] = ['be', 'fe', 'qa']
+    const sandboxes = ids.map(id => compileScope(templateRole(id), context()).settings.sandbox)
+
+    expect(sandboxes).toEqual([IMPLEMENTER_SANDBOX, IMPLEMENTER_SANDBOX, IMPLEMENTER_SANDBOX])
+  })
+
+  test('TL and Security may write ~/.cache and run no command outside the sandbox', () => {
+    const ids: readonly TemplateRoleId[] = ['tl', 'security']
+    const sandboxes = ids.map(id => compileScope(templateRole(id), context()).settings.sandbox)
+
+    expect(sandboxes).toEqual([CACHE_SANDBOX, CACHE_SANDBOX])
+  })
+
+  test('the PM has no Bash, so its sandbox is off and holds no other key', () => {
+    const sandbox = compileScope(templateRole('pm'), context()).settings.sandbox
+
+    expect(sandbox).toEqual({ enabled: false })
+    expect(Object.keys(sandbox)).toEqual(['enabled'])
+  })
+
+  test('a role based on BE runs docker outside the sandbox, a Bash role based on none does not', () => {
+    expect(compileScope(role('api', 'be'), context()).settings.sandbox).toEqual(IMPLEMENTER_SANDBOX)
+    expect(compileScope(role('docs', null), context()).settings.sandbox).toEqual(CACHE_SANDBOX)
+  })
+
+  test("BE also runs the repo's docker scripts outside the sandbox, TL none of them", () => {
+    const ctx = context({ dockerScripts: ['yarn docker:rspec'] })
+
+    expect(compileScope(templateRole('be'), ctx).settings.sandbox.excludedCommands).toEqual([
+      'docker *',
+      'docker-compose *',
+      'yarn docker:rspec *',
+    ])
+    expect(compileScope(templateRole('tl'), ctx).settings.sandbox).toEqual(CACHE_SANDBOX)
   })
 })

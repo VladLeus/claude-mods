@@ -24,6 +24,11 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
     ],
     "writes": [
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.git/worktrees/proj-1/cadre-links.exclude",
         "sha256": "5608675a9aba9d732c26529945239c6c9a508850c8201b61dd2cb49c6547d33b",
         "isWritten": true
@@ -35,7 +40,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/settings.json",
-        "sha256": "d27b65d1251b9b207393322f9bac5c6e6d98f3cd08ed184d8fd8e56e8d0cbdc3",
+        "sha256": "2350d3c4be92fee119f2a88dddcdd8f376427d625a77c801c847d8c15a67367c",
         "isWritten": true
       },
       {
@@ -45,17 +50,12 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/probe-expectations.json",
-        "sha256": "1846c565a3509afbed95ad2f3a1eb3acb32a2c59ddb9be6c1ccf2b7e34e5893f",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/inbox.md",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "da96428b4f91d3a5277e6646c0eafd7a5e721560219176494016f5f81845b007",
         "isWritten": true
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/kickoff.txt",
-        "sha256": "57a08a43a1b109f95a30c49a58d1b1e53f1310d4b3376c9dbe3032300170b3ae",
+        "sha256": "e6569ac8df54b629e35ee8c86b650006517bee7acb91ce536bf766637e2a5be7",
         "isWritten": true
       },
       {
@@ -65,7 +65,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/settings.json",
-        "sha256": "2c5fd58a882c70d3ee4f01c1f950a5d2937c3b50c8e2b3f624a592376e2c9d75",
+        "sha256": "b66853df4b60984ffe2474dab3dcd46b0866ba0961db50becedd6a50e08e1f86",
         "isWritten": true
       },
       {
@@ -75,17 +75,12 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/probe-expectations.json",
-        "sha256": "d77ca02f4bb5851151e866fefd969dba402d886148ab453fd4373442dad16c99",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/inbox.md",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "5afa942d55d06de1ce141803c9b1ad6faa8dc50c504dcb6bccf8d5c1132051fc",
         "isWritten": true
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/kickoff.txt",
-        "sha256": "17b998dcd39bc775692450709e36d6a96e7dea043927db8571a6b8ea43aef453",
+        "sha256": "d18cc20f4bf1dd827f573c7fa2c4b6ada602de38919f258a286e74d266117875",
         "isWritten": true
       },
       {
@@ -112,21 +107,36 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "git rev-parse --path-format=absolute --git-common-dir @ /repo/.claude/worktrees/proj-1",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/overlay @ -",
+      "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
       "/bin/mkdir -p -- /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions @ -",
       "/bin/chmod 700 /home/u/.claude/cadre @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions @ -",
-      "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
+      "/bin/chmod 700 /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm/inbox.jsonl @ -",
       "git rev-parse --path-format=absolute --git-common-dir @ /repo/.claude/worktrees/proj-1",
+      "git -C /repo/.claude/worktrees/proj-1 ls-files -z -s -- :(glob)**/.env :(glob)**/.env.* @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/overlay @ -",
+      "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
       "/bin/mkdir -p -- /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
       "/bin/chmod 700 /home/u/.claude/cadre @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
-      "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
+      "/bin/chmod 700 /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be/inbox.jsonl @ -",
       "/usr/bin/uname -s @ -",
       "/usr/bin/osascript -e on run argv -e tell application \"iTerm\" -e activate -e if (count of windows) is 0 then -e create window with default profile -e else -e tell current window to create tab with default profile -e end if -e tell current session of current window to write text (item 1 of argv) -e end tell -e end run cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/pm @ -",
       "/usr/bin/osascript -e on run argv -e tell application \"iTerm\" -e activate -e if (count of windows) is 0 then -e create window with default profile -e else -e tell current window to create tab with default profile -e end if -e tell current session of current window to write text (item 1 of argv) -e end tell -e end run cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/be @ -"
@@ -142,6 +152,11 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "  be: cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; git 2.31 or newer is needed), so it stopped."
     ],
     "writes": [
+      {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
       {
         "path": "/repo/.git/worktrees/proj-1-x/cadre-links.exclude",
         "sha256": "0a9da303107e0cb96019f23caf634b3590515712e2865ce9ead36dcff4a39d2d",
@@ -188,6 +203,11 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
     ],
     "writes": [
       {
+        "path": "/repo/.cadre/sizing.md",
+        "sha256": "9c961414ae04da71cdabf56a180298b54e2d9e631279138b47c059d3ab7ed6c3",
+        "isWritten": true
+      },
+      {
         "path": "/repo/.git/worktrees/proj-1/cadre-links.exclude",
         "sha256": "5608675a9aba9d732c26529945239c6c9a508850c8201b61dd2cb49c6547d33b",
         "isWritten": true
@@ -199,7 +219,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/settings.json",
-        "sha256": "d27b65d1251b9b207393322f9bac5c6e6d98f3cd08ed184d8fd8e56e8d0cbdc3",
+        "sha256": "2350d3c4be92fee119f2a88dddcdd8f376427d625a77c801c847d8c15a67367c",
         "isWritten": true
       },
       {
@@ -209,17 +229,12 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/probe-expectations.json",
-        "sha256": "1846c565a3509afbed95ad2f3a1eb3acb32a2c59ddb9be6c1ccf2b7e34e5893f",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/inbox.md",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "da96428b4f91d3a5277e6646c0eafd7a5e721560219176494016f5f81845b007",
         "isWritten": true
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/kickoff.txt",
-        "sha256": "57a08a43a1b109f95a30c49a58d1b1e53f1310d4b3376c9dbe3032300170b3ae",
+        "sha256": "e6569ac8df54b629e35ee8c86b650006517bee7acb91ce536bf766637e2a5be7",
         "isWritten": true
       },
       {
@@ -229,7 +244,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/settings.json",
-        "sha256": "2c5fd58a882c70d3ee4f01c1f950a5d2937c3b50c8e2b3f624a592376e2c9d75",
+        "sha256": "b66853df4b60984ffe2474dab3dcd46b0866ba0961db50becedd6a50e08e1f86",
         "isWritten": true
       },
       {
@@ -239,17 +254,12 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/probe-expectations.json",
-        "sha256": "d77ca02f4bb5851151e866fefd969dba402d886148ab453fd4373442dad16c99",
-        "isWritten": true
-      },
-      {
-        "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/inbox.md",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "5afa942d55d06de1ce141803c9b1ad6faa8dc50c504dcb6bccf8d5c1132051fc",
         "isWritten": true
       },
       {
         "path": "/repo/.claude/worktrees/proj-1/.cadre/be/.runtime/kickoff.txt",
-        "sha256": "17b998dcd39bc775692450709e36d6a96e7dea043927db8571a6b8ea43aef453",
+        "sha256": "d18cc20f4bf1dd827f573c7fa2c4b6ada602de38919f258a286e74d266117875",
         "isWritten": true
       },
       {
@@ -276,21 +286,36 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "git rev-parse --path-format=absolute --git-common-dir @ /repo/.claude/worktrees/proj-1",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/overlay @ -",
+      "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
       "/bin/mkdir -p -- /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions @ -",
       "/bin/chmod 700 /home/u/.claude/cadre @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions @ -",
-      "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/pm/instructions /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm @ -",
+      "/bin/chmod 700 /repo/.claude/worktrees/proj-1/.cadre/pm/.runtime/private-instructions @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/pm/inbox.jsonl @ -",
       "git rev-parse --path-format=absolute --git-common-dir @ /repo/.claude/worktrees/proj-1",
+      "git -C /repo/.claude/worktrees/proj-1 ls-files -z -s -- :(glob)**/.env :(glob)**/.env.* @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime @ -",
       "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/overlay @ -",
+      "/bin/mkdir -p -- /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
       "/bin/mkdir -p -- /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
       "/bin/chmod 700 /home/u/.claude/cadre @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be @ -",
       "/bin/chmod 700 /home/u/.claude/cadre/repo-6b4ca2db/be/instructions @ -",
-      "/bin/ln -sfn /home/u/.claude/cadre/repo-6b4ca2db/be/instructions /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
+      "/bin/mkdir -p -- /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625 @ -",
+      "/bin/chmod 700 /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be @ -",
+      "/bin/chmod 700 /repo/.claude/worktrees/proj-1/.cadre/be/.runtime/private-instructions @ -",
+      "/usr/bin/tee -a /home/u/.claude/cadre/inboxes/proj-1-37fe7625/be/inbox.jsonl @ -",
       "/usr/bin/uname -s @ -",
       "/usr/bin/pbcopy @ -"
     ]

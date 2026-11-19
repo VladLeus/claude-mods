@@ -12,11 +12,12 @@ import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { t } from '../locales/t'
 import { handoffFolderOf } from '../paths'
-import { INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from '../roles/infra'
+import { CADRE_TOOLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from '../roles/infra'
+import { runnableFrameworks } from './frameworks'
 
 /**
- * The reads every role is denied, best effort (ROLE-05, D-97c): the repo's .env files and the user's ssh and aws
- * folders. A subprocess that reads the file itself is not stopped by a Read rule, so the card never calls these hard.
+ * The reads every role is denied: the repo's .env files and the user's ssh and aws folders. With the sandbox on, the
+ * engine applies them to Bash commands too; a command run outside the sandbox is not stopped.
  */
 export const SECRET_READ_DENY: readonly string[] = Object.freeze([
   'Read(./.env)',
@@ -24,6 +25,12 @@ export const SECRET_READ_DENY: readonly string[] = Object.freeze([
   'Read(~/.aws/**)',
   'Read(~/.ssh/**)',
 ])
+
+/** The folder every Bash role's sandbox may write: the user's tool caches. */
+export const SANDBOX_CACHE_DIR = '~/.cache'
+
+/** The commands a role that runs the repo's checks runs outside the sandbox, since Docker cannot run inside it. */
+export const DOCKER_COMMANDS: readonly string[] = Object.freeze(['docker *', 'docker-compose *'])
 
 /**
  * The memory folder pattern a card shows (D-91). renderRole renders the real folder at launch: `<config dir>` is
@@ -62,11 +69,12 @@ const ABSOLUTE_MESSAGE = ARTIFACT.lintAbsolute
 const INFRA_MESSAGE = ARTIFACT.lintInfra
 
 /**
- * What no deny pattern may cover (ISO-04, D-77): the infra tools, the infra MCP servers by name, and the handoff
+ * What no deny pattern may cover: the infra tools, cadre's own tools, the infra MCP servers by name, and the handoff
  * skills as the `Skill(<name>)` rules that would block them.
  */
 const INFRA_DENY_TARGETS: readonly string[] = Object.freeze([
   ...INFRA_TOOLS,
+  ...CADRE_TOOLS,
   ...INFRA_MCP_SERVERS.map(server => `mcp__${server}`),
   ...INFRA_SKILLS.map(name => `Skill(${name})`),
 ])
@@ -119,15 +127,16 @@ export function ownRoots(id: string): ReadonlySet<string> {
 
 /**
  * Whether a deny pattern blocks an infra tool. A rule with an argument on an infra tool other than Skill
- * (`PushNotification(*)`) blocks it; `Skill(<name>)` blocks only the skills it can match. A pattern with a glob
- * character counts up to its first one, so `mcp__*` and `mcp__au*` cover `mcp__autopilot__wait_for`. A literal pattern
- * blocks only an infra name it equals, or the tools of a server it names (`mcp__autopilot` covers
- * `mcp__autopilot__wait_for`), so `mcp__a` and `mcp__autopilot__wait` block nothing of the infra (B9).
+ * (`PushNotification(*)`) or on one of cadre's tools (`mcp__cadre__inbox_send(*)`) blocks it; `Skill(<name>)` blocks
+ * only the skills it can match. A pattern with a glob character counts up to its first one, so `mcp__*` and
+ * `mcp__au*` cover `mcp__autopilot__wait_for`. A literal pattern blocks only an infra name it equals, or the tools of a
+ * server it names (`mcp__autopilot` covers `mcp__autopilot__wait_for`), so `mcp__a` and `mcp__autopilot__wait` block
+ * nothing of the infra (B9).
  */
 function blocksInfra(pattern: string): boolean {
   const open = pattern.indexOf('(')
   const tool = open < 0 ? pattern : pattern.slice(0, open)
-  if (INFRA_TOOLS.includes(tool) && (open < 0 || tool !== 'Skill')) return true
+  if ((INFRA_TOOLS.includes(tool) || CADRE_TOOLS.includes(tool)) && (open < 0 || tool !== 'Skill')) return true
   if (GLOB_CHARS.test(pattern)) {
     const literal = pattern.split(GLOB_CHARS)[0] ?? ''
 
@@ -248,8 +257,9 @@ function startSkillProblem(name: string, scope: CompiledScope, framework: Framew
  * The checker behind ISO-04 (D-77): every way a compiled scope could block autopilot, agent-fleet or the handoff
  * skills, each as a message that names what broke, and an empty list when none. (a) No deny entry may block an infra
  * tool or server (blocksInfra), cover a handoff skill as `Skill(<name>)`, or name an infra plugin by its key. (b) The
- * three infra plugins must be on, the handoff skills must be in the overlay, every start skill of the framework must
- * be present (in the overlay, or through an enabled plugin), and no flag may turn off slash commands. Absence matters
+ * three infra plugins must be on, the handoff skills must be in the overlay, every start skill of every framework the
+ * role may run (`framework` and the card's alsoRuns) must be present (in the overlay, or through an enabled plugin),
+ * and no flag may turn off slash commands. Absence matters
  * as much as denial: under `--setting-sources project` a user-level skill is missing unless the overlay links it. The
  * result does not depend on the order of the deny list.
  */
@@ -262,8 +272,8 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
     ...INFRA_SKILLS.filter(name => !scope.overlay.skills.includes(name)).map(
       name => t('scope.lint.infraViolations2', { name }),
     ),
-    ...adapterOf(framework).startSkills
-      .map(name => startSkillProblem(name, scope, framework))
+    ...runnableFrameworks({ framework, alsoRuns: scope.card.alsoRuns })
+      .flatMap(id => adapterOf(id).startSkills.map(name => startSkillProblem(name, scope, id)))
       .filter((problem): problem is string => problem !== null),
     ...scope.flags
       .filter(flag => flag === DISABLE_SLASH_FLAG || flag.startsWith(`${DISABLE_SLASH_FLAG}=`))

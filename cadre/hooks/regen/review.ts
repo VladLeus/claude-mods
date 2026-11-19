@@ -14,6 +14,7 @@ import type {
   InstructionPart,
   InstructionPartRecord,
   MemoryItem,
+  PartSource,
   RoleSpec,
   SetupScan,
 } from '../../types'
@@ -25,7 +26,7 @@ import { redactedText } from '../core/redact'
 import { asSentence, clean, reportText } from '../core/text'
 import { GIT_TRACKING_UNKNOWN_WARNING, trackedParts } from '../generate/gittrack'
 import { keyLabel, t, tn } from '../locales/t'
-import { partRecord, TOP_OF_FILE, withPartRecords } from '../records'
+import { isWholeFilePart, partRecord, TOP_OF_FILE, withPartRecords } from '../records'
 import { NO_MEMORY_SUMMARY } from '../scan/instructions/memories'
 import { checkedCompletion } from '../suggest/checked'
 import type { Checked } from '../suggest/checked'
@@ -67,16 +68,15 @@ function headingText(heading: string): string {
 }
 
 /**
- * The regen question of a part (D-142): whether the role gets it, by its heading, its secret-like spans hidden
- * (redactedText, E1, #163), and its file, cleaned; regen makes no grouping call, so a part is named by where it is,
- * not by a topic.
+ * The regen question of a part: whether the role gets it, by its file, cleaned, alone for a whole repo file, else
+ * with its heading, its secret-like spans hidden (redactedText); regen makes no grouping call, so a part is named by
+ * where it is, not by a topic.
  */
-export function regenPartQuestion(id: string, part: Pick<InstructionPart, 'file' | 'heading'>): string {
-  return t('regen.review.regenPartQuestion', {
-    id,
-    heading: redactedText(headingText(part.heading)),
-    file: clean(part.file),
-  })
+export function regenPartQuestion(id: string, part: Pick<InstructionPart, 'file' | 'heading' | 'source'>): string {
+  const file = clean(part.file)
+  if (isWholeFilePart(part.source, part.heading)) return t('regen.review.regenFileQuestion', { id, file })
+
+  return t('regen.review.regenPartQuestion', { id, heading: redactedText(headingText(part.heading)), file })
 }
 
 /** How the context line of a regen question names each kind of item (D-142). */
@@ -113,9 +113,19 @@ export function regenMemoryContextLine(
   return `${asSentence(redactedText(summary))} ${regenPartContextLine(change, isRecommended)}`
 }
 
-/** The reply line of a part regen dropped from a role because it is gone from its file (G-02-1f Regen). */
-export function partDroppedLine(id: string, record: Pick<InstructionPartRecord, 'file' | 'heading'>): string {
-  return t('regen.review.partDroppedLine', { id, file: clean(record.file), heading: headingText(record.heading) })
+/**
+ * The reply line of a part regen dropped from a role, its record read on the side `source` names: a whole repo file
+ * that is gone, else a part gone from its file.
+ */
+export function partDroppedLine(
+  id: string,
+  record: Pick<InstructionPartRecord, 'file' | 'heading'>,
+  source: PartSource,
+): string {
+  const file = clean(record.file)
+  if (isWholeFilePart(source, record.heading)) return t('regen.review.fileDroppedLine', { id, file })
+
+  return t('regen.review.partDroppedLine', { id, file, heading: headingText(record.heading) })
 }
 
 /** The reply line of a memory regen dropped from a role because its file is gone (G-02-1f Regen). */
@@ -124,11 +134,19 @@ export function memoryDroppedLine(id: string, memory: Pick<MemoryItem, 'file'>):
 }
 
 /**
- * The warning of a regen where no one can be asked, such as `claude -p` (D-142 rg1-a): how many new or changed parts
- * and memories were left out of the role, and the command that asks about them.
+ * The warning of a regen where no one can be asked, such as `claude -p`: how many new or changed parts and memories
+ * were left out of the role, and the command that asks about them.
  */
 export function notHandedOutWarning(id: string, count: number): string {
   return tn('regen.review.notHandedOut', count, { count, id })
+}
+
+/**
+ * The warning of a regen where no one can be asked: how many repo files the role is given changed since init and load
+ * as they are now, and the command that reviews them.
+ */
+export function loadsAsNowWarning(id: string, count: number): string {
+  return tn('regen.review.loadsAsNow', count, { count, id })
 }
 
 /** One new or changed item a regen asks about (G-02-1f Regen, D-142), as its side found it. */
@@ -137,10 +155,10 @@ export type RegenAsk =
   | { readonly kind: 'memory'; readonly memory: MemoryItem; readonly change: RegenChange }
 
 /**
- * The context of one regen question (D-236): what changed in that item, where it is (a part's file and heading, a
- * memory's file and summary, never its folder or text), whether it is new or changed since init and whether it is
- * recommended, titled by its place among the questions; its summary is that recommendation line (D-310). Its rows hold
- * the place and the change as plain rows and the recommendation as a field (D-313).
+ * The context of one regen question: what changed in that item, where it is (a part's file, alone for a whole repo
+ * file, else with its heading; a memory's file and summary, never its folder or text), whether it is new or changed
+ * since init and whether it is recommended, titled by its place among the questions; its summary is that
+ * recommendation line. Its rows hold the place and the change as plain rows and the recommendation as a field.
  */
 export function regenPartContext(
   item: RegenAsk,
@@ -148,9 +166,11 @@ export function regenPartContext(
   place: { readonly position: number; readonly count: number },
 ): AskContext {
   const summary = item.kind === 'memory' && item.memory.summary === '' ? NO_MEMORY_SUMMARY : null
+  const wholeFile =
+    item.kind === 'part' && isWholeFilePart(item.part.source, item.part.heading) ? clean(item.part.file) : null
   const where =
     item.kind === 'part'
-      ? t('regen.review.partSource', {
+      ? wholeFile ?? t('regen.review.partSource', {
         file: clean(item.part.file),
         heading: redactedText(headingText(item.part.heading)),
       })
@@ -171,9 +191,10 @@ export function regenPartContext(
   return { title, lines, kind: 'regen-part', summary: recommended, rows: [{ title: null, rows }] }
 }
 
-/** What changed on one side since its records were made, and what regen asks about it (sideChanges). */
+/** What changed on one side since its records were made, the source of its parts, and what regen asks about it. */
 type SideChanges = {
   readonly side: RegenSide
+  readonly source: PartSource
   readonly changes: PartChanges
   readonly asked: readonly RegenAsk[]
 }
@@ -195,13 +216,13 @@ function openParts(parts: readonly InstructionPart[], notGiven: readonly Instruc
 }
 
 /**
- * What changed on one side since its records were made (G-02-1f Regen, AUTO-PICK #19 Q1): a part that matches a
- * not-given record exactly stays not given (openParts), and partChanges compares the given records and the memories
- * with the rest. Regen asks, in file order, each changed part and each part neither list names by file and heading
- * (new), then each changed memory; a changed part the role was not given is not asked, and a memory is never new,
- * since only /cadre init finds a new file (D-142 rg2-a).
+ * What changed on one side since its records were made, its parts from `source`: a part that matches a not-given
+ * record exactly stays not given (openParts), and partChanges compares the given records and the memories with the
+ * rest. Regen asks, in file order, each changed part and each part neither list names by file and heading (new), then
+ * each changed memory; a changed part the role was not given is not asked, and a memory is never new, since only
+ * /cadre init finds a new file.
  */
-function sideChanges(side: RegenSide): SideChanges {
+function sideChanges(side: RegenSide, source: PartSource): SideChanges {
   const open = openParts(side.current.parts, side.notGiven)
   const records = { parts: side.given, memories: side.memories }
   const changes = partChanges(records, { parts: open, memories: side.current.memories })
@@ -216,7 +237,7 @@ function sideChanges(side: RegenSide): SideChanges {
   })
   const memories = changes.changed.memories.map((memory): RegenAsk => ({ kind: 'memory', memory, change: 'changed' }))
 
-  return { side, changes, asked: [...parts, ...memories] }
+  return { side, source, changes, asked: [...parts, ...memories] }
 }
 
 /**
@@ -235,12 +256,21 @@ type SideResult = {
 }
 
 /**
- * One side after the questions (G-02-1f Regen, D-142 rg1-a; AUTO-PICK #19 Q1, Q3): the role holds each kept part and
- * memory and, in a session, each asked one answered Yes (`yes`); every other part of the files read is not given, and
- * a memory answered No leaves its record. Its built text changes when a given part changed or is gone, or a new part
- * was taken; its records change only in a session, when an item was asked or one is gone, so where no one can be asked
- * no record is written and a removed item is reported again until a session regen drops it. Each removed part and
- * memory gives its reply line.
+ * The repo items held where no one can be asked: each part of a file a given record names, since the launch gives that
+ * file as it is now.
+ */
+function heldWithoutAsking(found: SideChanges): ReadonlySet<RegenAsk> {
+  const files = new Set(found.side.given.map(record => record.file))
+
+  return new Set(found.asked.filter(item => item.kind === 'part' && files.has(item.part.file)))
+}
+
+/**
+ * One side after the questions: the role holds each kept part and memory and each asked one in `yes` (the answers Yes
+ * in a session, the repo items heldWithoutAsking gives where no one can be asked); every other part of the files read
+ * is not given, and a memory answered No leaves its record. Its built text changes when a given part changed or is
+ * gone, or a new part was taken; its records change only in a session, when an item was asked or one is gone. Each
+ * removed part and memory gives its reply line, and an item not held where no one can be asked is left out.
  */
 function sideResult(id: string, found: SideChanges, yes: ReadonlySet<RegenAsk>, isSession: boolean): SideResult {
   const { side, changes, asked } = found
@@ -260,10 +290,10 @@ function sideResult(id: string, found: SideChanges, yes: ReadonlySet<RegenAsk>, 
       removed.parts.length > 0 || changes.changed.parts.length > 0 || taken.some(item => item.change === 'new'),
     isRecordsChanged: isSession && (isGone || asked.length > 0),
     dropped: [
-      ...removed.parts.map(record => partDroppedLine(id, record)),
+      ...removed.parts.map(record => partDroppedLine(id, record, found.source)),
       ...removed.memories.map(memory => memoryDroppedLine(id, memory)),
     ],
-    leftOut: isSession ? 0 : asked.length,
+    leftOut: isSession ? 0 : asked.length - taken.length,
   }
 }
 
@@ -414,9 +444,8 @@ function recordedRole(role: RoleSpec, side: SideResult): RoleSpec {
  * What regen hands out for its role (G-02-1f Regen, D-142): the role role.json is planned from, with new records when
  * they change (AUTO-PICK #19 Q2), and whether they do; the repo parts its built CLAUDE.md is rebuilt from, null to
  * keep that file as it is (Q4); its private files to rebuild, null for none; the reply lines of what was dropped; the
- * warnings printed with the scan warnings; the warnings of the git check, printed with what the apply did; whether a
- * dialog could be shown, so the improver may run after a plain regen; and the role memory folder, whose private files
- * the improver run of the built CLAUDE.md watches (02-GAPS-B3 M1).
+ * warnings printed with the scan warnings; the warnings of the git check, printed with what the apply did; and whether
+ * a dialog could be shown, so the improver may run after a plain regen.
  */
 export type RegenHanded = {
   readonly role: RoleSpec
@@ -427,22 +456,21 @@ export type RegenHanded = {
   readonly warnings: readonly string[]
   readonly untracked: readonly string[]
   readonly isSession: boolean
-  /** The role memory folder, null when it is not known (02-GAPS-B3 M1). */
-  readonly folder: string | null
 }
 
 /**
- * The hand-out of a regen (G-02-1f Regen, D-142). A role.json with no part records, written before them, hands out
- * nothing, so regen runs as before. Else regen reads again only the files and memories the records name (rg2-a): the
- * repo side from role.json (repoSideRead) and, in a plain regen, the private side from the role's hand-out record
- * (privateRecordOf, privateSideRead); a --dry-run compares the repo side only (AUTO-PICK #19 Q5). Each side gives what
- * changed and what to ask (sideChanges): the repo side's parts, then the global parts, then the memories. In a session
- * that can show a dialog, with an item to ask, one recommendation call and one question per item follow (regenAnswers,
- * rg1-a), in a --dry-run too (Q6), and a cancel gives its reason (Q7); where no one can be asked nothing is, and the
- * items left out give notHandedOutWarning. Then each side's result (sideResult): the repo side is checked against git
- * in a plain regen (trackedSide), sets its records on the role when they change (withPartRecords) and rebuilds the
- * built file from its parts when its text changes; the private side gives the files of the role memory folder to
- * rebuild (privateRoleOf), with the repo's folder name (repoNameOf).
+ * The hand-out of a regen. A role.json with no part records, written before them, hands out nothing, so regen runs as
+ * before. Else regen reads again only the files and memories the records name: the repo side from role.json
+ * (repoSideRead) and, in a plain regen, the private side from the role's hand-out record (privateRecordOf,
+ * privateSideRead); a --dry-run compares the repo side only. Each side gives what changed and what to ask
+ * (sideChanges): the repo side's parts, then the global parts, then the memories. In a session that can show a dialog,
+ * with an item to ask, one recommendation call and one question per item follow (regenAnswers), in a --dry-run too,
+ * and a cancel gives its reason; where no one can be asked nothing is: a repo item whose file a given record names
+ * stays held, as the launch gives that file as it is now (loadsAsNowWarning), and every other item is left out
+ * (notHandedOutWarning). Then each side's result (sideResult): the repo side is checked against git in a plain regen
+ * (trackedSide), sets its records on the role when they change (withPartRecords) and rebuilds the built file from its
+ * parts when its text changes; the private side gives the files of the role memory folder to rebuild (privateRoleOf),
+ * with the repo's folder name (repoNameOf).
  */
 export async function regenHandout(
   io: InitIo,
@@ -464,29 +492,31 @@ export async function regenHandout(
     warnings: [],
     untracked: [],
     isSession: false,
-    folder: null,
   }
   if (role.instructionParts === undefined && role.instructionPartsNotGiven === undefined) return accepted(handed)
   const repoRead = await repoSideRead(io, locations.root, role)
   const found = await privateRecordOf(io, host, locations, id)
   const places = recordPlacesOf(locations, input.setup)
   const privateRead = found.kind === 'found' ? await privateSideRead(io, found.record, places, id) : null
-  const repoChanges = repoRead.kind === 'read' ? sideChanges(repoRead.side) : null
-  const privateChanges = privateRead?.kind === 'read' ? sideChanges(privateRead.side) : null
+  const repoChanges = repoRead.kind === 'read' ? sideChanges(repoRead.side, 'repo') : null
+  const privateChanges = privateRead?.kind === 'read' ? sideChanges(privateRead.side, 'global') : null
   const asked = [...(repoChanges?.asked ?? []), ...(privateChanges?.asked ?? [])]
   const isSession = (await io.isInteractive()) === true
   const none: ReadonlySet<RegenAsk> = new Set()
   const answers = isSession && asked.length > 0 ? await regenAnswers(io, role, asked) : accepted(none)
   if (answers.kind === 'cancelled') return answers
-  const repoResult = repoChanges === null ? null : sideResult(id, repoChanges, answers.value, isSession)
+  const repoYes = repoChanges === null || isSession ? answers.value : heldWithoutAsking(repoChanges)
+  const repoResult = repoChanges === null ? null : sideResult(id, repoChanges, repoYes, isSession)
   const privateResult = privateChanges === null ? null : sideResult(id, privateChanges, answers.value, isSession)
   const tracked = repoResult === null ? null : await trackedSide(host, locations.root, id, repoResult)
   const repoSide = tracked?.result ?? null
   const leftOut = (repoResult?.leftOut ?? 0) + (privateResult?.leftOut ?? 0)
+  const loadsAsNow = isSession ? 0 : repoYes.size
   const warnings = [
     ...(repoRead.kind === 'kept' ? repoRead.warnings : []),
     ...(found.kind === 'kept' ? found.warnings : []),
     ...(privateRead?.kind === 'kept' ? privateRead.warnings : []),
+    ...(loadsAsNow > 0 ? [loadsAsNowWarning(id, loadsAsNow)] : []),
     ...(leftOut > 0 ? [notHandedOutWarning(id, leftOut)] : []),
   ]
   const isRoleWritten = repoSide !== null && repoSide.isRecordsChanged
@@ -504,6 +534,5 @@ export async function regenHandout(
     warnings,
     untracked: tracked?.warnings ?? [],
     isSession,
-    folder: found.kind === 'found' || found.kind === 'none' ? found.folder : null,
   })
 }

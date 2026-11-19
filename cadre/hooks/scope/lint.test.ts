@@ -1,10 +1,19 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { CompiledScope, FrameworkId, RoleSpec, SetupScan } from '../../types'
+import { lintRuntimeDenyPattern } from '../launch/deny'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { context, emptySetupScan, FRAMEWORKS, hook, session, skillRef, templateRole, withDeny } from '../testkit'
 import { compileScope } from './compile'
-import { infraViolations, isInfraPlugin, isSafeDir, lintDenyPattern, pluginName, roleOwnPaths } from './lint'
+import {
+  INFRA_CHECKS,
+  infraViolations,
+  isInfraPlugin,
+  isSafeDir,
+  lintDenyPattern,
+  pluginName,
+  roleOwnPaths,
+} from './lint'
 
 /** The literal segments of a repo-relative deny entry such as `Read(./a/b/**)`, `*` and `**` dropped; [] for others. */
 function denySegments(entry: string): string[] {
@@ -122,6 +131,32 @@ describe('lintDenyPattern', () => {
     ]
 
     expect(refused.filter(pattern => lintDenyPattern(pattern) !== message)).toEqual([])
+  })
+
+  test('a cadre tool, or a pattern over one, is refused at commit and at launch; no infra check names one', () => {
+    const message = 'would block an infra tool'
+    const refused = [
+      'mcp__cadre__inbox_send',
+      'mcp__cadre__inbox_read',
+      'mcp__cadre__inbox_mark',
+      'mcp__cadre',
+      'mcp__cadre__*',
+      'mcp__cadre__inbox_*',
+      'mcp__ca*',
+    ]
+
+    expect(refused.filter(pattern => lintDenyPattern(pattern) !== message)).toEqual([])
+    expect(refused.filter(pattern => lintRuntimeDenyPattern(pattern) !== message)).toEqual([])
+    expect(INFRA_CHECKS.filter(check => check.token.startsWith('mcp__cadre__'))).toEqual([])
+  })
+
+  test('a rule with an argument on a cadre tool is refused at commit and at launch', () => {
+    const message = 'would block an infra tool'
+    const names = ['mcp__cadre__inbox_send', 'mcp__cadre__inbox_read', 'mcp__cadre__inbox_mark']
+    const refused = names.flatMap(name => [`${name}(*)`, `${name}(x)`])
+
+    expect(refused.filter(pattern => lintDenyPattern(pattern) !== message)).toEqual([])
+    expect(refused.filter(pattern => lintRuntimeDenyPattern(pattern) !== message)).toEqual([])
   })
 
   test('a literal pattern blocks only the infra name it equals or the server it names, not a longer one (B9)', () => {
@@ -429,5 +464,20 @@ describe('isInfraPlugin (D-252)', () => {
     expect(isInfraPlugin('cadre')).toBe(true)
     expect(isInfraPlugin('codex@x')).toBe(false)
     expect(isInfraPlugin('autopilotx@m')).toBe(false)
+  })
+})
+
+describe('the lint over every framework a role may run', () => {
+  test("a gsd role that may run superpowers has a problem while superpowers' start skills have no plugin", () => {
+    const be = templateRole('be')
+    const union = compileScope(be, context({ framework: 'gsd', alsoRuns: ['gsd', 'superpowers'] }))
+    const alone = compileScope(be, context({ framework: 'gsd' }))
+    const setup = emptySetupScan({ plugins: ['superpowers@claude-plugins-official'] })
+    const enabled = compileScope(be, context({ framework: 'gsd', setup, alsoRuns: ['gsd', 'superpowers'] }))
+
+    expect(infraViolations(union, 'gsd')).toContain(
+      'start skill superpowers:brainstorming of superpowers needs the plugin superpowers, which is not enabled',
+    )
+    expect([infraViolations(alone, 'gsd'), infraViolations(enabled, 'gsd')]).toEqual([[], []])
   })
 })

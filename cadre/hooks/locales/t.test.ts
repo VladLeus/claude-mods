@@ -149,7 +149,7 @@ describe('long table values (D-224, WE-S6)', () => {
   test('the long values keep their bytes in any source form (WE-S6)', async () => {
     const values = CHAINED.map(([table, key]) => table[key])
 
-    expect(await sha256Hex(values.join('\n'))).toBe('a8fb92e4906fe273370a8ee3cc2f5a6faaf389cb0bb2280b81cb375a1476def0')
+    expect(await sha256Hex(values.join('\n'))).toBe('aec6a305820b08c8331171f4f5ad414768d37c801a9ff974d382c6b6d897d15a')
   })
 
   test('no table value widens to string (WE-S6)', () => {

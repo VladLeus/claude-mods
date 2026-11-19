@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { HostRun, InitIo } from '../../types'
 import { memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
-import { checkoutOf, findGitTop } from './checkout'
+import { checkoutOf, epicWorktreeMain, findGitTop } from './checkout'
 
 describe('findGitTop', () => {
   /** A port over the world that also records every path it is asked to stat. */
@@ -102,5 +102,50 @@ describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
     expect(checkoutOf(null)).toEqual({ kind: 'unknown' })
     expect(checkoutOf(run(128, '/repo/.git\n/repo/.git\n'))).toEqual({ kind: 'unknown' })
     expect(checkoutOf(run(0, '/repo/.git\n'))).toEqual({ kind: 'unknown' })
+  })
+})
+
+describe('epicWorktreeMain', () => {
+  const ROOT = '/m/.claude/worktrees/k'
+  const GIT_FILE = `${ROOT}/.git`
+  const GIT_LINE = 'gitdir: /m/.git/worktrees/k\n'
+  const RECORD = '/m/.git/worktrees/k/cadre-epic.json'
+  /** An epic worktree of the main checkout /m: its .git file names its git dir, which holds the epic record. */
+  const EPIC_FILES = { [GIT_FILE]: GIT_LINE, [RECORD]: '{}' }
+
+  async function mainOf(world: MemWorld): Promise<string | null> {
+    return epicWorktreeMain(memIo(world, []).io, ROOT)
+  }
+
+  test('a .git file naming a worktree git dir that holds the epic record gives the main checkout', async () => {
+    const run = memIo(memWorld({ files: EPIC_FILES }), [])
+    expect(await epicWorktreeMain(run.io, ROOT)).toBe('/m')
+    expect([run.reads, run.asked]).toEqual([[GIT_FILE], []])
+  })
+
+  test('with the epic record absent, a link or a folder it is no epic worktree', async () => {
+    const absent = memWorld({ files: { [GIT_FILE]: GIT_LINE } })
+    const link = memWorld({ files: EPIC_FILES, realPaths: { [RECORD]: '/elsewhere/cadre-epic.json' } })
+    const folder = memWorld({ files: { [GIT_FILE]: GIT_LINE }, dirs: { [RECORD]: [] } })
+    expect([await mainOf(absent), await mainOf(link), await mainOf(folder)]).toEqual([null, null, null])
+  })
+
+  test('a .git folder, as the main checkout has, or a .git link is no epic worktree', async () => {
+    const main = memWorld({ files: { [RECORD]: '{}' }, dirs: { [GIT_FILE]: [] } })
+    const link = memWorld({ files: EPIC_FILES, realPaths: { [GIT_FILE]: '/elsewhere/.git' } })
+    expect([await mainOf(main), await mainOf(link)]).toEqual([null, null])
+  })
+
+  test('a relative gitdir is resolved against the root', async () => {
+    const files = { ...EPIC_FILES, [GIT_FILE]: 'gitdir: ../../../.git/worktrees/k\n' }
+    expect(await mainOf(memWorld({ files }))).toBe('/m')
+  })
+
+  test('a text that is not one gitdir line, or a gitdir with no /.git/worktrees/ segment, gives null', async () => {
+    for (const text of [`${GIT_LINE}${GIT_LINE}`, 'git dir /m/.git/worktrees/k\n', '', 'gitdir: \n']) {
+      expect(await mainOf(memWorld({ files: { ...EPIC_FILES, [GIT_FILE]: text } }))).toBeNull()
+    }
+    const outside = { [GIT_FILE]: 'gitdir: /m/gits/k\n', '/m/gits/k/cadre-epic.json': '{}' }
+    expect(await mainOf(memWorld({ files: outside }))).toBeNull()
   })
 })

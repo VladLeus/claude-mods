@@ -13,6 +13,7 @@ import type {
   GsdFact,
   KickoffContext,
   RepoEntry,
+  RoleWorkContext,
   SettingProposal,
   SetupScan,
   SkillRef,
@@ -264,24 +265,59 @@ function approvedSpecLines(specPath: string | null): string[] {
 }
 
 /**
- * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work, one
- * line per human gate, and the done answer. Lines are joined with newlines and the text has no trailing newline. The
- * title and the spec path come from outside the adapter, so they are cleaned before they can add a line.
+ * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work (the
+ * new project of a checkout with no `.planning/` too), one line per human gate, and the done answer, joined with
+ * newlines. A core lead plans no implementation, so it gets no start or verify line; a core reviewer runs no repo
+ * checks, so it gets no verify line. The title and the spec path come from outside the adapter, so they are cleaned
+ * before they can add a line.
  */
 export function gsdKickoffText(ctx: KickoffContext): string {
   const title = kickoffTitle(ctx)
+  const isCoreLead = ctx.isCoreLead === true
+  const leftOut: readonly string[] = [
+    ...(isCoreLead ? [ARTIFACT.gsdKickoffStart] : []),
+    ...(isCoreLead || ctx.isCoreReviewer === true ? [ARTIFACT.gsdKickoffVerify] : []),
+  ]
 
   return [
     fill(ARTIFACT.gsdKickoffIntro, { title }),
     ...approvedSpecLines(ctx.specPath),
     ARTIFACT.gsdKickoffStart,
+    ARTIFACT.gsdKickoffNewProject,
     ARTIFACT.gsdKickoffSpecs,
     ARTIFACT.gsdKickoffVerify,
     ARTIFACT.gsdHumanGates,
     ...GSD_GATES.map(gate => fill(ARTIFACT.gsdGateLine, { where: gate.where, kickoff: gate.kickoff })),
     DONE_LINE,
-  ].join('\n')
+  ]
+    .filter(line => !leftOut.includes(line))
+    .join('\n')
 }
+
+/**
+ * The steps the lead runs to start its own planning in GSD: the project when the checkout has no `.planning/`, its
+ * workstream, the epic as its milestone, then the quick or phase path.
+ */
+const GSD_LEAD_STEPS: readonly string[] = Object.freeze([
+  ARTIFACT.gsdStepNewProject,
+  ARTIFACT.gsdStepWorkstream,
+  ARTIFACT.gsdStepMilestoneLead,
+  ARTIFACT.gsdStepPath,
+])
+
+/** The steps a core lead runs: the lead steps up to the milestone, since it plans no implementation. */
+const GSD_CORE_LEAD_STEPS: readonly string[] = Object.freeze(GSD_LEAD_STEPS.slice(0, 3))
+
+/**
+ * The steps a worker runs: the project only in a team with no TL and a checkout with no `.planning/`, its workstream,
+ * TL's task as its milestone goal, then the quick or phase path.
+ */
+const GSD_WORKER_STEPS: readonly string[] = Object.freeze([
+  ARTIFACT.gsdStepNewProjectNoLead,
+  ARTIFACT.gsdStepWorkstream,
+  ARTIFACT.gsdStepMilestoneWorker,
+  ARTIFACT.gsdStepPath,
+])
 
 /**
  * The GSD adapter: the contract every framework implements, filled for GSD. Its start, locate, verify and done entries
@@ -293,6 +329,7 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   detectRule:
     t('framework.gsd.adapter.gsdAdapter'),
   detect: detectGsd,
+  isInstalled: (facts: Facts): boolean => facts.gsd.some(fact => fact.identity === 'proven'),
   startWork: Object.freeze([
     t('framework.gsd.adapter.gsdAdapter2'),
     t('framework.gsd.adapter.gsdAdapter3'),
@@ -328,6 +365,10 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
     'gsd-execute-phase',
     'gsd-validate-phase',
     'gsd-code-review',
+    'gsd-new-project',
+    'gsd-new-milestone',
+    'gsd-quick',
+    'gsd-phase',
   ]),
   /** A GSD skill is named `gsd-...`. */
   ownsSkill: (skill: SkillRef) => skill.name.startsWith('gsd-'),
@@ -336,7 +377,32 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   needsBash: true,
   roleStart: () => '/gsd-autonomous',
   install: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
+  projectInstall: Object.freeze({
+    id: '@opengsd/gsd-core',
+    argv: Object.freeze(['npx', '-y', '@opengsd/gsd-core@latest', '--claude', '--local']),
+    timeoutMs: 600_000,
+    writes: Object.freeze([
+      '.claude/gsd-core',
+      '.claude/commands',
+      '.claude/agents',
+      '.claude/hooks',
+      '.claude/settings.local.json',
+      '.claude/scripts',
+      '.claude/gsd-file-manifest.json',
+      '.claude/gsd-install-state.json',
+    ]),
+    runs: Object.freeze(['.claude/hooks', '.claude/gsd-core', '.claude/scripts']),
+    isPlugin: false,
+  }),
   factsHeading: t('framework.gsd.adapter.gsdAdapterFactsHeading'),
+  roleWork: Object.freeze({
+    workstreamEnv: 'GSD_WORKSTREAM',
+    startSteps: (ctx: RoleWorkContext) => {
+      if (ctx.isCoreLead === true) return GSD_CORE_LEAD_STEPS
+
+      return ctx.isLead ? GSD_LEAD_STEPS : GSD_WORKER_STEPS
+    },
+  }),
 })
 
 /** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */

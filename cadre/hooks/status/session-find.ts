@@ -3,14 +3,15 @@
  * restart, so a role's session is found by its name `cadre-<id>`: first by the custom title of the newest transcripts
  * of its start folder under the user folder, grepped with `/usr/bin/grep` through the HostIo port (titledSession), else
  * by the newest agent-fleet beat with that name whose cwd lies in the repo (beatSessionOf); sessionOf tries both. It
- * reads through the InitIo port and runs only that grep; it imports core, paths and scan, and the rest of status/ and
- * epic read it.
+ * reads through the InitIo port and runs only that grep and the cwd grep (cwdGrepArgv); it imports core, paths and
+ * scan, and the rest of status/ and epic read it.
  */
 import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
 import { compareText } from '../core/text'
-import { mangledProjectDir, trimSlash, userDirOf } from '../paths'
+import { mangledProjectDir, startCwdNeedle, trimSlash, userDirOf } from '../paths'
 import { autopilotStatusPath } from '../scan/autopilot'
+import { followedProjectFolder } from '../scan/port-read'
 
 /** The most transcripts of the start folder the title search greps: the newest ones (D-131). */
 export const MAX_TRANSCRIPTS = 20
@@ -53,6 +54,14 @@ export function startFolderOf(root: string, start: LaunchStart): string | null {
  */
 export function titleGrepArgv(path: string): readonly string[] {
   return Object.freeze(['/usr/bin/grep', '-E', '^\\{"type":"custom-title"', '--', path])
+}
+
+/**
+ * The argv that exits 0 when a transcript holds a row whose cwd is `startFolder` (startCwdNeedle): a fixed-string
+ * `/usr/bin/grep`, with the path after `--`. It runs with no shell.
+ */
+export function cwdGrepArgv(path: string, startFolder: string): readonly string[] {
+  return Object.freeze(['/usr/bin/grep', '-F', '-q', '-m', '1', '-e', startCwdNeedle(startFolder), '--', path])
 }
 
 /**
@@ -119,22 +128,43 @@ export function transcriptCandidates(entries: readonly PortEntry[]): string[] {
     .map(entry => entry.name)
 }
 
+/** Whether one of a folder's newest transcripts (transcriptCandidates) holds a row whose cwd is `startFolder`. */
+async function grepsStartCwd(
+  io: InitIo,
+  host: Pick<HostIo, 'run'>,
+  folder: string,
+  startFolder: string,
+): Promise<boolean> {
+  const entries = await io.list(folder)
+  if (entries === null) return false
+  for (const name of transcriptCandidates(entries)) {
+    const run = await host.run(cwdGrepArgv(`${folder}/${name}`, startFolder), { timeoutMs: TITLE_GREP_TIMEOUT_MS })
+    if (run !== null && run.exitCode === 0) return true
+  }
+
+  return false
+}
+
 /**
- * The session the title search finds in a transcripts folder (D-131): the id of the first transcript, newest first
- * (transcriptCandidates), whose title grep exits 0 and gives `cadre-<id>`; a grep the host rejects, or that exits
- * non-zero, gives no title. Null when the folder is not known or cannot be listed, or no transcript has the title.
+ * The session the title search finds in the start folder's transcripts folder (D-131): the id of the first
+ * transcript, newest first (transcriptCandidates), whose title grep exits 0 and gives `cadre-<id>`; a grep the host
+ * rejects, or that exits non-zero, gives no title. A shortened folder is searched only when its transcripts hold the
+ * start folder as their cwd. Null when the folder is not known or cannot be listed, or no transcript has the title.
  */
 async function titledSession(
   io: InitIo,
   host: Pick<HostIo, 'run'>,
-  folder: string | null,
+  userDir: string | null,
+  startFolder: string | null,
   id: string,
 ): Promise<string | null> {
-  if (folder === null) return null
-  const entries = await io.list(folder)
+  const folder = transcriptFolderOf(userDir, startFolder)
+  if (folder === null || startFolder === null) return null
+  const followed = await followedProjectFolder(io, folder, candidate => grepsStartCwd(io, host, candidate, startFolder))
+  const entries = await io.list(followed)
   if (entries === null) return null
   for (const name of transcriptCandidates(entries)) {
-    const run = await host.run(titleGrepArgv(`${folder}/${name}`), { timeoutMs: TITLE_GREP_TIMEOUT_MS })
+    const run = await host.run(titleGrepArgv(`${followed}/${name}`), { timeoutMs: TITLE_GREP_TIMEOUT_MS })
     if (run === null || run.exitCode !== 0) continue
     if (customTitleOf(run.stdout) === sessionName(id)) return name.slice(0, -TRANSCRIPT_SUFFIX.length)
   }
@@ -264,7 +294,7 @@ export async function sessionOf(
   const { locations, id, startFolder } = input
   // The status reply has no warning lines, so an ignored CLAUDE_CONFIG_DIR only falls back here (D-238).
   const userDir = userDirOf(locations, [locations.root], [])
-  const titled = await titledSession(io, host, transcriptFolderOf(userDir, startFolder), id)
+  const titled = await titledSession(io, host, userDir, startFolder, id)
   if (titled !== null) return { sessionId: titled, foundBy: 'title', folder: startFolder }
   const home = locations.givenHome
   if (home === null || !home.startsWith('/')) return null

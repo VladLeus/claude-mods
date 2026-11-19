@@ -5,10 +5,10 @@
  * paths, the framework registry, the role template, the infra catalog and the types, so team compiles every role's
  * scope here.
  */
-import type { CompiledScope, RoleSpec, ScopeContext } from '../../types'
+import type { CompiledScope, RoleSpec, ScopeContext, SettingsTemplate } from '../../types'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
-import { PRIVATE_INSTRUCTIONS_LINK } from '../paths'
+import { PRIVATE_INSTRUCTIONS_COPY } from '../paths'
 import {
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
@@ -16,16 +16,19 @@ import {
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
 } from '../roles/infra'
-import { standsFor } from '../roles/template'
+import { runsRepoChecks, standsFor } from '../roles/template'
 import { cardFor, mcpToolName, notGivenMcp } from './card'
 import type { DenyPlan } from './card'
+import { runnableFrameworks } from './frameworks'
 import {
+  DOCKER_COMMANDS,
   isInfraPlugin,
   isSafeDir,
   lintAll,
   ownNames,
   ownRoots,
   pluginName,
+  SANDBOX_CACHE_DIR,
   SECRET_READ_DENY,
   skillPlugin,
 } from './lint'
@@ -40,19 +43,19 @@ function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean
 /**
  * The plugins the role session loads under the whitelist: the three infra plugins, every scanned key whose name part
  * is an infra plugin name under any marketplace (isInfraPlugin, D-281), and every scanned key of a plugin that adds a
- * skill of the role or a start skill of its framework (a skill named `plugin:skill` is present only when its plugin is
- * enabled). The superpowers framework also enables every scanned `superpowers@` key. A scanned key of a plugin named in
- * SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is that key exactly, never by its
- * plugin name, since the scanned keys include the repo's own settings (T-03-46, T-03-47); every other plugin is
- * matched by its name. A role that stands for Security also gets SECURITY_GUIDANCE_PLUGIN itself when the setup holds
- * that exact key, so its hooks warn that role about risky edits (decision #39); another role enables it only for a
- * `security-guidance:` skill the person gave it (decision #69 B4).
+ * skill of the role or a start skill of a framework it may run (runnableFrameworks; a skill named `plugin:skill` is
+ * present only when its plugin is enabled). The superpowers framework also enables every scanned `superpowers@` key.
+ * A scanned key of a plugin named in SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is
+ * that key exactly, never by its plugin name, since the scanned keys include the repo's own settings (T-03-46,
+ * T-03-47); every other plugin is matched by its name. A role that stands for Security also gets
+ * SECURITY_GUIDANCE_PLUGIN itself when the setup holds that exact key, so its hooks warn that role about risky edits
+ * (decision #39); another role enables it only for a `security-guidance:` skill the person gave it (decision #69 B4).
  */
 function pluginsFor(role: RoleSpec, ctx: ScopeContext): Readonly<Record<string, boolean>> {
-  const adapter = adapterOf(ctx.framework)
-  const skills = [...adapter.startSkills, ...role.skills]
+  const adapters = runnableFrameworks(ctx).map(adapterOf)
+  const skills = [...adapters.flatMap(adapter => adapter.startSkills), ...role.skills]
   const wanted = new Set(skills.map(skillPlugin).filter((plugin): plugin is string => plugin !== null))
-  for (const plugin of adapter.pluginsToEnable) wanted.add(plugin)
+  for (const plugin of adapters.flatMap(adapter => adapter.pluginsToEnable)) wanted.add(plugin)
   const scanned = ctx.setup.plugins.filter(key => {
     const name = pluginName(key)
     const exact = SECURITY_PLUGINS.find(official => pluginName(official) === name)
@@ -104,29 +107,35 @@ function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
 }
 
 /**
- * The skills and agents linked into the overlay at launch (spike S4 V3): the handoff skills, the start skills of the
- * framework and the skills of the role, and for GSD the `gsd-*` agents of the setup. Under `--setting-sources project`
- * a user-level skill is absent unless the overlay links it. A skill named `plugin:skill` is not linked: its plugin is
- * enabled instead.
+ * The skills and agents linked into the overlay at launch: the handoff skills, the start skills of every framework the
+ * role may run and the skills of the role, and the agents of the setup of every framework the role may run, by each
+ * adapter's prefix (`gsd-*` for GSD). Under `--setting-sources project` a user-level skill is absent unless the overlay
+ * links it. A skill named `plugin:skill` is not linked: its plugin is enabled instead.
  */
 function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay'] {
-  const adapter = adapterOf(ctx.framework)
-  const names = [...INFRA_SKILLS, ...adapter.startSkills, ...role.skills]
+  const runnable = runnableFrameworks(ctx)
+  const startSkills = runnable.flatMap(id => adapterOf(id).startSkills)
+  const names = [...INFRA_SKILLS, ...startSkills, ...role.skills]
   const skills = sortedUnique(names.filter(name => skillPlugin(name) === null))
-  const prefix = adapter.agentPrefix
-  const agents = prefix === null ? [] : sortedUnique(ctx.setup.agents.filter(name => name.startsWith(prefix)))
+  const agents = sortedUnique(
+    runnable.flatMap(id => {
+      const prefix = adapterOf(id).agentPrefix
+
+      return prefix === null ? [] : ctx.setup.agents.filter(name => name.startsWith(prefix))
+    }),
+  )
 
   return { skills, agents }
 }
 
 /**
- * The launcher flags as argv tokens, a flag and its value each their own token, so a launcher can quote every token
- * (D-50, D-78, S1, S4). The paths are repo-relative: the launcher starts in the git top level. Beside the overlay, the
- * role folder and the private instructions link in `.runtime` are added directories, so the engine loads the role's
- * built `.cadre/<id>/CLAUDE.md` and its private CLAUDE.md as CLAUDE.md files when the exec line sets
- * CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD (D-140 q1-b); ROLE.md stays the appended system prompt. The MCP route
- * is a parameter, and the flag that turns off slash commands is never added, because it would turn off the handoff
- * skills. The role id is a validated slug (validateRoleId), so it is safe in a path and in a token.
+ * The launcher flags as argv tokens, a flag and its value each their own token, so a launcher can quote every token.
+ * The paths are repo-relative: the launcher starts in the git top level. Beside the overlay, the role folder and the
+ * private instructions copy in `.runtime` are added directories, so the engine loads the role's built
+ * `.cadre/<id>/CLAUDE.md` and its private CLAUDE.md as CLAUDE.md files when the exec line sets
+ * CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD; ROLE.md stays the appended system prompt. The MCP route is a
+ * parameter, and the flag that turns off slash commands is never added, because it would turn off the handoff skills.
+ * The role id is a validated slug (validateRoleId), so it is safe in a path and in a token.
  */
 function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
   const runtime = `.cadre/${role.id}/.runtime`
@@ -150,7 +159,7 @@ function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
     '--add-dir',
     `.cadre/${role.id}`,
     '--add-dir',
-    `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`,
+    `${runtime}/${PRIVATE_INSTRUCTIONS_COPY}`,
     '--mcp-config',
     `${runtime}/mcp.json`,
   ]
@@ -159,12 +168,24 @@ function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
 }
 
 /**
- * Compiles the whole scope of one role from one computation (D-80): the committed settings template, the MCP file,
- * the launcher flags, the skill overlay and the card cannot drift apart, and the probe checks against the same
- * value. The settings hold only the portable keys `enabledPlugins`, `permissions` and `sandbox` (D-84); every
- * per-user value is rendered at launch. Every deny entry passes lintDenyPattern, and one that does not is dropped and
- * named on the card. Every list is sorted and without repeats, so the template hashes stably, and nothing is kept
- * between calls.
+ * The sandbox of a role: off without Bash, else on with the tool caches writable; a role that runs the repo's checks
+ * also runs Docker and the repo's docker scripts outside it.
+ */
+function sandboxFor(role: RoleSpec, ctx: ScopeContext): SettingsTemplate['sandbox'] {
+  if (!role.hasBash) return { enabled: false }
+  const filesystem = { allowWrite: [SANDBOX_CACHE_DIR] }
+  if (!runsRepoChecks(role)) return { enabled: true, filesystem }
+  const scripts = (ctx.dockerScripts ?? []).map(command => `${command} *`)
+
+  return { enabled: true, excludedCommands: [...DOCKER_COMMANDS, ...scripts], filesystem }
+}
+
+/**
+ * Compiles the whole scope of one role from one computation: the committed settings template, the MCP file, the
+ * launcher flags, the skill overlay and the card cannot drift apart, and the probe checks against the same value. The
+ * settings hold only the portable keys `enabledPlugins`, `permissions` and `sandbox`; every per-user value is rendered
+ * at launch. Every deny entry passes lintDenyPattern, and one that does not is dropped and named on the card. Every
+ * list is sorted and without repeats, so the template hashes stably, and nothing is kept between calls.
  */
 export function compileScope(role: RoleSpec, ctx: ScopeContext): CompiledScope {
   const enabledPlugins = pluginsFor(role, ctx)
@@ -174,7 +195,7 @@ export function compileScope(role: RoleSpec, ctx: ScopeContext): CompiledScope {
     settings: {
       enabledPlugins,
       permissions: { defaultMode: role.permissionMode, deny: deny.entries },
-      sandbox: { enabled: role.hasBash },
+      sandbox: sandboxFor(role, ctx),
     },
     mcp: { schema: 1, servers: sortedUnique(role.mcp) },
     flags: flagsFor(role, ctx),
